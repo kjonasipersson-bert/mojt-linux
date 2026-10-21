@@ -19,3 +19,5 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_base_install_failures.py' -v
       - name: Verify packed Base root ownership
         run: sudo python3 -m unittest discover -s tests -p 'test_base_pack_root.py' -v
+      - name: Check VM builder contracts
+        run: python3 -m unittest discover -s tests -p 'test_vm_builder.py' -v

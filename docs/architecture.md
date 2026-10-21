@@ -73,3 +73,18 @@ This remains a design direction, not an implemented Mojt Ports manager. We shoul
 - ABI policy between Base, System, and Ports
 - State migration/rollback guarantees for system services
 - Alternative bootstrap backends and platform support
+
+## System scope and larger component groups (open)
+
+The first QEMU boot uses a host-provided kernel and minimal initramfs;
+it does **not** establish a permanent System package format. System may
+eventually include desktop environments such as GNOME, rather than limiting
+System to the kernel, firmware and low-level services. That choice remains
+open for reconsideration. A substantial System desktop/profile would likely
+need explicit, versioned dependencies and compatibility checks; a lightweight
+component dependency resolver or use of existing tooling may be appropriate.
+Do not assume that all desktop components must belong to Ports.
+
+The VM prototype intentionally postpones package dependency resolution,
+System-versus-Ports desktop placement, and the mechanism that exposes
+independently installed System files inside the active Base filesystem.
