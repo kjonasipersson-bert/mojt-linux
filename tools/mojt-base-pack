@@ -112,6 +112,12 @@ def main():
         release.mkdir()
         subprocess.run(["cp", "-a", f"{rootfs}/.", str(stage)], check=True)
 
+        # cp -a SRC/. also copies the source root directory's ownership and
+        # mode onto the destination. Normalize only the staged filesystem root;
+        # other paths keep their package-supplied metadata. Never change ROOTFS.
+        os.chown(stage, 0, 0)
+        os.chmod(stage, 0o755)
+
         # Base carries vendor defaults, not machine-specific /etc state.
         defaults = stage / "usr/etc"
         if defaults.is_symlink():
