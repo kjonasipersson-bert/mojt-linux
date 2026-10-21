@@ -1,0 +1,214 @@
+#!/usr/bin/env python3
+# Mojt Linux
+# Copyright (C) 2026 Jonas Persson
+# SPDX-License-Identifier: GPL-2.0-only
+"""Pack a bootstrapped rootfs into one versioned Mojt Base release.
+
+Host requirements: Python >= 3.11, GNU cp, GNU tar, zstd, root privileges.
+Never modifies the supplied rootfs. The resulting image carries defaults in
+/usr/etc; a future installer owns persistent /etc and /var.
+"""
+
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import tomllib
+
+
+def die(message):
+    raise SystemExit(f"mojt-base-pack: {message}")
+
+
+def text(value):
+    return json.dumps(value, ensure_ascii=True)
+
+
+def remove(path):
+    if path.is_symlink() or path.is_file():
+        path.unlink()
+    elif path.is_dir():
+        shutil.rmtree(path)
+
+
+def clear_contents(path):
+    """Make a persistent/runtime mount point empty without losing its mode."""
+    if path.is_symlink() or (path.exists() and not path.is_dir()):
+        die(f"expected a directory, not a link or file: {path}")
+    path.mkdir(parents=True, exist_ok=True)
+    for child in list(path.iterdir()):
+        remove(child)
+
+
+def checked_label(value, field):
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+-]*", value):
+        die(f"invalid {field}: {value!r}")
+    return value
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("rootfs", type=Path, help="bootstrapped rootfs (left untouched)")
+    parser.add_argument("config", type=Path, help="TOML source manifest")
+    parser.add_argument("output", type=Path, help="directory for releases")
+    parser.add_argument("--packages", type=Path, help="optional XBPS package inventory")
+    args = parser.parse_args()
+
+    if os.geteuid() != 0:
+        die("run as root, e.g. sudo ./mojt-base-pack ROOTFS base.toml RELEASES")
+    for tool in ("cp", "tar", "zstd"):
+        if not shutil.which(tool):
+            die(f"required host command not found: {tool}")
+
+    rootfs = args.rootfs.resolve(strict=True)
+    for name in ("dev", "proc", "sys", "run"):
+        if os.path.ismount(rootfs / name):
+            die(f"unmount {rootfs / name} before packaging")
+    if not (rootfs / "bin/sh").exists() or not (rootfs / "usr/lib").is_dir():
+        die(f"not a usable rootfs: {rootfs}")
+    with args.config.open("rb") as handle:
+        cfg = tomllib.load(handle)
+    if cfg.get("format") != 1:
+        die("the input manifest must have format = 1")
+    base = cfg.get("base", {})
+    abi = cfg.get("abi", {})
+    build = cfg.get("build", {})
+    if base.get("name") != "mojt":
+        die('the input manifest must declare [base] name = "mojt"')
+    version = checked_label(base.get("version"), "base.version")
+    arch = checked_label(base.get("architecture"), "base.architecture")
+    if abi.get("libc") != "glibc":
+        die('for now only [abi] libc = "glibc" is supported')
+    libc_version = checked_label(abi.get("libc_version"), "abi.libc_version")
+    backend = checked_label(build.get("backend", "void"), "build.backend")
+
+    out = args.output.resolve()
+    if out == rootfs or rootfs in out.parents or out in rootfs.parents:
+        die("output directory must be outside the input rootfs")
+    out.mkdir(parents=True, exist_ok=True)
+    destination = out / f"base-{version}-{arch}"
+    if destination.exists() or destination.is_symlink():
+        die(f"release already exists: {destination}")
+    if args.packages and not args.packages.is_file():
+        die(f"package inventory not found: {args.packages}")
+    if args.packages:
+        inventory = args.packages.read_text(encoding="utf-8")
+        match = re.search(r"^ii\s+glibc-(\d+(?:\.\d+)+)_", inventory, re.M)
+        if match and match.group(1) != libc_version:
+            die(f"manifest claims glibc {libc_version}, package list has {match.group(1)}")
+
+    # Temporary stage and final release both reside on the output filesystem.
+    with tempfile.TemporaryDirectory(prefix=".mojt-pack-", dir=out) as tmp:
+        tmp = Path(tmp)
+        stage = tmp / "rootfs"
+        release = tmp / "release"
+        stage.mkdir()
+        release.mkdir()
+        subprocess.run(["cp", "-a", f"{rootfs}/.", str(stage)], check=True)
+
+        # Base carries vendor defaults, not machine-specific /etc state.
+        defaults = stage / "usr/etc"
+        if defaults.is_symlink():
+            die("/usr/etc must not be a symlink")
+        defaults.mkdir(parents=True, exist_ok=True)
+        etc = stage / "etc"
+        if not etc.is_dir() or etc.is_symlink():
+            die("rootfs /etc must be a directory")
+        for path in list(etc.iterdir()):
+            if path.name in ("os-release", "xbps.d"):
+                remove(path)
+                continue
+            target = defaults / path.name
+            if target.exists() or target.is_symlink():
+                die(f"conflicting default configuration: {target}")
+            path.rename(target)
+        # Installer will create /etc/os-release -> ../usr/lib/os-release.
+        remove(defaults / "os-release")
+        remove(defaults / "xbps.d")
+        # Never promote machine identity or host-specific settings to defaults.
+        for name in ("machine-id", "hostname", "resolv.conf", "mtab"):
+            remove(defaults / name)
+
+        # These mount points are persistent state or runtime data, not Base.
+        # Preserve the original directory modes (notably /tmp and /root).
+        for name in ("var", "home", "root", "srv", "run", "tmp",
+                     "boot", "dev", "proc", "sys", "opt", "usr/local"):
+            clear_contents(stage / name)
+
+        # XBPS is a bootstrap dependency, not part of the Mojt runtime.
+        for folder in ("usr/bin", "usr/sbin"):
+            for path in (stage / folder).glob("xbps-*"):
+                remove(path)
+        remove(stage / "usr/share/xbps.d")
+        # Existing shared libraries are kept for now; no unsafe pruning.
+
+        # OS identity is owned by this Base release.
+        os_release = stage / "usr/lib/os-release"
+        remove(os_release)
+        os_release.write_text(
+            'NAME="Mojt"\n'
+            'ID=mojt\n'
+            f'PRETTY_NAME="Mojt Linux {version}"\n'
+            f'VERSION_ID="{version}"\n'
+            'IMAGE_ID=mojt-base\n'
+            f'IMAGE_VERSION="{version}"\n',
+            encoding="utf-8",
+        )
+        os_release.chmod(0o644)
+
+        image = release / "rootfs.tar.zst"
+        subprocess.run([
+            "tar", "--sort=name", "--numeric-owner", "--acls", "--xattrs",
+            "--one-file-system", "-I", "zstd -7 -T0", "-cf", str(image),
+            "-C", str(stage), ".",
+        ], check=True)
+        with image.open("rb") as handle:
+            digest = hashlib.file_digest(handle, "sha256").hexdigest()
+        (release / "rootfs.tar.zst.sha256").write_text(
+            f"{digest}  rootfs.tar.zst\n", encoding="ascii"
+        )
+
+        if args.packages:
+            shutil.copy2(args.packages, release / "packages.txt")
+        manifest = (
+            'format = 1\n\n'
+            '[base]\n'
+            'name = "mojt"\n'
+            f'version = {text(version)}\n'
+            f'architecture = {text(arch)}\n\n'
+            '[abi]\n'
+            'libc = "glibc"\n'
+            f'libc_version = {text(libc_version)}\n\n'
+            '[image]\n'
+            'file = "rootfs.tar.zst"\n'
+            f'sha256 = "{digest}"\n\n'
+            '[state]\n'
+            'layout_version = 1\n'
+            'etc_defaults = "/usr/etc"\n'
+            'etc_policy = "add-missing"\n'
+            'var_policy = "persistent"\n\n'
+            '[build]\n'
+            f'backend = {text(backend)}\n'
+        )
+        if args.packages:
+            manifest += 'packages = "packages.txt"\n'
+        (release / "manifest.toml").write_text(manifest, encoding="utf-8")
+        release.rename(destination)
+
+    print(f"Release: {destination}")
+    print(f"SHA256:  {digest}")
+    print(f"Image:   {destination / 'rootfs.tar.zst'} ({image_size(destination):.1f} MiB)")
+
+
+def image_size(destination):
+    return (destination / "rootfs.tar.zst").stat().st_size / 1024**2
+
+
+if __name__ == "__main__":
+    main()

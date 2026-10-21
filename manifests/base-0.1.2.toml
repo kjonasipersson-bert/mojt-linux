@@ -1,0 +1,16 @@
+# Mojt Linux - Base 0.1.2 input manifest (upgrade test)
+# Copyright (C) 2026 Jonas Persson
+# SPDX-License-Identifier: GPL-2.0-only
+format = 1
+
+[base]
+name = "mojt"
+version = "0.1.2"
+architecture = "x86_64"
+
+[abi]
+libc = "glibc"
+libc_version = "2.41"
+
+[build]
+backend = "void"

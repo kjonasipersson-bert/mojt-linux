@@ -1,0 +1,360 @@
+#!/usr/bin/env python3
+# Mojt Linux
+# Copyright (C) 2026 Jonas Persson
+# SPDX-License-Identifier: GPL-2.0-only
+"""Install and switch Mojt Base generations in a directory (prototype v0.1).
+
+Host dependencies: Python >= 3.11, GNU tar, zstd; run as root for install.
+
+This manages VERSIONED ROOTFS DIRECTORIES and persistent state; it does NOT
+boot the machine or make bind mounts. Mount state/etc and state/var inside the
+selected rootfs in a private mount namespace before testing it with chroot.
+
+Only install local releases built by a trusted mojt-base-pack. SHA256 detects
+corruption but does not authenticate releases; signature verification is TODO.
+"""
+
+import argparse
+import fcntl
+import hashlib
+import os
+from pathlib import Path, PurePosixPath
+import platform
+import posixpath
+import re
+import shutil
+import subprocess
+import sys
+import tarfile
+import tempfile
+import tomllib
+
+LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]*\Z")
+SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+OS_RELEASE_LINK = "../usr/lib/os-release"
+
+
+class InstallError(Exception):
+    pass
+
+
+def fail(message):
+    raise InstallError(message)
+
+
+def valid_label(value, field):
+    if not isinstance(value, str) or not LABEL.fullmatch(value) or value in (".", ".."):
+        fail(f"invalid {field}: {value!r}")
+    return value
+
+
+def validate_manifest(release):
+    manifest_file = release / "manifest.toml"
+    if not manifest_file.is_file() or manifest_file.is_symlink():
+        fail(f"missing regular manifest: {manifest_file}")
+    with manifest_file.open("rb") as handle:
+        m = tomllib.load(handle)
+    if m.get("format") != 1:
+        fail("unsupported manifest schema (expected format = 1)")
+    base, image, state = (m.get(k) for k in ("base", "image", "state"))
+    if not all(isinstance(k, dict) for k in (base, image, state)):
+        fail("manifest lacks [base], [image], or [state]")
+    if base.get("name") != "mojt":
+        fail("not a Mojt Base release")
+    version = valid_label(base.get("version"), "base.version")
+    arch = valid_label(base.get("architecture"), "base.architecture")
+    if arch != platform.machine():
+        fail(f"architecture mismatch: release={arch}, host={platform.machine()}")
+    if image.get("file") != "rootfs.tar.zst":
+        fail("unsupported image.file (expected rootfs.tar.zst)")
+    digest = image.get("sha256")
+    if not isinstance(digest, str) or not SHA256.fullmatch(digest):
+        fail("missing or invalid image.sha256")
+    if state.get("layout_version") != 1:
+        fail("unsupported state.layout_version (expected 1)")
+    if state.get("etc_defaults") != "/usr/etc":
+        fail("unsupported state.etc_defaults")
+    if state.get("etc_policy") != "add-missing":
+        fail("unsupported state.etc_policy")
+    if state.get("var_policy") != "persistent":
+        fail("unsupported state.var_policy")
+    return version, digest, state["layout_version"]
+
+
+def sha256_file(path):
+    h = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def audit_tar(path):
+    """Check tar paths before extraction into a new, private staging directory.
+
+    A Linux rootfs legitimately contains absolute symbolic links, e.g.
+    /etc/ssl/certs/foo.pem -> /usr/share/ca-certificates/foo.crt.
+    Their targets refer to the *installed* rootfs, not the installer host.
+    Keep such links unchanged, but reject archive entries that would write
+    through a symlink, as well as escaping paths and unsafe hard links.
+
+    This is defense in depth, not release authentication: signed manifests
+    must be added before installing untrusted/network-supplied releases.
+    """
+    entries = {}
+    with tarfile.open(path, "r:") as archive:
+        for member in archive:
+            name = member.name
+            rel = PurePosixPath(name)
+            if rel.is_absolute() or ".." in rel.parts:
+                fail(f"unsafe archive entry: {name!r}")
+            norm = posixpath.normpath(name)
+            if norm == ".":
+                if not member.isdir():
+                    fail("archive root must be a directory")
+                continue
+            if norm in entries:
+                fail(f"duplicate archive entry: {name!r}")
+            if not (member.isdir() or member.isfile() or member.issym() or member.islnk()):
+                fail(f"unsupported archive object: {name!r}")
+
+            if member.issym():
+                if not member.linkname:
+                    fail(f"empty symbolic link: {name!r}")
+                if not member.linkname.startswith("/"):
+                    # A relative link must stay within the virtual rootfs.
+                    dest = posixpath.normpath(posixpath.join(
+                        posixpath.dirname(norm), member.linkname))
+                    if dest == ".." or dest.startswith("../"):
+                        fail(f"escaping symbolic link: {name!r} -> {member.linkname!r}")
+                # Absolute symlinks are valid rootfs data. We never follow
+                # their targets while unpacking or populating persistent state.
+            elif member.islnk():
+                link = member.linkname
+                if not link or link.startswith("/") or ".." in PurePosixPath(link).parts:
+                    fail(f"unsafe hard link: {name!r} -> {link!r}")
+            entries[norm] = member
+
+    # GNU tar must never be asked to unpack a file *under* a symlink,
+    # whether that symlink appeared earlier or later in archive order.
+    # Also reject entries under non-directories and hard links to anything
+    # but an ordinary file in the same image.
+    for name, member in entries.items():
+        parent = posixpath.dirname(name)
+        while parent not in ("", "."):
+            ancestor = entries.get(parent)
+            if ancestor is not None and not ancestor.isdir():
+                fail(f"archive entry traverses non-directory: {name!r} under {parent!r}")
+            parent = posixpath.dirname(parent)
+        if member.islnk():
+            dest = posixpath.normpath(member.linkname)
+            target = entries.get(dest)
+            if target is None or not target.isfile():
+                fail(f"hard link target is not a regular archive file: {name!r} -> {member.linkname!r}")
+
+
+def run(*cmd):
+    subprocess.run(cmd, check=True)
+
+
+def copy_ownership(src, dest, *, follow_symlinks=True):
+    stat = src.stat(follow_symlinks=follow_symlinks)
+    os.chown(dest, stat.st_uid, stat.st_gid, follow_symlinks=follow_symlinks)
+
+
+def add_defaults(source, dest):
+    """Add missing defaults recursively, never overwrite files or traverse state symlinks."""
+    if not source.is_dir() or source.is_symlink():
+        fail(f"missing /usr/etc defaults: {source}")
+    for entry in sorted(source.iterdir(), key=lambda p: p.name):
+        if entry.name == "os-release":
+            continue  # /etc/os-release is a special relative symlink.
+        target = dest / entry.name
+        if entry.is_symlink():
+            if not os.path.lexists(target):
+                os.symlink(os.readlink(entry), target)
+                copy_ownership(entry, target, follow_symlinks=False)
+        elif entry.is_dir():
+            if target.is_symlink():
+                continue  # Never follow an existing user-controlled symlink.
+            if not target.exists():
+                target.mkdir(mode=entry.stat().st_mode & 0o7777)
+                os.chmod(target, entry.stat().st_mode & 0o7777)
+                copy_ownership(entry, target)
+            if not target.is_dir():
+                continue  # Preserve a conflicting local file.
+            add_defaults(entry, target)
+        elif entry.is_file():
+            if not os.path.lexists(target):
+                # O_EXCL prevents replacing an existing local file.
+                with entry.open("rb") as reader:
+                    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                    with os.fdopen(fd, "wb") as writer:
+                        shutil.copyfileobj(reader, writer)
+                shutil.copystat(entry, target)
+                copy_ownership(entry, target)
+        else:
+            fail(f"unsupported default file type: {entry}")
+
+
+def prepare_state(target, defaults, layout):
+    state = target / "state"
+    etc = state / "etc"
+    var = state / "var"
+    layout_file = state / "layout-version"
+    if layout_file.exists():
+        if layout_file.read_text(encoding="ascii").strip() != str(layout):
+            fail("persistent state layout incompatible with this release")
+    if etc.is_symlink() or var.is_symlink():
+        fail("persistent state mount points must not be symlinks")
+    etc.mkdir(parents=True, exist_ok=True)
+    var.mkdir(parents=True, exist_ok=True)
+    add_defaults(defaults, etc)
+
+    os_release = etc / "os-release"
+    if not os.path.lexists(os_release):
+        os.symlink(OS_RELEASE_LINK, os_release)
+    elif not os_release.is_symlink() or os.readlink(os_release) != OS_RELEASE_LINK:
+        fail("existing /etc/os-release is not Mojt's expected relative symlink; refusing overwrite")
+    if not layout_file.exists():
+        layout_file.write_text(f"{layout}\n", encoding="ascii")
+
+
+def check_rootfs(stage, version):
+    osrel = stage / "usr/lib/os-release"
+    if not osrel.is_file():
+        fail("image missing /usr/lib/os-release")
+    contents = osrel.read_text(encoding="utf-8")
+    if "ID=mojt\n" not in contents or f'IMAGE_VERSION="{version}"' not in contents:
+        fail("image os-release identity/version disagrees with manifest")
+    for name in ("etc", "var"):
+        d = stage / name
+        if not d.is_dir() or d.is_symlink() or any(d.iterdir()):
+            fail(f"image /{name} is not an empty directory")
+    if not (stage / "usr/etc").is_dir():
+        fail("image missing /usr/etc")
+
+
+def current_version(target):
+    link = target / "base/current"
+    if not link.is_symlink():
+        if os.path.lexists(link):
+            fail("base/current exists but is not a symlink")
+        return None
+    value = os.readlink(link)
+    valid_label(value, "base/current")
+    if not (target / "base" / value).is_dir():
+        fail("base/current points to a missing generation")
+    return value
+
+
+def activate(target, version):
+    version = valid_label(version, "version")
+    if not (target / "base" / version).is_dir():
+        fail(f"Base generation not installed: {version}")
+    current_version(target)  # Refuse to replace a directory or invalid symlink.
+    link = target / "base/current"
+    temp_link = target / "base" / f".current-{os.getpid()}"
+    os.symlink(version, temp_link)
+    try:
+        os.replace(temp_link, link)  # Atomic on the same filesystem.
+    finally:
+        temp_link.unlink(missing_ok=True)
+
+
+def install(args, target):
+    release = args.release.resolve(strict=True)
+    if not release.is_dir():
+        fail("release must be a directory")
+    version, expected_hash, layout = validate_manifest(release)
+    image = release / "rootfs.tar.zst"
+    if not image.is_file() or image.is_symlink():
+        fail("missing regular rootfs.tar.zst")
+    actual_hash = sha256_file(image)
+    if actual_hash != expected_hash:
+        fail(f"SHA256 mismatch (expected {expected_hash}; got {actual_hash})")
+
+    base = target / "base"
+    base.mkdir(parents=True, exist_ok=True)
+    destination = base / version
+    if os.path.lexists(destination):
+        fail(f"generation already installed: {destination}")
+
+    if not shutil.which("zstd") or not shutil.which("tar"):
+        fail("requires zstd and GNU tar on the installing host")
+
+    with tempfile.TemporaryDirectory(prefix=".install-", dir=base) as tmp:
+        stage = Path(tmp) / "rootfs"
+        stage.mkdir()
+        tar_path = Path(tmp) / "image.tar"
+        with tar_path.open("wb") as output:
+            subprocess.run(["zstd", "-dc", str(image)], stdout=output, check=True)
+        audit_tar(tar_path)
+        run("tar", "--numeric-owner", "--acls", "--xattrs", "--xattrs-include=*",
+            "-xf", str(tar_path), "-C", str(stage))
+        check_rootfs(stage, version)
+        prepare_state(target, stage / "usr/etc", layout)
+        stage.rename(destination)
+
+    metadata = target / "releases"
+    metadata.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(release / "manifest.toml", metadata / f"base-{version}.toml")
+    if not args.no_activate:
+        activate(target, version)
+    print(f"Installed Base {version}: {destination}")
+    print(f"Persistent state:  {target / 'state'}")
+    print(f"Current version:   {current_version(target) or '(none)'}")
+    print("Note: this is a directory installation, not a bootable system.")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest="command", required=True)
+    install_parser = sub.add_parser("install", help="verify and install a Base release")
+    install_parser.add_argument("release", type=Path)
+    install_parser.add_argument("--no-activate", action="store_true")
+    activate_parser = sub.add_parser("activate", help="select an installed Base generation")
+    activate_parser.add_argument("version")
+    sub.add_parser("status", help="show installed Base generations")
+    for p in (install_parser, activate_parser, sub.choices["status"]):
+        p.add_argument("--target", type=Path, required=True,
+                       help="installation directory, e.g. ~/mojt-lab/installation")
+    args = parser.parse_args()
+    if args.command != "status" and os.geteuid() != 0:
+        fail("install and activate require root (sudo)")
+    target = args.target.absolute()
+    if target.is_symlink():
+        fail("installation target must not be a symlink")
+    if args.command == "status" and not target.exists():
+        fail(f"installation target not found: {target}")
+    if args.command != "status":
+        target.mkdir(parents=True, exist_ok=True)
+    lock_path = target / ".install-lock"
+    if args.command == "status":
+        lock = lock_path.open("rb")  # Status works without root privileges.
+    else:
+        lock = lock_path.open("a+b")
+    with lock:
+        fcntl.flock(lock, fcntl.LOCK_SH if args.command == "status" else fcntl.LOCK_EX)
+        if args.command == "install":
+            install(args, target)
+        elif args.command == "activate":
+            activate(target, args.version)
+            print(f"Current Base: {current_version(target)}")
+        elif args.command == "status":
+            current = current_version(target)
+            print(f"Target:  {target}")
+            print(f"Current: {current or '(none)'}")
+            base = target / "base"
+            for p in sorted(base.iterdir()) if base.is_dir() else []:
+                if p.is_dir() and p.name != "current" and not p.name.startswith("."):
+                    print(f"  {'*' if p.name == current else ' '} {p.name}")
+            print(f"State:   {target / 'state'}")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (InstallError, OSError, subprocess.CalledProcessError, tomllib.TOMLDecodeError) as e:
+        print(f"mojt-base-install: {e}", file=sys.stderr)
+        raise SystemExit(1)
