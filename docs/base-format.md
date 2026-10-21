@@ -112,3 +112,21 @@ undo such defaults or remove published generations. `fsync` improves
 durability on filesystems that honor it, but this is not a power-cut-tested
 guarantee. Never auto-delete state based only on installer markers. Release
 authenticity and rollback of service data are separate future work.
+
+## Base root directory ownership
+
+The packer sets the **staged image root** (archive entry `./`) to numeric
+UID/GID `0:0` and mode `0755` after copying the bootstrap tree.
+GNU `cp -a SOURCE/.` otherwise propagates the bootstrap directory's host
+ownership and permissions onto the stage root. Other packaged paths retain
+their existing metadata. The original bootstrap tree is never modified.
+
+This applies to **newly packed releases**, not previously published images.
+Old Base releases must not be rewritten in place; create a new versioned
+release to obtain the normalized root ownership.
+
+Regression test (synthetic rootfs, **requires sudo**):
+
+```sh
+sudo python3 -m unittest discover -s tests -p 'test_base_pack_root.py' -v
+```

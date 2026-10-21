@@ -17,3 +17,5 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y zstd
       - name: Run synthetic installer regression tests
         run: python3 -m unittest discover -s tests -p 'test_base_install_failures.py' -v
+      - name: Verify packed Base root ownership
+        run: sudo python3 -m unittest discover -s tests -p 'test_base_pack_root.py' -v
