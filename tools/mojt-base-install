@@ -162,6 +162,56 @@ def copy_ownership(src, dest, *, follow_symlinks=True):
     os.chown(dest, stat.st_uid, stat.st_gid, follow_symlinks=follow_symlinks)
 
 
+STAGING_MARKER = "mojt-base-install-stage-v1\n"
+
+
+def sync_file(path):
+    """Request durable content/metadata for a regular file (Linux host)."""
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def sync_directory(path):
+    """Persist directory entries; required after rename/unlink/symlink."""
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def sync_tree(root):
+    """Flush a staged rootfs before exposing it as a Base generation."""
+    for parent, dirs, files in os.walk(root, topdown=False, followlinks=False):
+        for name in files:
+            path = Path(parent) / name
+            if not path.is_symlink():
+                if not path.is_file():
+                    fail(f"unsupported rootfs object for sync: {path}")
+                sync_file(path)
+        for name in dirs:
+            path = Path(parent) / name
+            if not path.is_symlink() and not path.is_dir():
+                fail(f"unsupported rootfs directory for sync: {path}")
+        sync_directory(parent)
+
+
+def sync_created(created):
+    """Flush newly populated state files and their directory entries."""
+    dirs = set()
+    for path, is_dir in created:
+        if is_dir:
+            dirs.add(path)
+        elif not path.is_symlink():
+            sync_file(path)
+        dirs.add(path.parent)
+    for directory in sorted(dirs, key=lambda p: len(p.parts), reverse=True):
+        sync_directory(directory)
+
+
 def ensure_directory(path, created):
     """Create only a missing directory; reject links and conflicting files."""
     if path.is_symlink() or (path.exists() and not path.is_dir()):
@@ -296,14 +346,21 @@ def current_version(target):
 
 def activate(target, version):
     version = valid_label(version, "version")
-    if not (target / "base" / version).is_dir():
+    generation = target / "base" / version
+    if generation.is_symlink() or not generation.is_dir():
         fail(f"Base generation not installed: {version}")
+    # An interrupted installation may have published a rootfs but not its
+    # manifest. Never activate a generation without committed metadata.
+    metadata = target / "releases" / f"base-{version}.toml"
+    if metadata.is_symlink() or not metadata.is_file():
+        fail(f"Base generation has no committed release metadata: {version}")
     current_version(target)  # Refuse to replace a directory or invalid symlink.
     link = target / "base/current"
     temp_link = target / "base" / f".current-{os.getpid()}"
     os.symlink(version, temp_link)
     try:
         os.replace(temp_link, link)  # Atomic on the same filesystem.
+        sync_directory(link.parent)  # Persist the new symlink directory entry.
     finally:
         temp_link.unlink(missing_ok=True)
 
@@ -335,6 +392,14 @@ def install(args, target):
         fail("requires zstd and GNU tar on the installing host")
 
     with tempfile.TemporaryDirectory(prefix=".install-", dir=base) as tmp:
+        # Identifies interrupted *staging* directories for explicit recovery.
+        # The marker is outside the rootfs image and is never installed.
+        marker = Path(tmp) / ".mojt-install-stage"
+        marker.write_text(STAGING_MARKER, encoding="ascii")
+        sync_file(marker)
+        sync_directory(tmp)
+        sync_directory(base)
+
         stage = Path(tmp) / "rootfs"
         stage.mkdir()
         tar_path = Path(tmp) / "image.tar"
@@ -345,30 +410,52 @@ def install(args, target):
             "-xf", str(tar_path), "-C", str(stage))
         check_rootfs(stage, version)
 
-        # This journals *new* state/metadata entries. Existing /etc and /var
-        # content is never rewritten. Ordinary exceptions undo this attempt;
-        # SIGKILL, power loss and cross-filesystem durability are not covered.
+        # The rootfs becomes visible only once its contents are flushed.
+        # The active generation is switched only after state and metadata are
+        # published. Power loss still cannot atomically roll back /etc defaults.
+        sync_tree(stage)
         created = []
         generation_installed = False
         try:
             prepare_state(target, stage / "usr/etc", layout, created)
+            sync_created(created)
             stage.rename(destination)
             generation_installed = True
+            sync_directory(base)
 
             ensure_directory(metadata_file.parent, created)
-            with (release / "manifest.toml").open("rb") as reader:
-                fd = os.open(metadata_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            # Write release metadata to a temporary sibling, then publish
+            # it by rename. A crash cannot expose a half-written manifest.
+            fd, temp_name = tempfile.mkstemp(prefix=".base-install-", dir=metadata_file.parent)
+            temp_metadata = Path(temp_name)
+            try:
+                with (release / "manifest.toml").open("rb") as reader:
+                    with os.fdopen(fd, "wb") as writer:
+                        shutil.copyfileobj(reader, writer)
+                shutil.copystat(release / "manifest.toml", temp_metadata)
+                sync_file(temp_metadata)
+                os.replace(temp_metadata, metadata_file)
                 created.append((metadata_file, False))
-                with os.fdopen(fd, "wb") as writer:
-                    shutil.copyfileobj(reader, writer)
-            shutil.copystat(release / "manifest.toml", metadata_file)
+                sync_directory(metadata_file.parent)
+            finally:
+                temp_metadata.unlink(missing_ok=True)
+            sync_created(created)
 
             if not args.no_activate:
-                activate(target, version)  # Final operation of the commit sequence.
+                activate(target, version)  # Last operation: durable symlink swap.
         except BaseException:
+            # A failed directory fsync *after* os.replace means the active
+            # symlink may already point at this generation. Never delete it.
+            current = target / "base/current"
+            if current.is_symlink() and os.readlink(current) == version:
+                print("mojt-base-install: activation may have completed; "
+                      "leaving generation and state intact for inspection",
+                      file=sys.stderr)
+                raise
             if generation_installed:
                 try:
                     shutil.rmtree(destination)
+                    sync_directory(base)
                 except OSError as error:
                     print(f"mojt-base-install: rollback incomplete for {destination}: {error}",
                           file=sys.stderr)
@@ -381,6 +468,48 @@ def install(args, target):
     print("Note: this is a directory installation, not a bootable system.")
 
 
+
+def recover(target):
+    """Discard only recognizable stale extraction stages, under the install lock.
+
+    Orphaned published Base generations are reported, never deleted: they
+    could hold data and require operator inspection before any removal.
+    """
+    base = target / "base"
+    cleaned = 0
+    orphans = 0
+    if base.is_dir() and not base.is_symlink():
+        for entry in sorted(base.iterdir()):
+            if not entry.name.startswith(".install-") or entry.is_symlink() or not entry.is_dir():
+                continue
+            marker = entry / ".mojt-install-stage"
+            if marker.is_symlink() or not marker.is_file():
+                continue
+            if marker.read_text(encoding="ascii") != STAGING_MARKER:
+                continue
+            shutil.rmtree(entry)
+            sync_directory(base)
+            cleaned += 1
+        current = current_version(target)
+        for entry in sorted(base.iterdir()):
+            if entry.name.startswith(".") or entry.name == "current":
+                continue
+            if entry.is_symlink() or not entry.is_dir():
+                continue
+            if not LABEL.fullmatch(entry.name) or entry.name in (".", ".."):
+                continue
+            metadata = target / "releases" / f"base-{entry.name}.toml"
+            if not metadata.is_file() or metadata.is_symlink():
+                orphans += 1
+                print(f"Incomplete generation retained: {entry} "
+                      "(missing release metadata; inspect manually)")
+            elif entry.name == current:
+                pass
+    print(f"Recovered staging directories: {cleaned}")
+    print(f"Published generations needing inspection: {orphans}")
+
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -390,7 +519,8 @@ def main():
     activate_parser = sub.add_parser("activate", help="select an installed Base generation")
     activate_parser.add_argument("version")
     sub.add_parser("status", help="show installed Base generations")
-    for p in (install_parser, activate_parser, sub.choices["status"]):
+    sub.add_parser("recover", help="remove orphaned installer staging directories")
+    for p in (install_parser, activate_parser, sub.choices["status"], sub.choices["recover"]):
         p.add_argument("--target", type=Path, required=True,
                        help="installation directory, e.g. ~/mojt-lab/installation")
     args = parser.parse_args()
@@ -415,6 +545,8 @@ def main():
         elif args.command == "activate":
             activate(target, args.version)
             print(f"Current Base: {current_version(target)}")
+        elif args.command == "recover":
+            recover(target)
         elif args.command == "status":
             current = current_version(target)
             print(f"Target:  {target}")

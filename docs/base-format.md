@@ -89,3 +89,26 @@ python3 -m unittest discover -s tests -p 'test_base_install_failures.py' -v
 
 The existing privileged integration test remains
 `tests/test-base-upgrade.sh` and should also pass unchanged.
+
+## Durable publication and conservative recovery (prototype)
+
+Installation now requests `fsync` for staged rootfs contents and directories
+before publishing a Base generation, and publishes the release manifest by
+temporary-file rename and directory `fsync`. Activation uses a temporary
+symlink, `os.replace`, and a directory `fsync`. A generation without its
+release metadata is rejected by `activate`.
+
+Run `sudo tools/mojt-base-install recover --target TARGET` to clean up
+recognizable interrupted `.install-*` **staging** directories. Only directories
+with the expected `.mojt-install-stage` marker are removed. Published
+generations missing metadata are **reported but never deleted automatically**;
+inspect their contents and current symlink before removing anything. The
+recovery command holds the installer's lock.
+
+**Limits:** There is still no atomic transaction spanning rootfs publication,
+manifest publication, and persistent `/etc`. A power failure can leave new
+defaults or a published, incomplete generation behind. Recovery does not
+undo such defaults or remove published generations. `fsync` improves
+durability on filesystems that honor it, but this is not a power-cut-tested
+guarantee. Never auto-delete state based only on installer markers. Release
+authenticity and rollback of service data are separate future work.
