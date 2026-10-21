@@ -158,5 +158,79 @@ class InstallFailureTests(unittest.TestCase):
                          "../usr/lib/os-release")
 
 
+    def test_activation_requires_committed_metadata(self):
+        base = self.target / "base"
+        (base / self.version).mkdir(parents=True)
+        with self.assertRaisesRegex(installer.InstallError, "metadata"):
+            installer.activate(self.target, self.version)
+        self.assertFalse((base / "current").is_symlink())
+
+    def test_activation_sync_failure_keeps_selected_generation(self):
+        self.setup_existing_state()
+        original_sync = installer.sync_directory
+
+        def fail_after_switch(path):
+            if path == self.target / "base":
+                link = self.target / "base/current"
+                if link.is_symlink() and link.readlink().as_posix() == self.version:
+                    raise OSError("injected fsync error after symlink swap")
+            return original_sync(path)
+
+        with mock.patch.object(installer, "sync_directory", side_effect=fail_after_switch):
+            with self.assertRaisesRegex(OSError, "injected fsync"):
+                self.install()
+        self.assertEqual((self.target / "base/current").readlink().as_posix(),
+                         self.version)
+        self.assertTrue((self.target / "base" / self.version).is_dir())
+        self.assertTrue((self.target / "releases" /
+                         f"base-{self.version}.toml").is_file())
+        self.assertTrue((self.target / "state/etc/a.conf").is_file())
+
+    def test_recover_removes_only_recognized_staging(self):
+        base = self.target / "base"
+        base.mkdir()
+        known = base / ".install-abandoned"
+        known.mkdir()
+        (known / ".mojt-install-stage").write_text(installer.STAGING_MARKER)
+        (known / "partial").write_text("partial")
+        unknown = base / ".install-unrelated"
+        unknown.mkdir()
+        (unknown / "something").write_text("keep")
+        orphan = base / self.version
+        orphan.mkdir()
+        (orphan / "keep").write_text("important")
+
+        installer.recover(self.target)
+
+        self.assertFalse(known.exists())
+        self.assertEqual((unknown / "something").read_text(), "keep")
+        self.assertEqual((orphan / "keep").read_text(), "important")
+
+    def test_install_syncs_rootfs_before_generation_publication(self):
+        self.setup_existing_state()
+        observed = []
+        original_sync_tree = installer.sync_tree
+        original_sync_directory = installer.sync_directory
+
+        def record_tree(path):
+            observed.append("tree")
+            return original_sync_tree(path)
+
+        def record_directory(path):
+            if path == self.target / "base":
+                destination = path / self.version
+                if destination.exists():
+                    observed.append("published")
+            return original_sync_directory(path)
+
+        with mock.patch.object(installer, "sync_tree", side_effect=record_tree):
+            with mock.patch.object(installer, "sync_directory", side_effect=record_directory):
+                self.install(no_activate=True)
+        self.assertIn("tree", observed)
+        self.assertIn("published", observed)
+        self.assertLess(observed.index("tree"), observed.index("published"))
+
+
+
 if __name__ == "__main__":
     unittest.main()
