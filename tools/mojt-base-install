@@ -162,8 +162,34 @@ def copy_ownership(src, dest, *, follow_symlinks=True):
     os.chown(dest, stat.st_uid, stat.st_gid, follow_symlinks=follow_symlinks)
 
 
-def add_defaults(source, dest):
-    """Add missing defaults recursively, never overwrite files or traverse state symlinks."""
+def ensure_directory(path, created):
+    """Create only a missing directory; reject links and conflicting files."""
+    if path.is_symlink() or (path.exists() and not path.is_dir()):
+        fail(f"expected a state directory, not a file or link: {path}")
+    if not path.exists():
+        path.mkdir()
+        created.append((path, True))
+
+
+def rollback_created(created):
+    """Undo only entries created by this invocation, in reverse order.
+
+    Does not attempt crash recovery or remove a directory modified by another
+    process. A failed cleanup is reported rather than deleting existing data.
+    """
+    for path, is_dir in reversed(created):
+        try:
+            if is_dir:
+                path.rmdir()
+            else:
+                path.unlink(missing_ok=True)
+        except OSError as error:
+            print(f"mojt-base-install: rollback incomplete for {path}: {error}",
+                  file=sys.stderr)
+
+
+def add_defaults(source, dest, created):
+    """Add missing defaults and journal each creation for error rollback."""
     if not source.is_dir() or source.is_symlink():
         fail(f"missing /usr/etc defaults: {source}")
     for entry in sorted(source.iterdir(), key=lambda p: p.name):
@@ -173,22 +199,25 @@ def add_defaults(source, dest):
         if entry.is_symlink():
             if not os.path.lexists(target):
                 os.symlink(os.readlink(entry), target)
+                created.append((target, False))
                 copy_ownership(entry, target, follow_symlinks=False)
         elif entry.is_dir():
             if target.is_symlink():
                 continue  # Never follow an existing user-controlled symlink.
             if not target.exists():
                 target.mkdir(mode=entry.stat().st_mode & 0o7777)
+                created.append((target, True))
                 os.chmod(target, entry.stat().st_mode & 0o7777)
                 copy_ownership(entry, target)
             if not target.is_dir():
                 continue  # Preserve a conflicting local file.
-            add_defaults(entry, target)
+            add_defaults(entry, target, created)
         elif entry.is_file():
             if not os.path.lexists(target):
                 # O_EXCL prevents replacing an existing local file.
                 with entry.open("rb") as reader:
                     fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                    created.append((target, False))
                     with os.fdopen(fd, "wb") as writer:
                         shutil.copyfileobj(reader, writer)
                 shutil.copystat(entry, target)
@@ -197,27 +226,44 @@ def add_defaults(source, dest):
             fail(f"unsupported default file type: {entry}")
 
 
-def prepare_state(target, defaults, layout):
+def prepare_state(target, defaults, layout, created):
     state = target / "state"
     etc = state / "etc"
     var = state / "var"
     layout_file = state / "layout-version"
+    os_release = etc / "os-release"
+
+    # Reject known conflicts before writing any state defaults.
+    if not defaults.is_dir() or defaults.is_symlink():
+        fail(f"missing /usr/etc defaults: {defaults}")
+    if state.is_symlink() or (state.exists() and not state.is_dir()):
+        fail("persistent state must be a directory, not a symlink or file")
+    if layout_file.is_symlink():
+        fail("persistent state layout marker must not be a symlink")
     if layout_file.exists():
         if layout_file.read_text(encoding="ascii").strip() != str(layout):
             fail("persistent state layout incompatible with this release")
-    if etc.is_symlink() or var.is_symlink():
-        fail("persistent state mount points must not be symlinks")
-    etc.mkdir(parents=True, exist_ok=True)
-    var.mkdir(parents=True, exist_ok=True)
-    add_defaults(defaults, etc)
+    for directory in (etc, var):
+        if directory.is_symlink() or (directory.exists() and not directory.is_dir()):
+            fail(f"persistent state mount point must be a directory: {directory}")
+    if os.path.lexists(os_release) and (
+        not os_release.is_symlink() or os.readlink(os_release) != OS_RELEASE_LINK
+    ):
+        fail("existing /etc/os-release is not Mojt's expected relative symlink; refusing overwrite")
 
-    os_release = etc / "os-release"
+    ensure_directory(state, created)
+    ensure_directory(etc, created)
+    ensure_directory(var, created)
+    add_defaults(defaults, etc, created)
+
     if not os.path.lexists(os_release):
         os.symlink(OS_RELEASE_LINK, os_release)
-    elif not os_release.is_symlink() or os.readlink(os_release) != OS_RELEASE_LINK:
-        fail("existing /etc/os-release is not Mojt's expected relative symlink; refusing overwrite")
+        created.append((os_release, False))
     if not layout_file.exists():
-        layout_file.write_text(f"{layout}\n", encoding="ascii")
+        fd = os.open(layout_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+        created.append((layout_file, False))
+        with os.fdopen(fd, "w", encoding="ascii") as writer:
+            writer.write(f"{layout}\n")
 
 
 def check_rootfs(stage, version):
@@ -279,6 +325,11 @@ def install(args, target):
     destination = base / version
     if os.path.lexists(destination):
         fail(f"generation already installed: {destination}")
+    metadata_file = target / "releases" / f"base-{version}.toml"
+    if os.path.lexists(metadata_file):
+        fail(f"release metadata already exists: {metadata_file}")
+    if not args.no_activate:
+        current_version(target)  # Reject a corrupt current link before touching state.
 
     if not shutil.which("zstd") or not shutil.which("tar"):
         fail("requires zstd and GNU tar on the installing host")
@@ -293,14 +344,37 @@ def install(args, target):
         run("tar", "--numeric-owner", "--acls", "--xattrs", "--xattrs-include=*",
             "-xf", str(tar_path), "-C", str(stage))
         check_rootfs(stage, version)
-        prepare_state(target, stage / "usr/etc", layout)
-        stage.rename(destination)
 
-    metadata = target / "releases"
-    metadata.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(release / "manifest.toml", metadata / f"base-{version}.toml")
-    if not args.no_activate:
-        activate(target, version)
+        # This journals *new* state/metadata entries. Existing /etc and /var
+        # content is never rewritten. Ordinary exceptions undo this attempt;
+        # SIGKILL, power loss and cross-filesystem durability are not covered.
+        created = []
+        generation_installed = False
+        try:
+            prepare_state(target, stage / "usr/etc", layout, created)
+            stage.rename(destination)
+            generation_installed = True
+
+            ensure_directory(metadata_file.parent, created)
+            with (release / "manifest.toml").open("rb") as reader:
+                fd = os.open(metadata_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                created.append((metadata_file, False))
+                with os.fdopen(fd, "wb") as writer:
+                    shutil.copyfileobj(reader, writer)
+            shutil.copystat(release / "manifest.toml", metadata_file)
+
+            if not args.no_activate:
+                activate(target, version)  # Final operation of the commit sequence.
+        except BaseException:
+            if generation_installed:
+                try:
+                    shutil.rmtree(destination)
+                except OSError as error:
+                    print(f"mojt-base-install: rollback incomplete for {destination}: {error}",
+                          file=sys.stderr)
+            rollback_created(created)
+            raise
+
     print(f"Installed Base {version}: {destination}")
     print(f"Persistent state:  {target / 'state'}")
     print(f"Current version:   {current_version(target) or '(none)'}")

@@ -1,0 +1,19 @@
+# Mojt Linux
+# Copyright (C) 2026 Jonas Persson
+# SPDX-License-Identifier: GPL-2.0-only
+name: Base installer regressions
+
+on:
+  push:
+    branches: [main, fix/base-install-rollback-tests]
+  pull_request:
+
+jobs:
+  install-failures:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install archive tool
+        run: sudo apt-get update && sudo apt-get install -y zstd
+      - name: Run synthetic installer regression tests
+        run: python3 -m unittest discover -s tests -p 'test_base_install_failures.py' -v

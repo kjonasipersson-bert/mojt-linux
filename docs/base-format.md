@@ -64,3 +64,28 @@ packages = "packages.txt"     # optional
 The current prototype accepts only the supported manifest schema and state layout and checks release architecture and image hash. It performs an archive safety audit before unpacking. This should not be treated as sufficient validation for untrusted releases: authenticated manifests, additional hardening, and boot-time integrity checks are still needed.
 
 A Base switch must eventually be checked against the System and Ports ABI requirements. Returning to an older Base does not automatically roll back `/var` contents or service data formats.
+
+
+## Installer failure contract (prototype)
+
+For ordinary, catchable installation errors, the installer now attempts to remove
+the newly published Base generation, newly copied release metadata, and all
+newly created persistent-state entries from that invocation. Existing files
+under persistent /etc and /var are not deliberately modified or removed.
+Conflicting /etc/os-release and state layout markers are checked before
+populating defaults. Activation is the last installation step.
+
+This is **not** a crash-safe transaction: SIGKILL, power loss, disk failures
+during rollback, concurrent edits outside the installer's lock, and durable
+fsync/rename ordering are not covered. A failed rollback prints an error and
+requires manual inspection. SHA256 still does not authenticate a release.
+
+To run the synthetic failure regression tests without a built Base release
+(on a Linux host with Python 3.11+, GNU tar, and zstd):
+
+```sh
+python3 -m unittest discover -s tests -p 'test_base_install_failures.py' -v
+```
+
+The existing privileged integration test remains
+`tests/test-base-upgrade.sh` and should also pass unchanged.
