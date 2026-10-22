@@ -12,7 +12,7 @@ SPDX-License-Identifier: GPL-2.0-only
 
 Mojt is an experimental Linux distribution inspired by BSD's separation of the base operating system and ports. Its initial Base prototype is a versioned filesystem image, not a continuously updated package collection. System services and a future Ports environment are separate concepts.
 
-Read the [manifesto](docs/manifesto.md), [architecture notes](docs/architecture.md), and [Base format specification](docs/base-format.md).
+Read the [manifesto](docs/manifesto.md), [architecture notes](docs/architecture.md), [Base format specification](docs/base-format.md), and the draft [MPM package-management contract](docs/mpm.md).
 
 ## Status
 
