@@ -180,6 +180,35 @@ an error requiring explicit account repair. An existing `securetty`
 that does not allow `ttyS0` is preserved and rejected. A missing file
 is initialized for the local VM serial console.
 
+### Root shell compatibility check
+
+The copied `/etc/passwd` may name `/bin/bash` (from the Void bootstrap),
+but Mojt Base 0.1.3 only guarantees `/bin/sh`. An authenticated login
+can accept the password and **still fail to launch a shell**. The builder
+therefore validates that the root account's shell is executable **inside
+the selected Base** before asking for any password.
+
+If the copied account specifies a missing shell, image construction stops
+with a diagnostic instead of generating a broken login VM. To explicitly
+select the available shell **only in the new VM's copied `/etc/passwd`**,
+add the argument below to the builder command:
+
+```sh
+  --root-shell /bin/sh
+```
+
+For example, use `--login-mode password --root-shell /bin/sh` together.
+This does not rewrite the source installation's `state/etc/passwd`, the
+Base image, or any old VM disk. Other account records remain unchanged.
+No root shell is substituted silently. When provisioning an installed
+system later, this check will belong to the proper installation process.
+
+The `Void` banner and `(none)` hostname may still appear: the existing
+persistent `/etc/issue` and unset kernel hostname are separate from
+authentication. This prototype deliberately preserves the existing
+machine configuration rather than silently overwriting it. We can add
+System-owned branding and hostname defaults in a later change.
+
 On QEMU's serial console you should see a login prompt. Enter
 `root` and the password you configured. Test that an incorrect password
 does **not** grant a root shell, then test the correct password.
