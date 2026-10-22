@@ -88,3 +88,20 @@ Do not assume that all desktop components must belong to Ports.
 The VM prototype intentionally postpones package dependency resolution,
 System-versus-Ports desktop placement, and the mechanism that exposes
 independently installed System files inside the active Base filesystem.
+
+## Experimental VM PID 1 (System, not Base)
+
+The first boot prototype now uses a **System-owned static BusyBox init**,
+provided by the image builder in `system/prototype-init` and made available
+under `/run/mojt-system` at boot. BusyBox init supervises the serial console
+and provides a minimal poweroff path. This is **development-only**: BusyBox
+is suitable for the prototype, rescue media and embedded contexts, but it is
+**not** the planned permanent init for the Mojt distribution. The production
+init remains an open choice (systemd is a pragmatic candidate).
+
+Account databases (`/etc/passwd`, `/etc/group`, `/etc/shadow`) are persistent
+machine state. The source VM currently has a root account expecting shadow
+but no shadow file; the experimental serial root console bypasses login
+entirely. A later, separate System feature must establish authenticated
+console login and safe initial credential provisioning. Never install a
+universal default password or overwrite existing machine credentials.

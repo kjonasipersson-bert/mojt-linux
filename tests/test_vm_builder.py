@@ -69,6 +69,55 @@ class VmBuilderTests(unittest.TestCase):
             self.assertEqual((tree / "state/var/data").read_text(), "persistent")
             self.assertTrue((tree / "base/0.1.3/etc").is_dir())
 
+    def test_busybox_init_is_system_owned_and_preserves_inittab(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            (tree / "state/etc").mkdir(parents=True)
+            fake_busybox = tree / "fake-busybox"
+            fake_busybox.write_bytes(b"fake")
+            with mock.patch.object(vm.os, "chown"):
+                vm.install_system_init(tree, fake_busybox)
+            system_binary = tree / "system/prototype-init/busybox"
+            self.assertEqual(system_binary.read_bytes(), b"fake")
+            self.assertIn("ttyS0::respawn:", (tree / "state/etc/inittab").read_text())
+            (tree / "state/etc/inittab").write_text("custom admin config\n")
+            with mock.patch.object(vm.os, "chown"):
+                vm.install_system_init(tree, fake_busybox)
+            self.assertEqual((tree / "state/etc/inittab").read_text(),
+                             "custom admin config\n")
+
+    def test_inittab_conflict_is_not_overwritten(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            (tree / "state/etc").mkdir(parents=True)
+            (tree / "state/etc/inittab").symlink_to("/etc/other")
+            fake_busybox = tree / "fake-busybox"
+            fake_busybox.write_bytes(b"fake")
+            with mock.patch.object(vm.os, "chown"):
+                with self.assertRaisesRegex(ValueError, "inittab"):
+                    vm.install_system_init(tree, fake_busybox)
+            self.assertTrue((tree / "state/etc/inittab").is_symlink())
+
+    def test_root_shadow_missing_diagnostic_does_not_change_credentials(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            (tree / "state/etc").mkdir(parents=True)
+            passwd = tree / "state/etc/passwd"
+            passwd.write_text("root:x:0:0:root:/root:/bin/sh\n")
+            with mock.patch.object(vm.sys, "stderr") as err:
+                vm.warn_missing_shadow(tree)
+            self.assertTrue(err.write.called or err.method_calls)
+            self.assertFalse((tree / "state/etc/shadow").exists())
+            self.assertEqual(passwd.read_text(), "root:x:0:0:root:/root:/bin/sh\n")
+
+    def test_init_handoff_and_poweroff_contract(self):
+        self.assertIn("switch_root -c /dev/console /newroot /run/mojt-system/busybox init", vm.INIT)
+        self.assertIn("mount -t tmpfs", vm.INIT)
+        self.assertIn("mount --bind /sysroot/system/prototype-init", vm.INIT)
+        self.assertIn("ttyS0::respawn:", vm.SYSTEM_INITTAB)
+        self.assertIn("::shutdown:", vm.SYSTEM_INITTAB)
+        self.assertIn("poweroff", vm.REQUIRED_APPLETS)
+
     def test_module_compression_plain_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             module = Path(tmp) / "dummy.ko"
