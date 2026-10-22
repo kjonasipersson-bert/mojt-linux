@@ -241,15 +241,18 @@ paths. MPM manages **three logically distinct alias types**:
 | Alias | Contract |
 | --- | --- |
 | `blender` | The explicitly active **series** or **exact release** in the system-wide profile; created on first install |
-| `blender-4.9` | A **moving series alias**, pointing to the newest *installed* eligible Blender 4.9.x release tracked by that request |
+| `blender-4.9` | A **moving series alias**, pointing to the currently selected installed Blender 4.9.x release for that tracked series; it advances on an approved series upgrade or explicit series activation |
 | `blender-4.9.12-r2` | A **fixed exact-release alias**, pointing to that immutable package release for as long as it remains installed |
 
 Alias names above illustrate a possible canonical package revision suffix
 (`-r2`); the real naming/escaping convention remains open. The exact
 alias must distinguish distinct rebuilds of an identical upstream version.
-Aliases must not be created by ambiguous string-prefix matching. For a
-package with multiple executable commands, alias naming and command-name
-conflict policies still need specification.
+Aliases must not be created by ambiguous string-prefix matching.
+Every installed release of a directly requested command is given an exact
+release alias, even when it was installed through a series selector;
+a later series upgrade retains the old exact alias. For a package with
+multiple executable commands, alias naming and command-name conflict
+policies still need specification.
 
 An installation of `blender@=4.9.12-r2` publishes a fixed alias for that
 release; installation of `blender@4.9` publishes the tracked series alias
@@ -270,8 +273,13 @@ The default alias targets a series/exact selection, **not** simply the
 highest installed version. This makes activating a new series explicit
 without blocking ordinary approved maintenance upgrades *within* an active
 series. Merely refreshing a repository catalog or installing an additional
-version does not advance existing aliases; an approved upgrade of a tracked
-series may advance its moving alias.
+version (even a newer release in an **already installed series**) MUST NOT
+advance existing series or default aliases. A new exact alias can still be
+created for that added release. An approved `upgrade` advances its tracked
+series alias, and an explicit `activate` can select the newest installed
+eligible release in the requested series. In other words, a moving series
+alias follows the last **accepted series target**, not every background
+change in the set of installed releases.
 
 Conceptually, the public aliases can be symlinks (or small launchers where
 necessary) into MPM-owned profiles backed by immutable objects. MPM MUST
@@ -312,11 +320,13 @@ mpm ports upgrade
      blender        -> 5.3.8
      blender-4.9    -> 4.9.13
      blender-5.3    -> 5.3.8
-     blender-4.9.12 -> old exact release if that is a canonical exact alias
+     blender-4.9.12 -> old exact release, retained while installed
 ```
 
 The example suppresses packaging revisions in the displayed release names;
-real exact-release aliases must account for them. An exact project lock
+real exact-release aliases must account for them. The synthetic example
+also assumes none of the existing public command names conflict with
+unmanaged local files. An exact project lock
 continues to reference its own immutable release and dependency closure
 throughout these operations.
 
