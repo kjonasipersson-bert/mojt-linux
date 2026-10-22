@@ -125,3 +125,33 @@ root password without changing the console's login process does not secure
 it. The builder's authenticated mode refuses a conflicting existing
 `inittab`, leaves pre-existing shadow credentials unchanged and avoids
 embedding plaintext credentials in code, manifests or process arguments.
+
+## Identity, issue, MOTD, and independent version numbers
+
+Mojt keeps **Base version** separate from **System version**. A login banner
+may show `Mojt Linux 0.1/0.1.3`: System `0.1`, Base `0.1.3`. These are
+independent lifecycles, not a single combined release version.
+
+The Base packer generates a neutral fallback `/usr/etc/issue`
+(`Mojt Linux Base <base-version>`) for **newly packed** Base releases,
+including Base-only containers. It replaces the bootstrap backend's Void
+branding **inside the staged release only**. Installed `/etc/issue` remains
+persistent administrator state; the installer adds defaults only if missing.
+The raw Base filesystem's `/etc` remains empty by design.
+
+A System boot is responsible for constructing the **combined** identity
+from System release metadata and the currently selected Base. In the
+initial VM prototype, the System component declares `version = 0.1`
+using a simple text metadata file and records the **VM assembly time**
+in UTC. This is not yet a versioned System release format. Early boot
+writes volatile `/run/mojt/issue` and `/run/mojt/motd`; authenticated
+`getty` uses the former with `-f`. Base does not have to be rebuilt
+on every System upgrade, nor System on every Base upgrade.
+
+Existing machine-local `/etc/issue`, `/etc/motd`, and `/etc/hostname`
+are never silently overwritten. The VM image builder places a missing
+hostname default `mojt` into **copied VM state**, sets the kernel
+hostname at boot, and links a **missing** `/etc/motd` to the generated
+runtime file. An existing local MOTD always takes precedence; runtime
+information remains available explicitly at `/run/mojt/motd`.
+No change is made to existing Base generations or the source installation.

@@ -109,11 +109,11 @@ is still a first-stage prototype, **not** yet a validated clean unmount and
 restart/shutdown service manager. Check the serial console and rerun the
 persistence test rather than assuming that all writes are durable.
 
-The VM still has an **unauthenticated root console** and must not be
-exposed to untrusted users, networking or remote consoles. A root entry
-with `x` in `/etc/passwd` but no `/etc/shadow` is detected and reported
-by the builder; no shadow or password is fabricated. Authenticated login
-is a separate upcoming System installation task.
+The VM has an **unauthenticated root console** by default and must not
+be exposed to untrusted users, networking or remote consoles. The opt-in
+`--login-mode password` described below enables local serial-console login.
+A root entry with `x` in `/etc/passwd` but no `/etc/shadow` is still
+diagnosed, never silently repaired in development mode.
 
 ### What this experiment does not establish
 
@@ -236,3 +236,66 @@ Debian/KVM host before merging.
 The earlier `development` mode (the default for compatibility) still
 deliberately gives an **unauthenticated root shell**. Never interpret
 merely setting a root password in `shadow` as closing this bypass.
+
+## System and Base identity at boot
+
+The VM now has an **experimental System version `0.1`** independent of
+the selected Base version. Its `system/prototype-init/version` metadata is
+written by the VM image builder; `assembled-at-utc` records the **VM
+assembly date**, not a formally published/reproducible System release date.
+The latter will belong to a future proper System release format.
+
+Early boot combines:
+
+- `system/prototype-init/version` (System `0.1`)
+- `base/current` (for example, Base `0.1.3`)
+- `system/prototype-init/assembled-at-utc` (UTC build timestamp)
+- `/proc/sys/kernel/osrelease` (actual booted kernel)
+- `state/etc/hostname` (machine-local hostname)
+
+It writes the following **runtime** files, regenerating them at each boot:
+
+```text
+/run/mojt/issue
+/run/mojt/motd
+```
+
+In password mode, System's BusyBox `getty` uses
+`-f /run/mojt/issue` rather than the persistent `/etc/issue`, allowing
+the old Void-derived local configuration to remain unchanged.
+
+For a VM with System `0.1` and Base `0.1.3`, the login banner is:
+
+```text
+Mojt Linux 0.1/0.1.3 (x86_64)
+
+mojt login:
+```
+
+The generated MOTD contains separate System and Base versions, the UTC
+image assembly time, and the actual kernel version. A machine with no
+existing `/etc/motd` receives **only in the copied VM state** a symlink
+to `/run/mojt/motd`, so BusyBox login displays it after authentication.
+If an administrator already has an `/etc/motd` (including an inherited
+Void file), that local file is **not replaced or shadowed**. In that case,
+the generated message remains available for inspection with:
+
+```sh
+cat /run/mojt/motd
+```
+
+A missing `state/etc/hostname` is initialized to `mojt` **only in the
+new VM image's copied state**. Existing valid hostnames are preserved.
+The kernel hostname is set early on each boot; no change is made to the
+Debian host's UTS namespace. Invalid hostname entries are rejected during
+image creation rather than overwritten.
+
+Separately, when packing **new Base releases**, `mojt-base-pack`
+replaces the Void-sourced `/usr/etc/issue` default with
+`Mojt Linux Base <version>`. This remains meaningful for a Base-only
+container without the System layer. Old Base releases are immutable and
+are **not** repacked or modified by this VM work. The Base fallback text
+does not include a System version.
+
+This prototype deliberately does not implement a full System release
+manager, timestamp signing, local MOTD merge policy, or a bootloader.

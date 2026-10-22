@@ -215,7 +215,8 @@ class VmBuilderTests(unittest.TestCase):
             with mock.patch.object(vm.os, "chown"):
                 vm.install_system_init(tree, binary, "password")
             inittab = (tree / "state/etc/inittab").read_text()
-            self.assertIn("getty -L -l /run/mojt-system/login", inittab)
+            self.assertIn("getty -L -f /run/mojt/issue", inittab)
+            self.assertIn("-l /run/mojt-system/login", inittab)
             self.assertNotIn("respawn:/bin/sh", inittab)
             self.assertEqual((tree / "system/prototype-init/login").readlink().as_posix(),
                              "busybox")
@@ -302,6 +303,86 @@ class VmBuilderTests(unittest.TestCase):
     def test_root_shell_replacement_requires_password_mode(self):
         with self.assertRaisesRegex(ValueError, "root shell"):
             vm.virtual_root_file(Path("/synthetic"), "bin/sh")
+
+    def test_system_identity_metadata_written_with_init(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            (tree / "state/etc").mkdir(parents=True)
+            fake = tree / "fake-busybox"
+            fake.write_bytes(b"fake")
+            with mock.patch.object(vm.os, "chown"):
+                stamp = vm.install_system_init(tree, fake, "password")
+            system = tree / "system/prototype-init"
+            self.assertEqual((system / "version").read_text(),
+                             vm.SYSTEM_VERSION + "\n")
+            self.assertEqual((system / "assembled-at-utc").read_text(), stamp + "\n")
+            self.assertRegex(stamp, r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+            inittab = (tree / "state/etc/inittab").read_text()
+            self.assertIn("-f /run/mojt/issue", inittab)
+            self.assertIn("-l /run/mojt-system/login", inittab)
+
+    def test_missing_hostname_and_motd_get_only_add_missing_defaults(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            etc = tree / "state/etc"
+            etc.mkdir(parents=True)
+            (etc / "issue").write_text("My custom issue\n")
+            vm.prepare_system_identity(tree)
+            self.assertEqual((etc / "hostname").read_text(), "mojt\n")
+            self.assertEqual((etc / "motd").readlink().as_posix(),
+                             "/run/mojt/motd")
+            self.assertEqual((etc / "issue").read_text(), "My custom issue\n")
+
+    def test_custom_hostname_and_motd_are_preserved(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            etc = tree / "state/etc"
+            etc.mkdir(parents=True)
+            (etc / "hostname").write_text("my-host\n")
+            (etc / "motd").write_text("Administrator message\n")
+            vm.prepare_system_identity(tree)
+            self.assertEqual((etc / "hostname").read_text(), "my-host\n")
+            self.assertEqual((etc / "motd").read_text(), "Administrator message\n")
+            self.assertFalse((etc / "motd").is_symlink())
+
+    def test_hostname_symlink_and_malformed_values_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            etc = tree / "state/etc"
+            etc.mkdir(parents=True)
+            hostname = etc / "hostname"
+            hostname.symlink_to("/etc/hostname")
+            with self.assertRaisesRegex(ValueError, "unsafe persistent hostname"):
+                vm.prepare_system_identity(tree)
+            hostname.unlink()
+            for bad in ("bad host\n", "-bad\n", "two\nlines\n", "\n"):
+                with self.subTest(bad=bad):
+                    hostname.write_text(bad)
+                    with self.assertRaisesRegex(ValueError, "hostname"):
+                        vm.prepare_system_identity(tree)
+            self.assertFalse((etc / "motd").exists())
+
+    def test_early_boot_script_is_valid_posix_shell_syntax(self):
+        subprocess.run(["sh", "-n"], input=vm.INIT,
+                       text=True, capture_output=True, check=True)
+
+    def test_identity_is_rendered_at_boot_from_active_versions(self):
+        init = vm.INIT
+        for required in (
+            "sysroot/base/current",
+            "system/prototype-init/version",
+            "system/prototype-init/assembled-at-utc",
+            "state/etc/hostname",
+            'hostname "$mojt_hostname"',
+            "proc/sys/kernel/osrelease",
+            "/newroot/run/mojt/issue",
+            "/newroot/run/mojt/motd",
+            "Mojt Linux %s/%s",
+            "VM built UTC",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, init)
+        self.assertIn("hostname", vm.REQUIRED_APPLETS)
 
     def test_module_compression_plain_file(self):
         with tempfile.TemporaryDirectory() as tmp:

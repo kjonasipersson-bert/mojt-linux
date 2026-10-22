@@ -137,6 +137,12 @@ def main():
         # Installer will create /etc/os-release -> ../usr/lib/os-release.
         remove(defaults / "os-release")
         remove(defaults / "xbps.d")
+        # Replace the bootstrap backend's issue text in NEW Base images only.
+        # System uses a separately generated runtime banner when installed.
+        issue = defaults / "issue"
+        remove(issue)
+        issue.write_text(f"Mojt Linux Base {version}\n", encoding="utf-8")
+        issue.chmod(0o644)
         # Never promote machine identity or host-specific settings to defaults.
         for name in ("machine-id", "hostname", "resolv.conf", "mtab"):
             remove(defaults / name)
