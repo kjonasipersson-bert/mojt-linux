@@ -230,7 +230,7 @@ class VmBuilderTests(unittest.TestCase):
                 vm.validate_busybox_applets(Path("/test/fake-busybox"), "password")
 
     def test_password_prompt_passes_secret_on_stdin_only(self):
-        with mock.patch.object(vm.sys.stdin, "isatty", return_value=True):
+        with mock.patch.object(vm.sys, "stdin", types.SimpleNamespace(isatty=lambda: True)):
             with mock.patch.object(vm.getpass, "getpass",
                                    side_effect=["synthetic-testing-password",
                                                 "synthetic-testing-password"]):
