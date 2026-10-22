@@ -362,6 +362,10 @@ class VmBuilderTests(unittest.TestCase):
                         vm.prepare_system_identity(tree)
             self.assertFalse((etc / "motd").exists())
 
+    def test_early_boot_script_is_valid_posix_shell_syntax(self):
+        subprocess.run(["sh", "-n"], input=vm.INIT,
+                       text=True, capture_output=True, check=True)
+
     def test_identity_is_rendered_at_boot_from_active_versions(self):
         init = vm.INIT
         for required in (
