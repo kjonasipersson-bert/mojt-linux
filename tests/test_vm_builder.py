@@ -118,6 +118,191 @@ class VmBuilderTests(unittest.TestCase):
         self.assertIn("::shutdown:", vm.SYSTEM_INITTAB)
         self.assertIn("poweroff", vm.REQUIRED_APPLETS)
 
+    def make_guest_account_tree(self, root):
+        etc = root / "state/etc"
+        etc.mkdir(parents=True)
+        (etc / "passwd").write_text(
+            "root:x:0:0:root:/root:/bin/sh\n"
+            "daemon:x:1:1:daemon:/var/empty:/bin/false\n",
+            encoding="utf-8",
+        )
+        (etc / "group").write_text(
+            "root:x:0:\ndaemon:x:1:\n", encoding="utf-8",
+        )
+        return etc
+
+    def test_password_login_provisions_only_guest_shadow(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            etc = self.make_guest_account_tree(tree)
+            digest = "$6$testsalt$synthetic-unit-test-only"
+            with mock.patch.object(vm.os, "chown"):
+                vm.provision_vm_root_login(tree, digest)
+            shadow = etc / "shadow"
+            self.assertEqual(shadow.stat().st_mode & 0o777, 0o600)
+            contents = shadow.read_text()
+            self.assertIn(f"root:{digest}:", contents)
+            self.assertGreater(int(contents.splitlines()[0].split(":")[2]), 20000)
+            self.assertIn("daemon:!:", contents)
+            self.assertTrue((etc / "gshadow").is_file())
+            self.assertEqual((etc / "gshadow").stat().st_mode & 0o777, 0o600)
+            self.assertEqual((etc / "securetty").read_text(), "ttyS0\n")
+            self.assertEqual((etc / "passwd").read_text().splitlines()[0],
+                             "root:x:0:0:root:/root:/bin/sh")
+
+    def test_existing_shadow_is_preserved(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            etc = self.make_guest_account_tree(tree)
+            shadow = etc / "shadow"
+            shadow.write_text("root:$6$existing$hash:0:0:99999:7:::\n")
+            shadow.chmod(0o600)
+            with mock.patch.object(vm.os, "chown"):
+                vm.provision_vm_root_login(tree)
+            self.assertEqual(shadow.read_text(),
+                             "root:$6$existing$hash:0:0:99999:7:::\n")
+            with mock.patch.object(vm.os, "chown"):
+                with self.assertRaisesRegex(ValueError, "overwrite"):
+                    vm.provision_vm_root_login(tree, "$6$new$hash")
+
+    def test_locked_or_unsafe_shadow_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            etc = self.make_guest_account_tree(tree)
+            shadow = etc / "shadow"
+            shadow.write_text("root:!:0:0:99999:7:::\n")
+            shadow.chmod(0o600)
+            with self.assertRaisesRegex(ValueError, "locked"):
+                vm.provision_vm_root_login(tree)
+            shadow.write_text("root:$6$secret$hash:0:0:99999:7:::\n")
+            shadow.chmod(0o644)
+            with self.assertRaisesRegex(ValueError, "permissions"):
+                vm.provision_vm_root_login(tree)
+
+    def test_symlink_shadow_and_insecure_serial_policy_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            etc = self.make_guest_account_tree(tree)
+            shadow = etc / "shadow"
+            shadow.symlink_to("/etc/shadow")
+            with self.assertRaisesRegex(ValueError, "unsafe account file"):
+                vm.provision_vm_root_login(tree, "$6$test$hash")
+            shadow.unlink()
+            (etc / "securetty").write_text("tty1\n")
+            with mock.patch.object(vm.os, "chown"):
+                with self.assertRaisesRegex(ValueError, "ttyS0"):
+                    vm.provision_vm_root_login(tree, "$6$test$hash")
+
+    def test_password_mode_wont_preserve_open_root_console(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            etc = tree / "state/etc"
+            etc.mkdir(parents=True)
+            (etc / "inittab").write_text(vm.SYSTEM_INITTAB)
+            binary = tree / "fake"
+            binary.write_bytes(b"fake")
+            with mock.patch.object(vm.os, "chown"):
+                with self.assertRaisesRegex(ValueError, "unauthenticated|root shell"):
+                    vm.install_system_init(tree, binary, "password")
+            self.assertEqual((etc / "inittab").read_text(), vm.SYSTEM_INITTAB)
+
+    def test_new_password_mode_uses_getty_and_login_from_system(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            (tree / "state/etc").mkdir(parents=True)
+            binary = tree / "fake"
+            binary.write_bytes(b"fake")
+            with mock.patch.object(vm.os, "chown"):
+                vm.install_system_init(tree, binary, "password")
+            inittab = (tree / "state/etc/inittab").read_text()
+            self.assertIn("getty -L -l /run/mojt-system/login", inittab)
+            self.assertNotIn("respawn:/bin/sh", inittab)
+            self.assertEqual((tree / "system/prototype-init/login").readlink().as_posix(),
+                             "busybox")
+            self.assertIn("passwd", vm.LOGIN_APPLETS)
+
+    def test_missing_busybox_login_applet_rejected(self):
+        fake_applets = vm.REQUIRED_APPLETS | {"login", "getty"}
+        with mock.patch.object(
+            vm.subprocess, "run",
+            return_value=types.SimpleNamespace(stdout="\n".join(fake_applets)),
+        ):
+            with self.assertRaisesRegex(ValueError, "passwd"):
+                vm.validate_busybox_applets(Path("/test/fake-busybox"), "password")
+
+    def test_password_prompt_passes_secret_on_stdin_only(self):
+        with mock.patch.object(vm.sys, "stdin", types.SimpleNamespace(isatty=lambda: True)):
+            with mock.patch.object(vm.getpass, "getpass",
+                                   side_effect=["synthetic-testing-password",
+                                                "synthetic-testing-password"]):
+                with mock.patch.object(
+                    vm.subprocess, "run",
+                    return_value=types.SimpleNamespace(stdout="$6$salt$test-hash\n"),
+                ) as call:
+                    self.assertEqual(vm.password_hash_from_terminal(), "$6$salt$test-hash")
+        args, kwargs = call.call_args
+        self.assertEqual(args[0], ["openssl", "passwd", "-6", "-stdin"])
+        self.assertEqual(kwargs["input"], "synthetic-testing-password\n")
+        self.assertNotIn("synthetic-testing-password", " ".join(args[0]))
+
+    def test_root_shell_missing_fails_before_password_provisioning(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            etc = self.make_guest_account_tree(tree)
+            passwd = etc / "passwd"
+            passwd.write_text(
+                passwd.read_text().replace("/bin/sh", "/bin/bash"),
+                encoding="utf-8",
+            )
+            (tree / "base/0.1.3/bin").mkdir(parents=True)
+            (tree / "base/0.1.3/bin/sh").write_text("#!/bin/sh\n")
+            (tree / "base/0.1.3/bin/sh").chmod(0o755)
+            with self.assertRaisesRegex(ValueError, "--root-shell /bin/sh"):
+                vm.prepare_vm_root_shell(tree, "0.1.3")
+            self.assertIn("root:x:0:0:root:/root:/bin/bash", passwd.read_text())
+
+    def test_explicit_vm_shell_replacement_only_changes_root_record(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            etc = self.make_guest_account_tree(tree)
+            passwd = etc / "passwd"
+            before = passwd.read_text()
+            passwd.write_text(before.replace("root:/bin/sh", "root:/bin/bash"))
+            passwd.chmod(0o644)
+            generation = tree / "base/0.1.3"
+            (generation / "usr/bin").mkdir(parents=True)
+            (generation / "bin").symlink_to("usr/bin")
+            shell = generation / "usr/bin/sh"
+            shell.write_text("#!/bin/sh\n")
+            shell.chmod(0o755)
+            with mock.patch.object(vm.os, "chown"):
+                chosen = vm.prepare_vm_root_shell(tree, "0.1.3", "/bin/sh")
+            self.assertEqual(chosen, "/bin/sh")
+            self.assertEqual(passwd.read_text(), before)
+            self.assertEqual(passwd.stat().st_mode & 0o777, 0o644)
+            self.assertFalse((etc / "shadow").exists())
+
+    def test_root_shell_resolution_contains_symlinks_inside_base(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "usr/bin").mkdir(parents=True)
+            (root / "bin").symlink_to("/usr/bin")
+            (root / "usr/bin/sh").symlink_to("dash")
+            (root / "usr/bin/dash").write_text("fake")
+            (root / "usr/bin/dash").chmod(0o755)
+            self.assertEqual(vm.virtual_root_file(root, "/bin/sh"),
+                             root / "usr/bin/dash")
+            with self.assertRaisesRegex(ValueError, "unsafe"):
+                vm.virtual_root_file(root, "/bin/../etc/shadow")
+            (root / "usr/bin/sh").unlink()
+            (root / "usr/bin/sh").symlink_to("../../../../etc/shadow")
+            with self.assertRaisesRegex(ValueError, "escapes Base"):
+                vm.virtual_root_file(root, "/bin/sh")
+
+    def test_root_shell_replacement_requires_password_mode(self):
+        with self.assertRaisesRegex(ValueError, "root shell"):
+            vm.virtual_root_file(Path("/synthetic"), "bin/sh")
+
     def test_module_compression_plain_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             module = Path(tmp) / "dummy.ko"
