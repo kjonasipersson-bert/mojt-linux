@@ -105,3 +105,23 @@ but no shadow file; the experimental serial root console bypasses login
 entirely. A later, separate System feature must establish authenticated
 console login and safe initial credential provisioning. Never install a
 universal default password or overwrite existing machine credentials.
+
+## Experimental System console login (not production authentication)
+
+The VM prototype may use a static BusyBox `getty` and `login` from
+`system/prototype-init`, separate from Base, to authenticate the local
+serial-console root account. Password creation happens during **host-side
+VM staging** from an interactive terminal. The salted password hash and
+account files are placed only in the VM copy of persistent `/etc`.
+
+This is not an architecture commitment to BusyBox login, or a replacement
+for the eventual installer and System authentication stack. A production
+System may use PAM and other established account-management packages.
+Root should normally be locked when a configured administrative user is
+available. Persistent home directories and UID/GID handling remain open.
+
+The development VM console is deliberately unauthenticated; enabling a
+root password without changing the console's login process does not secure
+it. The builder's authenticated mode refuses a conflicting existing
+`inittab`, leaves pre-existing shadow credentials unchanged and avoids
+embedding plaintext credentials in code, manifests or process arguments.
