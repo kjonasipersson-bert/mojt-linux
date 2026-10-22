@@ -26,6 +26,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import time
 
 
 LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]*\Z")
@@ -262,8 +263,10 @@ def provision_vm_root_login(tree, password_hash=None):
     else:
         if password_hash is None or not password_hash.startswith("$6$"):
             fail("root password has not been provisioned")
+        today = int(time.time() // 86400)  # Shadow uses days since Unix epoch.
         lines = [
-            f"{name}:{password_hash if name == 'root' else '!'}:0:0:99999:7:::"
+            f"{name}:{password_hash if name == 'root' else '!'}:"
+            f"{today if name == 'root' else 0}:0:99999:7:::"
             for name in names
         ]
         fd = os.open(shadow, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
