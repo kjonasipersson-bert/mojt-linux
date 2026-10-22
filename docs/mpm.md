@@ -6,11 +6,13 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Mojt Package Management Contract (draft 0.1)
 
-**Status:** proposed interface contract; **not implemented**. This document
-records the agreed architecture and a deliberately explicit **proposal** for
-version selector syntax. Version selector syntax remains subject to review
-before it becomes a compatibility promise. No package backend or on-disk
-Ports/System package format has been chosen.
+**Status:** design contract; **not implemented**. This document records
+agreed architecture and accepted high-level selector semantics:
+`@3.0` selects the newest eligible stable release in the 3.0 line, while
+`@=3.0` matches an exact package-release identifier. The full identifier
+grammar, version comparison and backend adaptation remain to be specified
+before implementing a parser. No package backend or on-disk Ports/System
+package format has been chosen.
 
 The guiding rule is that Mojt can update **Base, System, Kernel, and Ports
 independently**, without silently updating applications or pinned project
@@ -109,28 +111,29 @@ Rollback selects previously published, still available content. Persistent
 An old System may be incompatible with newly migrated state; reactivation
 must warn about known compatibility/security problems.
 
-## 3. Package selectors: `gimp@3.0` (PROPOSED, NOT YET FINAL)
+## 3. Package selectors: release lines and exact identifiers (accepted)
 
-This is a conscious choice between two reasonable user interfaces:
+**Decision:** `gimp@3.0` selects the **newest eligible stable published
+release in the 3.0 line**, as listed in the chosen local catalog snapshot.
+`gimp@=3.0` instead requests a package whose **canonical release identifier
+is exactly `3.0`**; it does not match `3.0.0` or `3.0.8`. An exact
+identifier must actually exist in the catalog.
 
-1. **Exact by default:** `gimp@3.0` denotes only a release actually named
-   `3.0`. This is trivial to explain and implement, but does not find later
-   bugfix releases such as `3.0.8`; users must know and type the full version.
-2. **Release-line selector:** `gimp@3.0` means the **newest eligible
-   published stable release in the 3.0 line** in the selected local catalog.
-   It is more convenient for users who mean "GIMP 3.0, with current fixes",
-   but requires an explicit matching/ordering contract.
+This deliberately favors a convenient release-line selector for users who
+want subsequent bugfix releases without crossing into another release line.
+The exact form is explicit for reproducible or pinned choices. We rejected
+making `@3.0` exact-by-default because that would unexpectedly exclude
+maintenance releases such as `3.0.8`.
 
-**Recommended choice for discussion: option 2**, with an unmistakable syntax
-for exact requests. The CLI must print what a selector actually resolved to;
-"latest" is a repository decision, not proof that the chosen release has
-the fewest bugs or all security fixes. This distinction between exact matching
-and a release-series match is established in other ecosystems too (for
-example Python packaging uses `==3.0` versus `==3.0.*`); Mojt would be
-choosing its own CLI notation, not adopting Python's version standard.
+The CLI must display the exact resolved result. "Newest" means newest
+**eligible in the selected channel and local snapshot**, not a claim that
+the selected release has the fewest bugs or is universally the safest.
+Other ecosystems also distinguish exact matching and release-series
+matching (for example Python packaging uses `==3.0` versus `==3.0.*`);
+Mojt uses its own notation, not Python's version standard.
 See [Python Packaging: version specifiers](https://packaging.python.org/en/latest/specifications/version-specifiers/).
 
-### Proposed selector grammar
+### Selector examples (full grammar still to be specified)
 
 | Request | Meaning |
 | --- | --- |
@@ -171,7 +174,8 @@ gimp 3.1.0-r1   stable
 gimp 3.0.9-rc1  preview
 ```
 
-Then, under the proposed rules:
+Then, under the accepted release-line/exact distinction and the illustrative
+package-revision convention above:
 
 ```text
 mpm ports install gimp          -> gimp 3.1.0-r1
@@ -241,8 +245,9 @@ because a backend exists for System or Ports.
 
 ## 5. Deliberately unresolved details
 
-1. Confirm or change the proposed `@3.0` **release-line** default versus
-   **exact** semantics before implementing the command parser.
+1. Specify detailed matching/version ordering for epochs, pre-releases,
+   nonnumeric upstream versions and backend package revisions, while
+   preserving the accepted `@3.0` versus `@=3.0` distinction.
 2. Choose how full package identities are represented across backends
    (upstream version, packaging revision/epoch, repository and content digest).
 3. Decide whether an installation selector persists as an upgrade constraint
@@ -267,7 +272,7 @@ a QEMU VM prototype with a System-owned BusyBox init/login, a host-supplied
 kernel and a combined System/Base login banner.
 
 **Not implemented:** `mpm`, Ports installation and activation, System release
-packaging, the proposed selector grammar, package-backed System composition,
+packaging, a selector parser, package-backed System composition,
 external capability packages, signed catalogs and a production boot selector.
 
 This draft is a contract for future design review, not a command reference
