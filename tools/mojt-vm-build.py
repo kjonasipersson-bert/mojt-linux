@@ -16,7 +16,7 @@ import gzip
 import json
 import lzma
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import platform
 import re
 import shlex
@@ -214,6 +214,108 @@ def password_hash_from_terminal():
     if not digest.startswith("$6$") or ":" in digest or "\n" in digest:
         fail("openssl did not return a valid SHA512-crypt hash")
     return digest
+
+
+def virtual_root_file(root, path):
+    """Resolve a guest-absolute shell path without following host-absolute links.
+
+    The path is interpreted relative to the copied Base tree, including
+    absolute symbolic links that refer to paths inside the guest filesystem.
+    """
+    if not isinstance(path, str) or not path.startswith("/") or path == "/":
+        fail(f"root shell must be an absolute path inside Base: {path!r}")
+    if any(ord(char) < 32 or char == ":" for char in path):
+        fail(f"invalid root shell: {path!r}")
+    pure = PurePosixPath(path)
+    if ".." in pure.parts or "." in path.split("/"):
+        fail(f"unsafe root shell: {path!r}")
+
+    pending = list(pure.parts[1:])
+    resolved = []
+    followed = 0
+    while pending:
+        component = pending.pop(0)
+        if component in ("", ".", ".."):
+            fail(f"invalid root shell component: {path!r}")
+        candidate = root.joinpath(*resolved, component)
+        if candidate.is_symlink():
+            followed += 1
+            if followed > 32:
+                fail(f"root shell symlink loop: {path!r}")
+            link = os.readlink(candidate)
+            target = PurePosixPath(link)
+            if link.startswith("/"):
+                resolved = []
+            pending = list(target.parts[1:] if link.startswith("/") else target.parts) + pending
+            # Relative '..' is valid in the Base tree but must not escape it.
+            normalized = []
+            for part in resolved + pending:
+                if part == "..":
+                    if not normalized:
+                        fail(f"root shell symlink escapes Base: {path!r}")
+                    normalized.pop()
+                elif part not in ("", ".", "/"):
+                    normalized.append(part)
+            pending = normalized
+            resolved = []
+        else:
+            resolved.append(component)
+    result = root.joinpath(*resolved)
+    if result.is_symlink() or not result.is_file() or not (result.stat().st_mode & 0o111):
+        fail(f"root shell not executable in installed Base: {path}")
+    return result
+
+
+def prepare_vm_root_shell(tree, version, replacement=None):
+    """Validate root login shell, or explicitly correct *copied* /etc/passwd.
+
+    This never writes to the source installation or to any Base generation.
+    Preserve other account records, ownership, mode and original line endings.
+    """
+    rootfs = require_directory(tree / "base" / version, "copied Base generation")
+    passwd = tree / "state/etc/passwd"
+    if passwd.is_symlink() or not passwd.is_file():
+        fail(f"missing or unsafe persistent account file: {passwd}")
+    original = passwd.read_text(encoding="utf-8")
+    lines = original.splitlines(keepends=True)
+    root_indices = [index for index, line in enumerate(lines)
+                    if line.startswith("root:")]
+    if len(root_indices) != 1:
+        fail("expected exactly one root record in copied /etc/passwd")
+    index = root_indices[0]
+    line = lines[index]
+    fields = line.rstrip("\n").split(":")
+    if len(fields) != 7 or fields[1:4] != ["x", "0", "0"]:
+        fail("malformed root account in copied /etc/passwd")
+    old_shell = fields[6]
+    chosen = replacement if replacement is not None else old_shell
+    try:
+        virtual_root_file(rootfs, chosen)
+    except ValueError as error:
+        if replacement is None:
+            fail(f"{error}; configure the copied VM account explicitly "
+                 "with --root-shell /bin/sh")
+        raise
+    if replacement is None or replacement == old_shell:
+        return old_shell
+
+    fields[6] = replacement
+    new_line = ":".join(fields) + ("\n" if line.endswith("\n") else "")
+    lines[index] = new_line
+    mode = stat.S_IMODE(passwd.stat().st_mode)
+    owner = passwd.stat()
+    # Only the staged VM tree is modified; an existing passwd is not discarded.
+    fd, tmp_name = tempfile.mkstemp(prefix=".mojt-passwd-", dir=passwd.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.writelines(lines)
+        os.chmod(tmp_name, mode)
+        os.chown(tmp_name, owner.st_uid, owner.st_gid)
+        os.replace(tmp_name, passwd)
+    finally:
+        Path(tmp_name).unlink(missing_ok=True)
+    print(f"mojt-vm-build: copied VM root shell: {old_shell} -> {replacement}")
+    return replacement
 
 
 def provision_vm_root_login(tree, password_hash=None):
@@ -495,6 +597,7 @@ def build(args):
             populate_disk_tree(target, version, tree)
             install_system_init(tree, busybox, args.login_mode)
             if args.login_mode == "password":
+                prepare_vm_root_shell(tree, version, args.root_shell)
                 copied_shadow = tree / "state/etc/shadow"
                 password_hash = None
                 if not copied_shadow.exists() and not copied_shadow.is_symlink():
@@ -558,12 +661,17 @@ def main():
     parser.add_argument("--busybox", type=Path, default=Path("/usr/bin/busybox"),
                         help="static x86_64 BusyBox (Debian: busybox-static)")
     parser.add_argument("--disk-size-mib", type=int, default=1024)
+    parser.add_argument("--root-shell", metavar="PATH",
+                        help="password mode only: explicitly select root's shell "
+                             "in the NEW VM's copied /etc/passwd (e.g. /bin/sh)")
     parser.add_argument("--login-mode", choices=("development", "password"),
                         default="development",
                         help="password: prompt for a new root password if guest shadow "
                              "is missing; development: unsafe unauthenticated console")
     args = parser.parse_args()
     try:
+        if args.root_shell and args.login_mode != "password":
+            fail("--root-shell requires --login-mode password")
         build(args)
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         parser.exit(1, f"mojt-vm-build: {error}\n")
