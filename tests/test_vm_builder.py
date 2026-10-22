@@ -142,6 +142,7 @@ class VmBuilderTests(unittest.TestCase):
             self.assertEqual(shadow.stat().st_mode & 0o777, 0o600)
             contents = shadow.read_text()
             self.assertIn(f"root:{digest}:", contents)
+            self.assertGreater(int(contents.splitlines()[0].split(":")[2]), 20000)
             self.assertIn("daemon:!:", contents)
             self.assertTrue((etc / "gshadow").is_file())
             self.assertEqual((etc / "gshadow").stat().st_mode & 0o777, 0o600)
