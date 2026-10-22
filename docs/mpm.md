@@ -83,7 +83,10 @@ mpm ports install gcc@14
 
 `update` operates on the **local catalog**, not installed payloads. The user
 must be able to inspect which repository snapshot and package/release versions
-were fetched. `install` and `upgrade` resolve against the currently selected
+were fetched. A future read-only command such as `mpm ports list --available`
+(or `mpm ports info gimp`) should show all eligible versions and their source;
+the exact inspection command is not yet fixed. `install` and `upgrade`
+resolve against the currently selected
 local snapshot and MUST NOT perform a hidden `update`. If it is missing or
 too old for the requested policy, report this and offer an explicit refresh.
 
@@ -121,7 +124,11 @@ This is a conscious choice between two reasonable user interfaces:
 **Recommended choice for discussion: option 2**, with an unmistakable syntax
 for exact requests. The CLI must print what a selector actually resolved to;
 "latest" is a repository decision, not proof that the chosen release has
-the fewest bugs or all security fixes.
+the fewest bugs or all security fixes. This distinction between exact matching
+and a release-series match is established in other ecosystems too (for
+example Python packaging uses `==3.0` versus `==3.0.*`); Mojt would be
+choosing its own CLI notation, not adopting Python's version standard.
+See [Python Packaging: version specifiers](https://packaging.python.org/en/latest/specifications/version-specifiers/).
 
 ### Proposed selector grammar
 
