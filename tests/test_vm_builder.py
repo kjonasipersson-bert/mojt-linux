@@ -245,6 +245,64 @@ class VmBuilderTests(unittest.TestCase):
         self.assertEqual(kwargs["input"], "synthetic-testing-password\n")
         self.assertNotIn("synthetic-testing-password", " ".join(args[0]))
 
+    def test_root_shell_missing_fails_before_password_provisioning(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            etc = self.make_guest_account_tree(tree)
+            passwd = etc / "passwd"
+            passwd.write_text(
+                passwd.read_text().replace("/bin/sh", "/bin/bash"),
+                encoding="utf-8",
+            )
+            (tree / "base/0.1.3/bin").mkdir(parents=True)
+            (tree / "base/0.1.3/bin/sh").write_text("#!/bin/sh\n")
+            (tree / "base/0.1.3/bin/sh").chmod(0o755)
+            with self.assertRaisesRegex(ValueError, "--root-shell /bin/sh"):
+                vm.prepare_vm_root_shell(tree, "0.1.3")
+            self.assertIn("root:x:0:0:root:/root:/bin/bash", passwd.read_text())
+
+    def test_explicit_vm_shell_replacement_only_changes_root_record(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            etc = self.make_guest_account_tree(tree)
+            passwd = etc / "passwd"
+            before = passwd.read_text()
+            passwd.write_text(before.replace("root:/bin/sh", "root:/bin/bash"))
+            passwd.chmod(0o644)
+            generation = tree / "base/0.1.3"
+            (generation / "usr/bin").mkdir(parents=True)
+            (generation / "bin").symlink_to("usr/bin")
+            shell = generation / "usr/bin/sh"
+            shell.write_text("#!/bin/sh\n")
+            shell.chmod(0o755)
+            with mock.patch.object(vm.os, "chown"):
+                chosen = vm.prepare_vm_root_shell(tree, "0.1.3", "/bin/sh")
+            self.assertEqual(chosen, "/bin/sh")
+            self.assertEqual(passwd.read_text(), before)
+            self.assertEqual(passwd.stat().st_mode & 0o777, 0o644)
+            self.assertFalse((etc / "shadow").exists())
+
+    def test_root_shell_resolution_contains_symlinks_inside_base(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "usr/bin").mkdir(parents=True)
+            (root / "bin").symlink_to("/usr/bin")
+            (root / "usr/bin/sh").symlink_to("dash")
+            (root / "usr/bin/dash").write_text("fake")
+            (root / "usr/bin/dash").chmod(0o755)
+            self.assertEqual(vm.virtual_root_file(root, "/bin/sh"),
+                             root / "usr/bin/dash")
+            with self.assertRaisesRegex(ValueError, "unsafe"):
+                vm.virtual_root_file(root, "/bin/../etc/shadow")
+            (root / "usr/bin/sh").unlink()
+            (root / "usr/bin/sh").symlink_to("../../../../etc/shadow")
+            with self.assertRaisesRegex(ValueError, "escapes Base"):
+                vm.virtual_root_file(root, "/bin/sh")
+
+    def test_root_shell_replacement_requires_password_mode(self):
+        with self.assertRaisesRegex(ValueError, "root shell"):
+            vm.virtual_root_file(Path("/synthetic"), "bin/sh")
+
     def test_module_compression_plain_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             module = Path(tmp) / "dummy.ko"
