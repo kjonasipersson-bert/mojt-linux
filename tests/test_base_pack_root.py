@@ -36,7 +36,7 @@ class RootOwnershipTests(unittest.TestCase):
             (source / "usr/lib").mkdir()
             (source / "etc").mkdir()
             # Void is only a bootstrap backend; never ship its login banner.
-            (source / "etc/issue").write_text("Void Linux\\n", encoding="ascii")
+            (source / "etc/issue").write_text("Void Linux\n", encoding="ascii")
             (source / "usr/bin/sh").write_text("#!/bin/sh\n", encoding="ascii")
             (source / "bin").symlink_to("usr/bin")
             os.chown(source, 1000, 1000)
@@ -67,11 +67,11 @@ class RootOwnershipTests(unittest.TestCase):
                 self.assertEqual((archive_root.uid, archive_root.gid), (0, 0))
                 self.assertEqual(stat.S_IMODE(archive_root.mode), 0o755)
                 with archive.extractfile("./usr/etc/issue") as stream:
-                    self.assertEqual(stream.read(), b"Mojt Linux Base 0.1.99-test\\n")
+                    self.assertEqual(stream.read(), b"Mojt Linux Base 0.1.99-test\n")
                 self.assertTrue(archive.getmember("./etc").isdir())
                 self.assertFalse(any(item.name == "./etc/issue" for item in archive))
 
-            self.assertEqual((source / "etc/issue").read_bytes(), b"Void Linux\\n")
+            self.assertEqual((source / "etc/issue").read_bytes(), b"Void Linux\n")
             original = source.stat()
             self.assertEqual((original.st_uid, original.st_gid), (1000, 1000))
             self.assertEqual(stat.S_IMODE(original.st_mode), 0o775)
