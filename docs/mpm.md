@@ -65,8 +65,8 @@ A declared `provides` is not a substitute for checking the actual ABI.
 | Action | Intended behavior |
 | --- | --- |
 | `update` | Refresh local repository/release catalog metadata, like `apt update`. No packages installed, removed, or activated. |
-| `install` | Resolve and install a selected release plus dependencies; do not activate it automatically. |
-| `upgrade` | Show a complete proposed upgrade **within the selected area**; after approval, prepare/install the new version(s) without silently discarding old versions. |
+| `install` | Resolve and retain a selected release plus dependencies. For Ports, first installation of a directly requested application also establishes its default activation; later installs leave the existing activation unchanged. |
+| `upgrade` | Show a complete proposed upgrade **within the selected area**; after approval, install eligible releases while preserving old versions. Tracked Ports series aliases may advance; an active *series selection* stays the same. |
 | `activate` | Select an **already installed** version for a chosen profile, or a bootable deployment for Base/System/Kernel. |
 | `remove` | Remove an unreferenced, inactive installation only when pinned projects, profiles, dependencies, and rollback references do not need it. |
 
@@ -99,11 +99,22 @@ activation/reboot implications, and preserved prior versions. A `-y` flag
 may skip confirmation of **that** plan; it cannot bypass validation,
 cross-area safeguards, or version pins.
 
-Installing is not activating. For Ports, activation selects an existing
-installation in an explicit profile while keeping directly addressable older
-versions available. Kernel activation selects a boot target, never rewrites
-the running kernel's module tree. For Base/System, a deployment references a
-known compatible combination rather than forming every possible Cartesian
+Installation and activation are separate operations, **with one deliberate
+Ports convenience exception**: the first successful installation of a
+directly requested application, when no version of that application was
+previously installed or active, also activates the selected version/series
+as the system-wide default. This first-install activation MUST be included
+in the transaction preview. Installing further versions of that application
+MUST NOT change its active selection, even if the new version is newer.
+Dependency installations do not independently claim default command names.
+If a default command is already owned by unrelated/local software, MPM must
+not overwrite it; report the conflict and require explicit handling.
+
+An explicit `mpm ports activate` selects an already installed exact release
+or series for the system-wide profile. This is distinct from installing an
+additional version. Kernel activation selects a boot target, never rewrites
+the running kernel's module tree. For Base/System, a deployment references
+a known compatible combination rather than forming every possible Cartesian
 product of independent versions.
 
 Rollback selects previously published, still available content. Persistent
@@ -189,19 +200,135 @@ floating symlink: once `3.0.8-r2` is installed, the installed object stays
 that release. A later `mpm ports update` may reveal `3.0.9`, but neither
 `update` nor `install` silently changes any active profile.
 
-**Recommended tracking policy, still open for review:** remember the user's
-requested selector (`3.0`, exact `=3.0.8-r2`, or channel default) as an
-explicit *future upgrade constraint*, separate from both the installed
-artifact identity and the active profile. Thus an ordinary upgrade of a
-`gimp@3.0` intent may propose `3.0.9` but not `3.1.0`, whereas an exact
-request remains pinned until deliberately changed. No such upgrade may
-change a separately pinned project profile without explicit approval.
+### Upgrade intent is retained per request (accepted)
 
-`activate gimp@3.0`, if accepted as selector syntax, should resolve only
-among **already installed** matching versions (never fetch or install).
-To avoid ambiguity, activation must show the selected exact release and
-profile, and fail if the backend cannot determine a unique deterministic
-winner. Activation by a full exact ID is always possible.
+MPM remembers the installation selector as an upgrade policy **separately
+from the resolved immutable artifact and active selection**. Each explicitly
+requested series is its own tracked intent, even for the same application:
+
+- Unqualified `gimp`: propose newer eligible stable releases without a
+  version-series restriction.
+- Series `gimp@3.0`: propose only newer eligible releases in the 3.0 line.
+- Exact `gimp@=3.0.8-r2`: **never propose a version upgrade** for that
+  exact request; report known security advisories without silently changing
+  it.
+
+If both `blender@4.9` and `blender@5.3` have been requested, a normal
+`mpm ports upgrade` may propose newer releases in **both** series. Each
+installed release remains available, and the old release is not overwritten.
+`mpm ports update` merely refreshes metadata, never installed software.
+
+An explicit `mpm ports activate gimp@3.0` selects the installed **3.0
+series**, without downloading anything. The active selector is retained:
+subsequent approved `upgrade` operations may advance the binary reached
+through the active 3.0 series, but MUST NOT silently switch the active
+series to 3.1. An explicit `activate gimp@=3.0.8-r2` instead selects that
+exact immutable release, and its unqualified command stays pinned there.
+When the selected series has no installed candidate, activation fails rather
+than fetching a new one. The choice and resolved target must be displayed.
+
+An ordinary upgrade MUST NOT mutate an exact project lock or change the
+project's resolved dependency closure. The mechanism for changing an
+existing requested policy (e.g. from a series to unqualified latest) is
+not yet specified; such a change must be explicit.
+
+### Command aliases and system-wide activation (accepted)
+
+Every installed directly addressable application version should be
+invocable through ordinary Unix command names, without exposing store
+paths. MPM manages **three logically distinct alias types**:
+
+| Alias | Contract |
+| --- | --- |
+| `blender` | The explicitly active **series** or **exact release** in the system-wide profile; created on first install |
+| `blender-4.9` | A **moving series alias**, pointing to the currently selected installed Blender 4.9.x release for that tracked series; it advances on an approved series upgrade or explicit series activation |
+| `blender-4.9.12-r2` | A **fixed exact-release alias**, pointing to that immutable package release for as long as it remains installed |
+
+Alias names above illustrate a possible canonical package revision suffix
+(`-r2`); the real naming/escaping convention remains open. The exact
+alias must distinguish distinct rebuilds of an identical upstream version.
+Aliases must not be created by ambiguous string-prefix matching.
+Every installed release of a directly requested command is given an exact
+release alias, even when it was installed through a series selector;
+a later series upgrade retains the old exact alias. For a package with
+multiple executable commands, alias naming and command-name conflict
+policies still need specification.
+
+An installation of `blender@=4.9.12-r2` publishes a fixed alias for that
+release; installation of `blender@4.9` publishes the tracked series alias
+as well. They may point to the same underlying object and need not duplicate
+it. The initial default activation follows the *selector* used for the
+first explicit install:
+
+- First `install blender@4.9` makes `blender` follow the 4.9 **series**.
+  An approved future 4.9.x upgrade may advance both `blender-4.9` and
+  the effective target of `blender`.
+- First `install blender@=4.9.12-r2` makes `blender` follow that **exact
+  release**; no future upgrade changes its target.
+- Later `install blender@5.3` creates the 5.3 series alias and installs
+  its dependencies, but `blender` continues to refer to 4.9 until the
+  user explicitly runs `mpm ports activate blender@5.3`.
+
+The default alias targets a series/exact selection, **not** simply the
+highest installed version. This makes activating a new series explicit
+without blocking ordinary approved maintenance upgrades *within* an active
+series. Merely refreshing a repository catalog or installing an additional
+version (even a newer release in an **already installed series**) MUST NOT
+advance existing series or default aliases. A new exact alias can still be
+created for that added release. An approved `upgrade` advances its tracked
+series alias, and an explicit `activate` can select the newest installed
+eligible release in the requested series. In other words, a moving series
+alias follows the last **accepted series target**, not every background
+change in the set of installed releases.
+
+Conceptually, the public aliases can be symlinks (or small launchers where
+necessary) into MPM-owned profiles backed by immutable objects. MPM MUST
+publish complete profile changes atomically and preserve old object
+references needed by pins and rollback. A direct symlink into a store is
+not a universal solution for applications with runtime layout or invocation
+requirements; the actual backend integration remains open.
+
+**Scope for the first implementation:** a system-wide activation profile
+whose commands are placed in a dedicated MPM-owned directory on `PATH`.
+`/usr/local/bin` is an illustrative traditional location, not a settled
+namespace; MPM must not overwrite administrator-owned paths. Per-user
+overrides (for example `~/.local/bin` earlier on `PATH`) and project-specific
+profiles are intended, but their mechanics are deferred.
+
+### Worked activation example
+
+```text
+mpm ports install blender@4.9
+  -> installs 4.9.12, first Blender install: activates series 4.9
+     blender        -> 4.9.12
+     blender-4.9    -> 4.9.12
+
+mpm ports install blender@5.3
+  -> installs 5.3.7 without changing the active series
+     blender        -> 4.9.12
+     blender-4.9    -> 4.9.12
+     blender-5.3    -> 5.3.7
+
+mpm ports activate blender@5.3
+  -> changes the default series only
+     blender        -> 5.3.7
+     blender-4.9    -> 4.9.12
+     blender-5.3    -> 5.3.7
+
+mpm ports upgrade
+  -> with user approval, installs 4.9.13 and 5.3.8; retains old releases
+     blender        -> 5.3.8
+     blender-4.9    -> 4.9.13
+     blender-5.3    -> 5.3.8
+     blender-4.9.12 -> old exact release, retained while installed
+```
+
+The example suppresses packaging revisions in the displayed release names;
+real exact-release aliases must account for them. The synthetic example
+also assumes none of the existing public command names conflict with
+unmanaged local files. An exact project lock
+continues to reference its own immutable release and dependency closure
+throughout these operations.
 
 For reproducible project locks and rollback, record **not just the requested
 selector**, but the exact resolved package release, catalog snapshot/source,
@@ -250,10 +377,12 @@ because a backend exists for System or Ports.
    preserving the accepted `@3.0` versus `@=3.0` distinction.
 2. Choose how full package identities are represented across backends
    (upstream version, packaging revision/epoch, repository and content digest).
-3. Decide whether an installation selector persists as an upgrade constraint
-   (recommended above), and how users explicitly change or remove that intent.
-4. Define explicit profile scope (system-wide, user, project), and how
-   activation conflicts and command-name collisions are reported.
+3. Specify commands for explicitly changing/removing retained upgrade
+   intents and for listing installed series, exact releases and active
+   selections.
+4. Specify the profile namespace, command-name collision policy, exact alias
+   naming for packaging revisions and packages with multiple executables;
+   user and project override mechanics are deferred.
 5. Define signed repository snapshots, channel preference, downgrade and
    pre-release policy, and handling of withdrawn or known-vulnerable builds.
 6. Select and test System and Ports backend candidates independently; decide
