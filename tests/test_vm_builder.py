@@ -215,7 +215,8 @@ class VmBuilderTests(unittest.TestCase):
             with mock.patch.object(vm.os, "chown"):
                 vm.install_system_init(tree, binary, "password")
             inittab = (tree / "state/etc/inittab").read_text()
-            self.assertIn("getty -L -l /run/mojt-system/login", inittab)
+            self.assertIn("getty -L -f /run/mojt/issue", inittab)
+            self.assertIn("-l /run/mojt-system/login", inittab)
             self.assertNotIn("respawn:/bin/sh", inittab)
             self.assertEqual((tree / "system/prototype-init/login").readlink().as_posix(),
                              "busybox")
