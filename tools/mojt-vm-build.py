@@ -23,10 +23,24 @@ import shutil
 import stat
 import struct
 import subprocess
+import sys
 import tempfile
 
 
 LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]*\Z")
+# Temporary System prototype; BusyBox is not Mojt's intended production init.
+SYSTEM_INIT = "prototype-init"
+SYSTEM_INITTAB = """# Mojt Linux - experimental System init (unauthenticated VM console)
+# BusyBox init uses the first field as the device name under /dev.
+# This is a development-only root shell. No login/password check is done.
+ttyS0::respawn:/bin/sh -i
+::ctrlaltdel:/run/mojt-system/busybox reboot
+::shutdown:/run/mojt-system/busybox sync
+"""
+REQUIRED_APPLETS = frozenset({
+    "init", "poweroff", "reboot", "sync", "sh", "mount", "insmod",
+    "readlink", "sleep", "switch_root", "mkdir",
+})
 INIT = r"""#!/bin/sh
 # Mojt Linux
 # Copyright (C) 2026 Jonas Persson
@@ -69,13 +83,21 @@ root="/sysroot/base/$version"
     panic "Base mount points missing"
 echo "Selected Base: $version"
 mount --bind "$root" /newroot || panic "cannot bind Base root"
+# /run is System runtime state, never a mutable part of Base.
+mount -t tmpfs -o mode=0755 tmpfs /newroot/run ||
+    panic "cannot mount /run"
+mkdir /newroot/run/mojt-system || panic "cannot create System runtime mountpoint"
+[ -x /sysroot/system/prototype-init/busybox ] ||
+    panic "missing System init binary"
+mount --bind /sysroot/system/prototype-init /newroot/run/mojt-system ||
+    panic "cannot attach System init"
 mount --bind /sysroot/state/etc /newroot/etc || panic "cannot mount /etc"
 mount --bind /sysroot/state/var /newroot/var || panic "cannot mount /var"
 mount --move /dev /newroot/dev || panic "cannot move /dev"
 mount --move /proc /newroot/proc || panic "cannot move /proc"
 mount --move /sys /newroot/sys || panic "cannot move /sys"
 echo "Switching to Mojt Base..."
-exec switch_root -c /dev/console /newroot /bin/sh
+exec switch_root -c /dev/console /newroot /run/mojt-system/busybox init
 """
 
 
@@ -113,6 +135,56 @@ def static_x86_64_elf(path):
             if len(ph) != size or struct.unpack_from("<I", ph, 0)[0] == 3:
                 return False
     return True
+
+
+def validate_busybox_applets(binary):
+    """Check that the chosen BusyBox supports every used applet."""
+    result = subprocess.run(
+        [str(binary), "--list"], check=True, capture_output=True, text=True,
+    )
+    missing = REQUIRED_APPLETS - set(result.stdout.splitlines())
+    if missing:
+        fail(f"static BusyBox missing applets: {', '.join(sorted(missing))}")
+
+
+def install_system_init(tree, busybox):
+    """Install prototype init under System; add only a missing inittab to state.
+
+    This changes only the newly assembled VM image, never the source target.
+    """
+    system = tree / "system" / SYSTEM_INIT
+    system.mkdir(parents=True)
+    binary = system / "busybox"
+    shutil.copy2(busybox, binary)
+    os.chown(binary, 0, 0)
+    binary.chmod(0o755)
+    template = system / "inittab"
+    template.write_text(SYSTEM_INITTAB, encoding="ascii")
+    template.chmod(0o644)
+
+    inittab = tree / "state/etc/inittab"
+    if inittab.is_symlink() or (inittab.exists() and not inittab.is_file()):
+        fail(f"refusing conflicting persistent /etc/inittab: {inittab}")
+    if not inittab.exists():
+        # Do not replace any existing machine-local configuration.
+        with inittab.open("x", encoding="ascii") as stream:
+            stream.write(SYSTEM_INITTAB)
+        inittab.chmod(0o644)
+
+
+def warn_missing_shadow(tree):
+    """Diagnose inconsistent source account state, without altering credentials."""
+    passwd = tree / "state/etc/passwd"
+    shadow = tree / "state/etc/shadow"
+    if passwd.is_file() and not passwd.is_symlink() and not shadow.exists():
+        for line in passwd.read_text(encoding="utf-8").splitlines():
+            parts = line.split(":")
+            if len(parts) > 1 and parts[0] == "root" and parts[1] == "x":
+                print("mojt-vm-build: note: root expects /etc/shadow, "
+                      "but it is missing. The development console bypasses "
+                      "authentication; login is NOT configured.",
+                      file=sys.stderr)
+                return
 
 
 def kernel_release_from_path(path):
@@ -164,7 +236,7 @@ def make_initramfs(root, busybox, modules):
     for name in ("bin", "dev", "proc", "sys", "sysroot", "newroot", "modules"):
         (root / name).mkdir()
     shutil.copy2(busybox, root / "bin/busybox")
-    for name in ("sh", "mount", "insmod", "readlink", "sleep", "switch_root"):
+    for name in ("sh", "mount", "insmod", "readlink", "sleep", "switch_root", "mkdir"):
         (root / "bin" / name).symlink_to("busybox")
     init = root / "init"
     init.write_text(INIT, encoding="ascii")
@@ -257,6 +329,7 @@ def build(args):
     busybox = args.busybox.resolve(strict=True)
     if not busybox.is_file() or not static_x86_64_elf(busybox):
         fail(f"requires a static x86_64 BusyBox (Debian: busybox-static): {busybox}")
+    validate_busybox_applets(busybox)
 
     with lock_file.open("rb") as lock:
         fcntl.flock(lock, fcntl.LOCK_SH)
@@ -284,6 +357,8 @@ def build(args):
             tree = temp / "filesystem"
             tree.mkdir()
             populate_disk_tree(target, version, tree)
+            install_system_init(tree, busybox)
+            warn_missing_shadow(tree)
             disk = result / "disk.img"
             with disk.open("wb") as stream:
                 stream.truncate(args.disk_size_mib * 1024 * 1024)
@@ -300,7 +375,8 @@ def build(args):
             (result / "build.json").write_text(
                 json.dumps({"format": 1, "base": version, "kernel_release": release,
                             "disk_size_mib": args.disk_size_mib,
-                            "modules_in_initramfs": len(modules)}, indent=2) + "\n",
+                            "modules_in_initramfs": len(modules),
+                            "system_init": "busybox-prototype"}, indent=2) + "\n",
                 encoding="ascii",
             )
             # The disk contains persistent state; keep it private to the caller.
