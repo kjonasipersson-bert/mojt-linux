@@ -135,3 +135,75 @@ python3 -m unittest discover -s tests -p 'test_vm_builder.py' -v
 
 These are builder/unit tests, **not** a QEMU boot acceptance test. The final
 VM must be booted and checked on a host with a suitable kernel and KVM/QEMU.
+
+## Experimental authenticated serial login (opt-in)
+
+This is a **System** prototype, not a permanent BusyBox-based init or
+production credential manager. Build a **new** VM image from the same
+installed Base, this time adding `--login-mode password`:
+
+```sh
+cd ~/src/mojt-linux
+KREL="$(uname -r)"
+TARGET="$HOME/mojt-lab/root-test-013"
+VM="$HOME/mojt-lab/vm/login-$(date +%Y%m%d-%H%M%S)"
+
+sudo python3 tools/mojt-vm-build.py \
+  --target "$TARGET" \
+  --kernel "/boot/vmlinuz-$KREL" \
+  --output "$VM" \
+  --login-mode password
+
+"$VM/run-qemu.sh"
+```
+
+The builder checks that the **static** BusyBox has `getty`, `login`
+and `passwd` applets. It installs the prototype tools under
+`system/prototype-init` and adds an authenticated `ttyS0` getty to the
+VM copy of persistent `/etc/inittab`. The login program is supplied by
+System, **not** Base. Existing nonmatching inittab files are rejected
+rather than silently keeping an unauthenticated root shell.
+
+If `/etc/shadow` is absent in the copied state, the builder prompts
+twice for a new root password on the **host terminal**, uses the host's
+OpenSSL SHA512-crypt implementation to produce a salted hash, and
+creates `shadow` and, when missing, `gshadow` with restrictive modes.
+Other copied accounts are password-locked by default. It does **not**
+copy Debian's credentials, write the password into the process
+arguments, or mutate the source Mojt installation. No password or hash
+goes into `build.json` or Git. The output disk contains password hashes
+and other machine state; keep the VM directory private.
+
+If a shadow file already exists, the builder preserves it instead of
+resetting the password. A locked or otherwise unusable root entry is
+an error requiring explicit account repair. An existing `securetty`
+that does not allow `ttyS0` is preserved and rejected. A missing file
+is initialized for the local VM serial console.
+
+On QEMU's serial console you should see a login prompt. Enter
+`root` and the password you configured. Test that an incorrect password
+does **not** grant a root shell, then test the correct password.
+A first boot is only successful if both cases work. After login:
+
+```sh
+id
+cat /etc/os-release
+ls -l /etc/shadow
+/run/mojt-system/busybox poweroff
+```
+
+To change the password from inside this experimental VM, BusyBox
+provides `/run/mojt-system/busybox passwd root` (subject to the chosen
+BusyBox build's password backend).
+
+**Security limits:** This is a trusted, local serial-console experiment.
+No network login is configured, no PAM stack or multiuser provisioning
+is implemented, and the early initramfs has a recovery shell on failures.
+Do not treat the VM as a hardened or remotely accessible installation.
+BusyBox's compiled shadow-password support is not proven by its applet
+list; successful and unsuccessful login must be tested on the actual
+Debian/KVM host before merging.
+
+The earlier `development` mode (the default for compatibility) still
+deliberately gives an **unauthenticated root shell**. Never interpret
+merely setting a root password in `shadow` as closing this bypass.
