@@ -153,7 +153,7 @@ def install_system_init(tree, busybox):
     This changes only the newly assembled VM image, never the source target.
     """
     system = tree / "system" / SYSTEM_INIT
-    system.mkdir(parents=True)
+    system.mkdir(parents=True, exist_ok=True)
     binary = system / "busybox"
     shutil.copy2(busybox, binary)
     os.chown(binary, 0, 0)
