@@ -11,6 +11,7 @@ Does not overwrite releases or existing VM disks. No bootloader/partitions.
 
 import argparse
 import fcntl
+import getpass
 import gzip
 import json
 import lzma
@@ -37,6 +38,13 @@ ttyS0::respawn:/bin/sh -i
 ::ctrlaltdel:/run/mojt-system/busybox reboot
 ::shutdown:/run/mojt-system/busybox sync
 """
+SYSTEM_LOGIN_INITTAB = """# Mojt Linux - System prototype authenticated serial login
+# The getty applet invokes the *login* applet; it never bypasses authentication.
+ttyS0::respawn:/run/mojt-system/busybox getty -L -l /run/mojt-system/login 115200 ttyS0 vt100
+::ctrlaltdel:/run/mojt-system/busybox reboot
+::shutdown:/run/mojt-system/busybox sync
+"""
+LOGIN_APPLETS = frozenset({"getty", "login", "passwd"})
 REQUIRED_APPLETS = frozenset({
     "init", "poweroff", "reboot", "sync", "sh", "mount", "insmod",
     "readlink", "sleep", "switch_root", "mkdir",
@@ -137,39 +145,161 @@ def static_x86_64_elf(path):
     return True
 
 
-def validate_busybox_applets(binary):
+def validate_busybox_applets(binary, login_mode="development"):
     """Check that the chosen BusyBox supports every used applet."""
     result = subprocess.run(
         [str(binary), "--list"], check=True, capture_output=True, text=True,
     )
-    missing = REQUIRED_APPLETS - set(result.stdout.splitlines())
+    required = REQUIRED_APPLETS
+    if login_mode == "password":
+        required |= LOGIN_APPLETS
+    missing = required - set(result.stdout.splitlines())
     if missing:
         fail(f"static BusyBox missing applets: {', '.join(sorted(missing))}")
 
 
-def install_system_init(tree, busybox):
-    """Install prototype init under System; add only a missing inittab to state.
+def install_system_init(tree, busybox, login_mode="development"):
+    """Stage System-owned init and the requested machine-local inittab.
 
-    This changes only the newly assembled VM image, never the source target.
+    Password mode cannot inherit an old unauthenticated development inittab.
     """
+    if login_mode not in ("development", "password"):
+        fail(f"unsupported login mode: {login_mode}")
     system = tree / "system" / SYSTEM_INIT
     system.mkdir(parents=True, exist_ok=True)
     binary = system / "busybox"
     shutil.copy2(busybox, binary)
     os.chown(binary, 0, 0)
     binary.chmod(0o755)
+    if login_mode == "password":
+        (system / "login").symlink_to("busybox")
+    contents = SYSTEM_LOGIN_INITTAB if login_mode == "password" else SYSTEM_INITTAB
     template = system / "inittab"
-    template.write_text(SYSTEM_INITTAB, encoding="ascii")
+    template.write_text(contents, encoding="ascii")
     template.chmod(0o644)
 
     inittab = tree / "state/etc/inittab"
     if inittab.is_symlink() or (inittab.exists() and not inittab.is_file()):
         fail(f"refusing conflicting persistent /etc/inittab: {inittab}")
-    if not inittab.exists():
-        # Do not replace any existing machine-local configuration.
+    if inittab.exists():
+        if login_mode == "password" and inittab.read_text(encoding="utf-8") != contents:
+            fail("existing /etc/inittab is not the authenticated login configuration; "
+                 "refusing to enable password mode alongside an unchecked root shell")
+    else:
+        # A new default is added only to the copied VM state.
         with inittab.open("x", encoding="ascii") as stream:
-            stream.write(SYSTEM_INITTAB)
+            stream.write(contents)
         inittab.chmod(0o644)
+
+
+def password_hash_from_terminal():
+    """Use host OpenSSL's SHA512-crypt implementation; never pass a password as argv."""
+    if not sys.stdin.isatty():
+        fail("password mode needs an interactive terminal (do not pass secrets via flags)")
+    try:
+        first = getpass.getpass("New Mojt VM root password: ")
+        second = getpass.getpass("Confirm Mojt VM root password: ")
+    except (EOFError, KeyboardInterrupt):
+        fail("password entry aborted")
+    if first != second:
+        fail("passwords did not match")
+    if len(first) < 8 or "\n" in first or "\r" in first or "\x00" in first:
+        fail("use a password of at least eight characters without control line breaks")
+    result = subprocess.run(
+        ["openssl", "passwd", "-6", "-stdin"],
+        input=first + "\n", text=True, capture_output=True, check=True,
+    )
+    digest = result.stdout.strip()
+    if not digest.startswith("$6$") or ":" in digest or "\n" in digest:
+        fail("openssl did not return a valid SHA512-crypt hash")
+    return digest
+
+
+def provision_vm_root_login(tree, password_hash=None):
+    """Initialize *copied* guest shadow files, never host credentials.
+
+    Existing shadow files are preserved; a missing one needs an explicitly
+    supplied hash (normally gathered from the terminal). Other accounts
+    are locked rather than accidentally receiving usable passwords.
+    """
+    etc = require_directory(tree / "state/etc", "copied persistent /etc")
+    passwd = etc / "passwd"
+    group = etc / "group"
+    shadow = etc / "shadow"
+    gshadow = etc / "gshadow"
+    for path in (passwd, group):
+        if path.is_symlink() or not path.is_file():
+            fail(f"required regular account file missing: {path}")
+    for path in (shadow, gshadow):
+        if path.is_symlink() or (path.exists() and not path.is_file()):
+            fail(f"refusing unsafe account file: {path}")
+    names = []
+    root_count = 0
+    for line in passwd.read_text(encoding="utf-8").splitlines():
+        if not line or line.startswith("#"):
+            continue
+        fields = line.split(":")
+        if len(fields) != 7 or not fields[0] or fields[0] in names:
+            fail("invalid or duplicate /etc/passwd account")
+        names.append(fields[0])
+        if fields[0] == "root":
+            root_count += 1
+            if fields[1] != "x" or fields[2] != "0" or fields[3] != "0":
+                fail("expected root:x:0:0 in copied /etc/passwd")
+    if root_count != 1:
+        fail("expected exactly one root account")
+    if shadow.exists():
+        if password_hash is not None:
+            fail("refusing to overwrite existing /etc/shadow with new credentials")
+        root_entries = [
+            line.split(":")[1] for line in shadow.read_text(encoding="utf-8").splitlines()
+            if line.startswith("root:")
+        ]
+        if len(root_entries) != 1 or not root_entries[0].startswith("$"):
+            fail("root account is locked or missing from existing /etc/shadow")
+        if stat.S_IMODE(shadow.stat().st_mode) & 0o077:
+            fail("/etc/shadow has unsafe read/write permissions")
+    else:
+        if password_hash is None or not password_hash.startswith("$6$"):
+            fail("root password has not been provisioned")
+        lines = [
+            f"{name}:{password_hash if name == 'root' else '!'}:0:0:99999:7:::"
+            for name in names
+        ]
+        fd = os.open(shadow, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write("\n".join(lines) + "\n")
+        os.chown(shadow, 0, 0)
+        shadow.chmod(0o600)
+
+    if not gshadow.exists():
+        groups = []
+        for line in group.read_text(encoding="utf-8").splitlines():
+            if not line or line.startswith("#"):
+                continue
+            fields = line.split(":")
+            if len(fields) != 4 or not fields[0] or fields[0] in groups:
+                fail("invalid or duplicate /etc/group entry")
+            groups.append(fields[0])
+        fd = os.open(gshadow, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write("".join(f"{name}:!::\n" for name in groups))
+        os.chown(gshadow, 0, 0)
+        gshadow.chmod(0o600)
+
+    securetty = etc / "securetty"
+    if securetty.is_symlink() or (securetty.exists() and not securetty.is_file()):
+        fail("unsafe /etc/securetty")
+    if securetty.exists():
+        allowed = {
+            line.strip() for line in securetty.read_text(encoding="utf-8").splitlines()
+        }
+        if "ttyS0" not in allowed:
+            fail("existing /etc/securetty does not permit root on ttyS0")
+    else:
+        with securetty.open("x", encoding="ascii") as stream:
+            stream.write("ttyS0\n")
+        securetty.chmod(0o644)
 
 
 def warn_missing_shadow(tree):
@@ -305,7 +435,10 @@ def build(args):
         fail("run as root (sudo) to preserve Base ownership and create /dev nodes")
     if platform.machine() != "x86_64":
         fail("first VM builder supports x86_64 only")
-    for command in ("cp", "cpio", "mkfs.ext4", "modprobe", "zstd"):
+    commands = ["cp", "cpio", "mkfs.ext4", "modprobe", "zstd"]
+    if args.login_mode == "password":
+        commands.append("openssl")
+    for command in commands:
         if not shutil.which(command):
             fail(f"missing host command: {command}")
     target = args.target.resolve(strict=True)
@@ -329,7 +462,7 @@ def build(args):
     busybox = args.busybox.resolve(strict=True)
     if not busybox.is_file() or not static_x86_64_elf(busybox):
         fail(f"requires a static x86_64 BusyBox (Debian: busybox-static): {busybox}")
-    validate_busybox_applets(busybox)
+    validate_busybox_applets(busybox, args.login_mode)
 
     with lock_file.open("rb") as lock:
         fcntl.flock(lock, fcntl.LOCK_SH)
@@ -357,8 +490,17 @@ def build(args):
             tree = temp / "filesystem"
             tree.mkdir()
             populate_disk_tree(target, version, tree)
-            install_system_init(tree, busybox)
-            warn_missing_shadow(tree)
+            install_system_init(tree, busybox, args.login_mode)
+            if args.login_mode == "password":
+                copied_shadow = tree / "state/etc/shadow"
+                password_hash = None
+                if not copied_shadow.exists() and not copied_shadow.is_symlink():
+                    password_hash = password_hash_from_terminal()
+                provision_vm_root_login(tree, password_hash)
+            else:
+                warn_missing_shadow(tree)
+                print("mojt-vm-build: WARNING: development mode gives unauthenticated "
+                      "root access on the VM console.", file=sys.stderr)
             disk = result / "disk.img"
             with disk.open("wb") as stream:
                 stream.truncate(args.disk_size_mib * 1024 * 1024)
@@ -376,7 +518,8 @@ def build(args):
                 json.dumps({"format": 1, "base": version, "kernel_release": release,
                             "disk_size_mib": args.disk_size_mib,
                             "modules_in_initramfs": len(modules),
-                            "system_init": "busybox-prototype"}, indent=2) + "\n",
+                            "system_init": "busybox-prototype",
+                            "login_mode": args.login_mode}, indent=2) + "\n",
                 encoding="ascii",
             )
             # The disk contains persistent state; keep it private to the caller.
@@ -412,6 +555,10 @@ def main():
     parser.add_argument("--busybox", type=Path, default=Path("/usr/bin/busybox"),
                         help="static x86_64 BusyBox (Debian: busybox-static)")
     parser.add_argument("--disk-size-mib", type=int, default=1024)
+    parser.add_argument("--login-mode", choices=("development", "password"),
+                        default="development",
+                        help="password: prompt for a new root password if guest shadow "
+                             "is missing; development: unsafe unauthenticated console")
     args = parser.parse_args()
     try:
         build(args)
