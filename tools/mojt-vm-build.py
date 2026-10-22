@@ -10,6 +10,7 @@ Does not overwrite releases or existing VM disks. No bootloader/partitions.
 """
 
 import argparse
+from datetime import datetime, timezone
 import fcntl
 import getpass
 import gzip
@@ -32,6 +33,7 @@ import time
 LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]*\Z")
 # Temporary System prototype; BusyBox is not Mojt's intended production init.
 SYSTEM_INIT = "prototype-init"
+SYSTEM_VERSION = "0.1"
 SYSTEM_INITTAB = """# Mojt Linux - experimental System init (unauthenticated VM console)
 # BusyBox init uses the first field as the device name under /dev.
 # This is a development-only root shell. No login/password check is done.
@@ -41,14 +43,14 @@ ttyS0::respawn:/bin/sh -i
 """
 SYSTEM_LOGIN_INITTAB = """# Mojt Linux - System prototype authenticated serial login
 # The getty applet invokes the *login* applet; it never bypasses authentication.
-ttyS0::respawn:/run/mojt-system/busybox getty -L -l /run/mojt-system/login 115200 ttyS0 vt100
+ttyS0::respawn:/run/mojt-system/busybox getty -L -f /run/mojt/issue -l /run/mojt-system/login 115200 ttyS0 vt100
 ::ctrlaltdel:/run/mojt-system/busybox reboot
 ::shutdown:/run/mojt-system/busybox sync
 """
 LOGIN_APPLETS = frozenset({"getty", "login", "passwd"})
 REQUIRED_APPLETS = frozenset({
     "init", "poweroff", "reboot", "sync", "sh", "mount", "insmod",
-    "readlink", "sleep", "switch_root", "mkdir",
+    "readlink", "sleep", "switch_root", "mkdir", "hostname",
 })
 INIT = r"""#!/bin/sh
 # Mojt Linux
@@ -102,6 +104,22 @@ mount --bind /sysroot/system/prototype-init /newroot/run/mojt-system ||
     panic "cannot attach System init"
 mount --bind /sysroot/state/etc /newroot/etc || panic "cannot mount /etc"
 mount --bind /sysroot/state/var /newroot/var || panic "cannot mount /var"
+# System identity is assembled at boot from independently selected releases.
+IFS= read -r mojt_system_version </sysroot/system/prototype-init/version ||
+    panic "missing System version"
+IFS= read -r mojt_vm_built </sysroot/system/prototype-init/assembled-at-utc ||
+    panic "missing System build metadata"
+IFS= read -r mojt_hostname </sysroot/state/etc/hostname ||
+    panic "missing persistent hostname"
+case "$mojt_hostname" in
+    ""|*[!A-Za-z0-9.-]*) panic "invalid hostname in persistent state" ;;
+esac
+hostname "$mojt_hostname" || panic "cannot set hostname"
+IFS= read -r mojt_kernel </proc/sys/kernel/osrelease ||
+    panic "cannot identify kernel"
+mkdir /newroot/run/mojt || panic "cannot create runtime identity directory"
+printf 'Mojt Linux %s/%s (x86_64)\n\n' "$mojt_system_version" "$version"     >/newroot/run/mojt/issue || panic "cannot write System issue"
+printf 'Welcome to Mojt Linux\n\nSystem:       %s\nBase:         %s\nVM built UTC: %s\nKernel:       %s\n\nMojt Linux is an experimental distribution.\n'     "$mojt_system_version" "$version" "$mojt_vm_built" "$mojt_kernel"     >/newroot/run/mojt/motd || panic "cannot write System MOTD"
 mount --move /dev /newroot/dev || panic "cannot move /dev"
 mount --move /proc /newroot/proc || panic "cannot move /proc"
 mount --move /sys /newroot/sys || panic "cannot move /sys"
@@ -178,6 +196,9 @@ def install_system_init(tree, busybox, login_mode="development"):
     template = system / "inittab"
     template.write_text(contents, encoding="ascii")
     template.chmod(0o644)
+    assembled_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    (system / "version").write_text(SYSTEM_VERSION + "\n", encoding="ascii")
+    (system / "assembled-at-utc").write_text(assembled_at + "\n", encoding="ascii")
 
     inittab = tree / "state/etc/inittab"
     if inittab.is_symlink() or (inittab.exists() and not inittab.is_file()):
@@ -191,6 +212,35 @@ def install_system_init(tree, busybox, login_mode="development"):
         with inittab.open("x", encoding="ascii") as stream:
             stream.write(contents)
         inittab.chmod(0o644)
+    return assembled_at
+
+
+def prepare_system_identity(tree):
+    """Initialize missing VM-only defaults without changing existing /etc files."""
+    etc = require_directory(tree / "state/etc", "copied persistent /etc")
+    hostname = etc / "hostname"
+    if hostname.is_symlink() or (hostname.exists() and not hostname.is_file()):
+        fail(f"unsafe persistent hostname: {hostname}")
+    if hostname.exists():
+        raw = hostname.read_text(encoding="utf-8")
+        name = raw.removesuffix("\n")
+        if raw not in (name, name + "\n"):
+            fail("hostname must be exactly one line")
+    else:
+        name = "mojt"
+        with hostname.open("x", encoding="ascii") as stream:
+            stream.write(name + "\n")
+        hostname.chmod(0o644)
+    if len(name) > 253 or not re.fullmatch(
+        r"[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?", name
+    ):
+        fail("invalid persistent hostname: expected an ASCII DNS-style name")
+
+    # Existing MOTD files (including local customizations) are admin-owned.
+    # Only a missing file gets a link to the volatile System-generated MOTD.
+    motd = etc / "motd"
+    if not motd.exists() and not motd.is_symlink():
+        motd.symlink_to("/run/mojt/motd")
 
 
 def password_hash_from_terminal():
@@ -471,7 +521,7 @@ def make_initramfs(root, busybox, modules):
     for name in ("bin", "dev", "proc", "sys", "sysroot", "newroot", "modules"):
         (root / name).mkdir()
     shutil.copy2(busybox, root / "bin/busybox")
-    for name in ("sh", "mount", "insmod", "readlink", "sleep", "switch_root", "mkdir"):
+    for name in ("sh", "mount", "insmod", "readlink", "sleep", "switch_root", "mkdir", "hostname"):
         (root / "bin" / name).symlink_to("busybox")
     init = root / "init"
     init.write_text(INIT, encoding="ascii")
@@ -595,7 +645,8 @@ def build(args):
             tree = temp / "filesystem"
             tree.mkdir()
             populate_disk_tree(target, version, tree)
-            install_system_init(tree, busybox, args.login_mode)
+            assembled_at = install_system_init(tree, busybox, args.login_mode)
+            prepare_system_identity(tree)
             if args.login_mode == "password":
                 prepare_vm_root_shell(tree, version, args.root_shell)
                 copied_shadow = tree / "state/etc/shadow"
@@ -625,6 +676,8 @@ def build(args):
                             "disk_size_mib": args.disk_size_mib,
                             "modules_in_initramfs": len(modules),
                             "system_init": "busybox-prototype",
+                            "system_version": SYSTEM_VERSION,
+                            "vm_assembled_utc": assembled_at,
                             "login_mode": args.login_mode}, indent=2) + "\n",
                 encoding="ascii",
             )
