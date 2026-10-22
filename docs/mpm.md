@@ -6,13 +6,14 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Mojt Package Management Contract (draft 0.1)
 
-**Status:** design contract; **not implemented**. This document records
-agreed architecture and accepted high-level selector semantics:
+**Status:** design contract; a [backend-free experiment](mpm-experiment.md)
+tests a restricted Ports subset, not a production package manager. This
+document records agreed architecture and accepted high-level selector semantics:
 `@3.0` selects the newest eligible stable release in the 3.0 line, while
 `@=3.0` matches an exact package-release identifier. The full identifier
 grammar, version comparison and backend adaptation remain to be specified
-before implementing a parser. No package backend or on-disk Ports/System
-package format has been chosen.
+before implementing a production parser. No package backend or on-disk
+Ports/System package format has been chosen.
 
 The guiding rule is that Mojt can update **Base, System, Kernel, and Ports
 independently**, without silently updating applications or pinned project
@@ -400,9 +401,16 @@ installation/activation and conservative preservation of persistent state;
 a QEMU VM prototype with a System-owned BusyBox init/login, a host-supplied
 kernel and a combined System/Base login banner.
 
-**Not implemented:** `mpm`, Ports installation and activation, System release
-packaging, a selector parser, package-backed System composition,
-external capability packages, signed catalogs and a production boot selector.
+**Experimental subset:** `tools/mpm-prototype` exercises Ports series/exact
+selection, dummy command installation, activation and approved upgrades with
+local fixture catalogs and atomic profile publication. Its restricted parser,
+fixture version ordering and on-disk state are experiment-only conventions;
+see [the experiment guide](mpm-experiment.md) for runnable commands and limits.
+
+**Not implemented:** production `mpm`, real Ports installation and activation,
+System release packaging, a general selector parser, package-backed System
+composition, external capability packages, signed catalogs and a production
+boot selector.
 
 This draft is a contract for future design review, not a command reference
 for existing Mojt tools.

@@ -1,0 +1,22 @@
+# Mojt Linux
+# Copyright (C) 2026 Jonas Persson
+# SPDX-License-Identifier: GPL-2.0-only
+# Synthetic command identities only: these are not real application releases.
+format = 1
+source = "mojt-mpm-fixture"
+snapshot = "experiment-1"
+
+[[release]]
+name = "blender"
+version = "4.9.12-r1"
+channel = "stable"
+
+[[release]]
+name = "blender"
+version = "5.3.7-r1"
+channel = "stable"
+
+[[release]]
+name = "gimp"
+version = "3.0.9-r1"
+channel = "stable"

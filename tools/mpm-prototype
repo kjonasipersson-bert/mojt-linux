@@ -1,0 +1,334 @@
+#!/usr/bin/env python3
+# Mojt Linux
+# Copyright (C) 2026 Jonas Persson
+# SPDX-License-Identifier: GPL-2.0-only
+"""Backend-free Ports experiment. Generates dummy commands; installs no real packages."""
+
+import argparse
+import copy
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import sys
+import tempfile
+import tomllib
+import uuid
+
+
+NUMBER = r"(?:0|[1-9][0-9]*)"
+LINE = rf"{NUMBER}(?:\.{NUMBER})*"
+NAME = r"[a-z][a-z0-9]*"
+RELEASE = rf"{LINE}-r[1-9][0-9]*"
+MARKER = "Mojt MPM experiment 1\n"
+
+
+def require(condition, message):
+    if not condition:
+        raise ValueError(message)
+
+
+def selector(text):
+    match = re.fullmatch(rf"({NAME})@((?:=)?{LINE}(?:-r[1-9][0-9]*)?)", text)
+    require(match is not None, "experiment requires name@series or name@=release")
+    name, version = match.groups()
+    exact = version.startswith("=")
+    require(exact or re.fullmatch(LINE, version), "a series must be dotted numbers")
+    return name, version.lstrip("="), exact
+
+
+def version_key(version):
+    upstream, revision = version.rsplit("-r", 1)
+    return tuple(map(int, upstream.split("."))), int(revision)
+
+
+def matches(record, request):
+    name, version, exact = selector(request)
+    if record["name"] != name:
+        return False
+    if exact:
+        return record["version"] == version
+    components = record["version"].split("-r")[0].split(".")
+    wanted = version.split(".")
+    return record["channel"] == "stable" and components[:len(wanted)] == wanted
+
+
+def newest(records, request):
+    candidates = [r for r in records if matches(r, request)]
+    require(candidates, f"no eligible release for {request}")
+    return max(candidates, key=lambda r: version_key(r["version"]))
+
+
+def payload(record):
+    # Inputs are restricted identifiers, never arbitrary scripts from a catalog.
+    return f"#!/bin/sh\nprintf '%s\\n' '{record['name']} {record['version']}'\n".encode()
+
+
+def release_id(record):
+    return f"{record['name']}@={record['version']}"
+
+
+def read_catalog(path):
+    raw = tomllib.loads(path.read_text(encoding="utf-8"))
+    require(set(raw) == {"format", "snapshot", "source", "release"}, "invalid fixture catalog fields")
+    require(type(raw["format"]) is int and raw["format"] == 1, "unsupported fixture format")
+    for field in ("snapshot", "source"):
+        require(isinstance(raw[field], str) and re.fullmatch(r"[a-zA-Z0-9._-]+", raw[field]),
+                f"invalid catalog {field}")
+    require(isinstance(raw["release"], list) and raw["release"], "empty fixture catalog")
+    seen = set()
+    records = []
+    for item in raw["release"]:
+        require(set(item) == {"name", "version", "channel"}, "invalid fixture release fields")
+        require(isinstance(item["name"], str) and re.fullmatch(NAME, item["name"]), "invalid fixture name")
+        require(isinstance(item["version"], str) and re.fullmatch(RELEASE, item["version"]),
+                "fixture releases require numeric upstream versions and -rN revisions")
+        require(item["channel"] in ("stable", "preview"), "invalid fixture channel")
+        key = release_id(item)
+        require(key not in seen, f"duplicate fixture release: {key}")
+        seen.add(key)
+        record = dict(item, source=raw["source"], snapshot=raw["snapshot"])
+        record["sha256"] = hashlib.sha256(payload(record)).hexdigest()
+        record["object"] = f"{item['name']}-{item['version']}-{record['sha256']}"
+        records.append(record)
+    return dict(snapshot=raw["snapshot"], source=raw["source"], releases=records)
+
+
+def empty_state():
+    return dict(format=1, catalog=None, installed={}, requests=[], series={}, active={})
+
+
+def aliases(state):
+    result = {}
+
+    def add(alias, key):
+        record = state["installed"][key]
+        require(alias not in result, f"command alias conflict: {alias}")
+        result[alias] = record
+
+    for key, record in sorted(state["installed"].items()):
+        add(f"{record['name']}-{record['version']}", key)
+    for request, key in sorted(state["series"].items()):
+        name, line, _ = selector(request)
+        add(f"{name}-{line}", key)
+    for name, request in sorted(state["active"].items()):
+        _, _, exact = selector(request)
+        add(name, request if exact else state["series"][request])
+    return result
+
+
+def object_command(root, record):
+    return root / "store" / record["object"] / "bin" / record["name"]
+
+
+def load_state(root):
+    current = root / "current"
+    if not os.path.lexists(current):
+        return empty_state()
+    require(current.is_symlink(), "unmanaged current path; refusing to overwrite")
+    target = os.readlink(current)
+    require(re.fullmatch(r"profiles/[0-9a-f]{32}", target), "unmanaged current target")
+    generation = root / target
+    require(not generation.is_symlink(), "profile generation must be a directory")
+    state = json.loads((generation / "state.json").read_text(encoding="utf-8"))
+    require(state["format"] == 1, "unsupported experiment state")
+    expected = aliases(state)
+    bin_dir = generation / "bin"
+    require(not bin_dir.is_symlink() and bin_dir.is_dir(), "unmanaged profile bin")
+    require({p.name for p in bin_dir.iterdir()} == set(expected), "unmanaged profile command conflict")
+    for name, record in expected.items():
+        link = bin_dir / name
+        destination = os.path.relpath(object_command(root, record), bin_dir)
+        require(link.is_symlink() and os.readlink(link) == destination,
+                f"unmanaged profile command conflict: {name}")
+    return state
+
+
+def plan(state, action, request=None, catalog=None):
+    proposed = copy.deepcopy(state)
+    if action == "update":
+        proposed["catalog"] = catalog
+        return proposed
+    if action == "activate":
+        name, _, exact = selector(request)
+        selected = newest(state["installed"].values(), request)
+        if not exact:
+            proposed["series"][request] = release_id(selected)
+        proposed["active"][name] = request
+        return proposed
+    require(state["catalog"] is not None, "no local snapshot; run ports update --catalog FILE first")
+
+    def retain(record):
+        key = release_id(record)
+        existing = proposed["installed"].get(key)
+        if existing:
+            require(existing["object"] == record["object"] and existing["source"] == record["source"],
+                    f"immutable release identity changed: {key}")
+        else:
+            proposed["installed"][key] = record
+        return key
+
+    if action == "install":
+        name, _, exact = selector(request)
+        selected = newest(state["catalog"]["releases"], request)
+        first = not any(r["name"] == name for r in state["installed"].values())
+        key = retain(selected)
+        if request not in proposed["requests"]:
+            proposed["requests"].append(request)
+        if not exact:
+            proposed["series"].setdefault(request, key)
+        if first:
+            proposed["active"][name] = request
+    elif action == "upgrade":
+        for intent in state["requests"]:
+            if selector(intent)[2]:
+                continue
+            record = newest(state["catalog"]["releases"], intent)
+            previous = state["installed"][state["series"][intent]]
+            if version_key(record["version"]) > version_key(previous["version"]):
+                proposed["series"][intent] = retain(record)
+    return proposed
+
+
+def check_object(root, record):
+    directory = root / "store" / record["object"]
+    command = object_command(root, record)
+    require(not directory.is_symlink() and not (directory / "bin").is_symlink()
+            and not command.is_symlink() and command.is_file(), "unsafe or missing store object")
+    require(command.read_bytes() == payload(record) and os.access(command, os.X_OK),
+            f"store object modified: {record['object']}")
+
+
+def publish(root, state):
+    # Objects may remain unreferenced after interruption; never remove old objects.
+    for record in state["installed"].values():
+        directory = root / "store" / record["object"]
+        if os.path.lexists(directory):
+            check_object(root, record)
+            continue
+        stage = Path(tempfile.mkdtemp(prefix=".stage-", dir=root / "store"))
+        try:
+            (stage / "bin").mkdir()
+            command = stage / "bin" / record["name"]
+            command.write_bytes(payload(record))
+            command.chmod(0o555)
+            os.rename(stage, directory)
+        finally:
+            if stage.exists():
+                shutil.rmtree(stage)
+    generation = root / "profiles" / uuid.uuid4().hex
+    temporary = root / (".current-" + uuid.uuid4().hex)
+    generation.mkdir()
+    try:
+        bin_dir = generation / "bin"
+        bin_dir.mkdir()
+        (generation / "state.json").write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+        for name, record in aliases(state).items():
+            (bin_dir / name).symlink_to(os.path.relpath(object_command(root, record), bin_dir))
+        temporary.symlink_to("profiles/" + generation.name)
+        # One visibility point for catalog, intentions, activation, and all aliases.
+        os.replace(temporary, root / "current")
+    except BaseException:
+        if os.path.lexists(temporary):
+            temporary.unlink()
+        shutil.rmtree(generation)
+        raise
+
+
+def describe(old, new):
+    catalog = new["catalog"]
+    print(f"Local snapshot: {catalog['source']}/{catalog['snapshot']}" if catalog else "No local snapshot")
+    print("Dummy payloads only; dependencies/external capabilities: none; no migrations or reboot.")
+    print("All previous releases and profile generations are retained.")
+    for request in new["requests"]:
+        if request not in old["requests"]:
+            print(f"Track: {request}")
+    for key, record in new["installed"].items():
+        if key not in old["installed"]:
+            print(f"Install: {key} source={record['source']}/{record['snapshot']} "
+                  f"sha256={record['sha256']} bytes={len(payload(record))}")
+    before, after = aliases(old), aliases(new)
+    for name, record in after.items():
+        if name not in before or before[name]["object"] != record["object"]:
+            print(f"Alias: {name} -> {release_id(record)}")
+    for name, request in new["active"].items():
+        print(f"Active: {name} = {request}")
+
+
+def initialize(root):
+    require(not root.is_symlink(), "experiment root must not be a symlink")
+    root.mkdir(parents=True, exist_ok=True)
+    marker = root / ".mpm-experiment"
+    if not os.path.lexists(marker):
+        require(not any(root.iterdir()), "experiment root is not empty; refusing to adopt local files")
+        with marker.open("x", encoding="utf-8") as stream:
+            stream.write(MARKER)
+    require(not marker.is_symlink() and marker.read_text() == MARKER, "unmanaged experiment root")
+    for name in ("store", "profiles"):
+        directory = root / name
+        require(not directory.is_symlink(), f"unmanaged {name} path")
+        directory.mkdir(exist_ok=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--root", type=Path, required=True, help="dedicated disposable experiment root")
+    parser.add_argument("area", choices=["ports"])
+    actions = parser.add_subparsers(dest="action", required=True)
+    for action in ("update", "install", "activate", "upgrade", "status"):
+        sub = actions.add_parser(action)
+        if action in ("install", "activate"):
+            sub.add_argument("request")
+        if action == "update":
+            sub.add_argument("--catalog", type=Path, required=True)
+        if action != "status":
+            sub.add_argument("-y", "--yes", action="store_true")
+            sub.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args()
+    root = args.root.absolute()
+    try:
+        # Read-only inspection and previews need no lock or filesystem changes.
+        if args.action == "status" or args.dry_run:
+            if root.exists():
+                require(not root.is_symlink() and (root / ".mpm-experiment").read_text() == MARKER,
+                        "unmanaged experiment root")
+            state = load_state(root)
+            if args.action == "status":
+                print(json.dumps(state, indent=2))
+            else:
+                catalog = read_catalog(args.catalog) if args.action == "update" else None
+                proposed = plan(state, args.action, getattr(args, "request", None), catalog)
+                aliases(proposed)
+                describe(state, proposed)
+            return 0
+        initialize(root)
+        lock = root / ".lock"
+        require(not lock.is_symlink(), "unmanaged lock path")
+        with lock.open("a") as stream:
+            fcntl.flock(stream, fcntl.LOCK_EX)
+            state = load_state(root)
+            catalog = read_catalog(args.catalog) if args.action == "update" else None
+            proposed = plan(state, args.action, getattr(args, "request", None), catalog)
+            aliases(proposed)
+            for record in state["installed"].values():
+                check_object(root, record)
+            describe(state, proposed)
+            if proposed == state:
+                print("No changes.")
+                return 0
+            if not args.yes and input("Apply this plan? [y/N] ").strip().lower() != "y":
+                print("Cancelled.")
+                return 0
+            publish(root, proposed)
+            print("Published complete experiment profile.")
+        return 0
+    except (ValueError, OSError, KeyError, TypeError, EOFError) as error:
+        print(f"mpm-prototype: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
