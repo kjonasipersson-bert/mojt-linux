@@ -89,14 +89,37 @@ Switching to Mojt Base...
 
 Once in Mojt, verify `cat /etc/os-release`, `id`, `uname -a` and
 `cat /proc/mounts`. The Base intentionally lacks `mount`; the early
-initramfs handled mounts. The console is `/bin/sh` as PID 1, not a service
-manager; leaving it may trigger a kernel panic (expected for this demo).
+initramfs handled mounts. The experimental System layer now supplies **BusyBox init as PID 1**.
+A shell is respawned on `ttyS0`; exiting the shell should return to a new
+prompt instead of killing PID 1. This is explicitly **not** a decision to
+use BusyBox as Mojt's production init. It is an isolated VM/rescue-style
+boot implementation. The separate static BusyBox and default `inittab`
+live under `system/prototype-init` in the guest image; the runtime binary
+is bind-mounted into `/run/mojt-system` before `switch_root`. The guest
+`/etc/inittab` lives in persistent state. An existing inittab is preserved.
+
+To request a graceful shutdown from the VM console:
+
+```sh
+/run/mojt-system/busybox poweroff
+```
+
+BusyBox init runs its shutdown action (sync) and powers off the guest. This
+is still a first-stage prototype, **not** yet a validated clean unmount and
+restart/shutdown service manager. Check the serial console and rerun the
+persistence test rather than assuming that all writes are durable.
+
+The VM still has an **unauthenticated root console** and must not be
+exposed to untrusted users, networking or remote consoles. A root entry
+with `x` in `/etc/passwd` but no `/etc/shadow` is detected and reported
+by the builder; no shadow or password is fabricated. Authenticated login
+is a separate upcoming System installation task.
 
 ### What this experiment does not establish
 
 - No bootloader/UEFI, disk partitioning or installed kernel on the guest disk
 - No permanent kernel packaging, System dependency resolver or GNOME policy
-- No unattended shutdown/reboot, networking, login manager or persistent logs
+- No production-grade service supervision, networking, login manager or persistent logs
 - No guest-side verification of release signatures or runtime rootfs integrity
 - No real-machine, power-failure or multiple-release boot switching tests
 
