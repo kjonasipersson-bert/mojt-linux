@@ -52,6 +52,21 @@ Persistent `state/var` is kept across Base generations. For testing, the two sta
 
 Rollback does **not** revert persistent state or database formats. Future compatibility checks and explicit state migrations will be necessary.
 
+## MPM front-end contract (design only)
+
+The proposed user-facing package interface is documented in
+[the MPM contract](mpm.md). It specifies `mpm <area> <action>`,
+metadata-only `update`, explicit installation versus activation,
+independent Base/System/Kernel/Ports transactions, and versioned Ports
+selectors. The CLI meaning of `gimp@3.0` as the latest eligible stable
+release in the 3.0 line and `gimp@=3.0` as an exact release identifier
+has been **accepted as the design contract**, but is not yet implemented.
+Detailed version ordering and backend adapters remain open.
+
+The contract deliberately does not select a package backend, a System
+release format, a Ports store implementation, or a deployment format.
+These decisions require separate evaluation.
+
 ## Ports direction
 
 Ports should support:
