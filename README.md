@@ -6,6 +6,18 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Mojt Linux
 
+```text
+       |  |  |
+   +---+--+--+---+
+ --|             |--
+ --|   .-----.   |--
+ --|  (  @@@  )  |--
+   |   '-----'   |
+   |   |||||||   |
+   +---+--+--+---+
+       |  |  |
+```
+
 **A small Linux base. Independently managed system components and applications.**
 
 *Mojt* is an engineering-slang word from Lund, Sweden, roughly meaning a gadget or contraption.
@@ -64,3 +76,4 @@ docs/           manifesto, architecture, and format
 Mojt's original tools and documentation are licensed under **GPL-2.0-only**. Copyright (C) 2026 **Jonas Persson**. See `LICENSE`.
 
 Packages and other third-party components included in Base images retain their **own** licenses and respective copyright holders; this repository's GPLv2 notice does not replace those terms. Future external contributors retain their rights unless separately agreed.
+
