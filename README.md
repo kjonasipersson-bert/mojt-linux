@@ -93,6 +93,12 @@ owner's Mojt VM, including native `hello`, Python 3.12/3.13 activation and a
 retained project reference. See the [System guide](docs/system-nix-vm.md) for
 preparation, evidence and limitations.
 
+For early Mojt versions, Nix remains exposed and supplies System packages as
+well as Ports through a shared store. Mojt controls System activation;
+host-service requirements belong to MPM's separate capability model. See the
+[accepted interim policy](docs/architecture.md#accepted-early-nixsystem-policy-2026-10-23)
+for the decision and implementation boundaries.
+
 ```sh
 python3 -m unittest discover -s tests -p 'test_system_vm.py' -v
 ```

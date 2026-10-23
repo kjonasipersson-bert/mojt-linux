@@ -70,8 +70,42 @@ Detailed version ordering and backend adapters remain open.
 
 Nix is now the selected Ports backend after the binary-import and pacman
 comparisons. The contract's upgrade/selector/project-lock policies are still
-design requirements, not completed features. System release and deployment
-formats require separate evaluation.
+design requirements, not completed features. For early Mojt versions, Nix is
+also selected for System package acquisition and dependency storage, using a
+shared store. System release and deployment formats require separate evaluation.
+
+## Accepted early Nix/System policy (2026-10-23)
+
+The owner approved the following policy after the three-step System VM run:
+
+- Keep the Nix CLI exposed in early Mojt versions for direct administration
+  and experimentation.
+- Use Nix for System packages for now, with System and Ports sharing the Nix
+  store and its object/reference database.
+- Keep System generation selection, service configuration and activation
+  under Mojt control. A direct Nix profile change is not a Mojt System update.
+- Describe host-service requirements separately in MPM, for example a
+  requirement for a compatible logind service on the system D-Bus.
+
+The shared database records exact store objects and references; it is not the
+authority for the active System generation or MPM's area policies. System and
+Ports retain separate manifests/catalog choices and activation state. One
+immutable object may satisfy references from both areas. A different build
+identity remains a different object even if its package name/version matches.
+
+File dependencies and host capabilities are distinct. Nix supplies a port's
+exact library closure, reusing already registered System objects when their
+identities match. A library from systemd does not by itself establish that
+logind is available, and installing a service's files does not configure or
+activate that service. Mojt must describe and verify the capabilities required
+by the port; it must not claim a host capability from a package name alone.
+
+This is an interim backend choice, not adoption of NixOS or a final System
+release format. The current experiment already shares registered objects,
+roots System content and uses Mojt-owned activation. Host-capability metadata
+and enforcement, supported direct-Nix operation boundaries, and reconciliation
+of changes outside MPM remain implementation/design work. Root can bypass
+ordinary file protections; the exposed CLI is not an MPM authorization boundary.
 
 ## Ports direction
 

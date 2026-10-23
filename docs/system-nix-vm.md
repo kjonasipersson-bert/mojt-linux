@@ -18,9 +18,15 @@ The existing Base/state VM builder is extended through an opt-in
 `--system-payload` argument. Existing BusyBox-init VMs remain usable.
 
 The owner selected Nix for Ports after the Nix and pacman comparisons.
-This experiment also uses the same pinned Nixpkgs source to supply System
-binaries, without adopting NixOS or deciding a production System release format.
-Mojt supplies the early-boot assembly and service configuration.
+Following the successful VM run, the owner also selected Nix for System
+packages for now, with a shared store/database and exposed Nix CLI in early
+versions. Mojt retains System generation and service activation control;
+host-service requirements are to be modeled separately in MPM. See the
+[accepted policy](architecture.md#accepted-early-nixsystem-policy-2026-10-23).
+The experiment uses the same pinned Nixpkgs source for System binaries,
+without adopting NixOS or deciding a production System release format.
+Mojt supplies the early-boot assembly and service configuration. Host-capability
+checks and reconciliation of direct Nix changes remain unimplemented.
 
 | Step | Added components | Acceptance in the Mojt VM |
 | --- | --- | --- |

@@ -11,8 +11,9 @@ agreed architecture and accepted high-level selector semantics:
 `@3.0` selects the newest eligible stable release in the 3.0 line, while
 `@=3.0` matches an exact package-release identifier. The full identifier
 grammar, version comparison and backend adaptation remain to be specified
-before implementing a parser. Nix has been selected as the Ports backend after
-the binary-import comparison; System release/deployment formats remain open.
+before implementing a parser. Nix is selected for Ports and, for early Mojt
+versions, for System package acquisition and shared dependency storage.
+System release/deployment formats remain open.
 
 The guiding rule is that Mojt can update **Base, System, Kernel, and Ports
 independently**, without silently updating applications or pinned project
@@ -48,10 +49,19 @@ plan must explain the requirement and obtain explicit approval for a
 cross-area plan. An approval option such as `-y` MUST NOT silently expand
 the requested scope.
 
-Each package-managed area must be isolated at least at the levels of
-**repository selection, package database, dependency resolution, and
-file ownership**. Separate databases are not enough if installation scripts
-or runtime library lookup can modify or use another area's mutable files.
+Acquiring or retaining an immutable shared dependency is not a change to
+another area's declared package selection or activation. The shared-store
+exception below does not permit such changes as a side effect.
+
+Each package-managed area must preserve separate **catalog/repository
+selection, desired package sets, dependency-resolution scope, activation state
+and mutable-file ownership**. The accepted early Nix backend shares the
+immutable store and its object/reference database between System and Ports;
+separate backend databases are not required for that case. A shared object can
+be retained by both areas without making their activation choices shared.
+Installing a Ports dependency must not change the selected System generation
+or its services. Shared storage does not permit package scripts or activation
+to overwrite another area's mutable files.
 
 Base and Kernel advertise verified external capabilities, e.g.,
 `glibc = 2.41` and `linux >= 6.1`. System may depend on these without
@@ -344,7 +354,9 @@ using established technology where feasible.
 Required capabilities, whether native to a backend or provided by a small
 Mojt adapter:
 
-- Isolated catalogs, install targets, package databases and update scopes.
+- Isolated catalogs, desired package sets, activation/install targets and
+  update scopes. Nix's shared immutable store/reference database is allowed;
+  MPM's logical area state and mutable-file ownership remain separate.
 - Versioned dependencies and virtual/external capability providers without
   letting a System backend install or remove Base/Kernel-owned content.
 - Transaction simulation/inspection and deterministic resolution against a
@@ -363,12 +375,48 @@ Mojt adapter:
 - Visibility into why a package is retained (active profile, dependency,
   project pin, or rollback reference).
 
-Nix is selected for Ports. Its store location, own libc closures, package
-addressing and Mojt-specific upgrade policies still need production integration.
-System can use a separately evaluated backend; the first systemd VM experiment
-also obtains its binary inputs from pinned Nixpkgs. This is not a commitment
-to NixOS or a permanent System package/deployment format. Base does not acquire
-a mutable runtime package database because a backend exists for System or Ports.
+Nix is selected for Ports and, for early Mojt versions, for System package
+acquisition and dependency storage. Both areas use one Nix store and
+object/reference database; separate manifests, catalogs and activation state
+define their logical boundaries. Its store location, own libc closures,
+package addressing and Mojt-specific upgrade policies still need production
+integration. This is not a commitment to NixOS or a permanent System
+package/deployment format. Base does not acquire a mutable runtime package
+database because a backend exists for System or Ports.
+
+### Accepted early Nix exposure and service boundaries
+
+The Nix CLI remains exposed for direct administration in early Mojt versions.
+Mojt owns System generation selection, unit integration and service activation;
+importing another System package or changing a Nix profile does not itself
+constitute an MPM System activation. The current root-operated experiment has
+no guard that forces direct Nix operations through MPM. The supported-operation
+policy and detection/reconciliation of external changes remain open; MPM must
+not pretend those safeguards are implemented.
+
+The dependency model must distinguish these requirements:
+
+| Requirement | Responsibility |
+| --- | --- |
+| Exact files/libraries in a Nix runtime closure | Nix imports the referenced store objects and reuses already registered objects with matching identities. |
+| Host service/API, such as logind on the system D-Bus | Mojt/MPM records the requirement separately and verifies a compatible provider. |
+| Integration of a packaged systemd unit or D-Bus policy | Mojt explicitly configures/activates it through a System plan. Merely importing its files does not activate it. |
+
+An installed systemd package, its libraries, systemd as PID 1, and an available
+logind service are separate facts. Capability metadata must not infer all of
+them from the package's presence. A different backend's similarly named package
+must not be registered as if it were an absent exact Nix output.
+
+An unmet host-service requirement must be reported in the Ports plan; meeting
+it through System changes requires the explicit cross-area plan defined above.
+The capability schema, probes and enforcement are not implemented by the
+current adapter, which reports external capabilities as unaudited. Reference
+and GC policy must preserve objects needed by any retained System generation,
+Ports profile or project reference, including shared objects.
+
+Background: [Nix runtime closures](https://nix.dev/manual/nix/2.35/glossary.html),
+[logind's system-bus interface](https://www.freedesktop.org/software/systemd/man/latest/org.freedesktop.login1.html),
+and [NixOS's separate package/service integration](https://nixos.org/manual/nixos/unstable/).
 
 ## 5. Deliberately unresolved details
 
@@ -385,8 +433,9 @@ a mutable runtime package database because a backend exists for System or Ports.
    user and project override mechanics are deferred.
 5. Define signed repository snapshots, channel preference, downgrade and
    pre-release policy, and handling of withdrawn or known-vulnerable builds.
-6. Integrate the selected Nix Ports backend and evaluate the System backend;
-   decide the external Base/Kernel capabilities each area can safely use.
+6. Complete production integration of the selected Nix Ports backend and the
+   interim Nix System backend; define verified host-service/Base/Kernel
+   capabilities and supported direct-Nix/reconciliation behavior.
 7. Establish System release composition and how System-owned files are made
    visible beside the Base tree. Avoid committing to an overlay/prefix
    mechanism before testing it.
