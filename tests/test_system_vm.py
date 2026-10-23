@@ -185,6 +185,54 @@ class SystemVmTests(unittest.TestCase):
         for script in ("start", "setup", "bin/mojt-system-check"):
             subprocess.run(["sh", "-n", str(directory / script)], check=True, capture_output=True)
 
+    def test_vendor_dependency_directories_are_not_imported_through_symlinks(self):
+        record = self.fixture(1)
+        vendor = self.payload / record["packages"]["systemd"]["output"].lstrip("/") / "example/systemd/system"
+        system.write(vendor / "sysinit.target.wants/optional.service", "upstream default dependency")
+        for suffix in ("requires", "upholds"):
+            (vendor / ("basic.target." + suffix)).symlink_to("sysinit.target.wants")
+        with mock.patch.object(system.os, "chown"):
+            key = system.install(self.tree, self.payload, record, self.busybox, "development", REPO)
+        units = self.tree / "system" / key / "units"
+        self.assertEqual(sorted(p.name for p in (units / "sysinit.target.wants").iterdir()),
+                         ["mojt-setup.service"])
+        for suffix in ("requires", "upholds"):
+            self.assertFalse((units / ("basic.target." + suffix)).is_symlink())
+
+    @unittest.skipUnless(Path("/usr/bin/systemctl").is_file(), "real systemctl unavailable")
+    def test_first_boot_presets_leave_optional_units_disabled(self):
+        directory, _ = self.install(1)
+        start = (directory / "start").read_text()
+        policy = "/run/systemd/system-preset/99-mojt-vm.preset"
+        self.assertLess(start.index("cp /run/mojt-system/system-preset/99-mojt-vm.preset " + policy),
+                        start.index("exec "))
+        optional = {"optional.service": "[Service]\nExecStart=/bin/true\n",
+                    "optional.socket": "[Socket]\nListenStream=/run/optional.sock\n",
+                    "optional.mount": "[Mount]\nWhat=tmpfs\nWhere=/optional\nType=tmpfs\n"}
+        for name, body in optional.items():
+            system.write(directory / "units" / name,
+                         body + "[Install]\nWantedBy=sysinit.target\n")
+        (self.tree / "run").mkdir()
+        (self.tree / "run/mojt-system").symlink_to("../system/current")
+        (self.tree / "etc").symlink_to("state/etc")
+
+        def preset():
+            subprocess.run(["/usr/bin/systemctl", "--root", str(self.tree), "preset-all"],
+                           env={**os.environ, "SYSTEMD_UNIT_PATH": "/run/mojt-system/units"},
+                           check=True, capture_output=True, text=True)
+            wants = self.tree / "etc/systemd/system/sysinit.target.wants"
+            return {name for name in optional if (wants / name).is_symlink()}
+
+        # Reproduce the missing-policy failure before applying the generated policy.
+        self.assertEqual(preset(), set(optional))
+        system.write(self.tree / policy.lstrip("/"),
+                     (directory / "system-preset/99-mojt-vm.preset").read_text())
+        self.assertEqual(preset(), set())
+        self.assertTrue((directory / "units/sysinit.target.wants/mojt-setup.service").is_symlink())
+        self.assertIn("systemd-journald.service", (directory / "units/mojt.target").read_text())
+        system.write(self.tree / "etc/systemd/system-preset/00-local.preset", "enable optional.service\n")
+        self.assertEqual(preset(), {"optional.service"})
+
     def test_step2_has_root_managed_bus_dhcp_and_dns(self):
         directory, _ = self.install(2)
         config = (self.tree / "state/etc/NetworkManager/conf.d/90-mojt-vm.conf").read_text()

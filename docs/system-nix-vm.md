@@ -6,8 +6,11 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # System in three small VM steps
 
-**Status:** implementation prepared; real payload import and QEMU acceptance
-are pending. The existing Base/state VM builder is extended through an opt-in
+**Status:** the owner exported the step 1 payload (69 store objects) and booted
+the VM with systemd. Its first service-health check found unwanted units enabled
+at first boot; the preset fix below still needs a fresh VM run. Full step 1
+acceptance and steps 2/3 remain pending.
+The existing Base/state VM builder is extended through an opt-in
 `--system-payload` argument. Existing BusyBox-init VMs remain usable.
 
 The owner selected Nix for Ports after the Nix and pacman comparisons.
@@ -139,6 +142,30 @@ Step 1 explicitly has no QEMU NIC. Kernel and required module dependencies remai
 host supplied and copied to the initramfs; full kernel/firmware packaging and a
 bootloader are later work.
 
+### First-boot preset fix
+
+The first real VM boot used Base 0.1.3, System 0.2-step1 and host kernel
+7.2.9+deb13-amd64 (VM built 2026-10-23T18:47:01Z). PID 1 and the setup, console,
+journal and udev service checks passed. The overall boot check failed on
+`proc-sys-fs-binfmt_misc.mount`, `systemd-resolved.service`,
+`systemd-timesyncd.service`, `systemd-journalctl-metrics.socket`,
+`systemd-resolved-monitor.socket` and `systemd-resolved-varlink.socket`.
+
+The assembly lacked a preset policy. Systemd applies presets at first boot;
+without any policy it enables all available units with installation rules.
+The corrected start script publishes `99-mojt-vm.preset` containing `disable *`
+in `/run/systemd/system-preset` **before** executing PID 1. Mojt's explicit
+target dependencies still start the intended services. Administrator presets
+in `/etc` retain their normal precedence. Upstream dependency directories are
+also excluded when exposed as symlinks.
+
+Pull the updated branch on the Debian host and build a **new VM output** with
+the existing payload using the build commands above. No payload re-export is
+needed. Preserve the failed VM for inspection; rebuilding from the original
+Base/state avoids carrying its first-boot enablement links into the new image.
+The boot check continues to reject every failed unit. Poweroff and two-boot
+persistence acceptance are still required after it passes.
+
 ## Step 2: networking
 
 In the Nix Distrobox checkout, prepare a new payload:
@@ -212,9 +239,10 @@ through that profile. `/run` and `/tmp` are volatile. The containing disk remain
 reachable at `/run/mojt-disk`.
 
 The profile reuses Nixpkgs systemd vendor unit files, with Mojt-owned console,
-setup and optional bus/network units. Persistent `/etc/systemd/system` takes
-precedence. Distribution generators are disabled for this narrow experiment;
-Mojt explicitly supplies the required mounts and services. No general fstab,
+setup and optional bus/network units. A runtime preset defaults optional units
+to disabled before first-boot preset application. Persistent
+`/etc/systemd/system` takes precedence. Distribution generators are disabled for
+this narrow experiment; Mojt explicitly supplies the required mounts and services. No general fstab,
 automount or NixOS activation implementation is implied.
 
 Nixpkgs binaries can encode distribution assumptions (for example systemd's
@@ -227,13 +255,17 @@ work merely because their store objects are present.
 Agent-side validation uses synthetic package trees and a simulated Nix backend.
 It covers transfer integrity, missing/extra objects, failed/previews exports,
 state preservation, authenticated console selection, service generation and
-shell syntax. The workspace lacks Nix, QEMU, BusyBox and matching kernel tooling;
+shell syntax. A real offline `systemctl preset-all` regression reproduces the
+missing-policy enablement, verifies the generated default-off policy for service,
+socket and mount units, and checks administrator preset precedence. It does not
+boot systemd. The workspace lacks Nix, QEMU, BusyBox and matching kernel tooling;
 it has not imported real payloads or booted these System images.
 
-Recorded checks: all 20 System regressions and all 27 existing VM-builder
-regressions passed. The combined suite passed 88 of 89 tests; the unchanged
-Base root-ownership test cannot perform chown to UID/GID 1000 in this workspace
-(EINVAL). Syntax/help checks passed. No real System boot success is claimed.
+Recorded checks after the preset fix: all 22 System regressions and all 27
+existing VM-builder regressions passed, including shell syntax checks. The earlier
+combined suite passed 88 of 89 tests; the unchanged Base root-ownership test
+cannot perform chown to UID/GID 1000 in this workspace (EINVAL). Full System
+acceptance remains unverified.
 
 ```sh
 python3 -m unittest discover -s tests -p 'test_system_vm.py' -v
@@ -242,6 +274,7 @@ python3 -m unittest discover -s tests -p 'test_vm_builder.py' -v
 
 References: [systemd initrd interface](https://systemd.io/INITRD_INTERFACE/),
 [unit paths](https://www.freedesktop.org/software/systemd/man/latest/systemd.unit.html),
+[first-boot presets](https://www.freedesktop.org/software/systemd/man/latest/systemd.preset.html),
 [NetworkManager configuration](https://www.networkmanager.dev/docs/api/latest/NetworkManager.conf.html),
 [store registration export](https://nix.dev/manual/nix/2.35/command-ref/nix-store/dump-db.html)
 and [import](https://nix.dev/manual/nix/2.35/command-ref/nix-store/load-db.html).

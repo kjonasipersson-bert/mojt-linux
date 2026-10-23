@@ -213,7 +213,8 @@ def install(tree, payload, record, busybox, login_mode, repo):
     vendor_local = virtual_file(payload, str(vendor))
     require(vendor_local.is_dir(), "expected Nixpkgs systemd example units")
     for file in vendor_local.iterdir():
-        if file.is_file() or file.is_symlink():
+        if (not file.name.endswith((".wants", ".requires", ".upholds"))
+                and (file.is_file() or file.is_symlink())):
             (system / "units" / file.name).symlink_to(str(vendor / file.name))
     for name in ("basic.target", "sysinit.target", "poweroff.target", "reboot.target",
                  "systemd-journald.service", "systemd-journald.socket",
@@ -352,7 +353,14 @@ def install(tree, payload, record, busybox, login_mode, repo):
           ("export SSL_CERT_FILE=" + cert + "\nexport NIX_SSL_CERT_FILE=" + cert + "\n"
            if step >= 2 else "") +
           ("export NIX_REMOTE=local\n" if step == 3 else ""))
-    write(system / "start", "#!/bin/sh\n. /run/mojt-system/environment\n"
+    # PID 1 applies presets on first boot, before mojt-setup.service can run.
+    # Mojt's target supplies explicit dependencies; merely exposing a vendor
+    # unit must not enable its optional services or sockets.
+    write(system / "system-preset/99-mojt-vm.preset", "disable *\n")
+    write(system / "start", "#!/bin/sh\nset -eu\n. /run/mojt-system/environment\n"
+          "mkdir -p /run/systemd/system-preset\n"
+          "cp /run/mojt-system/system-preset/99-mojt-vm.preset "
+          "/run/systemd/system-preset/99-mojt-vm.preset\n"
           "export SYSTEMD_UNIT_PATH=/etc/systemd/system:/run/systemd/system:/run/mojt-system/units\n"
           "export SYSTEMD_GENERATOR_PATH=/run/mojt-system/empty\n"
           "export SYSTEMD_ENVIRONMENT_GENERATOR_PATH=/run/mojt-system/empty\n"
