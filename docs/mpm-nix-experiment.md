@@ -29,13 +29,15 @@ to use a simulated Nix backend. These are distinct sources of evidence.
 | Larger binary import | curl 8.22.0 imported; Nix fetched 17 additional store objects (10.8 MiB download, 29.8 MiB unpacked) |
 | Native network execution | The imported curl printed its version and fetched `https://cache.nixos.org/nix-cache-info` over HTTPS |
 | Preservation of existing selection | hello still ran and its resolved output path was unchanged after curl installation |
+| Parallel build identities | Full curl and curlMinimal 8.22.0 retained distinct objects and fixed aliases; importing the second left the full build active |
+| Explicit activation and return | The minimal build was activated, the full build restored, and both exact commands and the older profile still ran |
 
 The 17 objects are the additional downloads, not a claim about curl's total
 closure size. HTTPS success includes the container's existing environment,
 networking and certificate configuration; it does not establish independence
 from all host services or a working Mojt System. These tests inspected GC
-registrations without destructive garbage collection. Real parallel-build
-activation and execution on Mojt itself remain pending.
+registrations without destructive garbage collection. Different upstream
+versions, production project locks, and execution on Mojt itself remain pending.
 
 ## Manifest and local catalog
 
@@ -144,6 +146,42 @@ commands = ["curl"]
 Then explicitly `update --manifest YOUR_FILE`, inspect `install --dry-run`
 and approve `install`. Keep this first acceptance run to hello before adding
 more packages, so adapter failures are easy to identify.
+
+## Opt-in test with two Python versions
+
+The pinned Nixpkgs revision includes `python312` and `python313`. The next
+real acceptance test imports them under the same Mojt port name `python`,
+exporting `python3`. This runner is not part of unittest discovery or CI
+and must be invoked explicitly inside the container:
+
+```sh
+MPM_PYTHON_LAB="$(mktemp -d "$HOME/mpm-nix-test/python-lab.XXXXXX")"
+python3 tests/run-mpm-nix-python.py --root "$MPM_PYTHON_LAB"
+```
+
+The runner requires a new/empty directory, uses the source pin from
+`manifests/mpm-nix-example.toml` (or `--source-manifest FILE`), imports
+binary packages, and leaves the experiment retained after success or failure.
+It does not change the earlier curl experiment. Its generated catalogs only
+contain the requested Python attribute; it does not evaluate all of Nixpkgs.
+No source builds are attempted. A missing binary substitute fails the test.
+
+It checks that both fixed commands run, both outputs have registered MPM
+GC roots, a second install leaves Python 3.12 active, and explicit activation
+switches the default to Python 3.13. Each interpreter runs with `-I` and
+imports `ssl` and `zlib` to exercise binary extension loading as well as
+interpreter startup. Network requests are not part of this Python test.
+
+The runner also captures the first profile generation, exact identity and
+recorded closure in `<root>/test-project/pin.json`. After default activation
+changes, it checks that those reference bytes and artifact metadata remain
+unchanged and that the captured generation still executes Python 3.12.
+This is a **test reference**, not an implemented production project-lock
+format, environment resolver or proof of pin protection during removal/GC.
+An ordinary reinstall is tested; an `upgrade` action remains unimplemented.
+
+Agent-side validation of the runner is limited to syntax/help checks; real
+execution requires Nix and remains pending until the owner reports its output.
 
 ## Activation and retained identity
 
