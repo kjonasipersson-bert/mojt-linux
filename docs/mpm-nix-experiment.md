@@ -11,15 +11,19 @@ the complete MPM contract. The owner has now selected Nix for Ports after
 the comparator tests. Requires Linux, Python 3.11+, and an
 existing Nix installation with the traditional `nix-instantiate` and
 `nix-store` commands. Flakes and experimental Nix CLI features are not needed.
-Run as the ordinary user inside the dedicated Distrobox, without `sudo`.
+The instructions below run as the ordinary user inside the dedicated Distrobox,
+without `sudo`. The separate [System experiment](system-nix-vm.md) supplies Nix
+and management Python for a root-operated MPM acceptance run inside Mojt.
 
 The owner has run the adapter inside the dedicated Debian 13 Distrobox on a
 Debian host, using Nix 2.35.4, Python 3.13.5 and the pinned Nixpkgs revision
 shown below. The real import checks passed; local regression tests continue
 to use a simulated Nix backend. These are distinct sources of evidence.
 The initial real acceptance sequence for binary Ports imports and private
-activation is complete in that container. Production upgrade/project-lock
-semantics and execution inside Mojt remain open.
+activation is complete in that container. The subsequent real System VM run
+also passed hello and parallel-Python imports, independent activation and
+captured-reference retention inside Mojt. Production upgrade/project-lock
+semantics remain open.
 
 ## Owner-reported acceptance results (2026-10-23)
 
@@ -45,7 +49,9 @@ closure size. HTTPS success includes the container's existing environment,
 networking and certificate configuration; it does not establish independence
 from all host services or a working Mojt System. These tests inspected GC
 registrations without destructive garbage collection. Production project
-locks, upgrade policies and execution on Mojt itself remain pending.
+locks and upgrade policies remain pending. Execution inside Mojt was verified
+separately in System 0.2-step3 / Base 0.1.3; see the
+[recorded VM acceptance](system-nix-vm.md#recorded-step-3-acceptance-2026-10-23).
 
 ## Manifest and local catalog
 

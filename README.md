@@ -10,17 +10,24 @@ SPDX-License-Identifier: GPL-2.0-only
 
 *Mojt* is an engineering-slang word from Lund, Sweden, roughly meaning a gadget or contraption.
 
-Mojt is an experimental Linux distribution inspired by BSD's separation of the base operating system and ports. Its initial Base prototype is a versioned filesystem image, not a continuously updated package collection. System services and a future Ports environment are separate concepts.
+Mojt is an experimental Linux distribution inspired by BSD's separation of the base operating system and ports. Its Base prototype is a versioned filesystem image, not a continuously updated package collection. System services and Ports are composed separately.
 
 Read the [manifesto](docs/manifesto.md), [architecture notes](docs/architecture.md), [Base format specification](docs/base-format.md), and the draft [MPM package-management contract](docs/mpm.md).
 
 ## Status
 
-**Early prototype, not a bootable distribution.** On x86-64/glibc, the current scripts can bootstrap a userspace from Void packages, pack a Mojt Base release, install parallel generations, add missing configuration defaults, and switch or roll back the active generation. Tests have been run on Linux hosts; there is no boot integration or signed release channel yet.
+**Experimental prototype with verified QEMU boot.** On x86-64/glibc, the current
+scripts bootstrap and package whole-image Base generations, preserve machine
+state, and compose a System VM using pinned Nixpkgs binaries and a host kernel.
+The owner has verified systemd boot, persistent `/etc` and `/var`, networking,
+and MPM/Nix binary imports with parallel Python versions inside Mojt.
+There is no production installer, System release format or signed release
+channel yet. See the [System guide](docs/system-nix-vm.md) for measured scope
+and remaining integration work.
 
 ## Requirements on the build/test host
 
-A Linux x86-64 host with Bash, Python 3.11+, `curl`, `tar`, `zstd`, `sha256sum`, `sudo`, and standard Unix tools. Tests involving `chroot`, `mount`, and `unshare` require appropriate root privileges. No Mojt runtime installation needs Python.
+A Linux x86-64 host with Bash, Python 3.11+, `curl`, `tar`, `zstd`, `sha256sum`, `sudo`, and standard Unix tools. Tests involving `chroot`, `mount`, and `unshare` require appropriate root privileges. Base has no Python runtime requirement; the MPM/Nix System experiment supplies its own management Python. The System guide lists additional Nix preparation and VM-build requirements.
 
 ## Quick start
 
@@ -81,8 +88,10 @@ python3 -m unittest discover -s tests -p 'test_mpm_pacman_prototype.py' -v
 The opt-in System work has three cumulative steps: systemd boot with persistent
 state, NetworkManager/D-Bus networking, and MPM/Nix inside Mojt. Nix binary
 inputs are exported from the existing Distrobox; the Debian VM build host does
-not need Nix installed. Real boot acceptance is pending. See the
-[System guide](docs/system-nix-vm.md) for preparation and checks.
+not need Nix installed. All three initial acceptance steps passed on the
+owner's Mojt VM, including native `hello`, Python 3.12/3.13 activation and a
+retained project reference. See the [System guide](docs/system-nix-vm.md) for
+preparation, evidence and limitations.
 
 ```sh
 python3 -m unittest discover -s tests -p 'test_system_vm.py' -v

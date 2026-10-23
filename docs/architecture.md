@@ -17,8 +17,8 @@ This document records **current decisions and open questions**, not stable promi
 | Ports | Applications, libraries, developer toolchains and profiles | Independent versions, pinned environments, optional sandbox execution |
 | State | Local configuration, service data and user data | Persists across Base upgrades and rollbacks |
 
-The current Base prototype has no kernel, init, or desktop. The next System
-implementation uses systemd. BusyBox remains an early-boot/rescue component and
+The current Base prototype has no kernel, init, or desktop. The experimental
+System implementation uses systemd. BusyBox remains an early-boot/rescue component and
 a temporary console-login tool in the VM experiment.
 
 ## Existing prototype pipeline
@@ -44,13 +44,16 @@ tools/mojt-base-install
        +--> state/var/
 ```
 
-The prototype bootstrap currently selects eleven Void packages and uses a pinned static XBPS utility as a host-side construction tool. The assembled runtime image strips XBPS executables and package databases. The release is **not yet a bootable OS**.
+The prototype bootstrap currently selects eleven Void packages and uses a pinned static XBPS utility as a host-side construction tool. The assembled runtime image strips XBPS executables and package databases. Base alone has no boot stack; the tested System VM composes it with a kernel, initramfs and services.
 
 ## Configuration and state
 
 The Base image carries package defaults in `/usr/etc`. During installation, missing defaults are added to a persistent `state/etc` tree. Existing entries are preserved. `/etc/os-release` is a relative symlink to `/usr/lib/os-release`, which the Base packer generates from its version manifest.
 
-Persistent `state/var` is kept across Base generations. For testing, the two state directories are bind-mounted over `/etc` and `/var` in the selected rootfs inside a separate mount namespace. A future boot process must implement this arrangement before starting services.
+Persistent `state/var` is kept across Base generations. Host-side tests bind
+the state directories over `/etc` and `/var` in a separate mount namespace.
+The System VM implements these mounts before starting services, and the owner
+has verified both state directories across guest boots.
 
 Rollback does **not** revert persistent state or database formats. Future compatibility checks and explicit state migrations will be necessary.
 
@@ -82,15 +85,17 @@ Ports should support:
 
 Nix supplies the Ports store and dependency objects; MPM owns Mojt's user-facing
 selection and activation policy. The narrow adapter has passed real Distrobox
-imports and parallel-version tests, but has not yet been accepted inside Mojt.
+imports and parallel-version tests, followed by hello and parallel-Python
+acceptance inside the booted Mojt VM.
 See [the Nix experiment](mpm-nix-experiment.md).
 
 ## First System implementation
 
 The owner approved three incremental steps: systemd boot with persistent state,
 NetworkManager/D-Bus networking, and MPM/Nix imports inside the booted VM.
-See [the System experiment](system-nix-vm.md) for implemented preparation/build
-support and the required real acceptance checks.
+All three initial steps passed on the owner's Mojt VM. See
+[the System experiment](system-nix-vm.md) for preparation/build support,
+recorded real acceptance and remaining integration limits.
 
 The experiment obtains System binaries from the same pinned Nixpkgs source
 and keeps them separate from Base. A System profile supplies unit files and
@@ -103,7 +108,8 @@ binary-import test is not a production package-manager service/permission model.
 - Source-based/self-hosted Base build and verifiable reproducibility
 - Signature verification and trusted release channels
 - Crash-safe activation and `fsync` durability guarantees
-- Boot integration, state mounts, and kernel/module versioning
+- Production boot selection/deployment, complete shutdown storage detachment,
+  and kernel/module release/versioning policy
 - ABI policy between Base, System, and Ports
 - State migration/rollback guarantees for system services
 - Alternative bootstrap backends and platform support
@@ -125,25 +131,26 @@ independently installed System files inside the active Base filesystem.
 
 ## Experimental VM PID 1 (System, not Base)
 
-The first boot prototype now uses a **System-owned static BusyBox init**,
+The earlier boot prototype uses a **System-owned static BusyBox init**,
 provided by the image builder in `system/prototype-init` and made available
 under `/run/mojt-system` at boot. BusyBox init supervises the serial console
 and provides a minimal poweroff path. This is **development-only**: BusyBox
 is suitable for the prototype, rescue media and embedded contexts, but it is
-**not** the planned permanent init for the Mojt distribution. The next System
-experiment uses systemd as PID 1; BusyBox remains an early-boot/rescue tool.
+**not** the planned permanent init for the Mojt distribution. The current
+System experiment has verified systemd as PID 1; BusyBox remains an early-boot/rescue tool.
 
 Account databases (`/etc/passwd`, `/etc/group`, `/etc/shadow`) are persistent
-machine state. The source VM currently has a root account expecting shadow
-but no shadow file; the experimental serial root console bypasses login
-entirely. A later, separate System feature must establish authenticated
-console login and safe initial credential provisioning. Never install a
-universal default password or overwrite existing machine credentials.
+machine state. The earlier development console bypasses login entirely.
+The builder also supplies authenticated password mode and host-side credential
+provisioning, described below and used in the accepted System VM runs.
+Production installer/account policy remains open. Never install a universal
+default password or overwrite existing machine credentials.
 
 ## Experimental System console login (not production authentication)
 
 The VM prototype may use a static BusyBox `getty` and `login` from
-`system/prototype-init`, separate from Base, to authenticate the local
+`system/prototype-init` (legacy) or the selected versioned System profile,
+separate from Base, to authenticate the local
 serial-console root account. Password creation happens during **host-side
 VM staging** from an interactive terminal. The salted password hash and
 account files are placed only in the VM copy of persistent `/etc`.

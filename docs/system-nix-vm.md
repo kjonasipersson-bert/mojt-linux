@@ -11,8 +11,9 @@ boots passed on the owner's VM. Shutdown reached poweroff using the exitrd's
 busy-mount/read-only fallback; complete storage detachment remains unverified.
 Step 2 boot/service health, DHCPv4, routing, DNS resolution and HTTPS over IPv4
 passed in the owner's VM through the direct checks below, with no failed units.
-The corrected network probe still needs a fresh guest run. Step 3 has not run
-in the owner's VM.
+Step 3 passed both the corrected network probe and the complete MPM/parallel
+Python check in a fresh Mojt VM. All three initial acceptance steps are complete;
+production release/deployment and upgrade policies remain open.
 The existing Base/state VM builder is extended through an opt-in
 `--system-payload` argument. Existing BusyBox-init VMs remain usable.
 
@@ -334,8 +335,8 @@ HTTPS, returning `StoreDir: /nix/store`, `WantMassQuery: 1`, and `Priority: 40`.
 
 Together with the earlier service and DHCP diagnostics, these results pass
 the initial step 2 networking acceptance. The corrected combined network probe
-has synthetic coverage but has not yet run in a fresh real guest; the step 3
-image will include it. This does not extend acceptance to Wi-Fi, VPNs, desktop
+subsequently passed in the fresh step 3 VM, as recorded below.
+This does not extend acceptance to Wi-Fi, VPNs, desktop
 authorization or general service activation.
 
 ## Step 3: MPM/Nix inside Mojt
@@ -402,6 +403,40 @@ runner in a fresh `/var/lib/mojt/python-acceptance-UUID` root. Both roots remain
 available. Management Python belongs to this System experiment; Base still has
 no required Python runtime. Captured project references remain experimental.
 
+### Recorded step 3 acceptance (2026-10-23)
+
+The owner exported 162 store objects and booted System 0.2-step3 / Base 0.1.3
+with host kernel 7.2.9+deb13-amd64 (VM built 2026-10-23T19:31:14Z). Both
+`mojt-system-check network` and `mojt-system-check ports` passed in Mojt.
+The network probe observed `10.0.2.15/24` and its default route without
+reactivating the connection, then completed DNS and HTTPS over IPv4.
+
+The Ports test evaluated the retained Nixpkgs source at revision
+`5adc50831c259f87faeb09ddf930d43597197473`, imported binary outputs from
+`cache.nixos.org`, and produced these results:
+
+| Check | Result inside the Mojt VM |
+| --- | --- |
+| First application | hello 2.12.3 imported, activated and printed `Hello, world!` |
+| Parallel versions | Python 3.12.15 and 3.13.16 installed under one Ports name |
+| Installation policy | Installing 3.13 preserved the existing active 3.12 |
+| Runtime dependencies | Both interpreters loaded `ssl` and `zlib` |
+| Retention | Both interpreter outputs had MPM GC-root registrations |
+| Activation policy | Explicit activation selected 3.13 while the captured generation still executed 3.12 |
+| Repeat installation | Printed `No changes.` and preserved the profile and project reference |
+
+Hello state remains at `/var/lib/mojt/ports`. The Python experiment remains at
+`/var/lib/mojt/python-acceptance-f3b8eea1-091a-4d70-9594-2e8ce50f6dad`, with its
+captured reference in `test-project/pin.json`. This is evidence of the narrow
+adapter running inside a booted Mojt system, beyond the earlier Distrobox run.
+Production project profiles/locks, upgrades, removal and GC policy remain open.
+
+This completes the three initial System steps. It does not establish a
+production System release format, general service integration or power-loss
+durability. A post-import guest reboot has not yet been reported. The earlier
+shutdown read-only fallback and recurring clocksource watchdog timeout still
+need separate investigation; the timeout did not prevent these checks passing.
+
 ## Filesystem and service assembly
 
 The disk keeps separate `base/`, `state/`, `system/` and `nix/` trees.
@@ -436,8 +471,8 @@ it has not imported real payloads or booted these System images.
 Recorded checks after the network-probe fix: all 25 System regressions and all 27
 existing VM-builder regressions passed, including shell syntax checks. The earlier
 combined suite passed 88 of 89 tests; the unchanged Base root-ownership test
-cannot perform chown to UID/GID 1000 in this workspace (EINVAL). Full System
-acceptance remains unverified.
+cannot perform chown to UID/GID 1000 in this workspace (EINVAL). Separately,
+the owner has now passed all three initial real VM acceptance steps above.
 
 ```sh
 python3 -m unittest discover -s tests -p 'test_system_vm.py' -v

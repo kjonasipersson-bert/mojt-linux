@@ -10,6 +10,11 @@ This is a **host-side QEMU/KVM prototype**, not a bootable installer, not a
 signed System release and not a permanent kernel package format. It reuses
 an installed Mojt Base and matching host-supplied Linux kernel/modules.
 
+This guide describes the earlier BusyBox-init mode, which remains available
+without `--system-payload`. The current
+[System VM experiment](system-nix-vm.md) adds systemd, networking and MPM/Nix;
+its three initial acceptance steps have passed inside Mojt.
+
 The builder makes **copies** of the selected installed Base and persistent
 `state/etc` and `state/var` into a standalone ext4 disk file. Existing
 releases and target installations are not changed. The output directory

@@ -398,11 +398,18 @@ a mutable runtime package database because a backend exists for System or Ports.
 **Implemented today:** versioned whole-image Base packaging, multi-generation
 installation/activation and conservative preservation of persistent state;
 a QEMU VM prototype with a System-owned BusyBox init/login, a host-supplied
-kernel and a combined System/Base login banner.
+kernel and a combined System/Base login banner. The opt-in System experiment
+also composes pinned Nixpkgs binaries with systemd, NetworkManager/D-Bus and
+Nix/management Python. Its three initial real VM acceptance steps passed,
+including persistent state, networking and MPM/Nix binary Ports imports with
+parallel Python versions, independent activation and a captured generation.
 
-**Not implemented:** `mpm`, Ports installation and activation, System release
-packaging, a selector parser, package-backed System composition,
-external capability packages, signed catalogs and a production boot selector.
+**Not implemented:** the complete production `mpm` contract, production System
+release packaging/composition policy, a selector parser, production project
+profiles/locks, upgrade/removal/GC policy, external capability packages,
+signed catalogs and a production boot selector. The narrow Nix adapter's
+installation/activation behavior is documented in the
+[Nix experiment](mpm-nix-experiment.md); it is not the full interface above.
 
 This draft is a contract for future design review, not a command reference
 for existing Mojt tools.
