@@ -6,12 +6,10 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # System in three small VM steps
 
-**Status:** the owner exported the step 1 payload (69 store objects). After the
-preset fix, boot/service health passed on two boots and shutdown reached poweroff.
-The persistence check stopped because its `cmp` dependency was absent from Base;
-the corrected check still needs to run against the retained markers. Shutdown
-used the exitrd's busy-mount/read-only fallback. Full step 1 acceptance and steps
-2/3 remain pending.
+**Status:** step 1 boot/service health and `/etc` + `/var` persistence across
+boots passed on the owner's VM. Shutdown reached poweroff using the exitrd's
+busy-mount/read-only fallback; complete storage detachment remains unverified.
+Steps 2/3 are prepared but have not run in the owner's VM.
 The existing Base/state VM builder is extended through an opt-in
 `--system-payload` argument. Existing BusyBox-init VMs remain usable.
 
@@ -201,19 +199,64 @@ not proof that the backing filesystem was fully detached. Final mount flags
 were not captured. The console also showed a concatenated command option and
 bus-connection errors around shutdown; their exact timing/cause is unresolved.
 Run console commands individually and inspect whether the bus error repeats
-during an otherwise idle boot. Persistence acceptance remains pending.
+during an otherwise idle boot.
+
+### Recorded step 1 acceptance
+
+On the next boot of the same disk (journal beginning 2026-10-23T19:11:11),
+`mojt-system-check boot` passed again. The direct text-marker check above passed
+twice: both persistent files held the same nonempty ID, different from the
+current kernel boot ID. `systemctl --failed --no-pager` reported `0 loaded units
+listed`, without the earlier bus-connection error.
+
+This establishes the initial boot/service-health and two-boot state acceptance
+for step 1. The owner ran the direct equivalent because this retained image
+still contains the old `cmp`-dependent check. Full storage detachment, the prior
+shutdown-time bus errors and recurring clocksource watchdog timeouts remain
+follow-up items; no power-loss durability guarantee is inferred. Proceed to
+step 2 with a new payload/image and retain this step 1 disk.
 
 ## Step 2: networking
 
-In the Nix Distrobox checkout, prepare a new payload:
+Shut down the step 1 VM with `systemctl poweroff`. On the Debian host, enter
+the existing Nix Distrobox with `distrobox enter mojt-mpm-nix`. Inside it, update
+the checkout and prepare a new payload:
 
 ```sh
+cd "$HOME/mpm-system-test/mojt-system-adapter"
+git pull --ff-only
+
+python3 tools/mojt-system-prepare.py \
+  --step 2 --output "$HOME/mpm-system-test/system-step2" --dry-run
+
 python3 tools/mojt-system-prepare.py \
   --step 2 --output "$HOME/mpm-system-test/system-step2" -y
+
+exit
 ```
 
-On the host, repeat VM construction with the `system-step2` payload and a new
-VM output. Retain password mode and use at least 4096 MiB disk space.
+Back on the Debian host, update its separate checkout and build a new VM:
+
+```sh
+cd "$HOME/mojt-lab/mojt-system-adapter"
+git pull --ff-only
+
+TARGET="$HOME/mojt-lab/root-test-013"
+PAYLOAD="$HOME/mojt-lab/mpm-nix-home/mpm-system-test/system-step2"
+KREL="$(uname -r)"
+VM="$HOME/mojt-lab/vm/system-step2-$(date +%Y%m%d-%H%M%S)"
+
+sudo python3 tools/mojt-vm-build.py \
+  --target "$TARGET" \
+  --kernel "/boot/vmlinuz-$KREL" \
+  --system-payload "$PAYLOAD" \
+  --disk-size-mib 4096 \
+  --login-mode password --root-shell /bin/sh \
+  --output "$VM"
+
+"$VM/run-qemu.sh"
+```
+
 The launcher supplies a QEMU user-network VirtIO NIC without inbound port
 forwarding; matching `virtio_net` dependencies are added to the initramfs.
 
