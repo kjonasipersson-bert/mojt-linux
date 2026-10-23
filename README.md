@@ -49,12 +49,25 @@ An upgrade/rollback test can be run after the 0.1.1 bootstrap and release are av
 
 The test produces Base 0.1.2 with one additional default, then checks installation, preservation of `/etc` and `/var`, and rollback in a separate test target.
 
+## MPM/Nix Ports experiment
+
+`tools/mpm-nix-prototype` evaluates a small TOML selection from an already
+pinned Nixpkgs source, imports binary outputs and retains private command
+profiles. First installation activates the requested commands; later installs
+preserve existing activation. No Base/System files or host command paths are
+changed. See the [experiment guide](docs/mpm-nix-experiment.md) for the
+Distrobox acceptance run, scope and test limitations.
+
+```sh
+python3 -m unittest discover -s tests -p 'test_mpm_nix_prototype.py' -v
+```
+
 ## Project layout
 
 ```text
 bootstrap/      host-side bootstrap backends
 manifests/      source manifests used to create Base releases
-tools/          Base packer and installer
+tools/          Base/VM tools and package-backend experiments
 tests/          integration tests
 docs/           manifesto, architecture, and format
 ```
