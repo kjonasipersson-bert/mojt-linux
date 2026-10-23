@@ -16,6 +16,9 @@ The owner has run the adapter inside the dedicated Debian 13 Distrobox on a
 Debian host, using Nix 2.35.4, Python 3.13.5 and the pinned Nixpkgs revision
 shown below. The real import checks passed; local regression tests continue
 to use a simulated Nix backend. These are distinct sources of evidence.
+The initial real acceptance sequence for binary Ports imports and private
+activation is complete in that container. Production upgrade/project-lock
+semantics and execution inside Mojt remain open.
 
 ## Owner-reported acceptance results (2026-10-23)
 
@@ -31,13 +34,17 @@ to use a simulated Nix backend. These are distinct sources of evidence.
 | Preservation of existing selection | hello still ran and its resolved output path was unchanged after curl installation |
 | Parallel build identities | Full curl and curlMinimal 8.22.0 retained distinct objects and fixed aliases; importing the second left the full build active |
 | Explicit activation and return | The minimal build was activated, the full build restored, and both exact commands and the older profile still ran |
+| Parallel upstream versions | Python 3.12.15 and 3.13.16 imported under one Mojt port name; the second installation left 3.12 active |
+| Interpreter extensions and retention | Both fixed interpreter aliases loaded `ssl` and `zlib`; both outputs had registered MPM GC roots |
+| Captured project reference | After activation selected 3.13, the saved generation still executed 3.12, with unchanged pin bytes and recorded artifact/closure metadata |
+| Repeated Python installation | The selected generation and captured project reference remained unchanged |
 
 The 17 objects are the additional downloads, not a claim about curl's total
 closure size. HTTPS success includes the container's existing environment,
 networking and certificate configuration; it does not establish independence
 from all host services or a working Mojt System. These tests inspected GC
-registrations without destructive garbage collection. Different upstream
-versions, production project locks, and execution on Mojt itself remain pending.
+registrations without destructive garbage collection. Production project
+locks, upgrade policies and execution on Mojt itself remain pending.
 
 ## Manifest and local catalog
 
@@ -149,7 +156,7 @@ more packages, so adapter failures are easy to identify.
 
 ## Opt-in test with two Python versions
 
-The pinned Nixpkgs revision includes `python312` and `python313`. The next
+The pinned Nixpkgs revision includes `python312` and `python313`. The
 real acceptance test imports them under the same Mojt port name `python`,
 exporting `python3`. This runner is not part of unittest discovery or CI
 and must be invoked explicitly inside the container:
@@ -180,8 +187,13 @@ This is a **test reference**, not an implemented production project-lock
 format, environment resolver or proof of pin protection during removal/GC.
 An ordinary reinstall is tested; an `upgrade` action remains unimplemented.
 
-Agent-side validation of the runner is limited to syntax/help checks; real
-execution requires Nix and remains pending until the owner reports its output.
+Agent-side validation of the runner was limited to syntax/help checks. The
+owner then ran it successfully in the Distrobox with Python 3.12.15 and
+3.13.16. The first interpreter needed 14 additional store objects (57.9 MiB
+download, 144.2 MiB unpacked); the second needed one additional object
+(54.9 MiB download, 128.9 MiB unpacked), reusing dependencies already present.
+These are incremental downloads for this test environment, not total closure
+sizes or general installation-size estimates.
 
 ## Activation and retained identity
 
