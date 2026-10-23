@@ -7,11 +7,11 @@ SPDX-License-Identifier: GPL-2.0-only
 # Frozen binary environments with pacman
 
 **Status:** experimental comparator to the [Nix probe](mpm-nix-experiment.md).
-The owner's Distrobox passed namespace/chroot preflight and resolved the first
-archive catalog. Its initial package transaction stopped at signature checking;
-no environment was published. Actual runtime acceptance remains pending. This
-is an environment backend experiment, not a production MPM package format or
-a backend decision.
+The owner reported a completed real acceptance run with the September/October
+2026 snapshots after the initial historical-signature failure documented below.
+Both binary environments and the profile/activation checks passed in the Arch
+Distrobox. This is an environment backend experiment, not a production MPM
+package format or a backend decision.
 
 ## Scope
 
@@ -20,8 +20,9 @@ root filesystems, built from the dated Arch Linux Archive snapshots
 `2026/09/15` and `2026/10/15`. These replace the initial 2024/2025 test dates
 after the signature failure recorded below. Different Python patch releases
 are sufficient for the two-version test; different minor releases are not
-required. Exact versions and signature acceptance are determined during the
-real run. There is no source build, AUR or System/boot setup.
+required. Exact package versions are recorded in each run's state; the owner's
+reported final excerpt does not include them. There is no source build, AUR
+or System/boot setup.
 
 Pacman resolves and installs the packages. MPM records the snapshot, copies
 of repository metadata, exact resolved versions, package archive SHA256 values,
@@ -184,10 +185,43 @@ successful binary reuse or runtime isolation. The run stopped before snapshot B.
 
 The replacement manifests use September/October 2026 snapshots, both newer
 than that installed keyring release, to reduce historical key incompatibilities.
-Their full installation and runtime tests still need the owner's run. Keep the
-failed lab for inspection and start the acceptance runner with a new empty root.
+The owner subsequently completed the replacement run described below. Keep
+failed labs for inspection and start each acceptance run with a new empty root.
 Installation failures now report the retained staging root without repeating
 the entire Bubblewrap argument list.
+
+### Owner run: replacement snapshots passed
+
+The owner reported the runner's successful final output for the replacement
+snapshots. The retained lab is
+`/home/jonasp/mojt-lab/mpm-pacman-home/mpm-pacman-test/environments.5VRBnl`, with
+the experiment reference at `test-project/pin.json`. The final active environment
+is `cli-2026-10-15-12658f8df381e93fc2c5c8d8abca0bc186f7bd76cf5da9da337fe591d2dc36d7`.
+
+The excerpt includes `No changes.` and
+`PASS: repeat install preserves selection and captured project reference`,
+followed by the reference path and scope note. Inspection of the runner confirms
+that this point is reached only after all preceding required checks succeed:
+
+- Both package environments install from their frozen catalogs, with required
+  package signatures and cached archive digests checked before publication.
+- Their Python versions differ; both load `ssl`, `zlib` and glibc within their
+  respective roots, and child interpreters observe the same environment stamp.
+- Runtime `/usr` rejects writes with `EROFS`; the bound work directory supports
+  reading and writing.
+- Installing B preserves A's activation; explicit activation selects B without
+  changing the retained environments.
+- The generated active launcher runs B while the captured profile still runs A;
+  the experiment-reference bytes remain unchanged.
+- HTTPS succeeds in both roots, and repeat installation preserves the selected
+  profile generation.
+
+These results are inferred from the checked runner's completion point and the
+owner's final excerpt; the full run log, exact Python/library versions, package
+counts and storage totals were not supplied. This establishes unchanged Arch
+binary reuse for the tested CLI workload through whole-environment filesystem
+views. It does not establish independent package-level selection, production
+project locks, desktop/service integration or booting Mojt.
 
 Agent-side checks: 16 simulated-backend regression tests passed, including a
 rejected package transaction preserving the selected profile without a retry
