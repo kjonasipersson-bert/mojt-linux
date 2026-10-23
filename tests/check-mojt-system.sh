@@ -31,14 +31,23 @@ case "$action" in
         done
         device="$(nmcli -t -f DEVICE,TYPE device status | sed -n 's/:ethernet$//p' | head -n 1)"
         [ -n "$device" ] || fail "no Ethernet device"
-        nmcli --wait 30 device connect "$device"
-        address="$(nmcli -g IP4.ADDRESS device show "$device")"
-        [ -n "$address" ] || fail "no IPv4 address"
-        route="$(ip -4 route show default)"
-        [ -n "$route" ] || fail "no default route"
+        # Observe NetworkManager's autoconnection without restarting it.
+        # An active connection need not have finished IPv4 configuration.
+        tries=0
+        while :; do
+            address="$(ip -4 -o address show dev "$device" scope global)"
+            route="$(ip -4 route show default dev "$device")"
+            if [ -n "$address" ] && [ -n "$route" ]; then break; fi
+            if [ "$tries" -ge 30 ]; then
+                nmcli -f GENERAL,IP4,DHCP4 device show "$device" || :
+                fail "IPv4 address and default route not ready on $device after 30 seconds"
+            fi
+            sleep 1
+            tries=$((tries + 1))
+        done
         printf '%s\n%s\n' "$address" "$route"
         getent hosts cache.nixos.org
-        curl --fail --show-error --silent --max-time 30 \
+        curl --ipv4 --fail --show-error --silent --max-time 30 \
             https://cache.nixos.org/nix-cache-info
         echo "PASS: NetworkManager, IPv4, routing, DNS and HTTPS" ;;
     ports)

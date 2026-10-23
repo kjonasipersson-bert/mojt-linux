@@ -246,6 +246,75 @@ class SystemVmTests(unittest.TestCase):
         self.assertIn("Requires=mojt-setup.service dbus.socket", service)
         self.assertIn("Requires=dbus.service", (directory / "units/NetworkManager.service").read_text())
 
+    def run_network_check(self, address_after, route_after):
+        guest = Path(tempfile.mkdtemp(prefix="network-guest-", dir=self.root))
+        tools, trace, count = guest / "bin", guest / "trace", guest / "queries"
+        tools.mkdir()
+        for name in ("cat", "sed", "head"):
+            (tools / name).symlink_to(shutil.which(name))
+        trace.write_text("")
+
+        def command(name, body):
+            system.write(tools / name, "#!/bin/sh\nset -eu\n" +
+                         f"printf '%s\\n' \"{name} $*\" >>'{trace}'\n" + body + "\n", 0o755)
+
+        command("id", "printf '0\\n'")
+        command("systemctl", "exit 0")
+        command("journalctl", "exit 0")
+        command("nmcli", """case "$*" in
+    '-t -f DEVICE,TYPE device status') printf 'eth0:ethernet\\n' ;;
+    '-f GENERAL,IP4,DHCP4 device show eth0') echo 'diagnostic device state' ;;
+    *) echo "Unexpected mutating or unsupported nmcli command: $*" >&2; exit 1 ;;
+esac""")
+        command("ip", f"""queries=0
+if [ -f '{count}' ]; then read -r queries <'{count}'; fi
+case "$*" in
+    '-4 -o address show dev eth0 scope global')
+        queries=$((queries + 1))
+        printf '%s\\n' "$queries" >'{count}'
+        if [ "$queries" -ge {address_after} ]; then
+            echo '2: eth0 inet 10.0.2.15/24 scope global dynamic eth0'
+        fi ;;
+    '-4 route show default dev eth0')
+        if [ "$queries" -ge {route_after} ]; then echo 'default via 10.0.2.2 dev eth0'; fi ;;
+    *) echo "Unexpected ip command: $*" >&2; exit 1 ;;
+esac""")
+        command("sleep", "exit 0")
+        command("getent", "echo '203.0.113.1 cache.nixos.org'")
+        command("curl", "printf 'StoreDir: /nix/store\\n'")
+        system.write(guest / "proc/1/comm", "systemd\n")
+        system.write(guest / "run/mojt-system/record.json", "{}")
+        system.write(guest / "run/mojt-system/environment", f"export PATH={tools}\n")
+        for name in ("etc", "var"):
+            (guest / name).mkdir()
+        source = (REPO / "tests/check-mojt-system.sh").read_text()
+        for path in ("/run/mojt-system", "/proc/1/comm", "/etc", "/var"):
+            source = source.replace(path, str(guest / path.lstrip("/")))
+        script = guest / "check.sh"
+        script.write_text(source)
+        result = subprocess.run(["/bin/sh", str(script), "network"], capture_output=True, text=True)
+        return result, trace.read_text().splitlines()
+
+    def test_network_check_observes_ready_or_delayed_ipv4_without_reconnecting(self):
+        for address_after, route_after, sleeps in ((1, 1, 0), (3, 4, 3)):
+            with self.subTest(address_after=address_after, route_after=route_after):
+                result, trace = self.run_network_check(address_after, route_after)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("PASS: NetworkManager, IPv4, routing, DNS and HTTPS", result.stdout)
+                self.assertEqual(trace.count("sleep 1"), sleeps)
+                self.assertTrue(trace[-2].startswith("getent hosts "))
+                self.assertTrue(trace[-1].startswith("curl --ipv4 --fail "))
+
+    def test_network_check_times_out_without_address_or_route_before_dns_and_https(self):
+        for address_after, route_after in ((100, 1), (1, 100), (100, 100)):
+            with self.subTest(address_after=address_after, route_after=route_after):
+                result, trace = self.run_network_check(address_after, route_after)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("IPv4 address and default route not ready", result.stderr)
+                self.assertEqual(trace.count("sleep 1"), 30)
+                self.assertEqual(trace[-1], "nmcli -f GENERAL,IP4,DHCP4 device show eth0")
+                self.assertFalse(any(line.startswith(("getent ", "curl ")) for line in trace))
+
     def test_persistence_check_with_minimal_tools_rejects_invalid_markers(self):
         guest = self.root / "persistence-guest"
         tools = self.root / "minimal-bin"

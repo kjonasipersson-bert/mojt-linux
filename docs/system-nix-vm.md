@@ -9,7 +9,10 @@ SPDX-License-Identifier: GPL-2.0-only
 **Status:** step 1 boot/service health and `/etc` + `/var` persistence across
 boots passed on the owner's VM. Shutdown reached poweroff using the exitrd's
 busy-mount/read-only fallback; complete storage detachment remains unverified.
-Steps 2/3 are prepared but have not run in the owner's VM.
+Step 2 exported 119 objects and booted with D-Bus/NetworkManager. DHCPv4, address,
+gateway and DNS-server configuration are confirmed; the initial probe stopped
+at address readout, and DNS resolution/HTTPS acceptance remain pending. Step 3
+has not run in the owner's VM.
 The existing Base/state VM builder is extended through an opt-in
 `--system-payload` argument. Existing BusyBox-init VMs remain usable.
 
@@ -267,6 +270,11 @@ Inside that VM:
 mojt-system-check network
 ```
 
+The check observes autoconnection without reactivating the device. It polls
+kernel IPv4 address and default-route state on the selected Ethernet interface
+for up to 30 seconds before testing DNS and HTTPS over IPv4. A timeout prints
+NetworkManager's device state and remains a failure.
+
 NetworkManager uses its internal DHCP client, keyfile configuration, and an
 explicit regular `/etc/resolv.conf`. Existing resolver symlinks or conflicting
 experiment configuration stop image construction rather than being overwritten.
@@ -277,6 +285,43 @@ This initial bus policy permits root management; NetworkManager uses root-only
 authorization without a Polkit agent. It is not a desktop or multiuser policy.
 Wi-Fi, VPNs, DNS caching and service activation beyond these explicit units
 are not acceptance targets.
+
+### First step 2 VM and probe correction
+
+The owner exported 119 store objects and built System 0.2-step2 / Base 0.1.3
+at 2026-10-23T19:18:11Z with kernel 7.2.9+deb13-amd64. Boot/service health,
+including D-Bus and NetworkManager 1.58.1, passed. The original probe then ran
+`nmcli device connect eth0` and immediately read `IP4.ADDRESS`; that readout
+was empty and stopped the check.
+
+The supplied diagnostic log shows that the internal DHCP client had already
+obtained `10.0.2.15/24` at 19:18:23. The probe caused a new activation at
+19:18:51, with another successful lease in the same second. Later kernel and
+NetworkManager output agree on the address, gateway `10.0.2.2`, and DHCP-provided
+DNS server `10.0.2.3`. Both IPv4/IPv6 methods are `auto` with `may-fail=yes`.
+The exact reason for the earlier empty readout is unconfirmed; it is not
+evidence that DHCP is broken or that the initial boot only configured IPv6.
+
+The corrected probe avoids that extra activation and waits for kernel address
+and route state. Simulated shell regressions cover an already-ready interface,
+delayed address/route publication, and bounded failure when either is absent;
+DNS/HTTPS are reached only after both appear.
+
+Complete the remaining checks directly in the retained VM:
+
+```sh
+. /run/mojt-system/environment
+ip -4 route show default dev eth0
+getent hosts cache.nixos.org
+curl --ipv4 --fail --show-error --silent --max-time 30 \
+  https://cache.nixos.org/nix-cache-info
+systemctl --failed --no-pager
+```
+
+Expect a default route through `10.0.2.2`, successful name lookup and cache-info
+response, and no failed units. The installed probe in this older image still
+contains the reconnect/readout behavior; a future image built from the updated
+host checkout includes the correction without re-exporting the same payload.
 
 ## Step 3: MPM/Nix inside Mojt
 
@@ -341,7 +386,7 @@ socket and mount units, and checks administrator preset precedence. It does not
 boot systemd. The workspace lacks Nix, QEMU, BusyBox and matching kernel tooling;
 it has not imported real payloads or booted these System images.
 
-Recorded checks after the persistence-check fix: all 23 System regressions and all 27
+Recorded checks after the network-probe fix: all 25 System regressions and all 27
 existing VM-builder regressions passed, including shell syntax checks. The earlier
 combined suite passed 88 of 89 tests; the unchanged Base root-ownership test
 cannot perform chown to UID/GID 1000 in this workspace (EINVAL). Full System
