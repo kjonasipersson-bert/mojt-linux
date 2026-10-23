@@ -274,7 +274,13 @@ def install(root, record):
     require(not cache.is_symlink(), "unmanaged package cache")
     cache.mkdir(exist_ok=True)
     command = pacman_args(root, catalog / "pacman.conf", guest, guest / "var/lib/pacman", cache)
-    build_run(root, command + ["-S", "--noconfirm", *record["packages"]], guest=guest)
+    try:
+        build_run(root, command + ["-S", "--noconfirm", *record["packages"]], guest=guest)
+    except subprocess.CalledProcessError as error:
+        raise ValueError(
+            f"pacman installation failed (exit {error.returncode}); see pacman diagnostics above. "
+            f"Staging root retained: {guest}. No environment published; selected profile unchanged."
+        ) from error
     actual = build_run(root, command + ["-Q"], capture=True)
     require(dict(line.split(" ", 1) for line in actual.splitlines())
             == {p["name"]: p["version"] for p in record["resolved"]}, "installed versions differ from saved plan")

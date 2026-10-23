@@ -5,7 +5,7 @@ format = 1
 
 [environment]
 name = "cli"
-snapshot = "2025/06/01"
+snapshot = "2026/10/15"
 packages = ["filesystem", "bash", "coreutils", "python", "curl", "ca-certificates"]
 
 [commands]

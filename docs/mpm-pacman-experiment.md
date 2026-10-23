@@ -7,17 +7,21 @@ SPDX-License-Identifier: GPL-2.0-only
 # Frozen binary environments with pacman
 
 **Status:** experimental comparator to the [Nix probe](mpm-nix-experiment.md).
-The adapter and simulated-backend tests exist; actual pacman installation and
-namespace execution on the owner's machine are pending. This is an environment
-backend experiment, not a production MPM package format or a backend decision.
+The owner's Distrobox passed namespace/chroot preflight and resolved the first
+archive catalog. Its initial package transaction stopped at signature checking;
+no environment was published. Actual runtime acceptance remains pending. This
+is an environment backend experiment, not a production MPM package format or
+a backend decision.
 
 ## Scope
 
 Use original Arch binary packages and their resolved dependencies in separate
 root filesystems, built from the dated Arch Linux Archive snapshots
-`2024/06/01` and `2025/06/01`. Exact Python versions and available signatures
-are determined during the real run; archive access has not been verified from
-the agent's environment. There is no source build, AUR or System/boot setup.
+`2026/09/15` and `2026/10/15`. These replace the initial 2024/2025 test dates
+after the signature failure recorded below. Different Python patch releases
+are sufficient for the two-version test; different minor releases are not
+required. Exact versions and signature acceptance are determined during the
+real run. There is no source build, AUR or System/boot setup.
 
 Pacman resolves and installs the packages. MPM records the snapshot, copies
 of repository metadata, exact resolved versions, package archive SHA256 values,
@@ -160,9 +164,35 @@ optional, matching the configured `Required DatabaseOptional` policy; no claim
 of independently authenticated historical repository snapshots is made.
 SHA256 values identify metadata/package bytes and detect changes; they do not
 replace signature verification. Signature/key/archive failures stop the run.
+A dated package snapshot is not a frozen acceptance policy: the builder's
+current keyring can reject packages that were accepted when the snapshot was
+created. The probe does not re-enable disabled keys, roll back the trust store,
+or bypass required signatures to make an old snapshot installable.
 
-Agent-side checks: 15 simulated-backend regression tests passed, and the adapter,
-live runner and embedded Python probe passed syntax checks. The local Bubblewrap
+### Owner run: initial signature failure
+
+The owner ran the probe with pacman 7.1.0/libalpm 16.0.1, Bubblewrap 0.13.1 and
+`archlinux-keyring` 20260909-1. Nested user/mount/PID namespaces and chroot passed.
+The `2024/06/01` catalog resolved 59 packages (86.82 MiB download, 368.50 MiB
+installed size reported by pacman), and the archives downloaded. Pacman then
+rejected `libp11-kit`, `p11-kit`, `ca-certificates-utils` and `ca-certificates`
+because their signing key, identified as
+`Jan Alexander Steffens (heftig) <jan.steffens@gmail.com>`, was disabled.
+Pacman reported that no packages were upgraded; the adapter did not publish
+an environment. This establishes archive access and enforced rejection, not
+successful binary reuse or runtime isolation. The run stopped before snapshot B.
+
+The replacement manifests use September/October 2026 snapshots, both newer
+than that installed keyring release, to reduce historical key incompatibilities.
+Their full installation and runtime tests still need the owner's run. Keep the
+failed lab for inspection and start the acceptance runner with a new empty root.
+Installation failures now report the retained staging root without repeating
+the entire Bubblewrap argument list.
+
+Agent-side checks: 16 simulated-backend regression tests passed, including a
+rejected package transaction preserving the selected profile without a retry
+or signature bypass. The adapter, live runner and embedded Python probe passed
+syntax checks. The local Bubblewrap
 attempt failed at UID mapping, and pacman is unavailable locally. Neither those
 unit tests nor the syntax checks establish real pacman/Bubblewrap compatibility.
 

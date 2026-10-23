@@ -44,7 +44,7 @@ class PacmanEnvironmentTests(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
     def records(self, config):
-        newer = "2025/06/01" in Path(config).read_text()
+        newer = "2026/10/15" in Path(config).read_text()
         packages = []
         for name in ("filesystem", "bash", "coreutils", "python", "curl", "ca-certificates"):
             version = ("3.13.1-1" if newer else "3.12.1-1") if name == "python" else "1.0-1"
@@ -197,6 +197,31 @@ class PacmanEnvironmentTests(unittest.TestCase):
         self.assertEqual(self.state()["installed"], {})
         self.assertTrue(all(p.name.startswith(".stage-") for p in (self.root / "environments").iterdir()))
 
+    def test_rejected_package_transaction_preserves_selection_without_retry(self):
+        self.update()
+        self.cli("install", "-y")
+        retained = self.state()
+        self.update("b")
+        before = os.readlink(self.root / "current")
+        backend = self.backend
+        attempts = []
+
+        def reject_install(root, command, guest=None, capture=False):
+            if "-S" in command:
+                attempts.append(command)
+                raise subprocess.CalledProcessError(1, command)
+            return backend(root, command, guest, capture)
+
+        with mock.patch.object(mpm, "build_run", side_effect=reject_install):
+            output = self.cli("install", "-y", success=False)
+        self.assertIn("Staging root retained:", output)
+        self.assertIn("selected profile unchanged", output)
+        self.assertEqual(len(attempts), 1)
+        self.assertEqual(os.readlink(self.root / "current"), before)
+        self.assertEqual(self.state()["installed"], retained["installed"])
+        self.assertEqual(self.state()["active"], retained["active"])
+        self.assertTrue(any(p.name.startswith(".stage-") for p in (self.root / "environments").iterdir()))
+
     def test_installed_versions_must_match_plan(self):
         self.update()
         self.wrong_versions = True
@@ -264,7 +289,7 @@ class PacmanEnvironmentTests(unittest.TestCase):
     def test_unsafe_manifests_rejected_before_backend(self):
         source = (REPO / "manifests/mpm-pacman-a.toml").read_text()
         path = Path(self.tmp.name) / "bad.toml"
-        for text in (source.replace("2024/06/01", "2024/99/01"),
+        for text in (source.replace("2026/09/15", "2026/99/15"),
                      source.replace("/usr/bin/python", "/usr/bin/../bad"),
                      source.replace('"python"', '"python;bad"')):
             with self.subTest(text=text):
