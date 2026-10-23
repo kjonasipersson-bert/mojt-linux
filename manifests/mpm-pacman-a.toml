@@ -1,0 +1,13 @@
+# Mojt Linux
+# Copyright (C) 2026 Jonas Persson
+# SPDX-License-Identifier: GPL-2.0-only
+format = 1
+
+[environment]
+name = "cli"
+snapshot = "2024/06/01"
+packages = ["filesystem", "bash", "coreutils", "python", "curl", "ca-certificates"]
+
+[commands]
+python3 = "/usr/bin/python"
+curl = "/usr/bin/curl"

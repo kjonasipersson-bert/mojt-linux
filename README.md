@@ -62,6 +62,19 @@ Distrobox acceptance run, scope and test limitations.
 python3 -m unittest discover -s tests -p 'test_mpm_nix_prototype.py' -v
 ```
 
+## Frozen pacman environment experiment
+
+`tools/mpm-pacman-prototype` compares original Arch binary packages in separate,
+frozen userspaces. Pacman resolves and installs; private profiles select complete
+runtime roots through Bubblewrap. See the [experiment guide](docs/mpm-pacman-experiment.md)
+for the dedicated Arch Distrobox setup, namespace preflight and opt-in real test.
+Actual execution on the owner's machine is pending; regression tests simulate
+the backend and namespace operations.
+
+```sh
+python3 -m unittest discover -s tests -p 'test_mpm_pacman_prototype.py' -v
+```
+
 ## Project layout
 
 ```text

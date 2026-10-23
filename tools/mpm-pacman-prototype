@@ -1,0 +1,420 @@
+#!/usr/bin/env python3
+# Mojt Linux
+# Copyright (C) 2026 Jonas Persson
+# SPDX-License-Identifier: GPL-2.0-only
+"""Opt-in Arch binary-environment experiment; use a dedicated rootless Distrobox."""
+
+import argparse
+import copy
+import datetime
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import platform
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+import uuid
+import tomllib
+
+
+MARKER = "Mojt pacman environment experiment 1\n"
+NAME = r"[a-z][a-z0-9-]*"
+COMMAND = r"[A-Za-z0-9][A-Za-z0-9._+-]*"
+PACKAGES = r"[a-z0-9][a-z0-9@._+-]*"
+
+
+def require(condition, message):
+    if not condition:
+        raise ValueError(message)
+
+
+def digest(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+
+
+def file_hash(path):
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def execute(arguments, capture=False):
+    result = subprocess.run(list(map(str, arguments)), text=True, check=True,
+                            stdout=subprocess.PIPE if capture else None)
+    return result.stdout.strip() if capture else ""
+
+
+def namespace_base():
+    return ["/usr/bin/bwrap", "--unshare-user", "--unshare-pid", "--die-with-parent"]
+
+
+def builder_arguments(root, command, guest=None):
+    args = namespace_base() + ["--uid", "0", "--gid", "0", "--ro-bind", "/", "/",
+                              "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp",
+                              "--bind", str(root), str(root), "--clearenv", "--setenv", "PATH", "/usr/bin",
+                              "--setenv", "HOME", "/tmp", "--setenv", "LC_ALL", "C",
+                              "--chdir", str(root)]
+    # Scoped to the child user namespace: pacman needs chroot for scriptlets.
+    for capability in ("CAP_SYS_CHROOT", "CAP_CHOWN", "CAP_FOWNER", "CAP_DAC_OVERRIDE"):
+        args += ["--cap-add", capability]
+    if guest:
+        for option, target in (("--dev", "dev"), ("--proc", "proc"), ("--tmpfs", "tmp"),
+                               ("--tmpfs", "run")):
+            args += [option, str(guest / target)]
+    return args + ["--", *map(str, command)]
+
+
+def build_run(root, command, guest=None, capture=False):
+    return execute(builder_arguments(root, command, guest), capture)
+
+
+def check():
+    require(os.geteuid() != 0, "run as your ordinary Distrobox user, without sudo")
+    require(platform.machine() == "x86_64", "this experiment currently targets x86_64")
+    for tool in ("pacman", "pacman-key", "gpg", "bwrap", "chroot"):
+        require(shutil.which(tool), f"missing tool: {tool}")
+    execute(["pacman", "--version"])
+    execute(["bwrap", "--version"])
+    args = namespace_base() + ["--uid", "0", "--gid", "0", "--ro-bind", "/", "/",
+                              "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp",
+                              "--cap-add", "CAP_SYS_CHROOT", "--", "/usr/bin/chroot", "/",
+                              "/usr/bin/id", "-u"]
+    require(execute(args, capture=True) == "0", "namespace UID mapping failed")
+    print("PASS: nested user/mount/PID namespaces work; namespace root maps to the calling user")
+
+
+def manifest(path):
+    raw = tomllib.loads(path.read_text())
+    require(set(raw) == {"format", "environment", "commands"} and type(raw["format"]) is int
+            and raw["format"] == 1, "invalid manifest format or fields")
+    env = raw["environment"]
+    require(set(env) == {"name", "snapshot", "packages"}, "invalid environment fields")
+    require(re.fullmatch(NAME, env["name"]), "invalid environment name")
+    require(re.fullmatch(r"[0-9]{4}/[0-9]{2}/[0-9]{2}", env["snapshot"]), "invalid snapshot date")
+    datetime.date.fromisoformat(env["snapshot"].replace("/", "-"))
+    require(isinstance(env["packages"], list) and env["packages"]
+            and all(isinstance(p, str) and re.fullmatch(PACKAGES, p) for p in env["packages"])
+            and len(set(env["packages"])) == len(env["packages"]), "invalid package list")
+    require({"filesystem", "bash"} <= set(env["packages"]), "include filesystem and bash for bootstrap")
+    require(isinstance(raw["commands"], dict) and raw["commands"], "empty command exports")
+    for name, target in raw["commands"].items():
+        require(re.fullmatch(COMMAND, name) and isinstance(target, str)
+                and re.fullmatch(r"/usr/bin/" + COMMAND, target), "invalid command export")
+    return dict(env, commands=raw["commands"], architecture="x86_64")
+
+
+def pacman_config(snapshot):
+    return ("[options]\nArchitecture = x86_64\nSigLevel = Required DatabaseOptional\n"
+            "LocalFileSigLevel = Required\n"
+            + "".join(f"\n[{repo}]\nServer = https://archive.archlinux.org/repos/{snapshot}/$repo/os/$arch\n"
+                      for repo in ("core", "extra")))
+
+
+def initialize(root):
+    require(not root.is_symlink(), "lab root must not be a symlink")
+    root.mkdir(parents=True, exist_ok=True)
+    marker = root / ".mpm-pacman-experiment"
+    if not os.path.lexists(marker):
+        require(not any(root.iterdir()), "lab root is not empty; refusing to adopt it")
+        marker.write_text(MARKER)
+        for name in ("catalogs", "environments", "profiles", "cache", "keyring"):
+            (root / name).mkdir()
+        (root / "keyring").chmod(0o700)
+    check_root(root)
+
+
+def check_root(root):
+    marker = root / ".mpm-pacman-experiment"
+    require(not root.is_symlink() and not marker.is_symlink() and marker.read_text() == MARKER,
+            "unmanaged lab root")
+    for name in ("catalogs", "environments", "profiles", "cache", "keyring"):
+        require((root / name).is_dir() and not (root / name).is_symlink(), f"unmanaged {name}")
+
+
+def empty_state():
+    return dict(format=1, catalog=None, installed={}, active={})
+
+
+def aliases(state):
+    result = {}
+
+    def add(name, key, command):
+        require(name not in result, f"command export conflict: {name}")
+        result[name] = (key, command)
+
+    for key, record in state["installed"].items():
+        for command in record["commands"]:
+            add(command + "-env-" + key, key, command)
+    for key in state["active"].values():
+        for command in state["installed"][key]["commands"]:
+            add(command, key, command)
+    return result
+
+
+def launcher(root, key, command_path):
+    # A selected CLI command needs only sh and bwrap outside its own userspace.
+    args = runtime_arguments(root / "environments" / key / "rootfs", command_path, [], root)
+    work_index = args.index("--bind") + 1
+    words = ['"$PWD"' if i == work_index else shlex.quote(word) for i, word in enumerate(args)]
+    return "#!/bin/sh\nexec " + " ".join(words) + ' "$@"\n'
+
+
+def state_at(root):
+    if not root.exists():
+        return empty_state()
+    check_root(root)
+    current = root / "current"
+    if not os.path.lexists(current):
+        return empty_state()
+    require(current.is_symlink() and re.fullmatch(r"profiles/[0-9a-f]{32}", os.readlink(current)),
+            "unmanaged current path")
+    directory = root / os.readlink(current)
+    require(not directory.is_symlink(), "unmanaged profile generation")
+    state = json.loads((directory / "state.json").read_text())
+    require(state["format"] == 1, "unsupported state format")
+    bin_dir = directory / "bin"
+    require(bin_dir.is_dir() and not bin_dir.is_symlink(), "unmanaged profile bin")
+    expected = aliases(state)
+    require({p.name for p in bin_dir.iterdir()} == set(expected), "profile command list changed")
+    for name, (key, command) in expected.items():
+        path = bin_dir / name
+        target = state["installed"][key]["commands"][command]
+        require(not path.is_symlink() and path.read_text() == launcher(root, key, target)
+                and os.access(path, os.X_OK), f"profile command changed: {name}")
+    return state
+
+
+def pacman_args(root, config, guest, db, cache=None):
+    return ["/usr/bin/pacman", "--config", str(config), "--root", str(guest),
+            "--dbpath", str(db), "--cachedir", str(cache if cache is not None else root / "cache"),
+            "--gpgdir", str(root / "keyring"), "--logfile", str(root / "pacman.log")]
+
+
+def update(root, spec):
+    ready = root / "keyring/.ready"
+    if not ready.exists():
+        build_run(root, ["/usr/bin/pacman-key", "--gpgdir", root / "keyring", "--init"])
+        build_run(root, ["/usr/bin/pacman-key", "--gpgdir", root / "keyring", "--populate", "archlinux"])
+        ready.write_text("Arch keyring imported from the builder's installed archlinux-keyring\n")
+    directory = root / "catalogs" / (".stage-" + uuid.uuid4().hex)
+    directory.mkdir()
+    (directory / "query-root").mkdir()
+    (directory / "db/local").mkdir(parents=True)
+    config = directory / "pacman.conf"
+    config.write_text(pacman_config(spec["snapshot"]))
+    command = pacman_args(root, config, directory / "query-root", directory / "db")
+    build_run(root, command + ["-Sy", "--noconfirm"])
+    output = build_run(root, command + ["-Sp", "--noconfirm", "--print-format", "%n\t%v\t%h\t%f\t%s",
+                                       *spec["packages"]], capture=True)
+    packages = []
+    for line in output.splitlines():
+        fields = line.split("\t")
+        require(len(fields) == 5, f"unexpected pacman plan output: {line}")
+        name, version, sha256, filename, size = fields
+        require(re.fullmatch(PACKAGES, name) and re.fullmatch(r"[0-9a-f]{64}", sha256),
+                "invalid package identity or missing SHA256 in repository metadata")
+        require(Path(filename).name == filename and not filename.startswith("."), "unsafe package filename")
+        packages.append(dict(name=name, version=version, sha256=sha256, file=filename, size=int(size)))
+    require(packages and len({p["name"] for p in packages}) == len(packages), "invalid package closure")
+    require(set(spec["packages"]) <= {p["name"] for p in packages}, "requested packages missing from plan")
+    metadata = {p.name: file_hash(p) for p in (directory / "db/sync").iterdir() if p.is_file()}
+    require({"core.db", "extra.db"} <= set(metadata), "missing sync database")
+    record = dict(spec, resolved=sorted(packages, key=lambda p: p["name"]), metadata=metadata)
+    catalog_id = digest(record)
+    target = root / "catalogs" / catalog_id
+    if not target.exists():
+        directory.rename(target)
+    else:
+        shutil.rmtree(directory)
+    return dict(record, catalog_id=catalog_id)
+
+
+def catalog_directory(root, record):
+    catalog_id = record["catalog_id"]
+    require(re.fullmatch(r"[0-9a-f]{64}", catalog_id), "invalid catalog identity")
+    directory = root / "catalogs" / catalog_id
+    require(not directory.is_symlink(), "unmanaged catalog directory")
+    require((directory / "pacman.conf").read_text() == pacman_config(record["snapshot"]), "catalog config changed")
+    for name, expected in record["metadata"].items():
+        require(Path(name).name == name and file_hash(directory / "db/sync" / name) == expected,
+                "saved sync database changed")
+    return directory
+
+
+def environment_id(record):
+    return record["name"] + "-" + record["snapshot"].replace("/", "-") + "-" + digest(record)
+
+
+def environment(root, key, record):
+    require(re.fullmatch(NAME + r"-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9a-f]{64}", key), "invalid environment identity")
+    directory = root / "environments" / key
+    require(not directory.is_symlink() and not (directory / "rootfs").is_symlink(), "unmanaged environment")
+    require(json.loads((directory / "record.json").read_text()) == record, "environment metadata changed")
+    require((directory / "rootfs/usr").is_dir(), "environment rootfs missing")
+    return directory / "rootfs"
+
+
+def install(root, record):
+    catalog = catalog_directory(root, record)
+    key = environment_id(record)
+    target = root / "environments" / key
+    if target.exists():
+        environment(root, key, record)
+        return key
+    stage = root / "environments" / (".stage-" + uuid.uuid4().hex)
+    guest = stage / "rootfs"
+    for name in ("dev", "proc", "tmp", "run", "work", "etc", "var/lib/pacman/local"):
+        (guest / name).mkdir(parents=True, exist_ok=True)
+    shutil.copytree(catalog / "db/sync", guest / "var/lib/pacman/sync")
+    cache = root / "cache" / record["catalog_id"]
+    require(not cache.is_symlink(), "unmanaged package cache")
+    cache.mkdir(exist_ok=True)
+    command = pacman_args(root, catalog / "pacman.conf", guest, guest / "var/lib/pacman", cache)
+    build_run(root, command + ["-S", "--noconfirm", *record["packages"]], guest=guest)
+    actual = build_run(root, command + ["-Q"], capture=True)
+    require(dict(line.split(" ", 1) for line in actual.splitlines())
+            == {p["name"]: p["version"] for p in record["resolved"]}, "installed versions differ from saved plan")
+    for package in record["resolved"]:
+        require(file_hash(cache / package["file"]) == package["sha256"], "cached package digest mismatch")
+    for command_path in record["commands"].values():
+        require(os.access(guest / command_path.lstrip("/"), os.X_OK), f"missing exported command: {command_path}")
+    for name in ("resolv.conf", "hosts"):
+        if not os.path.lexists(guest / "etc" / name):
+            (guest / "etc" / name).touch()
+    (guest / "etc/mojt-environment").write_text(key + "\n")
+    (stage / "record.json").write_text(json.dumps(record, indent=2) + "\n")
+    stage.rename(target)
+    return key
+
+
+def publish(root, state):
+    generation = root / "profiles" / uuid.uuid4().hex
+    temporary = root / (".current-" + uuid.uuid4().hex)
+    generation.mkdir()
+    try:
+        (generation / "bin").mkdir()
+        (generation / "state.json").write_text(json.dumps(state, indent=2) + "\n")
+        for name, (key, command) in aliases(state).items():
+            path = generation / "bin" / name
+            path.write_text(launcher(root, key, state["installed"][key]["commands"][command]))
+            path.chmod(0o555)
+        temporary.symlink_to("profiles/" + generation.name)
+        os.replace(temporary, root / "current")
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        shutil.rmtree(generation)
+        raise
+
+
+def runtime_arguments(guest, command, arguments, workdir):
+    require(workdir.is_dir(), "working directory missing")
+    return namespace_base() + ["--ro-bind", str(guest), "/", "--dev", "/dev", "--proc", "/proc",
+                              "--tmpfs", "/tmp", "--tmpfs", "/run", "--bind", str(workdir), "/work",
+                              "--ro-bind", "/etc/resolv.conf", "/etc/resolv.conf",
+                              "--ro-bind", "/etc/hosts", "/etc/hosts", "--clearenv",
+                              "--setenv", "PATH", "/usr/bin", "--setenv", "HOME", "/work",
+                              "--setenv", "LC_ALL", "C", "--chdir", "/work", "--cap-drop", "ALL",
+                              "--", command, *arguments]
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--root", type=Path, required=True)
+    parser.add_argument("area", choices=["ports"])
+    actions = parser.add_subparsers(dest="action", required=True)
+    for action in ("check", "update", "install", "activate", "run", "status"):
+        sub = actions.add_parser(action)
+        if action == "update":
+            sub.add_argument("--manifest", type=Path, required=True)
+        if action == "activate":
+            sub.add_argument("identity")
+        if action == "run":
+            sub.add_argument("identity")
+            sub.add_argument("command")
+            sub.add_argument("arguments", nargs=argparse.REMAINDER)
+        if action in ("update", "install", "activate"):
+            sub.add_argument("--dry-run", action="store_true")
+            sub.add_argument("-y", "--yes", action="store_true")
+    args = parser.parse_args(argv)
+    root = args.root.absolute()
+    try:
+        if args.action == "check":
+            check()
+            return 0
+        if args.action == "status":
+            print(json.dumps(state_at(root), indent=2))
+            return 0
+        if args.action == "run":
+            state = state_at(root)
+            record = state["installed"][args.identity]
+            require(args.command in record["commands"], "command not exported by environment")
+            guest = environment(root, args.identity, record)
+            arguments = args.arguments[1:] if args.arguments[:1] == ["--"] else args.arguments
+            os.execvp("bwrap", runtime_arguments(guest, record["commands"][args.command], arguments, Path.cwd()))
+        require(os.geteuid() != 0, "run as the ordinary Distrobox user, without sudo")
+
+        def perform():
+            old = state_at(root)
+            for key, retained in old["installed"].items():
+                environment(root, key, retained)
+            proposed = copy.deepcopy(old)
+            if args.action == "update":
+                spec = manifest(args.manifest)
+                print(f"Refresh {spec['name']} from Arch snapshot {spec['snapshot']}; no payload installation.")
+            elif args.action == "install":
+                require(old["catalog"] is not None, "run ports update --manifest FILE first")
+                record = old["catalog"]
+                catalog_directory(root, record)
+                key = environment_id(record)
+                proposed["installed"].setdefault(key, record)
+                proposed["active"].setdefault(record["name"], key)
+                print(f"Install frozen environment: {key}")
+                for p in record["resolved"]:
+                    print(f"  {p['name']} {p['version']} sha256={p['sha256']} bytes={p['size']}")
+                print("Package scriptlets/hooks run in the staging root; no build from source.")
+            else:
+                require(args.identity in old["installed"], "activate requires an installed environment identity")
+                record = old["installed"][args.identity]
+                environment(root, args.identity, record)
+                proposed["active"][record["name"]] = args.identity
+            aliases(proposed)
+            for name, key in proposed["active"].items():
+                print(f"Active selection: {name} -> {key}")
+            print("Environment granularity. Old roots/profiles retained. System integration not audited.")
+            if args.dry_run:
+                print("Preview only; no files written.")
+                return
+            if proposed == old and args.action != "update":
+                print("No changes.")
+                return
+            if not args.yes and input("Apply this plan? [y/N] ").strip().lower() != "y":
+                print("Cancelled.")
+                return
+            if args.action == "update":
+                proposed["catalog"] = update(root, spec)
+            elif args.action == "install":
+                install(root, record)
+            publish(root, proposed)
+            print("Published complete pacman environment profile.")
+
+        if args.dry_run:
+            perform()
+        else:
+            initialize(root)
+            lock = root / ".lock"
+            require(not lock.is_symlink(), "unmanaged lock file")
+            with lock.open("a") as stream:
+                fcntl.flock(stream, fcntl.LOCK_EX)
+                perform()
+        return 0
+    except (OSError, ValueError, KeyError, TypeError, EOFError, subprocess.CalledProcessError) as error:
+        print(f"mpm-pacman-prototype: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
