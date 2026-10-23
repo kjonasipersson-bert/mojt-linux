@@ -9,10 +9,10 @@ SPDX-License-Identifier: GPL-2.0-only
 **Status:** step 1 boot/service health and `/etc` + `/var` persistence across
 boots passed on the owner's VM. Shutdown reached poweroff using the exitrd's
 busy-mount/read-only fallback; complete storage detachment remains unverified.
-Step 2 exported 119 objects and booted with D-Bus/NetworkManager. DHCPv4, address,
-gateway and DNS-server configuration are confirmed; the initial probe stopped
-at address readout, and DNS resolution/HTTPS acceptance remain pending. Step 3
-has not run in the owner's VM.
+Step 2 boot/service health, DHCPv4, routing, DNS resolution and HTTPS over IPv4
+passed in the owner's VM through the direct checks below, with no failed units.
+The corrected network probe still needs a fresh guest run. Step 3 has not run
+in the owner's VM.
 The existing Base/state VM builder is extended through an opt-in
 `--system-payload` argument. Existing BusyBox-init VMs remain usable.
 
@@ -323,18 +323,65 @@ response, and no failed units. The installed probe in this older image still
 contains the reconnect/readout behavior; a future image built from the updated
 host checkout includes the correction without re-exporting the same payload.
 
+### Recorded step 2 acceptance
+
+The owner completed the direct checks in the retained step 2 VM. The kernel
+reported `default via 10.0.2.2 proto dhcp src 10.0.2.15 metric 100`.
+`getent hosts cache.nixos.org` resolved the name and returned IPv6 addresses;
+the separate `curl --ipv4` request successfully resolved/used IPv4 and verified
+HTTPS, returning `StoreDir: /nix/store`, `WantMassQuery: 1`, and `Priority: 40`.
+`systemctl --failed --no-pager` reported zero loaded units.
+
+Together with the earlier service and DHCP diagnostics, these results pass
+the initial step 2 networking acceptance. The corrected combined network probe
+has synthetic coverage but has not yet run in a fresh real guest; the step 3
+image will include it. This does not extend acceptance to Wi-Fi, VPNs, desktop
+authorization or general service activation.
+
 ## Step 3: MPM/Nix inside Mojt
 
-Prepare another new payload in the Nix Distrobox:
+Shut down the step 2 VM with `systemctl poweroff`. On the Debian host, enter
+the existing Nix Distrobox with `distrobox enter mojt-mpm-nix`. Prepare another
+new payload inside it:
 
 ```sh
+cd "$HOME/mpm-system-test/mojt-system-adapter"
+git pull --ff-only
+
+python3 tools/mojt-system-prepare.py \
+  --step 3 --output "$HOME/mpm-system-test/system-step3" --dry-run
+
 python3 tools/mojt-system-prepare.py \
   --step 3 --output "$HOME/mpm-system-test/system-step3" -y
+
+exit
 ```
 
-Build a new host VM with that payload and at least 6144 MiB disk space.
-Increase the launcher's memory if the host needs more for Nixpkgs evaluation.
-Inside the VM:
+Step 3 includes Nix, management Python and the pinned Nixpkgs source in addition
+to all step 2 inputs. Source export can take longer and occupy more space.
+Back on the Debian host, update its checkout and build a new 6144 MiB VM disk:
+
+```sh
+cd "$HOME/mojt-lab/mojt-system-adapter"
+git pull --ff-only
+
+TARGET="$HOME/mojt-lab/root-test-013"
+PAYLOAD="$HOME/mojt-lab/mpm-nix-home/mpm-system-test/system-step3"
+KREL="$(uname -r)"
+VM="$HOME/mojt-lab/vm/system-step3-$(date +%Y%m%d-%H%M%S)"
+
+sudo python3 tools/mojt-vm-build.py \
+  --target "$TARGET" \
+  --kernel "/boot/vmlinuz-$KREL" \
+  --system-payload "$PAYLOAD" \
+  --disk-size-mib 6144 \
+  --login-mode password --root-shell /bin/sh \
+  --output "$VM"
+
+"$VM/run-qemu.sh"
+```
+
+Increase the launcher's memory if needed for Nixpkgs evaluation. Inside the VM:
 
 ```sh
 . /run/mojt-system/environment
