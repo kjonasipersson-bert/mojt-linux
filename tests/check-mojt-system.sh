@@ -64,9 +64,11 @@ case "$action" in
         sync
         echo "Markers written. Run systemctl poweroff, start the SAME disk, then persistence-check." ;;
     persistence-check)
-        cmp /etc/mojt-system-persistence-test /var/lib/mojt/system-persistence-test
-        old="$(cat /etc/mojt-system-persistence-test)"
-        current="$(cat /proc/sys/kernel/random/boot_id)"
+        old="$(cat /etc/mojt-system-persistence-test)" || fail "cannot read /etc marker"
+        var="$(cat /var/lib/mojt/system-persistence-test)" || fail "cannot read /var marker"
+        [ -n "$old" ] || fail "empty persistence marker"
+        [ "$old" = "$var" ] || fail "/etc and /var markers differ"
+        current="$(cat /proc/sys/kernel/random/boot_id)" || fail "cannot read current boot ID"
         [ "$old" != "$current" ] || fail "a second boot is required"
         echo "PASS: both /etc and /var markers survived a different boot" ;;
     *) fail "use boot, network, ports, persistence-write or persistence-check" ;;

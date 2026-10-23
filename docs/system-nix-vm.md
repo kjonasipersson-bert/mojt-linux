@@ -6,10 +6,12 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # System in three small VM steps
 
-**Status:** the owner exported the step 1 payload (69 store objects) and booted
-the VM with systemd. Its first service-health check found unwanted units enabled
-at first boot; the preset fix below still needs a fresh VM run. Full step 1
-acceptance and steps 2/3 remain pending.
+**Status:** the owner exported the step 1 payload (69 store objects). After the
+preset fix, boot/service health passed on two boots and shutdown reached poweroff.
+The persistence check stopped because its `cmp` dependency was absent from Base;
+the corrected check still needs to run against the retained markers. Shutdown
+used the exitrd's busy-mount/read-only fallback. Full step 1 acceptance and steps
+2/3 remain pending.
 The existing Base/state VM builder is extended through an opt-in
 `--system-payload` argument. Existing BusyBox-init VMs remain usable.
 
@@ -132,7 +134,9 @@ systemctl --failed
 ```
 
 The persistence check requires a different kernel boot ID and matching markers
-in `/etc` and `/var`. It refuses to overwrite pre-existing test markers.
+in `/etc` and `/var`. These are text boot IDs, compared with shell builtins after
+reading them with `cat`; Base need not provide `cmp`. Missing, empty or different
+markers fail the check. The write action refuses to overwrite pre-existing markers.
 Check shutdown output as well: an exitrd provides a static BusyBox shutdown
 environment for unmount/read-only handling before forced final poweroff.
 Successful persistence alone is not a power-loss durability or clean-unmount
@@ -163,8 +167,41 @@ Pull the updated branch on the Debian host and build a **new VM output** with
 the existing payload using the build commands above. No payload re-export is
 needed. Preserve the failed VM for inspection; rebuilding from the original
 Base/state avoids carrying its first-boot enablement links into the new image.
-The boot check continues to reject every failed unit. Poweroff and two-boot
-persistence acceptance are still required after it passes.
+The boot check continues to reject every failed unit.
+
+### Retest and persistence-check correction
+
+The corrected VM (built 2026-10-23T19:00:10Z) passed `mojt-system-check boot`
+before and after restarting the same disk. Its persistence check exited at
+`cmp: not found`, before comparing either marker or checking the boot ID. This
+was a test dependency error, not evidence of lost state. The corrected check
+uses `cat` and shell string comparisons and rejects unreadable/empty/mismatched
+markers or the same boot ID. A regression executes it with only `id` and `cat`
+in PATH, including positive and negative marker cases.
+
+For an already-built VM, preserve its disk and existing markers. The equivalent
+check can be run directly at its root console without rebuilding:
+
+```sh
+sh -eu -c '
+old="$(cat /etc/mojt-system-persistence-test)"
+var="$(cat /var/lib/mojt/system-persistence-test)"
+current="$(cat /proc/sys/kernel/random/boot_id)"
+[ -n "$old" ]
+[ "$old" = "$var" ]
+[ "$old" != "$current" ]
+echo "PASS: both /etc and /var markers survived a different boot"
+'
+```
+
+The reported shutdown stopped services, synchronized filesystems, entered the
+exitrd and powered off. Exitrd output included `devtmpfs busy - remounted
+read-only` and `/dev/vda busy - remounted read-only`; this records the fallback,
+not proof that the backing filesystem was fully detached. Final mount flags
+were not captured. The console also showed a concatenated command option and
+bus-connection errors around shutdown; their exact timing/cause is unresolved.
+Run console commands individually and inspect whether the bus error repeats
+during an otherwise idle boot. Persistence acceptance remains pending.
 
 ## Step 2: networking
 
@@ -261,7 +298,7 @@ socket and mount units, and checks administrator preset precedence. It does not
 boot systemd. The workspace lacks Nix, QEMU, BusyBox and matching kernel tooling;
 it has not imported real payloads or booted these System images.
 
-Recorded checks after the preset fix: all 22 System regressions and all 27
+Recorded checks after the persistence-check fix: all 23 System regressions and all 27
 existing VM-builder regressions passed, including shell syntax checks. The earlier
 combined suite passed 88 of 89 tests; the unchanged Base root-ownership test
 cannot perform chown to UID/GID 1000 in this workspace (EINVAL). Full System

@@ -246,6 +246,42 @@ class SystemVmTests(unittest.TestCase):
         self.assertIn("Requires=mojt-setup.service dbus.socket", service)
         self.assertIn("Requires=dbus.service", (directory / "units/NetworkManager.service").read_text())
 
+    def test_persistence_check_with_minimal_tools_rejects_invalid_markers(self):
+        guest = self.root / "persistence-guest"
+        tools = self.root / "minimal-bin"
+        system.write(tools / "id", "#!/bin/sh\nprintf '0\\n'\n", 0o755)
+        (tools / "cat").symlink_to(shutil.which("cat"))
+        system.write(guest / "run/mojt-system/record.json", "{}")
+        system.write(guest / "run/mojt-system/environment", f"export PATH={tools}\n")
+        source = (REPO / "tests/check-mojt-system.sh").read_text()
+        for path in ("/run/mojt-system", "/etc/mojt-system-persistence-test",
+                     "/var/lib/mojt", "/proc/sys/kernel/random/boot_id"):
+            source = source.replace(path, str(guest / path.lstrip("/")))
+        script = self.root / "check-in-fixture.sh"
+        script.write_text(source)
+        boot = "22222222-2222-4222-8222-222222222222\n"
+        previous = "11111111-1111-4111-8111-111111111111\n"
+        system.write(guest / "proc/sys/kernel/random/boot_id", boot)
+        for label, etc, var, expected in (
+                ("persisted", previous, previous, "PASS:"),
+                ("same boot", boot, boot, "a second boot is required"),
+                ("mismatch", previous, boot, "/etc and /var markers differ"),
+                ("empty", "", "", "empty persistence marker"),
+                ("missing etc", None, previous, "cannot read /etc marker"),
+                ("missing var", previous, None, "cannot read /var marker")):
+            with self.subTest(label=label):
+                for name, value in (("etc/mojt-system-persistence-test", etc),
+                                    ("var/lib/mojt/system-persistence-test", var)):
+                    path = guest / name
+                    if value is None:
+                        path.unlink(missing_ok=True)
+                    else:
+                        system.write(path, value)
+                result = subprocess.run(["/bin/sh", str(script), "persistence-check"],
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode == 0, label == "persisted", result.stderr)
+                self.assertIn(expected, result.stdout + result.stderr)
+
     def test_conflicting_dns_link_is_preserved_and_stops_build(self):
         record = self.fixture(2)
         resolv = self.tree / "state/etc/resolv.conf"
