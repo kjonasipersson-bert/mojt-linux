@@ -12,11 +12,30 @@ existing Nix installation with the traditional `nix-instantiate` and
 `nix-store` commands. Flakes and experimental Nix CLI features are not needed.
 Run as the ordinary user inside the dedicated Distrobox, without `sudo`.
 
-The first host-side checks reported by the owner passed: binary-cache import
-and execution of `hello`, identification of its closure, and repeat selection
-of the same output from a rooted Nixpkgs source. Those checks did **not** run
-this adapter. Adapter regression tests simulate Nix; real adapter acceptance
-on the owner's container is still pending.
+The owner has run the adapter inside the dedicated Debian 13 Distrobox on a
+Debian host, using Nix 2.35.4, Python 3.13.5 and the pinned Nixpkgs revision
+shown below. The real import checks passed; local regression tests continue
+to use a simulated Nix backend. These are distinct sources of evidence.
+
+## Owner-reported acceptance results (2026-10-23)
+
+| Check | Observed result |
+| --- | --- |
+| Pinned source selection | The manual source pin and adapter selected the same hello output |
+| First application import | `hello` 2.12.3 imported, activated and printed `Hello, world!` |
+| Runtime store metadata | The adapter recorded five hello closure objects with NAR hashes |
+| Idempotent installation | Repeating installation printed `No changes.` and preserved the selected profile generation |
+| Independent MPM GC roots | Nix reported MPM's own source and hello roots, alongside earlier manual test roots |
+| Larger binary import | curl 8.22.0 imported; Nix fetched 17 additional store objects (10.8 MiB download, 29.8 MiB unpacked) |
+| Native network execution | The imported curl printed its version and fetched `https://cache.nixos.org/nix-cache-info` over HTTPS |
+| Preservation of existing selection | hello still ran and its resolved output path was unchanged after curl installation |
+
+The 17 objects are the additional downloads, not a claim about curl's total
+closure size. HTTPS success includes the container's existing environment,
+networking and certificate configuration; it does not establish independence
+from all host services or a working Mojt System. These tests inspected GC
+registrations without destructive garbage collection. Real parallel-build
+activation and execution on Mojt itself remain pending.
 
 ## Manifest and local catalog
 
