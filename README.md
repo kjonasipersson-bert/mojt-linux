@@ -68,11 +68,24 @@ python3 -m unittest discover -s tests -p 'test_mpm_nix_prototype.py' -v
 frozen userspaces. Pacman resolves and installs; private profiles select complete
 runtime roots through Bubblewrap. See the [experiment guide](docs/mpm-pacman-experiment.md)
 for the dedicated Arch Distrobox setup, namespace preflight and opt-in real test.
-Actual execution on the owner's machine is pending; regression tests simulate
-the backend and namespace operations.
+The owner completed the real environment-level acceptance run. Regression
+tests simulate the backend and namespace operations. Nix was subsequently
+selected for Ports; this adapter remains the comparison experiment.
 
 ```sh
 python3 -m unittest discover -s tests -p 'test_mpm_pacman_prototype.py' -v
+```
+
+## System VM experiment
+
+The opt-in System work has three cumulative steps: systemd boot with persistent
+state, NetworkManager/D-Bus networking, and MPM/Nix inside Mojt. Nix binary
+inputs are exported from the existing Distrobox; the Debian VM build host does
+not need Nix installed. Real boot acceptance is pending. See the
+[System guide](docs/system-nix-vm.md) for preparation and checks.
+
+```sh
+python3 -m unittest discover -s tests -p 'test_system_vm.py' -v
 ```
 
 ## Project layout

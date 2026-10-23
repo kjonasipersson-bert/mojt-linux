@@ -11,8 +11,8 @@ agreed architecture and accepted high-level selector semantics:
 `@3.0` selects the newest eligible stable release in the 3.0 line, while
 `@=3.0` matches an exact package-release identifier. The full identifier
 grammar, version comparison and backend adaptation remain to be specified
-before implementing a parser. No package backend or on-disk Ports/System
-package format has been chosen.
+before implementing a parser. Nix has been selected as the Ports backend after
+the binary-import comparison; System release/deployment formats remain open.
 
 The guiding rule is that Mojt can update **Base, System, Kernel, and Ports
 independently**, without silently updating applications or pinned project
@@ -363,12 +363,12 @@ Mojt adapter:
 - Visibility into why a package is retained (active profile, dependency,
   project pin, or rollback reference).
 
-Current candidates include apk, XBPS, FreeBSD pkg, pkgsrc/pkgin, Nix, and
-other established managers. Nix's immutable store and dependency closures
-may fit Ports especially well, but its store location, own libc closures,
-and package-revision addressing need explicit evaluation. None is selected
-by this contract. Base does not acquire a mutable runtime package database
-because a backend exists for System or Ports.
+Nix is selected for Ports. Its store location, own libc closures, package
+addressing and Mojt-specific upgrade policies still need production integration.
+System can use a separately evaluated backend; the first systemd VM experiment
+also obtains its binary inputs from pinned Nixpkgs. This is not a commitment
+to NixOS or a permanent System package/deployment format. Base does not acquire
+a mutable runtime package database because a backend exists for System or Ports.
 
 ## 5. Deliberately unresolved details
 
@@ -385,8 +385,8 @@ because a backend exists for System or Ports.
    user and project override mechanics are deferred.
 5. Define signed repository snapshots, channel preference, downgrade and
    pre-release policy, and handling of withdrawn or known-vulnerable builds.
-6. Select and test System and Ports backend candidates independently; decide
-   the minimum set of external Base/Kernel capabilities they can safely use.
+6. Integrate the selected Nix Ports backend and evaluate the System backend;
+   decide the external Base/Kernel capabilities each area can safely use.
 7. Establish System release composition and how System-owned files are made
    visible beside the Base tree. Avoid committing to an overlay/prefix
    mechanism before testing it.

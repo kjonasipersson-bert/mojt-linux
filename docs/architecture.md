@@ -17,7 +17,9 @@ This document records **current decisions and open questions**, not stable promi
 | Ports | Applications, libraries, developer toolchains and profiles | Independent versions, pinned environments, optional sandbox execution |
 | State | Local configuration, service data and user data | Persists across Base upgrades and rollbacks |
 
-The current Base prototype has no kernel, init, or desktop. The choice of a future System init implementation is not yet frozen. Standardizing on a single supported init system is preferable to maintaining multiple init stacks by default.
+The current Base prototype has no kernel, init, or desktop. The next System
+implementation uses systemd. BusyBox remains an early-boot/rescue component and
+a temporary console-login tool in the VM experiment.
 
 ## Existing prototype pipeline
 
@@ -63,9 +65,10 @@ release in the 3.0 line and `gimp@=3.0` as an exact release identifier
 has been **accepted as the design contract**, but is not yet implemented.
 Detailed version ordering and backend adapters remain open.
 
-The contract deliberately does not select a package backend, a System
-release format, a Ports store implementation, or a deployment format.
-These decisions require separate evaluation.
+Nix is now the selected Ports backend after the binary-import and pacman
+comparisons. The contract's upgrade/selector/project-lock policies are still
+design requirements, not completed features. System release and deployment
+formats require separate evaluation.
 
 ## Ports direction
 
@@ -77,7 +80,23 @@ Ports should support:
 - native execution by default for ordinary command-line tools;
 - optional security sandboxes for programs or build processes where useful.
 
-This remains a design direction, not an implemented Mojt Ports manager. We should evaluate mature components before creating our own resolver or content-addressed store.
+Nix supplies the Ports store and dependency objects; MPM owns Mojt's user-facing
+selection and activation policy. The narrow adapter has passed real Distrobox
+imports and parallel-version tests, but has not yet been accepted inside Mojt.
+See [the Nix experiment](mpm-nix-experiment.md).
+
+## First System implementation
+
+The owner approved three incremental steps: systemd boot with persistent state,
+NetworkManager/D-Bus networking, and MPM/Nix imports inside the booted VM.
+See [the System experiment](system-nix-vm.md) for implemented preparation/build
+support and the required real acceptance checks.
+
+The experiment obtains System binaries from the same pinned Nixpkgs source
+and keeps them separate from Base. A System profile supplies unit files and
+runtime tools; persistent machine configuration retains precedence. Nix/MPM
+and their management runtime belong to System. The initial root-operated
+binary-import test is not a production package-manager service/permission model.
 
 ## Explicitly unresolved
 
@@ -111,8 +130,8 @@ provided by the image builder in `system/prototype-init` and made available
 under `/run/mojt-system` at boot. BusyBox init supervises the serial console
 and provides a minimal poweroff path. This is **development-only**: BusyBox
 is suitable for the prototype, rescue media and embedded contexts, but it is
-**not** the planned permanent init for the Mojt distribution. The production
-init remains an open choice (systemd is a pragmatic candidate).
+**not** the planned permanent init for the Mojt distribution. The next System
+experiment uses systemd as PID 1; BusyBox remains an early-boot/rescue tool.
 
 Account databases (`/etc/passwd`, `/etc/group`, `/etc/shadow`) are persistent
 machine state. The source VM currently has a root account expecting shadow

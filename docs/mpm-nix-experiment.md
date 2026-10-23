@@ -7,7 +7,8 @@ SPDX-License-Identifier: GPL-2.0-only
 # MPM/Nix Ports experiment
 
 **Status:** a narrow backend probe, not a production MPM implementation or
-a decision to use Nix permanently. Requires Linux, Python 3.11+, and an
+the complete MPM contract. The owner has now selected Nix for Ports after
+the comparator tests. Requires Linux, Python 3.11+, and an
 existing Nix installation with the traditional `nix-instantiate` and
 `nix-store` commands. Flakes and experimental Nix CLI features are not needed.
 Run as the ordinary user inside the dedicated Distrobox, without `sudo`.
