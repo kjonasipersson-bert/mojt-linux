@@ -110,6 +110,10 @@ owner's Mojt VM, including native `hello`, Python 3.12/3.13 activation and a
 retained project reference. See the [System guide](docs/system-nix-vm.md) for
 preparation, evidence and limitations.
 
+An additive [System administration step](docs/system-admin-tools.md) supplies
+procps, util-linux, less and a small vi editor (nvi), with a new payload and
+an explicit `mojt-system-check admin` acceptance probe.
+
 For early Mojt versions, Nix remains exposed and supplies System packages as
 well as Ports through a shared store. Mojt controls System activation;
 host-service requirements belong to MPM's separate capability model. See the

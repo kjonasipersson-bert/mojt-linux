@@ -71,7 +71,7 @@ def prepare(args):
         outputs = [p["output"] for p in packages.values()]
         for value in outputs:
             nix.retain(roots, value)
-        if args.step == 3:
+        if args.step >= 3:
             outputs.append(source["store"])
         closure = sorted(set(nix.run("nix-store", "--query", "--requisites", *outputs).splitlines()))
         system.require(set(outputs) <= set(closure), "incomplete System closure")
@@ -104,7 +104,7 @@ def prepare(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--step", type=int, choices=(1, 2, 3), required=True)
+    parser.add_argument("--step", type=int, choices=(1, 2, 3, 4), required=True)
     parser.add_argument("--source-manifest", type=Path,
                         default=REPO / "manifests/mpm-nix-example.toml")
     parser.add_argument("--output", type=Path, required=True)

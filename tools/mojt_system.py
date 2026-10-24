@@ -18,6 +18,13 @@ ROLES = {
     2: {"dbus": "dbus", "networkmanager": "networkmanager", "curl": "curl",
         "cacert": "cacert", "iproute2": "iproute2"},
     3: {"nix": "nix", "python": "python3"},
+    4: {"procps": "procps", "util-linux": "util-linux", "less": "less", "editor": "nvi"},
+}
+ADMIN_COMMANDS = {
+    "procps": ("ps", "top", "free", "pgrep", "uptime"),
+    "util-linux": ("lsblk", "findmnt", "mount", "umount", "dmesg", "blkid"),
+    "less": ("less",),
+    "editor": ("vi", "ex"),
 }
 VERSION = "0.2"
 
@@ -28,7 +35,7 @@ def require(condition, message):
 
 
 def roles(step):
-    require(type(step) is int and step in ROLES, "System step must be 1, 2 or 3")
+    require(type(step) is int and step in ROLES, "System step must be 1, 2, 3 or 4")
     return {key: value for n in range(1, step + 1) for key, value in ROLES[n].items()}
 
 
@@ -130,8 +137,8 @@ def load_payload(path):
     require(source["system"] == "x86_64-linux", "System VM requires x86_64-linux")
     require(source["path"] == source_store or source["path"].startswith(source_store + "/"),
             "Nixpkgs source path outside its store object")
-    if record["step"] == 3:
-        require(source_store in seen, "step 3 must retain its Nixpkgs source")
+    if record["step"] >= 3:
+        require(source_store in seen, "step 3+ must retain its Nixpkgs source")
         require((virtual_file(path, source["path"]) / ".git-revision").read_text().strip()
                 == source["revision"], "exported Nixpkgs revision changed")
     executable(path, record, "systemd", "lib/systemd/systemd", "bin/systemd")
@@ -149,10 +156,14 @@ def load_payload(path):
             executable(path, record, role, "bin/" + name, "sbin/" + name)
         require(virtual_file(path, record["packages"]["cacert"]["output"] +
                              "/etc/ssl/certs/ca-bundle.crt").is_file(), "missing exported CA bundle")
-    if record["step"] == 3:
+    if record["step"] >= 3:
         for name in ("nix", "nix-store", "nix-instantiate"):
             executable(path, record, "nix", "bin/" + name)
         executable(path, record, "python", "bin/python3")
+    if record["step"] >= 4:
+        for role, commands in ADMIN_COMMANDS.items():
+            for name in commands:
+                executable(path, record, role, "bin/" + name, "sbin/" + name)
     return record
 
 
@@ -309,7 +320,7 @@ def install(tree, payload, record, busybox, login_mode, repo):
         cert = record["packages"]["cacert"]["output"] + "/etc/ssl/certs/ca-bundle.crt"
         require(virtual_file(payload, cert).is_file(), "missing exported CA bundle")
         write(system / "ca-path", cert + "\n")
-    if step == 3:
+    if step >= 3:
         for name in ("nix", "nix-store", "nix-instantiate"):
             export(name, "nix", "bin/" + name)
         python = export("python3", "python", "bin/python3")
@@ -345,6 +356,12 @@ def install(tree, payload, record, busybox, login_mode, repo):
         for obj in record["objects"]:
             name = Path(obj["path"]).name
             setup.append(f"ln -sfn {obj['path']} /nix/var/nix/gcroots/mojt-system/{name}")
+    if step >= 4:
+        for role, commands in ADMIN_COMMANDS.items():
+            for name in commands:
+                export(name, role, "bin/" + name, "sbin/" + name)
+        write(system / "admin-commands", "\n".join(
+            name for commands in ADMIN_COMMANDS.values() for name in commands) + "\n")
     setup += ['echo "Mojt System setup complete"']
     write(system / "setup", "\n".join(setup) + "\n", 0o755)
     put_unit("mojt-setup.service", unit("Mojt System setup", "/run/mojt-system/setup",
@@ -360,11 +377,13 @@ def install(tree, payload, record, busybox, login_mode, repo):
     (system / "units/default.target").unlink(missing_ok=True)
     (system / "units/default.target").symlink_to("mojt.target")
     write(system / "environment", "export PATH=" +
-          ("/var/lib/mojt/ports/current/bin:" if step == 3 else "") +
+          ("/var/lib/mojt/ports/current/bin:" if step >= 3 else "") +
           "/run/mojt-system/bin:/usr/bin:/bin\n" +
           ("export SSL_CERT_FILE=" + cert + "\nexport NIX_SSL_CERT_FILE=" + cert + "\n"
            if step >= 2 else "") +
-          ("export NIX_REMOTE=local\n" if step == 3 else ""))
+          ("export NIX_REMOTE=local\n" if step >= 3 else "") +
+          ('export EDITOR="${EDITOR:-vi}"\nexport VISUAL="${VISUAL:-vi}"\n'
+           'export PAGER="${PAGER:-less}"\n' if step >= 4 else ""))
     # PID 1 applies presets on first boot, before mojt-setup.service can run.
     # Mojt's target supplies explicit dependencies; merely exposing a vendor
     # unit must not enable its optional services or sockets.

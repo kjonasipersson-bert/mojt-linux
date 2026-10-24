@@ -777,7 +777,7 @@ def main():
                         help="static x86_64 BusyBox (Debian: busybox-static)")
     parser.add_argument("--disk-size-mib", type=int, default=1024)
     parser.add_argument("--system-payload", type=Path,
-                        help="opt-in System payload from mojt-system-prepare.py (steps 1-3)")
+                        help="opt-in System payload from mojt-system-prepare.py (steps 1-4)")
     parser.add_argument("--root-shell", metavar="PATH",
                         help="password mode only: explicitly select root's shell "
                              "in the NEW VM's copied /etc/passwd (e.g. /bin/sh)")

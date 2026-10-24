@@ -69,6 +69,61 @@ case "$action" in
         /run/mojt-system/bin/python3 /run/mojt-system/tests/run-mpm-nix-ports.py \
             --root "$lab" --source-manifest /run/mojt-system/ports.toml
         echo "PASS: ordinary Ports, automatic exports and historical removal fallback" ;;
+    admin)
+        # Check the System tools even if the interactive Ports profile shadows them.
+        PATH=/run/mojt-system/bin:/usr/bin:/bin
+        export PATH
+        boot_check
+        [ -r /run/mojt-system/admin-commands ] || fail "requires a step 4 VM"
+        for name in $(cat /run/mojt-system/admin-commands); do
+            [ "$(command -v "$name")" = "/run/mojt-system/bin/$name" ] ||
+                fail "$name is not available from System"
+        done
+        [ "$(ps -p 1 -o comm=)" = systemd ] || fail "ps cannot inspect systemd PID 1"
+        ps -eo pid,ppid,comm --sort=pid
+        top -b -n 1 -w 80
+        free -h
+        pgrep -x systemd
+        uptime
+        lsblk -o NAME,TYPE,SIZE,FSTYPE
+        findmnt --noheadings --output TARGET,FSTYPE /
+        blkid --version
+        less --version
+
+        probe="$(mktemp -d /tmp/mojt-admin.XXXXXX)"
+        mounted=0
+        mkdir "$probe/mount"
+        cleanup_admin() {
+            if [ "$mounted" = 1 ]; then
+                /run/mojt-system/bin/umount "$probe/mount" || {
+                    echo "FAIL: temporary mount cleanup failed; retained $probe" >&2
+                    return 1
+                }
+                mounted=0
+            fi
+            rm -f "$probe/editor.txt" "$probe/dmesg"
+            rmdir "$probe/mount" "$probe"
+        }
+        trap cleanup_admin 0
+        trap 'exit 1' HUP INT TERM
+        dmesg --color=never >"$probe/dmesg"
+        tail -n 5 "$probe/dmesg"
+        mount -t tmpfs -o size=1m,nosuid,nodev mojt-admin-check "$probe/mount"
+        mounted=1
+        [ "$(findmnt --noheadings --output FSTYPE --mountpoint "$probe/mount")" = tmpfs ] ||
+            fail "temporary tmpfs mount not visible"
+        /run/mojt-system/bin/umount "$probe/mount"
+        mounted=0
+        ex -s "$probe/editor.txt" <<'EX'
+a
+Mojt System vi probe
+.
+wq
+EX
+        [ "$(cat "$probe/editor.txt")" = 'Mojt System vi probe' ] || fail "vi/ex file edit failed"
+        cleanup_admin
+        trap - 0 HUP INT TERM
+        echo "PASS: System process, memory, disk, mount, pager and vi tools" ;;
     persistence-write)
         [ ! -e /etc/mojt-system-persistence-test ] || fail "test marker already exists"
         [ ! -L /etc/mojt-system-persistence-test ] || fail "test marker is a symlink"
@@ -87,5 +142,5 @@ case "$action" in
         current="$(cat /proc/sys/kernel/random/boot_id)" || fail "cannot read current boot ID"
         [ "$old" != "$current" ] || fail "a second boot is required"
         echo "PASS: both /etc and /var markers survived a different boot" ;;
-    *) fail "use boot, network, ports, programs, persistence-write or persistence-check" ;;
+    *) fail "use boot, network, ports, programs, admin, persistence-write or persistence-check" ;;
 esac
