@@ -61,6 +61,7 @@ class SystemVmTests(unittest.TestCase):
                 "dbus": ["bin/dbus-daemon"], "networkmanager": ["bin/NetworkManager", "bin/nmcli"],
                 "curl": ["bin/curl"], "cacert": [], "iproute2": ["bin/ip"],
                 "nix": ["bin/nix", "bin/nix-store", "bin/nix-instantiate"], "python": ["bin/python3"],
+                "shell": ["bin/bash"],
                 **{role: ["bin/" + name for name in names]
                    for role, names in system.ADMIN_COMMANDS.items()},
             }[role]
@@ -99,8 +100,8 @@ class SystemVmTests(unittest.TestCase):
     def test_steps_are_cumulative_and_explicit(self):
         self.assertEqual(set(system.roles(1)), {"systemd"})
         self.assertTrue(set(system.roles(1)) < set(system.roles(2)) < set(system.roles(3))
-                        < set(system.roles(4)))
-        for value in (0, 5, True, "1"):
+                        < set(system.roles(4)) < set(system.roles(5)))
+        for value in (0, 6, True, "1"):
             with self.assertRaises(ValueError):
                 system.roles(value)
 
@@ -470,6 +471,64 @@ esac""")
         system.write(self.payload / "system.json", json.dumps(record))
         with self.assertRaisesRegex(ValueError, "missing procps executable"):
             system.load_payload(self.payload)
+
+    def test_step5_keeps_bash_in_system_and_can_select_it_for_copied_root_account(self):
+        before = system.tree_hash(self.tree / "base")
+        directory, record = self.install(5)
+        target = record["packages"]["shell"]["output"] + "/bin/bash"
+        self.assertEqual(os.readlink(directory / "bin/bash"), target)
+        with mock.patch.object(vm.os, "chown"):
+            vm.prepare_vm_root_shell(self.tree, "0.1.3", "/run/mojt-system/bin/bash", system_shell=target)
+        self.assertIn("root:x:0:0:root:/root:/run/mojt-system/bin/bash\n",
+                      (self.tree / "state/etc/passwd").read_text())
+        self.assertEqual(system.tree_hash(self.tree / "base"), before)
+        history = self.tree / "state/var/lib/mojt/console"
+        self.assertEqual(history.stat().st_mode & 0o777, 0o700)
+        self.assertEqual((history / "root.history").stat().st_mode & 0o777, 0o600)
+        self.assertEqual((directory / "bashrc").read_text(), system.BASH_RC)
+        self.assertIn('. /etc/profile.d/mojt-bash.sh',
+                      (self.tree / "state/etc/profile").read_text())
+        subprocess.run(["bash", "-n", str(directory / "bashrc")], check=True)
+
+    def test_system_shell_is_not_adopted_without_explicit_account_selection(self):
+        (self.tree / "base/0.1.3/bin").symlink_to("usr/bin")
+        directory, record = self.install(5)
+        before = (self.tree / "state/etc/passwd").read_bytes()
+        target = record["packages"]["shell"]["output"] + "/bin/bash"
+        self.assertEqual(vm.prepare_vm_root_shell(self.tree, "0.1.3", system_shell=target), "/bin/sh")
+        self.assertEqual((self.tree / "state/etc/passwd").read_bytes(), before)
+
+    def test_system_bash_selection_rejects_missing_metadata_and_changed_export(self):
+        directory, record = self.install(5)
+        before = (self.tree / "state/etc/passwd").read_bytes()
+        with self.assertRaisesRegex(ValueError, "requires a step 5 payload"):
+            vm.prepare_vm_root_shell(self.tree, "0.1.3", "/run/mojt-system/bin/bash")
+        (directory / "bin/bash").unlink()
+        (directory / "bin/bash").symlink_to("/usr/bin/bash")
+        with self.assertRaisesRegex(ValueError, "differs from selected payload"):
+            vm.prepare_vm_root_shell(self.tree, "0.1.3", "/run/mojt-system/bin/bash",
+                                     system_shell=record["packages"]["shell"]["output"] + "/bin/bash")
+        self.assertEqual((self.tree / "state/etc/passwd").read_bytes(), before)
+
+    def test_step5_preserves_local_bash_configuration_and_existing_history(self):
+        local_rc = self.tree / "state/etc/bashrc"
+        local_rc.write_text("# administrator configuration\n")
+        history = self.tree / "state/var/lib/mojt/console/root.history"
+        system.write(history, "retained history\n", 0o600)
+        self.install(5)
+        self.assertEqual(local_rc.read_text(), "# administrator configuration\n")
+        self.assertEqual(history.read_text(), "retained history\n")
+
+    def test_step5_history_directory_cannot_follow_a_link_outside_staging(self):
+        outside = self.root / "outside-history"
+        outside.mkdir()
+        (outside / "root.history").write_text("keep\n")
+        link = self.tree / "state/var/lib/mojt/console"
+        link.parent.mkdir(parents=True)
+        link.symlink_to(outside)
+        with self.assertRaisesRegex(ValueError, "unsafe console history directory"):
+            self.install(5)
+        self.assertEqual((outside / "root.history").read_text(), "keep\n")
 
     def run_admin_check(self, *, fail_mount_query=False):
         guest = self.root / "admin-guest"

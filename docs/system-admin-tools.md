@@ -193,7 +193,7 @@ References: [GNU stty special settings](https://www.gnu.org/software/coreutils/m
 [BusyBox applets](https://busybox.net/downloads/BusyBox.html), and
 [UTM's QEMU serial resize command](https://docs.getutm.app/settings-qemu/devices/serial/#resize-console-command).
 
-## Interactive shell trial
+## Interactive shell trial and System follow-up
 
 The current VM recipes explicitly select `/bin/sh` from Base for root login.
 That is the minimal POSIX shell, not a configured interactive shell profile.
@@ -207,13 +207,12 @@ bash -i
 `exit` returns to the original login shell. This trial does not change the
 account's login shell or `/bin/sh`. Bash supplies Readline command editing,
 history and basic completion; serial window-size synchronization is a separate
-problem and is not fixed by starting Bash. Persistent history and the default
-interactive System shell still need explicit integration; do not infer those
-policies from this temporary Ports trial.
+problem and is not fixed by starting Bash. This temporary Ports trial alone
+does not establish persistent-history or login-shell policy.
 
 The agent fetched the pinned source's `bashInteractive` binary (5.3p20),
 verified its Readline bindings and enabled history/editing options, and ran
-the shell successfully. An owner report of this interactive trial is pending.
-A future System console profile should pair an interactive shell with useful
-terminal tools, a reliable size query, clear prompt/configuration defaults
-and a retained minimal recovery shell.
+the shell successfully. On 2026-10-24 the owner reported that installing the
+package in the running Mojt VM worked very well and approved Bash in System.
+[System step 5](system-bash.md) implements that addition with console defaults
+and persistent root history. Automatic serial-terminal sizing remains open.

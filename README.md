@@ -114,6 +114,11 @@ An additive [System administration step](docs/system-admin-tools.md) supplies
 procps, util-linux, less and a small vi editor (nvi), with a new payload and
 an explicit `mojt-system-check admin` acceptance probe.
 
+[System step 5](docs/system-bash.md) adds interactive Bash, a console profile
+and persistent root history. Its new-VM recipe explicitly selects Bash for
+root login while retaining Base's `/bin/sh`. The next disk-boot milestone is
+outlined in the [self-booting image proposal](docs/self-booting-image-plan.md).
+
 For early Mojt versions, Nix remains exposed and supplies System packages as
 well as Ports through a shared store. Mojt controls System activation;
 host-service requirements belong to MPM's separate capability model. See the
