@@ -70,7 +70,12 @@ The test produces Base 0.1.2 with one additional default, then checks installati
 
 ## MPM/Nix Ports experiment
 
-`tools/mpm-nix-prototype` evaluates a small TOML selection from an already
+The [ordinary Ports guide](docs/mpm-ports.md) covers `mpm ports search`,
+`info`, `install`, `list`, `activate` and `remove`, including history-based
+fallback and a new opt-in acceptance run. `tools/mpm` is the repository entry
+point; newly built step 3 guests expose the same CLI as `mpm`.
+
+The original `tools/mpm-nix-prototype` evaluates a small TOML selection from an already
 pinned Nixpkgs source, imports binary outputs and retains private command
 profiles. First installation activates the requested commands; later installs
 preserve existing activation. No Base/System files or host command paths are

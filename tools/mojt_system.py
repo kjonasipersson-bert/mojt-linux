@@ -316,12 +316,22 @@ def install(tree, payload, record, busybox, login_mode, repo):
         write(system / "tools/mpm-nix-prototype", (repo / "tools/mpm-nix-prototype").read_text(), 0o755)
         write(system / "tests/run-mpm-nix-python.py",
               (repo / "tests/run-mpm-nix-python.py").read_text(), 0o755)
-        write(system / "bin/mpm", "#!/bin/sh\nexec " + python +
-              ' /run/mojt-system/tools/mpm-nix-prototype --root /var/lib/mojt/ports ports "$@"\n', 0o755)
+        write(system / "tests/run-mpm-nix-ports.py",
+              (repo / "tests/run-mpm-nix-ports.py").read_text(), 0o755)
+        write(system / "bin/mpm", "#!/bin/sh\n"
+              "PATH=/run/mojt-system/bin:/usr/bin:/bin\nexport PATH\nexec " + python +
+              ' -I /run/mojt-system/tools/mpm-nix-prototype --root /var/lib/mojt/ports '
+              '--source-manifest /run/mojt-system/ports.toml "$@"\n', 0o755)
         source = record["source"]
         write(system / "ports.toml", 'format = 1\n[nixpkgs]\n' +
               "".join(f'{k} = "{source[k]}"\n' for k in ("path", "revision", "system")) +
               '\n[[ports]]\nname = "hello"\nattribute = "hello"\ncommands = ["hello"]\n')
+        # Add a login hook without overwriting machine-local profile contents.
+        login_hook = '[ ! -r /run/mojt-system/environment ] || . /run/mojt-system/environment\n'
+        add_default(tree / "state/etc/profile.d/mojt-system.sh", login_hook)
+        profile = tree / "state/etc/profile"
+        if not profile.exists() and not profile.is_symlink():
+            write(profile, '. /etc/profile.d/mojt-system.sh\n')
         add_default(tree / "state/etc/nix/nix.conf",
                     "build-users-group =\nmax-jobs = 0\nrequire-sigs = true\n"
                     "substituters = https://cache.nixos.org/\n"
@@ -349,7 +359,9 @@ def install(tree, payload, record, busybox, login_mode, repo):
              "Wants=" + " ".join(wanted) + "\nAllowIsolate=yes\n")
     (system / "units/default.target").unlink(missing_ok=True)
     (system / "units/default.target").symlink_to("mojt.target")
-    write(system / "environment", "export PATH=/run/mojt-system/bin:/usr/bin:/bin\n" +
+    write(system / "environment", "export PATH=" +
+          ("/var/lib/mojt/ports/current/bin:" if step == 3 else "") +
+          "/run/mojt-system/bin:/usr/bin:/bin\n" +
           ("export SSL_CERT_FILE=" + cert + "\nexport NIX_SSL_CERT_FILE=" + cert + "\n"
            if step >= 2 else "") +
           ("export NIX_REMOTE=local\n" if step == 3 else ""))

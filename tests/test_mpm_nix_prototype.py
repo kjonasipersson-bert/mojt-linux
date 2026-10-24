@@ -45,6 +45,8 @@ class MpmNixTests(unittest.TestCase):
         self.output2 = self.object("3", "hello-1.0", command="hello", version="1.0-rebuild")
         self.selected = [dict(name="hello", attribute="hello", commands=["hello"],
                               version="1.0", output=str(self.output))]
+        self.attributes = {"hello": dict(version="1.0", output=str(self.output), description="Hello")}
+        self.materialize = {}
         self.patch("run", self.nix)
         self.manifest = self.directory / "ports.toml"
         self.write_manifest()
@@ -79,6 +81,13 @@ commands = {commands}
     def nix(self, *args):
         self.calls.append(args)
         if args[0] == "nix-instantiate":
+            request = json.loads(args[args.index("requestJSON") + 1])
+            expression = args[args.index("--expr") + 1]
+            if expression == mpm.RESOLVE:
+                return json.dumps(self.attributes[request["attribute"]])
+            if expression == mpm.SEARCH:
+                return json.dumps(dict(matches=[dict(attribute="hello", version="1.0",
+                                                     description="Hello")], matchedAttributes=1))
             return json.dumps(self.selected)
         if args[1:3] == ("--query", "--hash"):
             return "\n".join("sha256:" + mpm.store_hash(p) for p in args[3:])
@@ -87,6 +96,8 @@ commands = {commands}
         if args[1] == "--realise":
             if "--dry-run" in args:
                 return ""
+            if args[2] in self.materialize:
+                self.materialize.pop(args[2])()
             self.assertNotIn(".drv", args[2])
             link = Path(args[args.index("--add-root") + 1])
             if os.path.lexists(link):
@@ -286,6 +297,231 @@ commands = ["hello"]
                       str(self.output / "bin/hello")):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 mpm.store_path(value)
+
+    def variant(self, attribute, character, version):
+        output = self.object(character, "hello-" + version, command="hello", version=version)
+        self.attributes[attribute] = dict(version=version, output=str(output), description=attribute)
+        self.cli("install", "hello", "--attribute", attribute, "-y")
+        return next(k for k, r in self.state()["installed"].items() if r["attribute"] == attribute)
+
+    def test_generic_install_uses_pinned_source_and_discovers_commands_without_toml_entry(self):
+        self.manifest.write_text(self.manifest.read_text().split("[[ports]]")[0])
+        self.update()
+        source = self.state()["catalog"]["source"]
+        self.manifest.unlink()
+        extra = self.output / "bin/hello-extra"
+        extra.symlink_to("hello")
+        self.cli("install", "hello", "-y")
+        state = self.state()
+        record = next(iter(state["installed"].values()))
+        self.assertEqual(record["commands"], ["hello", "hello-extra"])
+        self.assertEqual(record["source"], source)
+        self.assertEqual(self.hello(), "1.0")
+        self.assertTrue((self.root / "current/bin/hello-extra").exists())
+        self.assertEqual(state["catalog"]["packages"], {})
+        requests = [json.loads(c[c.index("requestJSON") + 1]) for c in self.calls
+                    if c[0] == "nix-instantiate"]
+        self.assertTrue(all(r["source"] == source for r in requests))
+
+    def test_search_info_and_list_are_read_only_and_show_source(self):
+        self.update()
+        before = os.readlink(self.root / "current")
+        self.calls.clear()
+        found = json.loads(self.cli("search", "HeL", "--json"))
+        self.assertEqual(found["source"]["revision"], "a" * 40)
+        self.assertEqual(found["matches"][0]["attribute"], "hello")
+        record = json.loads(self.cli("info", "hello", "--json"))
+        self.assertEqual(record["output"], str(self.output))
+        self.assertEqual(json.loads(self.cli("list", "--json")), [])
+        self.assertEqual(os.readlink(self.root / "current"), before)
+        self.assertFalse(any(c[0] == "nix-store" and c[1] == "--realise" for c in self.calls))
+
+    def test_update_without_manifest_reuses_saved_pin_and_never_reads_channel(self):
+        self.update()
+        self.manifest.unlink()
+        self.calls.clear()
+        before = os.readlink(self.root / "current")
+        self.assertIn("No changes.", self.cli("update", "-y"))
+        self.assertEqual(os.readlink(self.root / "current"), before)
+        self.assertEqual(self.calls, [])
+
+    def test_initial_update_can_use_system_source_manifest(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            code = mpm.main(["--root", str(self.root), "--source-manifest", str(self.manifest),
+                             "ports", "update", "-y"])
+        self.assertEqual(code, 0)
+        self.assertIsNotNone(self.state()["catalog"])
+
+    def test_initial_preview_accepts_empty_mktemp_directory_without_writing(self):
+        self.root.mkdir()
+        self.cli("update", "--manifest", str(self.manifest), "--dry-run")
+        self.assertEqual(list(self.root.iterdir()), [])
+        self.assertEqual(self.state()["installed"], {})
+
+    def test_discovery_after_import_and_late_conflict_preserve_old_profile(self):
+        self.update()
+        self.cli("install", "hello", "-y")
+        before = os.readlink(self.root / "current")
+        output = self.store / ("4" * 32 + "-other-2.0")
+        self.attributes["other"] = dict(version="2.0", output=str(output), description="Collision")
+        self.materialize[str(output)] = lambda: self.object("4", "other-2.0", command="hello", version="2.0")
+        preview = self.cli("install", "other", "--dry-run")
+        self.assertIn("discover after binary import", preview)
+        self.assertFalse(output.exists())
+        self.cli("install", "other", "-y", success=False)
+        self.assertTrue(output.exists())
+        self.assertEqual(os.readlink(self.root / "current"), before)
+        self.assertEqual(self.hello(), "1.0")
+        self.assertEqual(len(self.state()["installed"]), 1)
+        # The same imported output can subsequently be retained without claiming defaults.
+        self.cli("install", "other", "--no-activate", "-y")
+        self.assertEqual(self.hello(), "1.0")
+        self.assertEqual(len(self.state()["installed"]), 2)
+
+    def test_remove_active_uses_activation_history_before_newer_never_active_version(self):
+        self.update()
+        a = self.variant("a", "4", "1.0")
+        saved = (self.root / "current").resolve()
+        b = self.variant("b", "5", "2.0")
+        self.cli("activate", b, "-y")
+        c = self.variant("c", "6", "99.0")
+        preview = self.cli("remove", b, "--dry-run")
+        self.assertIn("Activate: hello -> " + a, preview)
+        self.cli("remove", b, "-y")
+        self.assertEqual(self.state()["active"]["hello"], a)
+        self.assertEqual(set(self.state()["installed"]), {a, c})
+        self.assertEqual(self.hello(saved), "1.0")
+        self.assertTrue((self.root / "gcroots" / ("5" * 32 + "-hello-2.0")).exists())
+        self.cli("remove", a, "-y")
+        self.assertEqual(self.state()["active"]["hello"], c)
+        self.cli("remove", "hello", "-y")
+        self.assertEqual(self.state()["active"], {})
+        self.assertEqual(self.state()["installed"], {})
+        self.assertFalse((self.root / "current/bin/hello").exists())
+        self.assertEqual(self.hello(saved), "1.0")
+        self.assertFalse(any("--gc" in call or "--delete" in call for call in self.calls))
+
+    def test_remove_active_uses_last_activation_rather_than_install_or_version_order(self):
+        self.update()
+        a = self.variant("a", "4", "9.0")
+        b = self.variant("b", "5", "2.0")
+        c = self.variant("c", "6", "1.0")
+        self.cli("activate", c, "-y")
+        self.cli("activate", b, "-y")
+        self.cli("activate", a, "-y")
+        self.cli("remove", a, "-y")
+        self.assertEqual(self.state()["active"]["hello"], b)
+        self.assertEqual(self.hello(), "2.0")
+
+    def test_never_active_fallback_uses_install_order_and_multi_remove_excludes_all_targets(self):
+        self.update()
+        a = self.variant("a", "4", "1.0")
+        b = self.variant("b", "5", "99.0")
+        c = self.variant("c", "6", "2.0")
+        self.cli("remove", a, "-y")
+        self.assertEqual(self.state()["active"]["hello"], c)
+        self.cli("install", "hello", "--attribute", "a", "-y")
+        self.cli("remove", a, c, "-y")
+        self.assertEqual(self.state()["active"]["hello"], b)
+
+    def test_remove_inactive_and_repeat_activate_do_not_reorder_history(self):
+        self.update()
+        a = self.variant("a", "4", "1.0")
+        b = self.variant("b", "5", "1.0-rebuild")
+        before = os.readlink(self.root / "current")
+        self.assertIn("No changes.", self.cli("activate", a, "-y"))
+        self.assertEqual(os.readlink(self.root / "current"), before)
+        active_history = self.state()["history"]["activated"]
+        self.cli("remove", b, "-y")
+        self.assertEqual(self.state()["active"]["hello"], a)
+        self.assertEqual(self.state()["history"]["activated"], active_history)
+
+    def test_ambiguous_remove_and_activation_require_exact_identity(self):
+        self.update()
+        self.variant("a", "4", "1.0")
+        self.variant("b", "5", "2.0")
+        before = os.readlink(self.root / "current")
+        for action in ("activate", "remove"):
+            self.assertIn("multiple versions", self.cli(action, "hello", "-y", success=False))
+        self.assertEqual(os.readlink(self.root / "current"), before)
+
+    def test_remove_preview_cancel_and_publish_failure_leave_history_and_default_unchanged(self):
+        self.update()
+        a = self.variant("a", "4", "1.0")
+        self.variant("b", "5", "2.0")
+        before = self.state()
+        profile = os.readlink(self.root / "current")
+        self.cli("remove", a, "--dry-run")
+        self.cli("remove", a, answer="n")
+        with mock.patch.object(mpm.os, "replace", side_effect=OSError("injected failure")):
+            self.cli("remove", a, "-y", success=False)
+        self.assertEqual(self.state(), before)
+        self.assertEqual(os.readlink(self.root / "current"), profile)
+        self.assertEqual(self.hello(), "1.0")
+
+    def test_legacy_history_baseline_is_explicit_and_read_only_commands_do_not_migrate(self):
+        self.update()
+        a = self.variant("a", "4", "1.0")
+        b = self.variant("b", "5", "2.0")
+        state = self.state()
+        del state["history"]
+        (self.root / "current/state.json").write_text(json.dumps(state))
+        self.assertNotIn("history", self.state())
+        self.assertIn("earlier activation order is unknown", self.cli("remove", a, "-y"))
+        self.assertEqual(self.state()["active"]["hello"], b)
+
+    def test_conflicting_removal_fallback_aborts_without_removing_active_version(self):
+        self.update()
+        a = self.variant("a", "4", "1.0")
+        output = self.object("5", "hello-2.0", command="hello", version="2.0")
+        (output / "bin/extra").symlink_to("hello")
+        self.attributes["b"] = dict(version="2.0", output=str(output), description="b")
+        self.cli("install", "hello", "--attribute", "b", "-y")
+        b = next(k for k, r in self.state()["installed"].items() if r["attribute"] == "b")
+        self.cli("activate", b, "-y")
+        self.cli("activate", a, "-y")
+        other = self.object("6", "other-1.0", command="extra", version="other")
+        self.attributes["other"] = dict(version="1.0", output=str(other), description="other")
+        self.cli("install", "other", "-y")
+        before = self.state()
+        self.assertIn("command alias conflict: extra", self.cli("remove", a, "-y", success=False))
+        self.assertEqual(self.state(), before)
+        self.assertEqual(self.hello(), "1.0")
+
+    def test_profile_flush_failure_before_commit_preserves_old_selection(self):
+        self.update()
+        a = self.variant("a", "4", "1.0")
+        self.variant("b", "5", "2.0")
+        before = os.readlink(self.root / "current")
+        with mock.patch.object(mpm, "sync_directory", side_effect=OSError("flush failed")):
+            self.cli("remove", a, "-y", success=False)
+        self.assertEqual(os.readlink(self.root / "current"), before)
+        self.assertEqual(self.hello(), "1.0")
+
+    def test_post_commit_flush_failure_retains_selected_generation_and_reports_uncertainty(self):
+        self.update()
+        self.variant("a", "4", "1.0")
+        b = self.variant("b", "5", "2.0")
+        original = mpm.sync_directory
+
+        def fail_at_root(path):
+            if path == self.root:
+                raise OSError("post-commit flush failed")
+            original(path)
+
+        with mock.patch.object(mpm, "sync_directory", side_effect=fail_at_root):
+            result = self.cli("activate", b, "-y", success=False)
+        self.assertIn("Profile selection may have committed", result)
+        self.assertEqual(self.state()["active"]["hello"], b)
+        self.assertEqual(self.hello(), "2.0")
+
+    def test_reserved_manager_commands_can_only_be_retained_inactive(self):
+        self.update()
+        output = self.object("4", "other-1.0", command="mpm", version="other")
+        self.attributes["other"] = dict(version="1.0", output=str(output), description="other")
+        self.assertIn("reserved System management command", self.cli("install", "other", "-y", success=False))
+        self.cli("install", "other", "--no-activate", "-y")
+        self.assertNotIn("other", self.state()["active"])
 
 
 if __name__ == "__main__":

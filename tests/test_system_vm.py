@@ -380,11 +380,21 @@ esac""")
         config = (self.tree / "state/etc/nix/nix.conf").read_text()
         self.assertIn("require-sigs = true", config)
         self.assertIn("max-jobs = 0", config)
-        self.assertIn("/var/lib/mojt/ports ports", (directory / "bin/mpm").read_text())
+        wrapper = (directory / "bin/mpm").read_text()
+        self.assertIn("--root /var/lib/mojt/ports", wrapper)
+        self.assertIn('--source-manifest /run/mojt-system/ports.toml "$@"', wrapper)
+        self.assertNotIn('ports "$@"', wrapper)
+        self.assertIn(" -I ", wrapper)
+        self.assertIn("/var/lib/mojt/ports/current/bin:/run/mojt-system/bin",
+                      (directory / "environment").read_text())
+        self.assertIn("/run/mojt-system/environment",
+                      (self.tree / "state/etc/profile.d/mojt-system.sh").read_text())
         self.assertEqual((directory / "tools/mpm-nix-prototype").read_bytes(),
                          (REPO / "tools/mpm-nix-prototype").read_bytes())
         self.assertEqual((directory / "tests/run-mpm-nix-python.py").read_bytes(),
                          (REPO / "tests/run-mpm-nix-python.py").read_bytes())
+        self.assertEqual((directory / "tests/run-mpm-nix-ports.py").read_bytes(),
+                         (REPO / "tests/run-mpm-nix-ports.py").read_bytes())
         self.assertIn(record["source"]["revision"], (directory / "ports.toml").read_text())
 
     def test_early_boot_mounts_store_before_systemd_and_moves_backing_disk_last(self):
@@ -399,6 +409,13 @@ esac""")
         self.assertIn("/run/initramfs/shutdown", script)
         subprocess.run(["sh", "-n"], input=script, text=True, check=True, capture_output=True)
         subprocess.run(["sh", "-n"], input=system.SHUTDOWN, text=True, check=True, capture_output=True)
+
+    def test_step3_preserves_administrator_login_profile(self):
+        profile = self.tree / "state/etc/profile"
+        profile.write_text("# administrator login profile\nexport EDITOR=vi\n")
+        self.install(3)
+        self.assertEqual(profile.read_text(), "# administrator login profile\nexport EDITOR=vi\n")
+        self.assertTrue((self.tree / "state/etc/profile.d/mojt-system.sh").is_file())
 
     def test_init_hook_fails_if_legacy_handover_changes(self):
         with self.assertRaisesRegex(ValueError, "handover changed"):
