@@ -331,7 +331,7 @@ def virtual_root_file(root, path):
     return result
 
 
-def prepare_vm_root_shell(tree, version, replacement=None):
+def prepare_vm_root_shell(tree, version, replacement=None, system_shell=None):
     """Validate root login shell, or explicitly correct *copied* /etc/passwd.
 
     This never writes to the source installation or to any Base generation.
@@ -355,7 +355,20 @@ def prepare_vm_root_shell(tree, version, replacement=None):
     old_shell = fields[6]
     chosen = replacement if replacement is not None else old_shell
     try:
-        virtual_root_file(rootfs, chosen)
+        if chosen == "/run/mojt-system/bin/bash":
+            current = tree / "system/current"
+            if not system_shell or not current.is_symlink():
+                fail("System Bash login requires a step 5 payload")
+            selected = os.readlink(current)
+            if not LABEL.fullmatch(selected):
+                fail("unsafe System selection for login shell")
+            link = tree / "system" / selected / "bin/bash"
+            if (not system_shell.startswith("/nix/store/") or not system_shell.endswith("/bin/bash")
+                    or not link.is_symlink() or os.readlink(link) != system_shell):
+                fail("System Bash export differs from selected payload")
+            virtual_root_file(tree, system_shell)
+        else:
+            virtual_root_file(rootfs, chosen)
     except ValueError as error:
         if replacement is None:
             fail(f"{error}; configure the copied VM account explicitly "
@@ -704,7 +717,9 @@ def build(args):
                 init_script = shutdown_script = None
             prepare_system_identity(tree)
             if args.login_mode == "password":
-                prepare_vm_root_shell(tree, version, args.root_shell)
+                system_shell = (record["packages"]["shell"]["output"] + "/bin/bash"
+                                if record and "shell" in record["packages"] else None)
+                prepare_vm_root_shell(tree, version, args.root_shell, system_shell=system_shell)
                 copied_shadow = tree / "state/etc/shadow"
                 password_hash = None
                 if not copied_shadow.exists() and not copied_shadow.is_symlink():
@@ -777,10 +792,11 @@ def main():
                         help="static x86_64 BusyBox (Debian: busybox-static)")
     parser.add_argument("--disk-size-mib", type=int, default=1024)
     parser.add_argument("--system-payload", type=Path,
-                        help="opt-in System payload from mojt-system-prepare.py (steps 1-3)")
+                        help="opt-in System payload from mojt-system-prepare.py (steps 1-5)")
     parser.add_argument("--root-shell", metavar="PATH",
                         help="password mode only: explicitly select root's shell "
-                             "in the NEW VM's copied /etc/passwd (e.g. /bin/sh)")
+                             "in the NEW VM's copied /etc/passwd (e.g. /bin/sh or "
+                             "/run/mojt-system/bin/bash with step 5)")
     parser.add_argument("--login-mode", choices=("development", "password"),
                         default="development",
                         help="password: prompt for a new root password if guest shadow "

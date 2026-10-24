@@ -137,6 +137,25 @@ runtime tools; persistent machine configuration retains precedence. Nix/MPM
 and their management runtime belong to System. The initial root-operated
 binary-import test is not a production package-manager service/permission model.
 
+## Accepted interactive System shell (2026-10-24)
+
+After successfully installing interactive Bash through MPM in the running VM,
+the owner approved including it in System. Step 5 uses `bashInteractive` from
+the same pinned Nixpkgs source. Bash supplies the interactive console shell;
+Base's `/bin/sh` retains its POSIX script role and recovery use.
+
+The VM builder can explicitly select `/run/mojt-system/bin/bash` in the new
+VM's copied root account. It does not silently rewrite an existing account
+choice or modify the source installation. Mojt supplies an interactive prompt,
+editing/history defaults and private root history in persistent `/var`.
+Existing local startup files retain precedence. See [System Bash](system-bash.md)
+for the build recipe, validation and serial-terminal limitations.
+
+The next proposed milestone is a disk containing its own bootloader, kernel
+and initramfs. The [disk-boot proposal](self-booting-image-plan.md) recommends
+UEFI/GPT/GRUB for an initial VM test; that boot architecture is not yet an
+accepted implementation or a completed System deployment/rollback mechanism.
+
 ## Explicitly unresolved
 
 - Source-based/self-hosted Base build and verifiable reproducibility

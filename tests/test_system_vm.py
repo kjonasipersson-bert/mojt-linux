@@ -52,7 +52,7 @@ class SystemVmTests(unittest.TestCase):
     def fixture(self, step):
         packages = {}
         for index, (role, attribute) in enumerate(system.roles(step).items(), 1):
-            value = "/nix/store/" + str(index) * 32 + "-" + role
+            value = "/nix/store/" + "0123456789abcdfghijklmnpqrsvwxyz"[index] * 32 + "-" + role
             packages[role] = dict(attribute=attribute, output=value, version="test-version")
             base = self.payload / value.lstrip("/")
             names = {
@@ -61,6 +61,9 @@ class SystemVmTests(unittest.TestCase):
                 "dbus": ["bin/dbus-daemon"], "networkmanager": ["bin/NetworkManager", "bin/nmcli"],
                 "curl": ["bin/curl"], "cacert": [], "iproute2": ["bin/ip"],
                 "nix": ["bin/nix", "bin/nix-store", "bin/nix-instantiate"], "python": ["bin/python3"],
+                "shell": ["bin/bash"],
+                **{role: ["bin/" + name for name in names]
+                   for role, names in system.ADMIN_COMMANDS.items()},
             }[role]
             base.mkdir(parents=True)
             for name in names:
@@ -77,7 +80,7 @@ class SystemVmTests(unittest.TestCase):
         source = dict(store="/nix/store/" + "a" * 32 + "-nixpkgs",
                       path="/nix/store/" + "a" * 32 + "-nixpkgs/nixpkgs",
                       revision="b" * 40, system="x86_64-linux")
-        if step == 3:
+        if step >= 3:
             system.write(self.payload / source["path"].lstrip("/") / ".git-revision", source["revision"])
         objects = [dict(path="/nix/store/" + p.name, tree_sha256=system.tree_hash(p), nar_hash="test")
                    for p in (self.payload / "nix/store").iterdir()]
@@ -96,8 +99,9 @@ class SystemVmTests(unittest.TestCase):
 
     def test_steps_are_cumulative_and_explicit(self):
         self.assertEqual(set(system.roles(1)), {"systemd"})
-        self.assertTrue(set(system.roles(1)) < set(system.roles(2)) < set(system.roles(3)))
-        for value in (0, 4, True, "1"):
+        self.assertTrue(set(system.roles(1)) < set(system.roles(2)) < set(system.roles(3))
+                        < set(system.roles(4)) < set(system.roles(5)))
+        for value in (0, 6, True, "1"):
             with self.assertRaises(ValueError):
                 system.roles(value)
 
@@ -417,6 +421,174 @@ esac""")
         self.assertEqual(profile.read_text(), "# administrator login profile\nexport EDITOR=vi\n")
         self.assertTrue((self.tree / "state/etc/profile.d/mojt-system.sh").is_file())
 
+    def test_step4_exports_admin_commands_without_base_changes_or_new_services(self):
+        before = system.tree_hash(self.tree / "base")
+        directory, record = self.install(4)
+        self.assertEqual(system.tree_hash(self.tree / "base"), before)
+        commands = (directory / "admin-commands").read_text().splitlines()
+        self.assertEqual(set(commands), {n for group in system.ADMIN_COMMANDS.values() for n in group})
+        for role, names in system.ADMIN_COMMANDS.items():
+            for name in names:
+                self.assertEqual(os.readlink(directory / "bin" / name),
+                                 record["packages"][role]["output"] + "/bin/" + name)
+        self.assertTrue((directory / "bin/mpm").is_file())
+        self.assertIn("nix-store --load-db", (directory / "setup").read_text())
+        self.assertIn("/var/lib/mojt/ports/current/bin:", (directory / "environment").read_text())
+        wants = (directory / "units/mojt.target").read_text()
+        for role in system.ADMIN_COMMANDS:
+            self.assertNotIn(role + ".service", wants)
+        subprocess.run(["sh", "-n", str(directory / "environment")], check=True)
+
+    def test_step4_supports_mount_commands_in_a_separate_retained_output(self):
+        record = self.fixture(4)
+        package = record["packages"]["util-linux"]["output"]
+        split = "/nix/store/" + "d" * 32 + "-util-linux-mount"
+        for name in ("mount", "umount"):
+            system.write(self.payload / split.lstrip("/") / "bin" / name, "#!/bin/sh\nexit 0\n", 0o755)
+            path = self.payload / package.lstrip("/") / "bin" / name
+            path.unlink()
+            path.symlink_to(split + "/bin/" + name)
+        for item in record["objects"]:
+            if item["path"] == package:
+                item["tree_sha256"] = system.tree_hash(self.payload / package.lstrip("/"))
+        record["objects"].append(dict(path=split, tree_sha256=system.tree_hash(
+            self.payload / split.lstrip("/")), nar_hash="synthetic"))
+        system.write(self.payload / "system.json", json.dumps(record))
+        self.assertEqual(system.load_payload(self.payload), record)
+        with mock.patch.object(system.os, "chown"):
+            key = system.install(self.tree, self.payload, record, self.busybox, "development", REPO)
+        link = self.tree / "system" / key / "bin/mount"
+        self.assertEqual(system.virtual_file(self.tree, os.readlink(link)),
+                         self.tree / split.lstrip("/") / "bin/mount")
+
+    def test_step4_rejects_missing_admin_executable_even_with_valid_transfer_hash(self):
+        record = self.fixture(4)
+        output = record["packages"]["procps"]["output"]
+        (self.payload / output.lstrip("/") / "bin/ps").unlink()
+        for item in record["objects"]:
+            if item["path"] == output:
+                item["tree_sha256"] = system.tree_hash(self.payload / output.lstrip("/"))
+        system.write(self.payload / "system.json", json.dumps(record))
+        with self.assertRaisesRegex(ValueError, "missing procps executable"):
+            system.load_payload(self.payload)
+
+    def test_step5_keeps_bash_in_system_and_can_select_it_for_copied_root_account(self):
+        before = system.tree_hash(self.tree / "base")
+        directory, record = self.install(5)
+        target = record["packages"]["shell"]["output"] + "/bin/bash"
+        self.assertEqual(os.readlink(directory / "bin/bash"), target)
+        with mock.patch.object(vm.os, "chown"):
+            vm.prepare_vm_root_shell(self.tree, "0.1.3", "/run/mojt-system/bin/bash", system_shell=target)
+        self.assertIn("root:x:0:0:root:/root:/run/mojt-system/bin/bash\n",
+                      (self.tree / "state/etc/passwd").read_text())
+        self.assertEqual(system.tree_hash(self.tree / "base"), before)
+        history = self.tree / "state/var/lib/mojt/console"
+        self.assertEqual(history.stat().st_mode & 0o777, 0o700)
+        self.assertEqual((history / "root.history").stat().st_mode & 0o777, 0o600)
+        self.assertEqual((directory / "bashrc").read_text(), system.BASH_RC)
+        self.assertIn('. /etc/profile.d/mojt-bash.sh',
+                      (self.tree / "state/etc/profile").read_text())
+        subprocess.run(["bash", "-n", str(directory / "bashrc")], check=True)
+
+    def test_system_shell_is_not_adopted_without_explicit_account_selection(self):
+        (self.tree / "base/0.1.3/bin").symlink_to("usr/bin")
+        directory, record = self.install(5)
+        before = (self.tree / "state/etc/passwd").read_bytes()
+        target = record["packages"]["shell"]["output"] + "/bin/bash"
+        self.assertEqual(vm.prepare_vm_root_shell(self.tree, "0.1.3", system_shell=target), "/bin/sh")
+        self.assertEqual((self.tree / "state/etc/passwd").read_bytes(), before)
+
+    def test_system_bash_selection_rejects_missing_metadata_and_changed_export(self):
+        directory, record = self.install(5)
+        before = (self.tree / "state/etc/passwd").read_bytes()
+        with self.assertRaisesRegex(ValueError, "requires a step 5 payload"):
+            vm.prepare_vm_root_shell(self.tree, "0.1.3", "/run/mojt-system/bin/bash")
+        (directory / "bin/bash").unlink()
+        (directory / "bin/bash").symlink_to("/usr/bin/bash")
+        with self.assertRaisesRegex(ValueError, "differs from selected payload"):
+            vm.prepare_vm_root_shell(self.tree, "0.1.3", "/run/mojt-system/bin/bash",
+                                     system_shell=record["packages"]["shell"]["output"] + "/bin/bash")
+        self.assertEqual((self.tree / "state/etc/passwd").read_bytes(), before)
+
+    def test_step5_preserves_local_bash_configuration_and_existing_history(self):
+        local_rc = self.tree / "state/etc/bashrc"
+        local_rc.write_text("# administrator configuration\n")
+        history = self.tree / "state/var/lib/mojt/console/root.history"
+        system.write(history, "retained history\n", 0o600)
+        self.install(5)
+        self.assertEqual(local_rc.read_text(), "# administrator configuration\n")
+        self.assertEqual(history.read_text(), "retained history\n")
+
+    def test_step5_history_directory_cannot_follow_a_link_outside_staging(self):
+        outside = self.root / "outside-history"
+        outside.mkdir()
+        (outside / "root.history").write_text("keep\n")
+        link = self.tree / "state/var/lib/mojt/console"
+        link.parent.mkdir(parents=True)
+        link.symlink_to(outside)
+        with self.assertRaisesRegex(ValueError, "unsafe console history directory"):
+            self.install(5)
+        self.assertEqual((outside / "root.history").read_text(), "keep\n")
+
+    def run_admin_check(self, *, fail_mount_query=False):
+        guest = self.root / "admin-guest"
+        tools = guest / "run/mojt-system/bin"
+        trace, mounted = guest / "trace", guest / "mounted"
+
+        def command(name, body):
+            system.write(tools / name, "#!/bin/sh\nset -eu\n"
+                         f"printf '%s\\n' \"{name} $*\" >>'{trace}'\n" + body + "\n", 0o755)
+
+        for name in ("top", "free", "pgrep", "uptime", "lsblk", "blkid", "less", "dmesg", "vi"):
+            command(name, "echo 'synthetic admin output'")
+        command("id", "echo 0")
+        command("systemctl", "exit 0")
+        command("journalctl", "echo 'synthetic journal'")
+        command("ps", "case \"$*\" in '-p 1 -o comm=') echo systemd ;; *) echo '1 0 systemd' ;; esac")
+        command("mount", f"touch '{mounted}'")
+        command("umount", f"rm '{mounted}'")
+        command("findmnt", "case \"$*\" in *--mountpoint*) " +
+                ("exit 1" if fail_mount_query else f"test -f '{mounted}'; echo tmpfs") +
+                " ;; *) echo '/ ext4' ;; esac")
+        command("ex", "cat >/dev/null\nprintf '%s\\n' 'Mojt System vi probe' >\"$2\"")
+        system.write(guest / "proc/1/comm", "systemd\n")
+        system.write(guest / "run/mojt-system/record.json", "{}")
+        system.write(guest / "run/mojt-system/environment", f"export PATH={tools}:/usr/bin:/bin\n")
+        system.write(guest / "run/mojt-system/admin-commands", "\n".join(
+            name for group in system.ADMIN_COMMANDS.values() for name in group) + "\n")
+        for name in ("etc", "var", "tmp"):
+            (guest / name).mkdir()
+        source = (REPO / "tests/check-mojt-system.sh").read_text()
+        for path in ("/run/mojt-system", "/proc/1/comm", "/etc", "/var"):
+            source = source.replace(path, str(guest / path.lstrip("/")))
+        source = source.replace("/tmp/mojt-admin.", str(guest / "tmp/mojt-admin."))
+        script = guest / "check.sh"
+        script.write_text(source)
+        result = subprocess.run(["/bin/sh", str(script), "admin"], capture_output=True, text=True,
+                                env={**os.environ, "PATH": str(tools) + ":/usr/bin:/bin"})
+        return result, trace.read_text().splitlines(), mounted.exists(), list((guest / "tmp").iterdir())
+
+    def test_admin_check_exercises_tools_and_cleans_temporary_mount_and_editor_file(self):
+        result, trace, mounted, temporary = self.run_admin_check()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("PASS: System process, memory, disk, mount, pager and vi tools", result.stdout)
+        self.assertIn("top -b -n 1 -w 80", trace)
+        self.assertIn("pgrep -x systemd", trace)
+        self.assertTrue(any(line.startswith("ex -s ") for line in trace))
+        self.assertEqual(sum(line.startswith("mount ") for line in trace), 1)
+        self.assertEqual(sum(line.startswith("umount ") for line in trace), 1)
+        self.assertFalse(mounted)
+        self.assertEqual(temporary, [])
+
+    def test_admin_check_failure_after_mount_unmounts_and_removes_probe(self):
+        result, trace, mounted, temporary = self.run_admin_check(fail_mount_query=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("temporary tmpfs mount not visible", result.stderr)
+        self.assertNotIn("PASS: System process", result.stdout)
+        self.assertEqual(sum(line.startswith("umount ") for line in trace), 1)
+        self.assertFalse(mounted)
+        self.assertEqual(temporary, [])
+
     def test_init_hook_fails_if_legacy_handover_changes(self):
         with self.assertRaisesRegex(ValueError, "handover changed"):
             system.init_script(vm.INIT.replace("exec switch_root", "changed switch_root"))
@@ -439,8 +611,8 @@ esac""")
         self.assertNotIn("hostfwd", network)
         subprocess.run(["bash", "-n"], input=network, text=True, check=True, capture_output=True)
 
-    def prepare_with_fake_nix(self, *, dry_run=False, fail_import=False):
-        record = self.fixture(1)
+    def prepare_with_fake_nix(self, *, dry_run=False, fail_import=False, step=1):
+        record = self.fixture(step)
         with mock.patch.dict("sys.modules", {"mojt_system": system}):
             prepare = module("mojt_system_export_test", "mojt-system-prepare.py")
         calls = []
@@ -476,7 +648,7 @@ esac""")
                 self.fail(str(args))
             return types.SimpleNamespace(returncode=0)
 
-        args = types.SimpleNamespace(output=self.root / "export", step=1, yes=True,
+        args = types.SimpleNamespace(output=self.root / "export", step=step, yes=True,
                                      dry_run=dry_run, source_manifest=Path("synthetic.toml"))
         with mock.patch.object(prepare.os, "geteuid", return_value=1000), \
                 mock.patch.object(prepare.shutil, "which", return_value="/synthetic/tool"), \
@@ -497,6 +669,15 @@ esac""")
         self.assertTrue(any(c[1:2] == ("--verify-path",) for c in calls))
         self.assertTrue(all(not any(str(a).endswith(".drv") for a in c) for c in calls))
         self.assertEqual((output / "registration").read_text(), "synthetic exported registration")
+
+    def test_step4_export_keeps_nixpkgs_source_and_all_admin_roles(self):
+        output, calls = self.prepare_with_fake_nix(step=4)
+        record = system.load_payload(output)
+        self.assertEqual(record["step"], 4)
+        self.assertTrue(set(system.ADMIN_COMMANDS) <= set(record["packages"]))
+        self.assertIn(record["source"]["store"], {item["path"] for item in record["objects"]})
+        query = next(c for c in calls if c[:3] == ("nix-store", "--query", "--requisites"))
+        self.assertIn(record["source"]["store"], query[3:])
 
     def test_export_preview_does_not_write_or_retain(self):
         output, calls = self.prepare_with_fake_nix(dry_run=True)

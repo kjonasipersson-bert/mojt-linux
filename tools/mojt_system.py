@@ -18,8 +18,40 @@ ROLES = {
     2: {"dbus": "dbus", "networkmanager": "networkmanager", "curl": "curl",
         "cacert": "cacert", "iproute2": "iproute2"},
     3: {"nix": "nix", "python": "python3"},
+    4: {"procps": "procps", "util-linux": "util-linux", "less": "less", "editor": "nvi"},
+    5: {"shell": "bashInteractive"},
+}
+ADMIN_COMMANDS = {
+    "procps": ("ps", "top", "free", "pgrep", "uptime"),
+    "util-linux": ("lsblk", "findmnt", "mount", "umount", "dmesg", "blkid"),
+    "less": ("less",),
+    "editor": ("vi", "ex"),
 }
 VERSION = "0.2"
+BASH_RC = r'''# Mojt System interactive Bash defaults; user startup files may override these.
+case $- in *i*) ;; *) return 0 ;; esac
+[ -n "${BASH_VERSION-}" ] || return 0
+[ -z "${_MOJT_BASHRC_LOADED-}" ] || return 0
+_MOJT_BASHRC_LOADED=1
+. /run/mojt-system/environment
+PS1='\u@\h:\w\$ '
+HISTCONTROL=ignoreboth
+HISTSIZE=2000
+HISTFILESIZE=10000
+shopt -s histappend checkwinsize
+if [ "$EUID" = 0 ] && { [ -z "${HISTFILE-}" ] || [ "$HISTFILE" = "$HOME/.bash_history" ]; }; then
+    HISTFILE=/var/lib/mojt/console/root.history
+fi
+_mojt_append_history() {
+    local previous_status=$?
+    history -a
+    return "$previous_status"
+}
+case "$(declare -p PROMPT_COMMAND 2>/dev/null)" in
+    'declare -a '*) PROMPT_COMMAND+=(_mojt_append_history) ;;
+    *) PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND; }_mojt_append_history" ;;
+esac
+'''
 
 
 def require(condition, message):
@@ -28,7 +60,7 @@ def require(condition, message):
 
 
 def roles(step):
-    require(type(step) is int and step in ROLES, "System step must be 1, 2 or 3")
+    require(type(step) is int and step in ROLES, "System step must be 1, 2, 3, 4 or 5")
     return {key: value for n in range(1, step + 1) for key, value in ROLES[n].items()}
 
 
@@ -130,8 +162,8 @@ def load_payload(path):
     require(source["system"] == "x86_64-linux", "System VM requires x86_64-linux")
     require(source["path"] == source_store or source["path"].startswith(source_store + "/"),
             "Nixpkgs source path outside its store object")
-    if record["step"] == 3:
-        require(source_store in seen, "step 3 must retain its Nixpkgs source")
+    if record["step"] >= 3:
+        require(source_store in seen, "step 3+ must retain its Nixpkgs source")
         require((virtual_file(path, source["path"]) / ".git-revision").read_text().strip()
                 == source["revision"], "exported Nixpkgs revision changed")
     executable(path, record, "systemd", "lib/systemd/systemd", "bin/systemd")
@@ -149,10 +181,16 @@ def load_payload(path):
             executable(path, record, role, "bin/" + name, "sbin/" + name)
         require(virtual_file(path, record["packages"]["cacert"]["output"] +
                              "/etc/ssl/certs/ca-bundle.crt").is_file(), "missing exported CA bundle")
-    if record["step"] == 3:
+    if record["step"] >= 3:
         for name in ("nix", "nix-store", "nix-instantiate"):
             executable(path, record, "nix", "bin/" + name)
         executable(path, record, "python", "bin/python3")
+    if record["step"] >= 4:
+        for role, commands in ADMIN_COMMANDS.items():
+            for name in commands:
+                executable(path, record, role, "bin/" + name, "sbin/" + name)
+    if record["step"] >= 5:
+        executable(path, record, "shell", "bin/bash")
     return record
 
 
@@ -309,7 +347,7 @@ def install(tree, payload, record, busybox, login_mode, repo):
         cert = record["packages"]["cacert"]["output"] + "/etc/ssl/certs/ca-bundle.crt"
         require(virtual_file(payload, cert).is_file(), "missing exported CA bundle")
         write(system / "ca-path", cert + "\n")
-    if step == 3:
+    if step >= 3:
         for name in ("nix", "nix-store", "nix-instantiate"):
             export(name, "nix", "bin/" + name)
         python = export("python3", "python", "bin/python3")
@@ -331,7 +369,8 @@ def install(tree, payload, record, busybox, login_mode, repo):
         add_default(tree / "state/etc/profile.d/mojt-system.sh", login_hook)
         profile = tree / "state/etc/profile"
         if not profile.exists() and not profile.is_symlink():
-            write(profile, '. /etc/profile.d/mojt-system.sh\n')
+            write(profile, '. /etc/profile.d/mojt-system.sh\n' +
+                  ('. /etc/profile.d/mojt-bash.sh\n' if step >= 5 else ''))
         add_default(tree / "state/etc/nix/nix.conf",
                     "build-users-group =\nmax-jobs = 0\nrequire-sigs = true\n"
                     "substituters = https://cache.nixos.org/\n"
@@ -345,6 +384,37 @@ def install(tree, payload, record, busybox, login_mode, repo):
         for obj in record["objects"]:
             name = Path(obj["path"]).name
             setup.append(f"ln -sfn {obj['path']} /nix/var/nix/gcroots/mojt-system/{name}")
+    if step >= 4:
+        for role, commands in ADMIN_COMMANDS.items():
+            for name in commands:
+                export(name, role, "bin/" + name, "sbin/" + name)
+        write(system / "admin-commands", "\n".join(
+            name for commands in ADMIN_COMMANDS.values() for name in commands) + "\n")
+    if step >= 5:
+        export("bash", "shell", "bin/bash")
+        write(system / "bashrc", BASH_RC)
+        bash_hook = '[ ! -r /run/mojt-system/bashrc ] || . /run/mojt-system/bashrc\n'
+        add_default(tree / "state/etc/profile.d/mojt-bash.sh", bash_hook)
+        local_rc = tree / "state/etc/bashrc"
+        require(not local_rc.is_symlink() and (not local_rc.exists() or local_rc.is_file()),
+                "unsafe existing /etc/bashrc")
+        if not local_rc.exists():
+            write(local_rc, bash_hook)
+        history = tree / "state/var"
+        for component in ("lib", "mojt", "console"):
+            history /= component
+            require(not history.is_symlink() and (not history.exists() or history.is_dir()),
+                    "unsafe console history directory")
+            history.mkdir(exist_ok=True)
+        history.chmod(0o700)
+        os.chown(history, 0, 0)
+        history_file = history / "root.history"
+        require(not history_file.is_symlink()
+                and (not history_file.exists() or history_file.is_file()), "unsafe console history file")
+        if not history_file.exists():
+            write(history_file, "", 0o600)
+        history_file.chmod(0o600)
+        os.chown(history_file, 0, 0)
     setup += ['echo "Mojt System setup complete"']
     write(system / "setup", "\n".join(setup) + "\n", 0o755)
     put_unit("mojt-setup.service", unit("Mojt System setup", "/run/mojt-system/setup",
@@ -360,11 +430,13 @@ def install(tree, payload, record, busybox, login_mode, repo):
     (system / "units/default.target").unlink(missing_ok=True)
     (system / "units/default.target").symlink_to("mojt.target")
     write(system / "environment", "export PATH=" +
-          ("/var/lib/mojt/ports/current/bin:" if step == 3 else "") +
+          ("/var/lib/mojt/ports/current/bin:" if step >= 3 else "") +
           "/run/mojt-system/bin:/usr/bin:/bin\n" +
           ("export SSL_CERT_FILE=" + cert + "\nexport NIX_SSL_CERT_FILE=" + cert + "\n"
            if step >= 2 else "") +
-          ("export NIX_REMOTE=local\n" if step == 3 else ""))
+          ("export NIX_REMOTE=local\n" if step >= 3 else "") +
+          ('export EDITOR="${EDITOR:-vi}"\nexport VISUAL="${VISUAL:-vi}"\n'
+           'export PAGER="${PAGER:-less}"\n' if step >= 4 else ""))
     # PID 1 applies presets on first boot, before mojt-setup.service can run.
     # Mojt's target supplies explicit dependencies; merely exposing a vendor
     # unit must not enable its optional services or sockets.

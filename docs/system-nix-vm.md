@@ -6,6 +6,11 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # System in three small VM steps
 
+The three original steps below remain supported. An additive
+[step 4 administration set](system-admin-tools.md) now supplies process,
+memory, disk/mount, pager and vi tools; it requires a new payload and has
+separate VM acceptance instructions.
+
 **Status:** step 1 boot/service health and `/etc` + `/var` persistence across
 boots passed on the owner's VM. Shutdown reached poweroff using the exitrd's
 busy-mount/read-only fallback; complete storage detachment remains unverified.
