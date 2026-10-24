@@ -154,6 +154,10 @@ issue was reported separately: the guest behaved as though it had 25 rows
 while the actual terminal was taller. The connection was Windows terminal
 to Debian over SSH, then the existing QEMU serial console. The screenshot
 shows `top` updating a smaller upper region with older output below it.
+The owner then reported `stty size` as `0 0`, confirming that the guest TTY
+had no registered window size, and confirmed that the selected static
+BusyBox has no `resize` applet. They also reported that the interactive
+console environment feels too limited.
 
 ## Serial terminal geometry over SSH and QEMU
 
@@ -166,25 +170,17 @@ Mojt serial-console setup. Confirm inside Mojt, after quitting `top` with `q`:
 stty size
 ```
 
-Try the terminal-query applet if the selected static BusyBox includes it:
-
-```sh
-/run/mojt-system/busybox resize
-stty size
-printf '\033[2J\033[H'
-top
-```
-
-BusyBox may print `COLUMNS=...;LINES=...;export COLUMNS LINES;`. If stale
-values of those variables are already exported, unset them before restarting
-the application so it can use the updated kernel TTY size:
+The owner's static BusyBox does not include `resize`; the VM builder has
+never required that applet. A dedicated resize tool is therefore still a
+System follow-up. If stale values of `LINES`/`COLUMNS` are exported, unset
+them before restarting the application after setting the kernel TTY size:
 
 ```sh
 unset LINES COLUMNS
 ```
 
-If the applet is unavailable or querying the terminal does not work, set
-the guest size explicitly with `stty rows ROWS cols COLS`. For example,
+For the current image, set the guest size explicitly with
+`stty rows ROWS cols COLS`. For example,
 `stty rows 40 cols 140` is appropriate only for an actual 40-by-140 terminal.
 `stty size` in the Debian SSH terminal **before launching QEMU** gives the
 host-side rows/columns to copy into the guest. Recheck after changing the
@@ -196,3 +192,28 @@ remains a console follow-up.
 References: [GNU stty special settings](https://www.gnu.org/software/coreutils/manual/html_node/Special.html),
 [BusyBox applets](https://busybox.net/downloads/BusyBox.html), and
 [UTM's QEMU serial resize command](https://docs.getutm.app/settings-qemu/devices/serial/#resize-console-command).
+
+## Interactive shell trial
+
+The current VM recipes explicitly select `/bin/sh` from Base for root login.
+That is the minimal POSIX shell, not a configured interactive shell profile.
+An interactive Bash can already be tried through MPM inside the booted VM:
+
+```sh
+mpm ports install bash --attribute bashInteractive -y
+bash -i
+```
+
+`exit` returns to the original login shell. This trial does not change the
+account's login shell or `/bin/sh`. Bash supplies Readline command editing,
+history and basic completion; serial window-size synchronization is a separate
+problem and is not fixed by starting Bash. Persistent history and the default
+interactive System shell still need explicit integration; do not infer those
+policies from this temporary Ports trial.
+
+The agent fetched the pinned source's `bashInteractive` binary (5.3p20),
+verified its Readline bindings and enabled history/editing options, and ran
+the shell successfully. An owner report of this interactive trial is pending.
+A future System console profile should pair an interactive shell with useful
+terminal tools, a reliable size query, clear prompt/configuration defaults
+and a retained minimal recovery shell.
