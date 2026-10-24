@@ -292,7 +292,8 @@ esac""")
             source = source.replace(path, str(guest / path.lstrip("/")))
         script = guest / "check.sh"
         script.write_text(source)
-        result = subprocess.run(["/bin/sh", str(script), "network"], capture_output=True, text=True)
+        result = subprocess.run(["/bin/sh", str(script), "network"], capture_output=True, text=True,
+                                env={**os.environ, "PATH": str(tools)})
         return result, trace.read_text().splitlines()
 
     def test_network_check_observes_ready_or_delayed_ipv4_without_reconnecting(self):
@@ -300,6 +301,7 @@ esac""")
             with self.subTest(address_after=address_after, route_after=route_after):
                 result, trace = self.run_network_check(address_after, route_after)
                 self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(trace[0], "id -u")
                 self.assertIn("PASS: NetworkManager, IPv4, routing, DNS and HTTPS", result.stdout)
                 self.assertEqual(trace.count("sleep 1"), sleeps)
                 self.assertTrue(trace[-2].startswith("getent hosts "))
@@ -347,7 +349,8 @@ esac""")
                     else:
                         system.write(path, value)
                 result = subprocess.run(["/bin/sh", str(script), "persistence-check"],
-                                        capture_output=True, text=True)
+                                        capture_output=True, text=True,
+                                        env={**os.environ, "PATH": str(tools)})
                 self.assertEqual(result.returncode == 0, label == "persisted", result.stderr)
                 self.assertIn(expected, result.stdout + result.stderr)
 
