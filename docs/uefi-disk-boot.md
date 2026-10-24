@@ -128,20 +128,37 @@ the same launcher, inspect the saved note and `mpm ports list`, and use
 before; the source Base/state installation is not changed.
 
 Finally, while the VM is powered off, copy **only the disk and firmware
-launcher** to a fresh directory on Debian:
+launcher** to a fresh private directory on Debian. Keep `VM` set to the source
+VM directory from the build. The copy is created directly under your home
+directory, so it does not require write access to the build's parent directory:
 
 ```sh
-COPY="$HOME/mojt-lab/vm/uefi-disk-copy-$(date +%Y%m%d-%H%M%S)"
-install -d -m 700 "$COPY"
+(
+set -eu
+umask 077
+: "${VM:?Set VM to the directory containing the powered-off source VM}"
+test -r "$VM/disk.img"
+test -r "$VM/run-qemu.sh"
+COPY="$(mktemp -d "$HOME/uefi-disk-copy.XXXXXX")"
+printf 'Test copy: %s\n' "$COPY"
 cp --sparse=always "$VM/disk.img" "$COPY/disk.img"
 chmod 600 "$COPY/disk.img"
 cp "$VM/run-qemu.sh" "$COPY/run-qemu.sh"
 "$COPY/run-qemu.sh"
+)
 ```
 
 There is no copied `OVMF_VARS.fd`, kernel, initramfs, source payload or build
 tree. The launcher creates new VM variables. Verify login, the retained note
 and Ports again. This is the decisive disk-independence check.
+
+The subshell stops at the first failure without changing your interactive
+shell's options. `mktemp -d` creates a new mode-0700 directory and prints its
+path before copying. The VM builder runs with sudo and may have created a
+root-owned parent such as `~/mojt-lab/vm`; this can prevent creating a sibling
+copy even though the built VM directory itself belongs to you. Inspect that
+parent with `ls -ld "$HOME/mojt-lab/vm"` if needed. A copy-directory failure
+occurs before the firmware/boot test and does not require rebuilding the image.
 
 ## Validation and remaining scope
 
