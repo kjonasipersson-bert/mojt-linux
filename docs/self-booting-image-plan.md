@@ -8,7 +8,10 @@ SPDX-License-Identifier: GPL-2.0-only
 
 Status: approved by the owner on 2026-10-24. An experimental implementation
 and [build/acceptance guide](uefi-disk-boot.md) are now available. The real
-synthetic firmware-boot probe passed; full Mojt UEFI acceptance remains pending.
+synthetic firmware-boot probe passed. The owner subsequently reported the final
+Mojt disk-copy boot test working on 2026-10-24; detailed per-service/check logs
+were not supplied. The initial self-booting disk milestone is owner-reported
+as passed.
 The following records the agreed scope. System step 5 Bash is additive to the
 earlier accepted boot, network, native Ports and administration work.
 

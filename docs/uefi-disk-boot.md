@@ -178,10 +178,21 @@ and disk-only transfer to fresh variables passed. Device-node packaging used
 fakeroot in the constrained agent runtime; no host devices were created.
 This is boot-chain evidence, not full Mojt service/login/network acceptance.
 
-Full Mojt UEFI acceptance with the owner's tested kernel and System payload
-remains pending. The feature is an experimental image builder, not a hardware
-installer, kernel release pipeline, System updater or automatic rollback
-mechanism. Persistent service state is not rolled back by a boot entry.
+## Owner-reported disk-copy acceptance (2026-10-24)
+
+The owner reported that the final disk-copy test works after moving the copy
+directory into their home directory. The original attempt failed while creating
+the copy directory, before QEMU started; no image rebuild was needed. The
+successful recipe copies only the powered-off disk and firmware launcher,
+creates fresh firmware variables and starts the copied Mojt disk without
+external kernel/initramfs files. This completes the owner-reported disk-boot
+milestone. Individual login/service/network/Ports and history-check logs from
+this UEFI run were not supplied, so those checks are not separately attested
+by this report.
+
+The feature remains an experimental image builder, not a hardware installer,
+kernel release pipeline, System updater or automatic rollback mechanism.
+Persistent service state is not rolled back by a boot entry.
 
 References: [GNU GRUB standalone image tool](https://manpages.debian.org/bookworm/grub-common/grub-mkstandalone.1.en.html),
 [mtools image access](https://www.gnu.org/s/mtools/manual/mtools.html#Drive-letters),

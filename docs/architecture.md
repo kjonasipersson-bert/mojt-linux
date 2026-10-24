@@ -167,9 +167,11 @@ external kernel/initramfs arguments. Direct-kernel mode remains a diagnostic
 path. See [disk boot](uefi-disk-boot.md) for construction and acceptance.
 
 A real synthetic static-guest probe passed firmware boot, repeat boot with
-persistent state and disk-only transfer to fresh firmware variables. Full Mojt
-UEFI login/service/network/Ports acceptance is pending. This first image build
-does not implement a System updater, automatic fallback or state rollback.
+persistent state and disk-only transfer to fresh firmware variables. On
+2026-10-24 the owner also reported the final Mojt disk-copy boot test working
+after creating the copy in their home directory. Individual UEFI service,
+network, Ports and history-check logs were not supplied. This first image
+build does not implement a System updater, automatic fallback or state rollback.
 
 ## Explicitly unresolved
 
