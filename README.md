@@ -61,12 +61,23 @@ An upgrade/rollback test can be run after the 0.1.1 bootstrap and release are av
 
 The test produces Base 0.1.2 with one additional default, then checks installation, preservation of `/etc` and `/var`, and rollback in a separate test target.
 
+## Backend-free MPM experiment
+
+`tools/mpm-prototype` tests the Ports activation contract with synthetic
+commands in a disposable directory. It requires only Linux, Python 3.11+
+and `/bin/sh`, with no root privileges, network access or package backend.
+See [the experiment guide](docs/mpm-experiment.md) for a complete walkthrough.
+
+```bash
+python3 -m unittest discover -s tests -p 'test_mpm_prototype.py' -v
+```
+
 ## Project layout
 
 ```text
 bootstrap/      host-side bootstrap backends
 manifests/      source manifests used to create Base releases
-tools/          Base packer and installer
+tools/          Base/VM tools and the backend-free MPM experiment
 tests/          integration tests
 docs/           manifesto, architecture, and format
 ```
