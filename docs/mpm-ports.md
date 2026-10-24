@@ -194,6 +194,93 @@ selections, losing earlier entries in a later plan. The same sequence passed
 outside that directory and with an additional test-only `sync()` after each
 subprocess. Targeted file/directory fsync did not eliminate the anomaly.
 No global-sync workaround is added to MPM and no filesystem cause is claimed
-as established. The PR remains a draft pending the owner's Distrobox and
-fresh Mojt VM acceptance; passing tests in the agent runtime do not establish
-those environments' behavior.
+as established. The owner's Distrobox acceptance below subsequently passed;
+fresh Mojt VM acceptance for this iteration remains pending.
+
+## Owner-reported Distrobox acceptance (2026-10-24)
+
+The owner ran `tests/run-mpm-nix-ports.py` inside the existing Nix Distrobox
+and reported success. The supplied final output reached:
+
+```text
+PASS: removal restores prior activation; last removal preserves captured profile
+No physical collection performed; production project locks and GC remain deferred.
+```
+
+The runner reaches this point only after the ordinary-program, parallel-Python,
+historical fallback, last-removal, captured-generation and idempotence checks.
+The final removal explicitly listed the Python 3.12 aliases being removed,
+reported no installed replacement, retained store objects and old profiles,
+then published the complete profile. The source was the existing pinned
+Nixpkgs revision, not an implicit channel update. No corresponding stale-profile
+failure was reported in the owner's Distrobox. This is owner-reported evidence,
+separate from agent execution and from the still-pending new VM run.
+
+## Fresh VM acceptance with the existing step 3 payload
+
+Shut down any running Mojt VM. Leave the Distrobox with `exit`; perform this
+build on the Debian host. Use a fresh checkout and VM output directory so the
+earlier images remain available. The exported step 3 payload does not need
+to be regenerated: MPM and its tests are copied from this checkout by the
+VM builder.
+
+```sh
+cd "$HOME/mojt-lab"
+git clone --single-branch --branch feature/mpm-usable-ports \
+  https://github.com/kjonasipersson-bert/mojt-linux.git \
+  mojt-usable-ports
+cd mojt-usable-ports
+
+TARGET="$HOME/mojt-lab/root-test-013"
+PAYLOAD="$HOME/mojt-lab/mpm-nix-home/mpm-system-test/system-step3"
+KREL="$(uname -r)"
+VM="$HOME/mojt-lab/vm/mpm-ports-$(date +%Y%m%d-%H%M%S)"
+
+sudo python3 tools/mojt-vm-build.py \
+  --target "$TARGET" \
+  --kernel "/boot/vmlinuz-$KREL" \
+  --system-payload "$PAYLOAD" \
+  --disk-size-mib 6144 \
+  --login-mode password --root-shell /bin/sh \
+  --output "$VM"
+
+"$VM/run-qemu.sh"
+```
+
+Log in and run:
+
+```sh
+. /run/mojt-system/environment
+mojt-system-check network
+mojt-system-check ports
+mojt-system-check programs
+
+mpm ports install less vim --dry-run
+mpm ports install less vim -y
+mpm ports list
+less --version
+vi --version
+```
+
+`ports` selects the guest's saved source pin and installs hello in the normal
+Ports profile. `programs` exercises the full new test in a separate lab; its
+less/Vim installations do not populate the normal profile. The explicit
+installation above therefore also verifies the guest launcher, normal state
+root and interactive PATH.
+
+Finally run `systemctl poweroff`, relaunch the **same** `$VM/run-qemu.sh` on
+the host and log in again. Before sourcing the environment manually, check:
+
+```sh
+command -v mpm
+command -v less
+command -v vi
+mpm ports list
+less --version
+vi --version
+```
+
+Expected: MPM and the selected Ports are available after normal login; the
+installed set and active defaults survived the boot. If a custom existing
+`/etc/profile` does not source `profile.d`, inspect the add-missing login hook
+described above rather than overwriting administrator configuration.
