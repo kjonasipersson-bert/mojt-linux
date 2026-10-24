@@ -62,7 +62,7 @@ different attributes under one application name, use `--attribute`:
 ```sh
 mpm ports install python --attribute python312 -y
 mpm ports install python --attribute python313 -y
-mpm ports list
+mpm ports list --exact
 mpm ports activate 'EXACT_IDENTITY_FROM_LIST' --dry-run
 mpm ports activate 'EXACT_IDENTITY_FROM_LIST' -y
 ```
@@ -72,6 +72,24 @@ default unchanged. Every installed application exports fixed command aliases
 containing its upstream version and full Nix output hash. Activation accepts
 an installed exact identity; a bare name is accepted only when unambiguous.
 It never fetches another version. Series selectors/upgrades remain deferred.
+
+The ordinary `list` view shows **installed versions**, not request constraints:
+
+```text
+Installed versions (* = active default):
+* hello 2.12.3 [hello]
+* less 710 [less]
+* vim 9.2.1164 [vim]
+```
+
+`list --exact` instead shows exact installed artifact identities, including
+the Nix output hash, for activation/removal of a particular build. `list
+--json` keeps the detailed records and `identity` field unchanged. An artifact
+identity containing `@=` does not mean the user requested an exact-version
+lock: `install vim` still resolves a concrete immutable output from the
+saved source. Requested selectors, resolved artifacts and future upgrade
+policies are separate concepts. This iteration has no upgrade engine and
+does not infer a requested pin from the resolved output.
 
 The adapter chooses Nixpkgs' binary output (`lib.getBin`: `bin`, otherwise
 `out`, otherwise the default). It discovers executable files in that output's
@@ -110,7 +128,7 @@ the VM builder's checkout, not from the payload.
 ## Removal
 
 ```sh
-mpm ports list
+mpm ports list --exact
 mpm ports remove 'EXACT_IDENTITY_FROM_LIST' --dry-run
 mpm ports remove 'EXACT_IDENTITY_FROM_LIST' -y
 ```
@@ -194,8 +212,8 @@ selections, losing earlier entries in a later plan. The same sequence passed
 outside that directory and with an additional test-only `sync()` after each
 subprocess. Targeted file/directory fsync did not eliminate the anomaly.
 No global-sync workaround is added to MPM and no filesystem cause is claimed
-as established. The owner's Distrobox acceptance below subsequently passed;
-fresh Mojt VM acceptance for this iteration remains pending.
+as established. The owner's Distrobox and Mojt VM acceptance below
+subsequently passed without a corresponding reported failure.
 
 ## Owner-reported Distrobox acceptance (2026-10-24)
 
@@ -214,7 +232,21 @@ reported no installed replacement, retained store objects and old profiles,
 then published the complete profile. The source was the existing pinned
 Nixpkgs revision, not an implicit channel update. No corresponding stale-profile
 failure was reported in the owner's Distrobox. This is owner-reported evidence,
-separate from agent execution and from the still-pending new VM run.
+separate from agent execution and from the subsequent VM report.
+
+## Owner-reported Mojt VM acceptance (2026-10-24)
+
+The owner reported that the fresh VM checks and operation after reboot
+worked. After reboot, they edited and read `helo.txt` using Vim installed
+with MPM. The supplied `mpm ports list` output still showed hello 2.12.3,
+less 710 and Vim 9.2.1164 as active. This establishes owner-reported
+interactive program use and retention of the installed set across reboot;
+the detailed checker/reboot logs were not supplied. It does not establish
+that the newly edited file itself survived another reboot.
+
+The report used the earlier list format containing `name@=version-nix-hash`.
+The subsequent presentation-only change separates normal version display
+from `list --exact`; the owner's report predates that display change.
 
 ## Fresh VM acceptance with the existing step 3 payload
 

@@ -163,7 +163,7 @@ failure before the selection rename leaves the old profile selected. An I/O
 failure after that commit point may mean the new profile was selected; report
 the uncertainty and retain the complete generation for inspection. A bare name with multiple installed
 versions is ambiguous in the initial wrapper: require exact identities from
-`mpm ports list`, rather than silently removing one or all versions.
+`mpm ports list --exact`, rather than silently removing one or all versions.
 
 Old profiles and project references may continue using the removed version.
 Dependencies required by remaining applications are likewise retained. GC

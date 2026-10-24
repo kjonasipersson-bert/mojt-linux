@@ -270,11 +270,11 @@ def remember(state, kind, key):
 def installed_selection(state, request):
     if request in state["installed"]:
         return request
-    require("@" not in request, "exact installed identity not found; use ports list")
+    require("@" not in request, "exact installed identity not found; use ports list --exact")
     matches = [k for k, r in state["installed"].items() if r["name"] == request]
     require(matches, f"port not installed: {request}")
     require(len(matches) == 1,
-            f"multiple versions of {request}; choose an exact identity from ports list")
+            f"multiple versions of {request}; choose an exact identity from ports list --exact")
     return matches[0]
 
 
@@ -343,7 +343,7 @@ def describe(old, new):
         print("History baseline: old installation order retained; earlier activation order is unknown.")
     for key, record in new["installed"].items():
         if key not in old["installed"]:
-            print(f"Install: {key}\n  Output: {record['output']}")
+            print(f"Install artifact: {key}\n  Output: {record['output']}")
             print("  Commands: " + (", ".join(record["commands"]) if record["commands"] is not None
                                     else "discover after binary import; conflicts abort publication"))
             # Nix supplies its native download/closure preview before approval.
@@ -474,8 +474,12 @@ def inspect(state, args):
         if args.json:
             print(json.dumps(rows, indent=2))
         else:
+            if rows:
+                print("Installed artifact identities (* = active default):" if args.exact
+                      else "Installed versions (* = active default):")
             for row in rows:
-                print(("* " if row["active"] else "  ") + row["identity"]
+                label = row["identity"] if args.exact else row["name"] + " " + row["version"]
+                print(("* " if row["active"] else "  ") + label
                       + " [" + row["attribute"] + "]")
             if not rows:
                 print("No Ports installed in current profile.")
@@ -504,7 +508,7 @@ def inspect(state, args):
             if args.json:
                 print(json.dumps(record, indent=2))
             else:
-                print(f"{record['identity']}\nAttribute: {record['attribute']}\n"
+                print(f"Artifact identity: {record['identity']}\nAttribute: {record['attribute']}\n"
                       f"Nixpkgs: {record['source']['revision']} ({record['source']['system']})\n"
                       f"Output: {record['output']}\n{record.get('description', '')}")
                 print("Commands: " + (", ".join(record["commands"]) if record["commands"] is not None
@@ -529,10 +533,15 @@ def main(argv=None):
             sub.add_argument("--attribute", help="Nixpkgs attribute for a single named Port, e.g. python312")
             sub.add_argument("--no-activate", action="store_true", help="retain without first-install activation")
         if action == "activate":
-            sub.add_argument("request", help="exact identity printed by status, including Nix hash")
+            sub.add_argument("request", help="artifact identity from ports list --exact, or unambiguous name")
         if action == "remove":
             sub.add_argument("names", nargs="+", help="exact identities, or names with one installed version")
-        if action in ("list", "search", "info"):
+        if action == "list":
+            view = sub.add_mutually_exclusive_group()
+            view.add_argument("--json", action="store_true")
+            view.add_argument("--exact", action="store_true",
+                              help="show exact installed artifact identities, not request constraints")
+        elif action in ("search", "info"):
             sub.add_argument("--json", action="store_true")
         if action == "search":
             sub.add_argument("query", help="case-insensitive attribute-name fragment")
