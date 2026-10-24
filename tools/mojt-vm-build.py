@@ -121,9 +121,20 @@ IFS= read -r mojt_kernel </proc/sys/kernel/osrelease ||
 mkdir /newroot/run/mojt || panic "cannot create runtime identity directory"
 printf 'Mojt Linux %s/%s (x86_64)\n\n' "$mojt_system_version" "$version" \
     >/newroot/run/mojt/issue || panic "cannot write System issue"
-printf 'Welcome to Mojt Linux\n\nSystem:       %s\nBase:         %s\nVM built UTC: %s\nKernel:       %s\n\nMojt Linux is an experimental distribution.\n' \
-    "$mojt_system_version" "$version" "$mojt_vm_built" "$mojt_kernel" \
-    >/newroot/run/mojt/motd || panic "cannot write System MOTD"
+{
+    printf '\033[1;36m       |  |  |\n'
+    printf '\033[1;37m   +---+--+--+---+\n'
+    printf '\033[1;30m --\033[1;37m|             |\033[1;30m--\n'
+    printf '\033[1;30m --\033[1;37m|   .-----.   |\033[1;30m--\n'
+    printf '\033[1;30m --\033[1;37m|  (  \033[38;5;214m@@@\033[1;37m  )  |\033[1;30m--\n'
+    printf "\033[1;37m   |   '-----'   |\n"
+    printf '\033[1;37m   |   \033[1;36m|||||||\033[1;37m   |\n'
+    printf '\033[1;37m   +---+--+--+---+\n'
+    printf '\033[1;36m       |  |  |\n\033[0m\n'
+
+    printf 'Welcome to Mojt Linux\n\nSystem:       %s\nBase:         %s\nVM built UTC: %s\nKernel:       %s\n\nMojt Linux is an experimental distribution.\n' \
+        "$mojt_system_version" "$version" "$mojt_vm_built" "$mojt_kernel"
+} >/newroot/run/mojt/motd || panic "cannot write System MOTD"
 mount --move /dev /newroot/dev || panic "cannot move /dev"
 mount --move /proc /newroot/proc || panic "cannot move /proc"
 mount --move /sys /newroot/sys || panic "cannot move /sys"

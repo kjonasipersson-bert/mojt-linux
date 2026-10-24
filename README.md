@@ -6,6 +6,18 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Mojt Linux
 
+```text
+       |  |  |
+   +---+--+--+---+
+ --|             |--
+ --|   .-----.   |--
+ --|  (  @@@  )  |--
+   |   '-----'   |
+   |   |||||||   |
+   +---+--+--+---+
+       |  |  |
+```
+
 **A small Linux base. Independently managed system components and applications.**
 
 *Mojt* is an engineering-slang word from Lund, Sweden, roughly meaning a gadget or contraption.
