@@ -102,8 +102,9 @@ and tab completion. Enter `printf 'Mojt Bash history probe\n'`, power off with
 `systemctl poweroff`, restart the **same disk** and use `history` to find the
 probe. `/bin/sh` remains available explicitly for POSIX/recovery work.
 
-This image still boots through QEMU's external kernel/initramfs arguments.
-The [self-booting disk proposal](self-booting-image-plan.md) is the next milestone.
+This recipe uses QEMU's external kernel/initramfs arguments. The additive
+[UEFI disk recipe](uefi-disk-boot.md) reuses the same step 5 payload and puts
+the boot pair on the disk.
 
 ## Validation boundary
 

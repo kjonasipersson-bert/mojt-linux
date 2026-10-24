@@ -151,10 +151,27 @@ editing/history defaults and private root history in persistent `/var`.
 Existing local startup files retain precedence. See [System Bash](system-bash.md)
 for the build recipe, validation and serial-terminal limitations.
 
-The next proposed milestone is a disk containing its own bootloader, kernel
-and initramfs. The [disk-boot proposal](self-booting-image-plan.md) recommends
-UEFI/GPT/GRUB for an initial VM test; that boot architecture is not yet an
-accepted implementation or a completed System deployment/rollback mechanism.
+## Accepted initial disk boot (2026-10-24)
+
+The owner approved UEFI/GPT/GRUB, keeping the first image simple with one boot
+entry and the already tested kernel source. Opt-in `--boot-mode uefi` now
+builds a regular GPT image with a FAT32 EFI partition and the Mojt ext4
+partition. A standalone GRUB EFI loader lives at the fallback path; the build
+does not run host `grub-install`, change NVRAM or use loop devices/mounts.
+
+The disk owns a versioned kernel/initramfs pair and an input-hash record.
+Early init locates ext4 by UUID and pins the exact System generation named by
+that boot pair, including System identity reads. It does not follow a changed
+`system/current`. QEMU supplies firmware and a private variable file, without
+external kernel/initramfs arguments. Direct-kernel mode remains a diagnostic
+path. See [disk boot](uefi-disk-boot.md) for construction and acceptance.
+
+A real synthetic static-guest probe passed firmware boot, repeat boot with
+persistent state and disk-only transfer to fresh firmware variables. On
+2026-10-24 the owner also reported the final Mojt disk-copy boot test working
+after creating the copy in their home directory. Individual UEFI service,
+network, Ports and history-check logs were not supplied. This first image
+build does not implement a System updater, automatic fallback or state rollback.
 
 ## Explicitly unresolved
 

@@ -116,8 +116,10 @@ an explicit `mojt-system-check admin` acceptance probe.
 
 [System step 5](docs/system-bash.md) adds interactive Bash, a console profile
 and persistent root history. Its new-VM recipe explicitly selects Bash for
-root login while retaining Base's `/bin/sh`. The next disk-boot milestone is
-outlined in the [self-booting image proposal](docs/self-booting-image-plan.md).
+root login while retaining Base's `/bin/sh`. The opt-in
+[UEFI disk boot](docs/uefi-disk-boot.md) builds GPT, an EFI partition with GRUB,
+and a disk-contained kernel/initramfs pair. The default direct-boot mode remains
+available for comparison.
 
 For early Mojt versions, Nix remains exposed and supplies System packages as
 well as Ports through a shared store. Mojt controls System activation;
