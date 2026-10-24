@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 import fcntl
 import getpass
 import gzip
+import importlib.util
 import json
 import lzma
 import os
@@ -492,12 +493,12 @@ def kernel_release_from_path(path):
     return label(path.name[len("vmlinuz-"):])
 
 
-def module_paths(release, modules_dir):
+def module_paths(release, modules_dir, network=False):
     """Use kmod on the host for dependency ordering; do not load modules."""
     root = modules_dir.resolve(strict=True)
     seen = set()
     paths = []
-    for name in ("virtio_pci", "virtio_blk", "ext4"):
+    for name in ("virtio_pci", "virtio_blk", "ext4") + (("virtio_net",) if network else ()):
         result = subprocess.run(
             ["modprobe", "--set-version", release, "--show-depends", name],
             check=True, capture_output=True, text=True,
@@ -530,16 +531,22 @@ def module_bytes(path):
     fail(f"unsupported module compression: {path}")
 
 
-def make_initramfs(root, busybox, modules):
+def make_initramfs(root, busybox, modules, init_script=None, shutdown_script=None):
     root.mkdir()
     for name in ("bin", "dev", "proc", "sys", "sysroot", "newroot", "modules"):
         (root / name).mkdir()
     shutil.copy2(busybox, root / "bin/busybox")
-    for name in ("sh", "mount", "insmod", "readlink", "sleep", "switch_root", "mkdir", "hostname"):
+    applets = ("sh", "mount", "insmod", "readlink", "sleep", "switch_root", "mkdir", "hostname")
+    if shutdown_script is not None:
+        applets += ("cp", "ln")
+    for name in applets:
         (root / "bin" / name).symlink_to("busybox")
     init = root / "init"
-    init.write_text(INIT, encoding="ascii")
+    init.write_text(INIT if init_script is None else init_script, encoding="ascii")
     init.chmod(0o755)
+    if shutdown_script is not None:
+        (root / "shutdown").write_text(shutdown_script, encoding="ascii")
+        (root / "shutdown").chmod(0o755)
     for name, major, minor in (("console", 5, 1), ("null", 1, 3)):
         os.mknod(root / "dev" / name, stat.S_IFCHR | 0o600,
                  os.makedev(major, minor))
@@ -581,7 +588,7 @@ def populate_disk_tree(target, version, tree):
     tree.chmod(0o755)
 
 
-def run_script():
+def run_script(network=False):
     return """#!/usr/bin/env bash
 # Mojt Linux
 # Copyright (C) 2026 Jonas Persson
@@ -595,6 +602,7 @@ exec qemu-system-x86_64 \\
     -initrd "$here/initramfs.cpio.gz" \\
     -append "console=ttyS0,115200 rdinit=/init" \\
     -drive "file=$here/disk.img,if=virtio,format=raw" \\
+    -nic """ + ("user,model=virtio-net-pci" if network else "none") + """ \\
     -display none -serial mon:stdio -no-reboot
 """
 
@@ -604,7 +612,7 @@ def build(args):
         fail("run as root (sudo) to preserve Base ownership and create /dev nodes")
     if platform.machine() != "x86_64":
         fail("first VM builder supports x86_64 only")
-    commands = ["cp", "cpio", "mkfs.ext4", "modprobe", "zstd"]
+    commands = ["cp", "cpio", "mkfs.ext4", "modprobe", "zstd", "du"]
     if args.login_mode == "password":
         commands.append("openssl")
     for command in commands:
@@ -632,6 +640,21 @@ def build(args):
     if not busybox.is_file() or not static_x86_64_elf(busybox):
         fail(f"requires a static x86_64 BusyBox (Debian: busybox-static): {busybox}")
     validate_busybox_applets(busybox, args.login_mode)
+    payload = getattr(args, "system_payload", None)
+    support = record = None
+    if payload is not None:
+        spec = importlib.util.spec_from_file_location(
+            "mojt_system_support", Path(__file__).with_name("mojt_system.py"))
+        support = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(support)
+        payload = payload.absolute()
+        record = support.load_payload(payload)
+        applets = set(subprocess.run([str(busybox), "--list"], check=True,
+                                    text=True, capture_output=True).stdout.splitlines())
+        missing = {"cp", "ln", "umount", "halt"} - applets
+        if missing:
+            fail(f"System boot needs BusyBox applets: {', '.join(sorted(missing))}")
+    network = record is not None and record["step"] >= 2
 
     with lock_file.open("rb") as lock:
         fcntl.flock(lock, fcntl.LOCK_SH)
@@ -649,7 +672,7 @@ def build(args):
                 fail(f"required installation metadata missing: {path}")
         for name in ("etc", "var", "dev", "proc", "sys"):
             require_directory(generation / name, f"Base /{name}")
-        modules = module_paths(release, modules_dir)
+        modules = module_paths(release, modules_dir, network=network)
         output.parent.mkdir(parents=True, exist_ok=True)
 
         with tempfile.TemporaryDirectory(prefix=".mojt-vm-", dir=output.parent) as temp:
@@ -659,7 +682,26 @@ def build(args):
             tree = temp / "filesystem"
             tree.mkdir()
             populate_disk_tree(target, version, tree)
-            assembled_at = install_system_init(tree, busybox, args.login_mode)
+            if support:
+                # Mountpoint scaffolding is added to the VM copy, not the Base release.
+                copied_base = tree / "base" / version
+                for name in ("nix", "run", "tmp"):
+                    path = copied_base / name
+                    if path.is_symlink() or (path.exists() and not path.is_dir()):
+                        fail(f"conflicting Base mountpoint /{name}")
+                    if path.exists() and any(path.iterdir()):
+                        fail(f"Base mountpoint /{name} must be empty for System assembly")
+                    path.mkdir(exist_ok=True)
+                system_version = support.install(
+                    tree, payload, record, busybox, args.login_mode, Path(__file__).resolve().parents[1])
+                assembled_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                (tree / "system" / system_version / "assembled-at-utc").write_text(assembled_at + "\n")
+                init_script = support.init_script(INIT)
+                shutdown_script = support.SHUTDOWN
+            else:
+                assembled_at = install_system_init(tree, busybox, args.login_mode)
+                system_version = SYSTEM_VERSION
+                init_script = shutdown_script = None
             prepare_system_identity(tree)
             if args.login_mode == "password":
                 prepare_vm_root_shell(tree, version, args.root_shell)
@@ -672,6 +714,10 @@ def build(args):
                 warn_missing_shadow(tree)
                 print("mojt-vm-build: WARNING: development mode gives unauthenticated "
                       "root access on the VM console.", file=sys.stderr)
+            used = int(subprocess.run(["du", "-s", "--block-size=1", str(tree)], check=True,
+                                     capture_output=True, text=True).stdout.split()[0])
+            if used + 128 * 1024 * 1024 > args.disk_size_mib * 1024 * 1024:
+                fail("VM disk is too small for Base/System plus free space; increase --disk-size-mib")
             disk = result / "disk.img"
             with disk.open("wb") as stream:
                 stream.truncate(args.disk_size_mib * 1024 * 1024)
@@ -680,17 +726,19 @@ def build(args):
                 check=True,
             )
             (result / "initramfs.cpio.gz").write_bytes(
-                make_initramfs(temp / "initroot", busybox, modules)
+                make_initramfs(temp / "initroot", busybox, modules, init_script, shutdown_script)
             )
             shutil.copy2(kernel, result / "vmlinuz")
-            (result / "run-qemu.sh").write_text(run_script(), encoding="ascii")
+            (result / "run-qemu.sh").write_text(run_script(network), encoding="ascii")
             (result / "run-qemu.sh").chmod(0o755)
             (result / "build.json").write_text(
                 json.dumps({"format": 1, "base": version, "kernel_release": release,
                             "disk_size_mib": args.disk_size_mib,
                             "modules_in_initramfs": len(modules),
-                            "system_init": "busybox-prototype",
-                            "system_version": SYSTEM_VERSION,
+                            "system_init": "systemd-experiment" if support else "busybox-prototype",
+                            "system_version": system_version,
+                            "system_step": record["step"] if record else None,
+                            "system_source": record["source"] if record else None,
                             "vm_assembled_utc": assembled_at,
                             "login_mode": args.login_mode}, indent=2) + "\n",
                 encoding="ascii",
@@ -728,6 +776,8 @@ def main():
     parser.add_argument("--busybox", type=Path, default=Path("/usr/bin/busybox"),
                         help="static x86_64 BusyBox (Debian: busybox-static)")
     parser.add_argument("--disk-size-mib", type=int, default=1024)
+    parser.add_argument("--system-payload", type=Path,
+                        help="opt-in System payload from mojt-system-prepare.py (steps 1-3)")
     parser.add_argument("--root-shell", metavar="PATH",
                         help="password mode only: explicitly select root's shell "
                              "in the NEW VM's copied /etc/passwd (e.g. /bin/sh)")
@@ -746,4 +796,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

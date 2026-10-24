@@ -17,7 +17,9 @@ This document records **current decisions and open questions**, not stable promi
 | Ports | Applications, libraries, developer toolchains and profiles | Independent versions, pinned environments, optional sandbox execution |
 | State | Local configuration, service data and user data | Persists across Base upgrades and rollbacks |
 
-The current Base prototype has no kernel, init, or desktop. The choice of a future System init implementation is not yet frozen. Standardizing on a single supported init system is preferable to maintaining multiple init stacks by default.
+The current Base prototype has no kernel, init, or desktop. The experimental
+System implementation uses systemd. BusyBox remains an early-boot/rescue component and
+a temporary console-login tool in the VM experiment.
 
 ## Existing prototype pipeline
 
@@ -42,13 +44,16 @@ tools/mojt-base-install
        +--> state/var/
 ```
 
-The prototype bootstrap currently selects eleven Void packages and uses a pinned static XBPS utility as a host-side construction tool. The assembled runtime image strips XBPS executables and package databases. The release is **not yet a bootable OS**.
+The prototype bootstrap currently selects eleven Void packages and uses a pinned static XBPS utility as a host-side construction tool. The assembled runtime image strips XBPS executables and package databases. Base alone has no boot stack; the tested System VM composes it with a kernel, initramfs and services.
 
 ## Configuration and state
 
 The Base image carries package defaults in `/usr/etc`. During installation, missing defaults are added to a persistent `state/etc` tree. Existing entries are preserved. `/etc/os-release` is a relative symlink to `/usr/lib/os-release`, which the Base packer generates from its version manifest.
 
-Persistent `state/var` is kept across Base generations. For testing, the two state directories are bind-mounted over `/etc` and `/var` in the selected rootfs inside a separate mount namespace. A future boot process must implement this arrangement before starting services.
+Persistent `state/var` is kept across Base generations. Host-side tests bind
+the state directories over `/etc` and `/var` in a separate mount namespace.
+The System VM implements these mounts before starting services, and the owner
+has verified both state directories across guest boots.
 
 Rollback does **not** revert persistent state or database formats. Future compatibility checks and explicit state migrations will be necessary.
 
@@ -63,9 +68,44 @@ release in the 3.0 line and `gimp@=3.0` as an exact release identifier
 has been **accepted as the design contract**, but is not yet implemented.
 Detailed version ordering and backend adapters remain open.
 
-The contract deliberately does not select a package backend, a System
-release format, a Ports store implementation, or a deployment format.
-These decisions require separate evaluation.
+Nix is now the selected Ports backend after the binary-import and pacman
+comparisons. The contract's upgrade/selector/project-lock policies are still
+design requirements, not completed features. For early Mojt versions, Nix is
+also selected for System package acquisition and dependency storage, using a
+shared store. System release and deployment formats require separate evaluation.
+
+## Accepted early Nix/System policy (2026-10-23)
+
+The owner approved the following policy after the three-step System VM run:
+
+- Keep the Nix CLI exposed in early Mojt versions for direct administration
+  and experimentation.
+- Use Nix for System packages for now, with System and Ports sharing the Nix
+  store and its object/reference database.
+- Keep System generation selection, service configuration and activation
+  under Mojt control. A direct Nix profile change is not a Mojt System update.
+- Describe host-service requirements separately in MPM, for example a
+  requirement for a compatible logind service on the system D-Bus.
+
+The shared database records exact store objects and references; it is not the
+authority for the active System generation or MPM's area policies. System and
+Ports retain separate manifests/catalog choices and activation state. One
+immutable object may satisfy references from both areas. A different build
+identity remains a different object even if its package name/version matches.
+
+File dependencies and host capabilities are distinct. Nix supplies a port's
+exact library closure, reusing already registered System objects when their
+identities match. A library from systemd does not by itself establish that
+logind is available, and installing a service's files does not configure or
+activate that service. Mojt must describe and verify the capabilities required
+by the port; it must not claim a host capability from a package name alone.
+
+This is an interim backend choice, not adoption of NixOS or a final System
+release format. The current experiment already shares registered objects,
+roots System content and uses Mojt-owned activation. Host-capability metadata
+and enforcement, supported direct-Nix operation boundaries, and reconciliation
+of changes outside MPM remain implementation/design work. Root can bypass
+ordinary file protections; the exposed CLI is not an MPM authorization boundary.
 
 ## Ports direction
 
@@ -77,14 +117,33 @@ Ports should support:
 - native execution by default for ordinary command-line tools;
 - optional security sandboxes for programs or build processes where useful.
 
-This remains a design direction, not an implemented Mojt Ports manager. We should evaluate mature components before creating our own resolver or content-addressed store.
+Nix supplies the Ports store and dependency objects; MPM owns Mojt's user-facing
+selection and activation policy. The narrow adapter has passed real Distrobox
+imports and parallel-version tests, followed by hello and parallel-Python
+acceptance inside the booted Mojt VM.
+See [the Nix experiment](mpm-nix-experiment.md).
+
+## First System implementation
+
+The owner approved three incremental steps: systemd boot with persistent state,
+NetworkManager/D-Bus networking, and MPM/Nix imports inside the booted VM.
+All three initial steps passed on the owner's Mojt VM. See
+[the System experiment](system-nix-vm.md) for preparation/build support,
+recorded real acceptance and remaining integration limits.
+
+The experiment obtains System binaries from the same pinned Nixpkgs source
+and keeps them separate from Base. A System profile supplies unit files and
+runtime tools; persistent machine configuration retains precedence. Nix/MPM
+and their management runtime belong to System. The initial root-operated
+binary-import test is not a production package-manager service/permission model.
 
 ## Explicitly unresolved
 
 - Source-based/self-hosted Base build and verifiable reproducibility
 - Signature verification and trusted release channels
 - Crash-safe activation and `fsync` durability guarantees
-- Boot integration, state mounts, and kernel/module versioning
+- Production boot selection/deployment, complete shutdown storage detachment,
+  and kernel/module release/versioning policy
 - ABI policy between Base, System, and Ports
 - State migration/rollback guarantees for system services
 - Alternative bootstrap backends and platform support
@@ -106,25 +165,26 @@ independently installed System files inside the active Base filesystem.
 
 ## Experimental VM PID 1 (System, not Base)
 
-The first boot prototype now uses a **System-owned static BusyBox init**,
+The earlier boot prototype uses a **System-owned static BusyBox init**,
 provided by the image builder in `system/prototype-init` and made available
 under `/run/mojt-system` at boot. BusyBox init supervises the serial console
 and provides a minimal poweroff path. This is **development-only**: BusyBox
 is suitable for the prototype, rescue media and embedded contexts, but it is
-**not** the planned permanent init for the Mojt distribution. The production
-init remains an open choice (systemd is a pragmatic candidate).
+**not** the planned permanent init for the Mojt distribution. The current
+System experiment has verified systemd as PID 1; BusyBox remains an early-boot/rescue tool.
 
 Account databases (`/etc/passwd`, `/etc/group`, `/etc/shadow`) are persistent
-machine state. The source VM currently has a root account expecting shadow
-but no shadow file; the experimental serial root console bypasses login
-entirely. A later, separate System feature must establish authenticated
-console login and safe initial credential provisioning. Never install a
-universal default password or overwrite existing machine credentials.
+machine state. The earlier development console bypasses login entirely.
+The builder also supplies authenticated password mode and host-side credential
+provisioning, described below and used in the accepted System VM runs.
+Production installer/account policy remains open. Never install a universal
+default password or overwrite existing machine credentials.
 
 ## Experimental System console login (not production authentication)
 
 The VM prototype may use a static BusyBox `getty` and `login` from
-`system/prototype-init`, separate from Base, to authenticate the local
+`system/prototype-init` (legacy) or the selected versioned System profile,
+separate from Base, to authenticate the local
 serial-console root account. Password creation happens during **host-side
 VM staging** from an interactive terminal. The salted password hash and
 account files are placed only in the VM copy of persistent `/etc`.

@@ -1,0 +1,15 @@
+# Mojt Linux
+# Copyright (C) 2026 Jonas Persson
+# SPDX-License-Identifier: GPL-2.0-only
+# Experiment B: source already pinned in the owner's Distrobox test.
+format = 1
+
+[nixpkgs]
+path = "/nix/store/4abi8hv3y6sxq7lgwlllclkjlnx65gd4-nixpkgs/nixpkgs"
+revision = "5adc50831c259f87faeb09ddf930d43597197473"
+system = "x86_64-linux"
+
+[[ports]]
+name = "hello"
+attribute = "hello"
+commands = ["hello"]
