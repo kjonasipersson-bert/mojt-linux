@@ -1,0 +1,10 @@
+#!/usr/bin/env python3
+# Mojt Linux
+# Copyright (C) 2026 Jonas Persson
+# SPDX-License-Identifier: GPL-2.0-only
+"""Repository entry point for the experimental Nix-backed MPM."""
+
+from pathlib import Path
+import runpy
+
+runpy.run_path(str(Path(__file__).with_name("mpm-nix-prototype")), run_name="__main__")

@@ -403,7 +403,10 @@ local source builds are disabled. Ordinary-user administration, daemon/socket
 permissions and production removal/GC policy are separate work.
 
 MPM's default experiment state is `/var/lib/mojt/ports`. Its user-facing wrapper
-accepts actions such as `mpm status` and `mpm install -y`. The Ports check imports
+now accepts area-qualified actions such as `mpm ports list` and
+`mpm ports install hello -y`. See the [ordinary Ports guide](mpm-ports.md)
+for new program installation/removal and `mojt-system-check programs`.
+Previously built images retain the old shorthand. The Ports check imports
 hello from the binary cache, then reuses the existing Python 3.12/3.13 acceptance
 runner in a fresh `/var/lib/mojt/python-acceptance-UUID` root. Both roots remain
 available. Management Python belongs to this System experiment; Base still has

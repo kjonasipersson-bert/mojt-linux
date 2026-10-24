@@ -2,7 +2,7 @@
 # Mojt Linux
 # Copyright (C) 2026 Jonas Persson
 # SPDX-License-Identifier: GPL-2.0-only
-"""MPM/Nix Ports probe: local pinned catalog, binary imports and private profiles."""
+"""MPM Ports: pinned Nixpkgs, binary imports and independent activation."""
 
 import argparse
 import copy
@@ -23,6 +23,44 @@ MARKER = "Mojt MPM Nix experiment 1\n"
 NAME = r"[a-z][a-z0-9-]*"
 COMMAND = r"[A-Za-z0-9][A-Za-z0-9._+-]*"
 STORE_NAME = r"[0-9abcdfghijklmnpqrsvwxyz]{32}-[A-Za-z0-9+._?=-]+"
+ATTRIBUTE = r"[A-Za-z_][A-Za-z0-9_+-]*(?:\.[A-Za-z_][A-Za-z0-9_+-]*)*"
+RESERVED = {"mpm", "mojt-system-check", "nix", "nix-store", "nix-instantiate"}
+IMPORT = r'''
+{ requestJSON }:
+let
+  r = builtins.fromJSON requestJSON;
+  pkgs = import (builtins.toPath r.source.path) {
+    system = r.source.system; config = {}; overlays = [];
+  };
+'''
+RESOLVE = IMPORT + r'''
+  p = pkgs.lib.attrByPath (pkgs.lib.splitString "." r.attribute)
+    (throw "MPM: attribute missing from pinned Nixpkgs") pkgs;
+in assert pkgs.lib.isDerivation p; {
+  version = p.version or "unknown";
+  output = (pkgs.lib.getBin p).outPath;
+  description = p.meta.description or "";
+}
+'''
+SEARCH = IMPORT + r'''
+  scope = if r.scope == "" then pkgs else
+    pkgs.lib.attrByPath (pkgs.lib.splitString "." r.scope) {} pkgs;
+  names = builtins.filter
+    (n: pkgs.lib.hasInfix (pkgs.lib.toLower r.query) (pkgs.lib.toLower n))
+    (builtins.attrNames scope);
+  candidate = n: let
+    result = builtins.tryEval (let p = scope.${n}; in
+      if pkgs.lib.isDerivation p then
+        let value = { attribute = (if r.scope == "" then "" else r.scope + ".") + n;
+                      version = p.version or "unknown";
+                      description = p.meta.description or ""; };
+        in builtins.deepSeq value value
+      else null);
+    in if result.success then result.value else null;
+in { matches = builtins.filter (p: p != null)
+       (map candidate (pkgs.lib.take r.limit names));
+     matchedAttributes = builtins.length names; }
+'''
 EVALUATE = r'''
 { requestJSON }:
 let
@@ -67,42 +105,71 @@ def store_hash(value):
     return store_path(value).name[:32]
 
 
-def catalog_from_manifest(path):
-    raw = tomllib.loads(path.read_text(encoding="utf-8"))
-    require(set(raw) == {"format", "nixpkgs", "ports"} and type(raw["format"]) is int
-            and raw["format"] == 1, "unsupported manifest fields or format")
-    source = raw["nixpkgs"]
+def evaluate(expression, **request):
+    return json.loads(run("nix-instantiate", "--eval", "--strict", "--json",
+                          "--option", "allow-import-from-derivation", "false",
+                          "--expr", expression, "--argstr", "requestJSON", json.dumps(request)))
+
+
+def source_from_fields(source, directory):
     require(set(source) == {"path", "revision", "system"}, "invalid nixpkgs fields")
     require(re.fullmatch(r"[0-9a-f]{40}", source["revision"]), "expected full Nixpkgs revision")
     require(source["system"] in ("x86_64-linux", "aarch64-linux"), "unsupported platform")
     supplied = Path(source["path"]).expanduser()
-    resolved = (supplied if supplied.is_absolute() else path.parent / supplied).resolve(strict=True)
+    resolved = (supplied if supplied.is_absolute() else directory / supplied).resolve(strict=True)
     relative = resolved.relative_to(STORE)
     source_root = store_path(str(STORE / relative.parts[0]))
     require((resolved / "default.nix").is_file(), "Nixpkgs default.nix missing")
     require((resolved / ".git-revision").read_text().strip() == source["revision"],
             "Nixpkgs revision differs from manifest")
-    require(isinstance(raw["ports"], list) and raw["ports"], "empty ports list")
+    return dict(source, path=str(resolved), store=str(source_root),
+                nar_hash=run("nix-store", "--query", "--hash", str(source_root)))
+
+
+def discover_commands(record):
+    directory = Path(record["output"]) / "bin"
+    commands = sorted(p.name for p in directory.iterdir()
+                      if p.is_file() and os.access(p, os.X_OK)) if directory.is_dir() else []
+    require(commands, f"no executable commands in selected binary output: {record['attribute']}")
+    require(all(re.fullmatch(COMMAND, c) for c in commands), "unsupported executable name")
+    return commands
+
+
+def resolve_package(source, name, attribute):
+    require(re.fullmatch(ATTRIBUTE, attribute), "unsupported Nix attribute path")
+    require(re.fullmatch(ATTRIBUTE, name), "unsupported Ports name")
+    selected = evaluate(RESOLVE, source=source, attribute=attribute)
+    require(isinstance(selected["version"], str) and re.fullmatch(COMMAND, selected["version"]),
+            "unsupported upstream version for experiment aliases")
+    store_path(selected["output"])
+    record = dict(selected, name=name, attribute=attribute, source=source, commands=None)
+    if Path(record["output"]).exists():
+        record["commands"] = discover_commands(record)
+    return record
+
+
+def catalog_from_manifest(path):
+    raw = tomllib.loads(path.read_text(encoding="utf-8"))
+    require(set(raw) in ({"format", "nixpkgs"}, {"format", "nixpkgs", "ports"})
+            and type(raw["format"]) is int
+            and raw["format"] == 1, "unsupported manifest fields or format")
+    ports = raw.get("ports", [])
+    require(isinstance(ports, list), "invalid ports list")
     names = set()
-    for item in raw["ports"]:
+    for item in ports:
         require(set(item) == {"name", "attribute", "commands"}, "invalid port fields")
         require(re.fullmatch(NAME, item["name"]) and item["name"] not in names,
                 "invalid or duplicate port name")
         names.add(item["name"])
-        require(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)*",
-                             item["attribute"]), "unsupported Nix attribute path")
+        require(re.fullmatch(ATTRIBUTE, item["attribute"]), "unsupported Nix attribute path")
         require(isinstance(item["commands"], list) and item["commands"]
                 and all(isinstance(c, str) and re.fullmatch(COMMAND, c) for c in item["commands"])
                 and len(set(item["commands"])) == len(item["commands"]), "invalid command list")
-    source = dict(source, path=str(resolved), store=str(source_root))
-    source["nar_hash"] = run("nix-store", "--query", "--hash", str(source_root))
-    request = dict(source=source, ports=raw["ports"])
-    result = json.loads(run("nix-instantiate", "--eval", "--strict", "--json",
-                            "--option", "allow-import-from-derivation", "false",
-                            "--expr", EVALUATE, "--argstr", "requestJSON", json.dumps(request)))
-    require(isinstance(result, list) and len(result) == len(raw["ports"]), "invalid Nix result")
+    source = source_from_fields(raw["nixpkgs"], path.parent)
+    result = evaluate(EVALUATE, source=source, ports=ports) if ports else []
+    require(isinstance(result, list) and len(result) == len(ports), "invalid Nix result")
     packages = {}
-    for item, selected in zip(raw["ports"], result):
+    for item, selected in zip(ports, result):
         require(all(selected[k] == item[k] for k in ("name", "attribute", "commands")),
                 "Nix result differs from request")
         require(isinstance(selected["version"], str) and re.fullmatch(COMMAND, selected["version"]),
@@ -129,11 +196,13 @@ def command_aliases(state):
 
     for record in state["installed"].values():
         suffix = record["version"] + "-nix-" + store_hash(record["output"])
-        for command in record["commands"]:
+        for command in record["commands"] or []:
             add(command + "-" + suffix, record["output"], command)
     for key in state["active"].values():
         record = state["installed"][key]
-        for command in record["commands"]:
+        for command in record["commands"] or []:
+            require(command not in RESERVED,
+                    f"reserved System management command: {command}; install with --no-activate")
             add(command, record["output"], command)
     return aliases
 
@@ -159,15 +228,16 @@ def initialize(root):
 
 
 def load_state(root):
-    if not root.exists():
+    if not root.exists() or (root.is_dir() and not root.is_symlink() and not any(root.iterdir())):
         return empty_state()
     check_root(root)
     current = root / "current"
     if not os.path.lexists(current):
         return empty_state()
-    require(current.is_symlink() and re.fullmatch(r"profiles/[0-9a-f]{32}", os.readlink(current)),
-            "unmanaged current path")
-    generation = root / os.readlink(current)
+    require(current.is_symlink(), "unmanaged current path")
+    selected = os.readlink(current)
+    require(re.fullmatch(r"profiles/[0-9a-f]{32}", selected), "unmanaged current path")
+    generation = root / selected
     require(not generation.is_symlink(), "unmanaged generation")
     state = json.loads((generation / "state.json").read_text())
     require(state["format"] == 1, "unsupported state format")
@@ -181,29 +251,85 @@ def load_state(root):
     return state
 
 
-def plan(state, action, catalog=None, names=(), request=None):
+def history(state):
+    if "history" not in state:
+        # Old probes recorded insertion order, but not past activation choices.
+        installs = {key: n for n, key in enumerate(state["installed"], 1)}
+        sequence = len(installs)
+        state["history"] = dict(sequence=sequence, installed=installs,
+                                activated={key: sequence for key in state["active"].values()})
+    return state["history"]
+
+
+def remember(state, kind, key):
+    events = history(state)
+    events["sequence"] += 1
+    events[kind][key] = events["sequence"]
+
+
+def installed_selection(state, request):
+    if request in state["installed"]:
+        return request
+    require("@" not in request, "exact installed identity not found; use ports list")
+    matches = [k for k, r in state["installed"].items() if r["name"] == request]
+    require(matches, f"port not installed: {request}")
+    require(len(matches) == 1,
+            f"multiple versions of {request}; choose an exact identity from ports list")
+    return matches[0]
+
+
+def plan(state, action, catalog=None, names=(), request=None, records=None, inactive=False):
     proposed = copy.deepcopy(state)
     if action == "update":
         proposed["catalog"] = catalog
     elif action == "install":
-        require(state["catalog"] is not None, "run ports update --manifest FILE first")
-        available = state["catalog"]["packages"]
+        require(state["catalog"] is not None, "run mpm ports update first")
+        available = records if records is not None else state["catalog"]["packages"]
         for name in names or available:
             require(name in available, f"port not in local catalog: {name}")
             record = copy.deepcopy(available[name])
             key = identity(record)
             existing = proposed["installed"].get(key)
             if existing:
-                require(existing["commands"] == record["commands"], "exports for retained object changed")
+                require(record["commands"] is None or existing["commands"] == record["commands"],
+                        "exports for retained object changed")
                 continue
+            history(proposed)
             proposed["installed"][key] = record
+            remember(proposed, "installed", key)
             # Accepted MPM convenience exception: only first install claims defaults.
             first = not any(r["name"] == name for r in state["installed"].values())
-            if first:
+            if first and not inactive:
                 proposed["active"][name] = key
+                remember(proposed, "activated", key)
     elif action == "activate":
-        require(request in state["installed"], "activate requires an installed exact identity from status")
-        proposed["active"][state["installed"][request]["name"]] = request
+        key = installed_selection(state, request)
+        name = state["installed"][key]["name"]
+        if state["active"].get(name) != key:
+            history(proposed)
+            proposed["active"][name] = key
+            remember(proposed, "activated", key)
+    elif action == "remove":
+        # Resolve the entire removal set first, so no removed version can be a fallback.
+        removed = {installed_selection(state, name) for name in names}
+        require(removed, "specify a package or exact installed identity")
+        events = history(proposed)
+        for key in removed:
+            del proposed["installed"][key]
+            events["installed"].pop(key, None)
+            events["activated"].pop(key, None)
+        for name, key in list(proposed["active"].items()):
+            if key not in removed:
+                continue
+            candidates = [k for k, r in proposed["installed"].items() if r["name"] == name]
+            if candidates:
+                # Positive activation sequences outrank never-active installations.
+                fallback = max(candidates, key=lambda k: (events["activated"].get(k, 0),
+                                                          events["installed"].get(k, 0), k))
+                proposed["active"][name] = fallback
+                remember(proposed, "activated", fallback)
+            else:
+                del proposed["active"][name]
     command_aliases(proposed)
     return proposed
 
@@ -213,14 +339,27 @@ def describe(old, new):
         source = new["catalog"]["source"]
         print(f"Nixpkgs: {source['revision']} ({source['system']}) at {source['path']}")
     print("Ports only. Binary imports only. Old objects/profiles retained. No migrations or reboot.")
+    if old["installed"] and "history" not in old and "history" in new:
+        print("History baseline: old installation order retained; earlier activation order is unknown.")
     for key, record in new["installed"].items():
         if key not in old["installed"]:
             print(f"Install: {key}\n  Output: {record['output']}")
+            print("  Commands: " + (", ".join(record["commands"]) if record["commands"] is not None
+                                    else "discover after binary import; conflicts abort publication"))
             # Nix supplies its native download/closure preview before approval.
-            run("nix-store", "--realise", record["output"], "--dry-run")
+            run("nix-store", "--realise", record["output"], "--dry-run",
+                "--option", "max-jobs", "0", "--option", "builders", "")
+    for key in old["installed"].keys() - new["installed"].keys():
+        print(f"Remove from current profile: {key}")
+        print("  Store object and old profiles retained for rollback; no disk space reclaimed.")
+    lost = sorted(command_aliases(old).keys() - command_aliases(new).keys())
+    if lost:
+        print("Remove command aliases: " + ", ".join(lost))
     for name, key in new["active"].items():
         if old["active"].get(name) != key:
             print(f"Activate: {name} -> {key}")
+    for name in old["active"].keys() - new["active"].keys():
+        print(f"Deactivate: {name}; no installed replacement")
     print("Known external capabilities: not audited by this probe.")
 
 
@@ -230,7 +369,8 @@ def retain(root, output):
     if os.path.lexists(gcroot):
         require(gcroot.is_symlink() and os.readlink(gcroot) == str(path), "GC root conflict")
     # Register at its final location; moving an indirect GC root breaks registration.
-    result = run("nix-store", "--realise", str(path), "--add-root", str(gcroot), "--indirect")
+    result = run("nix-store", "--realise", str(path), "--add-root", str(gcroot), "--indirect",
+                 "--option", "max-jobs", "0", "--option", "builders", "")
     require(gcroot.is_symlink() and os.readlink(gcroot) == str(path) and path.exists(),
             f"Nix did not retain expected object: {output} ({result})")
 
@@ -248,6 +388,14 @@ def verify_retained(root, state):
                 f"retained object or GC root missing: {output}")
 
 
+def sync_directory(path):
+    descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
 def publish(root, old, state):
     if state["catalog"]:
         retain(root, state["catalog"]["source"]["store"])
@@ -255,6 +403,10 @@ def publish(root, old, state):
         if key in old["installed"]:
             continue
         retain(root, record["output"])
+        retain(root, record["source"]["store"])
+        if record["commands"] is None:
+            record["commands"] = discover_commands(record)
+            print(f"Export commands for {key}: {', '.join(record['commands'])}")
         for command in record["commands"]:
             require(os.access(Path(record["output"]) / "bin" / command, os.X_OK),
                     f"exported command missing or not executable: {command}")
@@ -265,52 +417,158 @@ def publish(root, old, state):
         hashes = run("nix-store", "--query", "--hash", *closure).splitlines()
         require(len(hashes) == len(closure) and all(hashes), "invalid closure hashes")
         record["closure"] = [dict(path=p, nar_hash=h) for p, h in zip(closure, hashes)]
+    aliases = command_aliases(state)  # Validate discovered exports before publishing any link.
     generation = root / "profiles" / uuid.uuid4().hex
     temporary = root / (".current-" + uuid.uuid4().hex)
     generation.mkdir()
+    published = False
     try:
         (generation / "bin").mkdir()
-        (generation / "state.json").write_text(json.dumps(state, indent=2) + "\n")
-        for name, destination in command_aliases(state).items():
+        with (generation / "state.json").open("w") as stream:
+            stream.write(json.dumps(state, indent=2) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        for name, destination in aliases.items():
             (generation / "bin" / name).symlink_to(destination)
+        sync_directory(generation / "bin")
+        sync_directory(generation)
+        sync_directory(root / "profiles")
         temporary.symlink_to("profiles/" + generation.name)
         os.replace(temporary, root / "current")
+        published = True
+        sync_directory(root)
+        require(os.readlink(root / "current") == "profiles/" + generation.name,
+                "profile selection changed unexpectedly after publication; retained for inspection")
     except BaseException:
         temporary.unlink(missing_ok=True)
-        shutil.rmtree(generation)
+        if not published:
+            shutil.rmtree(generation)
+        else:
+            print("Profile selection may have committed; inspect current. New generation retained.",
+                  file=sys.stderr)
         raise
 
 
+def install_records(state, names, attribute=None):
+    require(state["catalog"] is not None, "run mpm ports update first")
+    catalog = state["catalog"]
+    selected = names or list(catalog["packages"])
+    require(selected, "specify at least one Ports name")
+    require(not attribute or len(selected) == 1, "--attribute requires exactly one Ports name")
+    records = {}
+    for name in selected:
+        require(re.fullmatch(ATTRIBUTE, name), "unsupported Ports name or selector; use an attribute name")
+        if attribute or name not in catalog["packages"]:
+            records[name] = resolve_package(catalog["source"], name, attribute or name)
+        else:
+            records[name] = catalog["packages"][name]
+    return records
+
+
+def inspect(state, args):
+    if args.action == "status":
+        print(json.dumps(state, indent=2))
+    elif args.action == "list":
+        rows = [dict(record, identity=key, active=state["active"].get(record["name"]) == key)
+                for key, record in state["installed"].items()]
+        if args.json:
+            print(json.dumps(rows, indent=2))
+        else:
+            for row in rows:
+                print(("* " if row["active"] else "  ") + row["identity"]
+                      + " [" + row["attribute"] + "]")
+            if not rows:
+                print("No Ports installed in current profile.")
+    else:
+        require(state["catalog"] is not None, "run mpm ports update first")
+        source = state["catalog"]["source"]
+        if args.action == "search":
+            require(not args.scope or re.fullmatch(ATTRIBUTE, args.scope), "unsupported search scope")
+            require(args.query.strip(), "provide a nonempty package-name fragment")
+            require(1 <= args.limit <= 200, "search limit must be between 1 and 200")
+            result = evaluate(SEARCH, source=source, query=args.query, scope=args.scope, limit=args.limit)
+            if args.json:
+                print(json.dumps(dict(source=source, **result), indent=2))
+            else:
+                print(f"Nixpkgs: {source['revision']} ({source['system']}); attribute-name search")
+                for row in result["matches"]:
+                    print(f"{row['attribute']} ({row['version']})  {row['description']}")
+                if result["matchedAttributes"] > args.limit:
+                    print("Result limited; narrow the name fragment or use --scope/--limit.")
+        else:
+            if args.name in state["installed"]:
+                record = dict(state["installed"][args.name], identity=args.name)
+            else:
+                record = install_records(state, [args.name])[args.name]
+                record = dict(record, identity=identity(record))
+            if args.json:
+                print(json.dumps(record, indent=2))
+            else:
+                print(f"{record['identity']}\nAttribute: {record['attribute']}\n"
+                      f"Nixpkgs: {record['source']['revision']} ({record['source']['system']})\n"
+                      f"Output: {record['output']}\n{record.get('description', '')}")
+                print("Commands: " + (", ".join(record["commands"]) if record["commands"] is not None
+                                      else "discovered on import"))
+                print("Binary output only; host-service/desktop requirements are not audited.")
+
+
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root", type=Path, required=True, help="new/empty dedicated directory; never move it")
+    parser = argparse.ArgumentParser(prog="mpm", description=__doc__)
+    parser.add_argument("--root", type=Path, default=Path("/var/lib/mojt/ports"),
+                        help="dedicated state directory; default: /var/lib/mojt/ports; never move it")
+    parser.add_argument("--source-manifest", type=Path,
+                        help="initial source pin for ports update; never an implicit channel refresh")
     parser.add_argument("area", choices=["ports"])
     actions = parser.add_subparsers(dest="action", required=True)
-    for action in ("update", "install", "activate", "status"):
+    for action in ("update", "install", "activate", "remove", "status", "list", "search", "info"):
         sub = actions.add_parser(action)
         if action == "update":
-            sub.add_argument("--manifest", type=Path, required=True)
+            sub.add_argument("--manifest", type=Path, help="explicit source pin and optional curated entries")
         if action == "install":
             sub.add_argument("names", nargs="*", help="default: all ports in saved local catalog")
+            sub.add_argument("--attribute", help="Nixpkgs attribute for a single named Port, e.g. python312")
+            sub.add_argument("--no-activate", action="store_true", help="retain without first-install activation")
         if action == "activate":
             sub.add_argument("request", help="exact identity printed by status, including Nix hash")
-        if action != "status":
+        if action == "remove":
+            sub.add_argument("names", nargs="+", help="exact identities, or names with one installed version")
+        if action in ("list", "search", "info"):
+            sub.add_argument("--json", action="store_true")
+        if action == "search":
+            sub.add_argument("query", help="case-insensitive attribute-name fragment")
+            sub.add_argument("--scope", default="", help="Nixpkgs subgroup, e.g. python313Packages")
+            sub.add_argument("--limit", type=int, default=50)
+        if action == "info":
+            sub.add_argument("name", help="Ports name, Nixpkgs attribute or installed exact identity")
+        if action in ("update", "install", "activate", "remove"):
             sub.add_argument("--dry-run", action="store_true")
             sub.add_argument("-y", "--yes", action="store_true")
     args = parser.parse_args(argv)
     root = args.root.absolute()
     try:
-        if args.action == "status":
-            print(json.dumps(load_state(root), indent=2))
+        if args.action in ("status", "list", "search", "info"):
+            inspect(load_state(root), args)
             return 0
 
         def perform():
             old = load_state(root)
             if root.exists():
                 verify_retained(root, old)
-            catalog = catalog_from_manifest(args.manifest) if args.action == "update" else None
+            catalog = None
+            if args.action == "update":
+                if args.manifest:
+                    catalog = catalog_from_manifest(args.manifest)
+                elif old["catalog"] is not None:
+                    catalog = copy.deepcopy(old["catalog"])
+                else:
+                    require(args.source_manifest is not None,
+                            "initial update needs --manifest FILE (source pin only is sufficient)")
+                    catalog = catalog_from_manifest(args.source_manifest)
+            records = (install_records(old, args.names, args.attribute)
+                       if args.action == "install" else None)
             proposed = plan(old, args.action, catalog, getattr(args, "names", ()),
-                            getattr(args, "request", None))
+                            getattr(args, "request", None), records,
+                            getattr(args, "no_activate", False))
             describe(old, proposed)
             if args.dry_run:
                 print("Preview only; no MPM state, GC roots or payloads written.")
@@ -335,7 +593,7 @@ def main(argv=None):
                 perform()
         return 0
     except (ValueError, OSError, KeyError, TypeError, EOFError, AttributeError) as error:
-        print(f"mpm-nix-prototype: {error}", file=sys.stderr)
+        print(f"mpm: {error}", file=sys.stderr)
         return 1
 
 

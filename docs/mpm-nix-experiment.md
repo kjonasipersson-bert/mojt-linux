@@ -6,6 +6,11 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # MPM/Nix Ports experiment
 
+**2026-10-24 extension:** see [Using MPM for ordinary Ports](mpm-ports.md)
+for attribute lookup without per-package manifests, automatic command
+discovery, inspection commands and logical removal with historical fallback.
+The earlier acceptance record below describes the original probe.
+
 **Status:** a narrow backend probe, not a production MPM implementation or
 the complete MPM contract. The owner has now selected Nix for Ports after
 the comparator tests. Requires Linux, Python 3.11+, and an
@@ -83,9 +88,11 @@ and registered NAR hash, and the selected output paths and upstream versions
 in a new local catalog. It roots the source but does not realise applications
 or alter their active selection. It never runs `nix-channel --update`.
 
-`ports install` imports all entries from the saved local catalog; optional
-names restrict the selection. It does not re-read the manifest or reevaluate
-Nixpkgs. Removing an entry from the manifest/catalog never uninstalls it.
+`ports install` without names imports the curated entries from the saved
+local catalog. Named requests absent from those entries are now resolved
+against the same pinned source, without re-reading the manifest. Existing
+curated entries keep their saved outputs. Removing an entry from the
+manifest/catalog never uninstalls it.
 
 Only already-built output paths are passed to `nix-store --realise`; no
 derivations are realised and no source builds are attempted. A missing binary
@@ -253,6 +260,11 @@ multi-command snapshot. Files already downloaded or rooted before failure
 may remain, but the previous active profile remains selected. Stale staging
 cleanup and power-loss durability are not implemented.
 
+The ordinary-Ports extension now flushes profile files/directories around
+publication and reports uncertainty for a failure after the selection rename.
+This remains short of complete power-loss recovery for backend state; see
+the current [validation limits](mpm-ports.md#agent-side-validation-2026-10-24).
+
 Use a new/empty dedicated root. The probe refuses unmanaged directories,
 modified profile aliases, command collisions and missing retention links.
 State and manifests are trusted local inputs, not a hardened boundary against
@@ -278,10 +290,11 @@ perform `os.chown(..., 1000, 1000)` in this environment (`EINVAL`). This is not
 a claim of a passing full suite or a test run on the owner's Debian host.
 
 Not implemented: series selection and upgrade policies, project profiles or
-portable lockfiles, removal/GC, automatic selection of multiple Nix outputs,
+portable lockfiles, profile pruning/physical GC, generalized selection of multiple Nix outputs,
 desktop/service integration, system capability checks, System or boot. Only
-the selected default output is imported; explicit commands must be executable
-under that output's `bin/`. It is not a claim to support every Nixpkgs package.
+curated entries use their saved default output and explicit commands. New
+attribute requests use the binary output and discover its executable `bin/`
+files. It is not a claim to support every Nixpkgs package.
 There is no implicit reconciliation that removes packages absent from TOML.
 
 References: [Nix store realisation](https://nix.dev/manual/nix/2.35/command-ref/nix-store/realise.html),

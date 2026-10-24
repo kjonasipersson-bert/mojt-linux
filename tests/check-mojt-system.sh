@@ -53,15 +53,22 @@ case "$action" in
     ports)
         boot_check
         command -v mpm >/dev/null || fail "requires a step 3 VM"
-        mpm update --manifest /run/mojt-system/ports.toml --dry-run
-        mpm update --manifest /run/mojt-system/ports.toml -y
-        mpm install --dry-run
-        mpm install -y
-        /var/lib/mojt/ports/current/bin/hello
+        mpm ports update --dry-run
+        mpm ports update -y
+        mpm ports install hello --dry-run
+        mpm ports install hello -y
+        hello
         lab="/var/lib/mojt/python-acceptance-$(cat /proc/sys/kernel/random/uuid)"
-        python3 /run/mojt-system/tests/run-mpm-nix-python.py \
+        /run/mojt-system/bin/python3 /run/mojt-system/tests/run-mpm-nix-python.py \
             --root "$lab" --source-manifest /run/mojt-system/ports.toml
         echo "PASS: MPM binary import, parallel Python versions and captured profile" ;;
+    programs)
+        boot_check
+        command -v mpm >/dev/null || fail "requires a step 3 VM"
+        lab="/var/lib/mojt/programs-acceptance-$(cat /proc/sys/kernel/random/uuid)"
+        /run/mojt-system/bin/python3 /run/mojt-system/tests/run-mpm-nix-ports.py \
+            --root "$lab" --source-manifest /run/mojt-system/ports.toml
+        echo "PASS: ordinary Ports, automatic exports and historical removal fallback" ;;
     persistence-write)
         [ ! -e /etc/mojt-system-persistence-test ] || fail "test marker already exists"
         [ ! -L /etc/mojt-system-persistence-test ] || fail "test marker is a symlink"
@@ -80,5 +87,5 @@ case "$action" in
         current="$(cat /proc/sys/kernel/random/boot_id)" || fail "cannot read current boot ID"
         [ "$old" != "$current" ] || fail "a second boot is required"
         echo "PASS: both /etc and /var markers survived a different boot" ;;
-    *) fail "use boot, network, ports, persistence-write or persistence-check" ;;
+    *) fail "use boot, network, ports, programs, persistence-write or persistence-check" ;;
 esac

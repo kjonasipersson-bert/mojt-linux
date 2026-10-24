@@ -78,7 +78,7 @@ A declared `provides` is not a substitute for checking the actual ABI.
 | `install` | Resolve and retain a selected release plus dependencies. For Ports, first installation of a directly requested application also establishes its default activation; later installs leave the existing activation unchanged. |
 | `upgrade` | Show a complete proposed upgrade **within the selected area**; after approval, install eligible releases while preserving old versions. Tracked Ports series aliases may advance; an active *series selection* stays the same. |
 | `activate` | Select an **already installed** version for a chosen profile, or a bootable deployment for Base/System/Kernel. |
-| `remove` | Remove an unreferenced, inactive installation only when pinned projects, profiles, dependencies, and rollback references do not need it. |
+| `remove` | Remove selected Ports installations from the current profile; if an active installation is removed, choose an installed replacement by the history rule below. Physical collection is separate and must preserve dependencies, project pins and rollback references. Base/System/Kernel deployment removal needs separate safeguards. |
 
 Examples, describing desired behavior rather than runnable commands:
 
@@ -131,6 +131,52 @@ Rollback selects previously published, still available content. Persistent
 `/etc`, `/var`, and future user data are not automatically rolled back.
 An old System may be incompatible with newly migrated state; reactivation
 must warn about known compatibility/security problems.
+
+### Ports removal and historical fallback (accepted 2026-10-24)
+
+Removal from the current Ports installation set is distinct from physically
+deleting immutable objects. Removing an inactive installation leaves the
+active selection unchanged. Removing the active installation MUST select a
+remaining installation of that application, using this order:
+
+1. The most recently activated remaining installation.
+2. If none has ever been active, the most recently installed remaining installation.
+3. If none remains, remove the application's unqualified command aliases.
+
+Record ordering with committed event sequences, not wall-clock timestamps
+or upstream version comparison. First-install activation and removal-triggered
+fallback count as activations; an idempotent activation changes no history.
+Distinct builds of one upstream version are distinct installations. Resolve
+all targets of a multi-removal before choosing replacements: an installation
+being removed cannot become a fallback in the same transaction.
+
+For an active series selection, apply the same ordering within that series
+first. If the series becomes empty, apply it to the remaining installations
+and explicitly show the resulting change of selection in the preview. The
+current Nix adapter implements exact activations only; series aliases remain
+future work and MUST NOT be inferred from version prefixes.
+
+Show all removals, exact fallback identities, lost/default commands and
+retained rollback references before confirmation. Publish removal and
+activation as one complete profile change. Any validation/import/publication
+failure before the selection rename leaves the old profile selected. An I/O
+failure after that commit point may mean the new profile was selected; report
+the uncertainty and retain the complete generation for inspection. A bare name with multiple installed
+versions is ambiguous in the initial wrapper: require exact identities from
+`mpm ports list`, rather than silently removing one or all versions.
+
+Old profiles and project references may continue using the removed version.
+Dependencies required by remaining applications are likewise retained. GC
+may physically delete an object only after all protecting references have
+been released. `remove` MUST NOT imply that disk space was reclaimed; report
+when store objects are retained. A later, explicit retention/collection policy
+will govern releasing rollback profiles and GC roots.
+
+Existing prototype states predate activation-history tracking. On their first
+relevant mutation, retain the recorded installation insertion order and mark
+only the currently active versions as known activations. Report that earlier
+activation order is unknown; do not fabricate historical choices. Read-only
+commands and no-op transactions do not rewrite those states.
 
 ## 3. Package selectors: release lines and exact identifiers (accepted)
 
