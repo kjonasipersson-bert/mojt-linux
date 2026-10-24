@@ -2,11 +2,12 @@
 # Mojt Linux
 # Copyright (C) 2026 Jonas Persson
 # SPDX-License-Identifier: GPL-2.0-only
-"""Build an experimental QEMU direct-kernel boot from an installed Mojt Base.
+"""Build an experimental QEMU VM from an installed Mojt Base.
 
 Host: root, Python 3.11+, cp, cpio, mkfs.ext4, modprobe, zstd,
 a kernel image and matching modules, and a static x86_64 BusyBox.
-Does not overwrite releases or existing VM disks. No bootloader/partitions.
+UEFI mode also needs GRUB EFI tools, sfdisk, dosfstools and mtools.
+Does not overwrite releases or existing VM disks.
 """
 
 import argparse
@@ -29,6 +30,12 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
+
+
+_boot_spec = importlib.util.spec_from_file_location("mojt_boot", Path(__file__).with_name("mojt_boot.py"))
+boot = importlib.util.module_from_spec(_boot_spec)
+_boot_spec.loader.exec_module(boot)
 
 
 LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]*\Z")
@@ -179,12 +186,12 @@ def static_x86_64_elf(path):
     return True
 
 
-def validate_busybox_applets(binary, login_mode="development"):
+def validate_busybox_applets(binary, login_mode="development", extra=()):
     """Check that the chosen BusyBox supports every used applet."""
     result = subprocess.run(
         [str(binary), "--list"], check=True, capture_output=True, text=True,
     )
-    required = REQUIRED_APPLETS
+    required = REQUIRED_APPLETS | set(extra)
     if login_mode == "password":
         required |= LOGIN_APPLETS
     missing = required - set(result.stdout.splitlines())
@@ -509,11 +516,14 @@ def kernel_release_from_path(path):
 def module_paths(release, modules_dir, network=False):
     """Use kmod on the host for dependency ordering; do not load modules."""
     root = modules_dir.resolve(strict=True)
+    if root.name != release or root.parent.name != "modules" or root.parent.parent.name != "lib":
+        fail("modules directory must end in lib/modules/<kernel-release>")
     seen = set()
     paths = []
     for name in ("virtio_pci", "virtio_blk", "ext4") + (("virtio_net",) if network else ()):
         result = subprocess.run(
-            ["modprobe", "--set-version", release, "--show-depends", name],
+            ["modprobe", "--dirname", str(root.parents[2]),
+             "--set-version", release, "--show-depends", name],
             check=True, capture_output=True, text=True,
         )
         for line in result.stdout.splitlines():
@@ -544,7 +554,7 @@ def module_bytes(path):
     fail(f"unsupported module compression: {path}")
 
 
-def make_initramfs(root, busybox, modules, init_script=None, shutdown_script=None):
+def make_initramfs(root, busybox, modules, init_script=None, shutdown_script=None, extra_applets=()):
     root.mkdir()
     for name in ("bin", "dev", "proc", "sys", "sysroot", "newroot", "modules"):
         (root / name).mkdir()
@@ -552,7 +562,7 @@ def make_initramfs(root, busybox, modules, init_script=None, shutdown_script=Non
     applets = ("sh", "mount", "insmod", "readlink", "sleep", "switch_root", "mkdir", "hostname")
     if shutdown_script is not None:
         applets += ("cp", "ln")
-    for name in applets:
+    for name in applets + tuple(extra_applets):
         (root / "bin" / name).symlink_to("busybox")
     init = root / "init"
     init.write_text(INIT if init_script is None else init_script, encoding="ascii")
@@ -601,7 +611,7 @@ def populate_disk_tree(target, version, tree):
     tree.chmod(0o755)
 
 
-def run_script(network=False):
+def run_script(network=False, kernel_cmdline="console=ttyS0,115200 rdinit=/init"):
     return """#!/usr/bin/env bash
 # Mojt Linux
 # Copyright (C) 2026 Jonas Persson
@@ -613,7 +623,7 @@ exec qemu-system-x86_64 \\
     -m 1024 -smp 2 \\
     -kernel "$here/vmlinuz" \\
     -initrd "$here/initramfs.cpio.gz" \\
-    -append "console=ttyS0,115200 rdinit=/init" \\
+    -append """ + shlex.quote(kernel_cmdline) + """ \\
     -drive "file=$here/disk.img,if=virtio,format=raw" \\
     -nic """ + ("user,model=virtio-net-pci" if network else "none") + """ \\
     -display none -serial mon:stdio -no-reboot
@@ -625,7 +635,13 @@ def build(args):
         fail("run as root (sudo) to preserve Base ownership and create /dev nodes")
     if platform.machine() != "x86_64":
         fail("first VM builder supports x86_64 only")
+    uefi = getattr(args, "boot_mode", "direct") == "uefi"
+    if uefi and not getattr(args, "system_payload", None):
+        fail("UEFI boot requires --system-payload")
+    parts = boot.layout(args.disk_size_mib) if uefi else None
     commands = ["cp", "cpio", "mkfs.ext4", "modprobe", "zstd", "du"]
+    if uefi:
+        commands += boot.COMMANDS
     if args.login_mode == "password":
         commands.append("openssl")
     for command in commands:
@@ -652,7 +668,7 @@ def build(args):
     busybox = args.busybox.resolve(strict=True)
     if not busybox.is_file() or not static_x86_64_elf(busybox):
         fail(f"requires a static x86_64 BusyBox (Debian: busybox-static): {busybox}")
-    validate_busybox_applets(busybox, args.login_mode)
+    validate_busybox_applets(busybox, args.login_mode, extra=("findfs",) if uefi else ())
     payload = getattr(args, "system_payload", None)
     support = record = None
     if payload is not None:
@@ -729,23 +745,37 @@ def build(args):
                 warn_missing_shadow(tree)
                 print("mojt-vm-build: WARNING: development mode gives unauthenticated "
                       "root access on the VM console.", file=sys.stderr)
+            root_uuid = str(uuid.uuid4()) if uefi else None
+            if uefi:
+                init_script = boot.init_script(init_script, root_uuid, system_version)
+            initramfs = make_initramfs(temp / "initroot", busybox, modules, init_script,
+                                      shutdown_script, extra_applets=("findfs",) if uefi else ())
+            boot_record = None
+            if uefi:
+                boot_record = boot.stage(tree, kernel, initramfs, modules, release=release,
+                                         base=version, system=system_version, root_uuid=root_uuid)
             used = int(subprocess.run(["du", "-s", "--block-size=1", str(tree)], check=True,
                                      capture_output=True, text=True).stdout.split()[0])
-            if used + 128 * 1024 * 1024 > args.disk_size_mib * 1024 * 1024:
+            usable = parts["root_bytes"] if uefi else args.disk_size_mib * 1024 * 1024
+            if used + 128 * 1024 * 1024 > usable:
                 fail("VM disk is too small for Base/System plus free space; increase --disk-size-mib")
             disk = result / "disk.img"
-            with disk.open("wb") as stream:
-                stream.truncate(args.disk_size_mib * 1024 * 1024)
-            subprocess.run(
-                ["mkfs.ext4", "-F", "-q", "-L", "MOJT", "-d", str(tree), str(disk)],
-                check=True,
-            )
-            (result / "initramfs.cpio.gz").write_bytes(
-                make_initramfs(temp / "initroot", busybox, modules, init_script, shutdown_script)
-            )
+            disk_layout = None
+            if uefi:
+                disk_layout = boot.build_disk(disk, tree, temp, args.disk_size_mib, root_uuid, system_version)
+            else:
+                with disk.open("xb") as stream:
+                    stream.truncate(args.disk_size_mib * 1024 * 1024)
+                subprocess.run(
+                    ["mkfs.ext4", "-F", "-q", "-L", "MOJT", "-d", str(tree), str(disk)], check=True)
+            (result / "initramfs.cpio.gz").write_bytes(initramfs)
             shutil.copy2(kernel, result / "vmlinuz")
-            (result / "run-qemu.sh").write_text(run_script(network), encoding="ascii")
+            (result / "run-qemu.sh").write_text(
+                boot.run_script(network) if uefi else run_script(network), encoding="ascii")
             (result / "run-qemu.sh").chmod(0o755)
+            if uefi:
+                (result / "run-qemu-direct.sh").write_text(
+                    run_script(network, boot_record["cmdline"]), encoding="ascii")
             (result / "build.json").write_text(
                 json.dumps({"format": 1, "base": version, "kernel_release": release,
                             "disk_size_mib": args.disk_size_mib,
@@ -755,6 +785,8 @@ def build(args):
                             "system_step": record["step"] if record else None,
                             "system_source": record["source"] if record else None,
                             "vm_assembled_utc": assembled_at,
+                            "boot_mode": "uefi" if uefi else "direct",
+                            "disk_layout": disk_layout, "boot_record": boot_record,
                             "login_mode": args.login_mode}, indent=2) + "\n",
                 encoding="ascii",
             )
@@ -766,7 +798,7 @@ def build(args):
             for item in result.iterdir():
                 os.chown(item, uid, gid)
                 item.chmod(0o600 if item.name == "disk.img" else
-                           0o755 if item.name == "run-qemu.sh" else 0o644)
+                           0o755 if item.name in ("run-qemu.sh", "run-qemu-direct.sh") else 0o644)
             if output.exists() or output.is_symlink():
                 fail(f"VM output appeared during build; not overwriting: {output}")
             result.rename(output)
@@ -775,7 +807,8 @@ def build(args):
     print(f"Kernel:  {release}")
     print(f"Modules: {len(modules)}")
     print(f"Launch:  {output / 'run-qemu.sh'}")
-    print("Experimental direct-kernel boot; no bootloader or partitions.")
+    print("Experimental UEFI/GPT/GRUB disk boot." if uefi else
+          "Experimental direct-kernel boot; no bootloader or partitions.")
 
 
 def main():
@@ -791,6 +824,8 @@ def main():
     parser.add_argument("--busybox", type=Path, default=Path("/usr/bin/busybox"),
                         help="static x86_64 BusyBox (Debian: busybox-static)")
     parser.add_argument("--disk-size-mib", type=int, default=1024)
+    parser.add_argument("--boot-mode", choices=("direct", "uefi"), default="direct",
+                        help="uefi: self-booting GPT disk with GRUB (requires System payload)")
     parser.add_argument("--system-payload", type=Path,
                         help="opt-in System payload from mojt-system-prepare.py (steps 1-5)")
     parser.add_argument("--root-shell", metavar="PATH",

@@ -4,19 +4,21 @@ Copyright (C) 2026 Jonas Persson
 SPDX-License-Identifier: GPL-2.0-only
 -->
 
-# Proposed next milestone: a self-booting disk
+# Accepted milestone: a self-booting disk
 
-Status: proposal for discussion, not implemented. System step 5 Bash is a
-separate additive change. The owner has passed the earlier System boot,
-network, native Ports and administration trials, making disk boot a useful
-next integration milestone.
+Status: approved by the owner on 2026-10-24. An experimental implementation
+and [build/acceptance guide](uefi-disk-boot.md) are now available. The real
+synthetic firmware-boot probe passed; full Mojt UEFI acceptance remains pending.
+The following records the agreed scope. System step 5 Bash is additive to the
+earlier accepted boot, network, native Ports and administration work.
 
 ## Current dependency on the launcher
 
-`mojt-vm-build.py` creates a raw ext4 image without a partition table. Its
+The original direct mode creates a raw ext4 image without a partition table. Its
 launcher supplies external `vmlinuz`, `initramfs.cpio.gz` and the command line
 through QEMU's `-kernel`, `-initrd` and `-append`. Early init mounts `/dev/vda`
-directly. The disk therefore does not yet contain a firmware-bootable system.
+directly. That mode does not contain a firmware-bootable system. The new opt-in
+UEFI mode supplies the partitioned disk and image-contained boot artifacts.
 
 The next milestone should boot from the disk through ordinary VM firmware.
 It should preserve the tested Base/System/State/Nix layout and current service
@@ -39,8 +41,8 @@ support can be evaluated after that path works.
 
 Install the EFI loader into the image's fallback path rather than registering
 a host firmware entry. QEMU uses OVMF firmware and its own per-VM variable
-file. Image construction must operate only on a newly created regular image,
-with temporary mappings/mounts cleaned up on success or failure. It must not
+file. Image construction operates only on a newly created regular image, using
+regular partition images and mtools instead of mappings/mounts. It must not
 install a bootloader on the Debian host's disk or change host NVRAM.
 
 ## Small implementation steps

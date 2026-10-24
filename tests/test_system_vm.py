@@ -105,6 +105,46 @@ class SystemVmTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 system.roles(value)
 
+    def test_failed_uefi_assembly_publishes_nothing_and_preserves_source(self):
+        self.fixture(5)
+        for name in ("etc", "var", "dev", "proc", "sys"):
+            (self.tree / "base/0.1.3" / name).mkdir()
+        (self.tree / "base/current").symlink_to("0.1.3")
+        system.write(self.tree / ".install-lock", "")
+        system.write(self.tree / "state/layout-version", "1\n")
+        system.write(self.tree / "releases/base-0.1.3.toml", "format = 1\n")
+        before = system.tree_hash(self.tree)
+        kernel = self.root / "vmlinuz-test"
+        kernel.write_bytes(b"synthetic kernel")
+        modules = self.root / "modules"
+        modules.mkdir()
+        self.busybox.write_text("#!/bin/sh\nprintf '%s\\n' cp ln umount halt\n")
+        self.busybox.chmod(0o755)
+        output = self.root / "output-vm"
+        args = types.SimpleNamespace(boot_mode="uefi", system_payload=self.payload,
+            disk_size_mib=512, target=self.tree, output=output, kernel=kernel,
+            modules_dir=modules, busybox=self.busybox, login_mode="development", root_shell=None)
+
+        def fail_assembly(disk, *unused):
+            disk.write_bytes(b"incomplete GPT image")
+            raise ValueError("synthetic GRUB assembly failure")
+
+        with mock.patch.object(vm.os, "geteuid", return_value=0), \
+                mock.patch.object(vm.platform, "machine", return_value="x86_64"), \
+                mock.patch.object(vm.os, "chown"), \
+                mock.patch.object(vm.shutil, "which", return_value="/synthetic/command"), \
+                mock.patch.object(vm, "static_x86_64_elf", return_value=True), \
+                mock.patch.object(vm, "validate_busybox_applets"), \
+                mock.patch.object(vm, "module_paths", return_value=[]), \
+                mock.patch.object(vm, "make_initramfs", return_value=b"synthetic initramfs"), \
+                mock.patch.object(vm.boot, "build_disk", side_effect=fail_assembly), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaisesRegex(ValueError, "synthetic GRUB"):
+                vm.build(args)
+        self.assertFalse(output.exists())
+        self.assertEqual(list(self.root.glob(".mojt-vm-*")), [])
+        self.assertEqual(system.tree_hash(self.tree), before)
+
     def test_transfer_digest_covers_bytes_mode_and_link_target(self):
         data = self.root / "objects"
         data.mkdir()
