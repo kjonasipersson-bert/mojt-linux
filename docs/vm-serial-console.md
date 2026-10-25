@@ -6,8 +6,8 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Use the existing Mojt VM from an SSH terminal
 
-`tools/mojt-vm-serial.py` makes a separate copy of a **stopped** password-login
-UEFI VM and adds an authenticated serial console. GRUB, login and the guest
+`tools/mojt-vm-serial.py` makes a separate copy of a **stopped**, local-console,
+password-login UEFI VM and adds an authenticated serial console. GRUB, login and the guest
 shell then use the current terminal. The existing password, all Base/System
 pairs, persistent state, Ports and firmware variables are retained. The
 original image remains unchanged.
@@ -16,6 +16,8 @@ The copied persistent `/etc` gains a `mojt-serial-console.service`, its
 `mojt.target.wants` link and a missing `ttyS0` entry in `securetty`. Existing
 local-console access remains available. No Base/System profile, password or
 boot artifact is rewritten. Conflicting configuration is refused.
+An image whose System profile already selects serial login is refused, since
+starting two gettys on the same tty would conflict; use its existing launcher.
 
 ## Prepare the copy on the Debian host
 

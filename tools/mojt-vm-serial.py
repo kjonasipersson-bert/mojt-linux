@@ -171,6 +171,9 @@ def prepare(source, output):
     record = json.loads(regular(source / "build.json").read_text())
     require(record.get("format") == 1 and record.get("boot_mode") == "uefi" and
             record.get("login_mode") == "password", "requires a password-login Mojt UEFI build")
+    entries = [record.get("boot_record"), *record.get("additional_boot_records", [])]
+    require(all(isinstance(entry, dict) and entry.get("console") == "local" for entry in entries),
+            "source must use local-console boot pairs; serial-only VMs already have a serial getty")
     parts = record["disk_layout"]
     offset, length = parts["root_offset"], parts["root_bytes"]
     require(type(offset) is int and type(length) is int and offset > 0 and length > 0 and

@@ -159,6 +159,11 @@ class SerialCopyTests(unittest.TestCase):
         (source / "build.json").write_text(json.dumps(changed))
         with self.assertRaisesRegex(ValueError, "password-login"):
             self.prepare(source, output)
+        changed = json.loads(json.dumps(record))
+        changed["boot_record"]["console"] = "serial"
+        (source / "build.json").write_text(json.dumps(changed))
+        with self.assertRaisesRegex(ValueError, "local-console"):
+            self.prepare(source, output)
         record["disk_layout"]["root_offset"] += 4096
         (source / "build.json").write_text(json.dumps(record))
         with self.assertRaisesRegex(ValueError, "GPT differs"):

@@ -107,6 +107,8 @@ def main():
     if args.serial_login:
         vm.validate_busybox_applets(args.busybox, "password", extra=("id",))
     physical = bool(args.hardware_profile)
+    if args.serial_login and not physical:
+        parser.error("--serial-login adapts a local-console hardware-profile fixture")
     if args.switch_bus and not physical:
         parser.error("--switch-bus requires --hardware-profile")
     console = "local" if physical else "serial"
@@ -220,6 +222,7 @@ echo MOJT_HARDWARE_MOUNTS_PASS'''.replace("@RELEASE@", release) if physical else
             # The hardware helper needed a valid link during staging only.
             (tree / "base/current").unlink()
             (tree / "base/current").symlink_to("unselected-and-absent")
+        boot_records = []
         for number, (pair_base, pair_system) in enumerate(pairs):
             script = system.init_script(vm.INIT)
             if physical:
@@ -227,8 +230,9 @@ echo MOJT_HARDWARE_MOUNTS_PASS'''.replace("@RELEASE@", release) if physical else
             script = vm.boot.init_script(script, root_uuid, pair_system, pair_base)
             initramfs = vm.make_initramfs(work / ("initramfs-" + str(number)), args.busybox, modules,
                                           script, system.SHUTDOWN, extra_applets=("findfs",))
-            vm.boot.stage(tree, args.kernel, initramfs, modules, release=release, base=pair_base,
-                          system=pair_system, root_uuid=root_uuid, console=console)
+            boot_records.append(vm.boot.stage(
+                tree, args.kernel, initramfs, modules, release=release, base=pair_base,
+                system=pair_system, root_uuid=root_uuid, console=console))
         parts = vm.boot.build_disk(output / "disk.img", tree, work, 2048 if physical else 512,
                                    root_uuid, selected, base, console=console)
         if args.serial_login:
@@ -237,7 +241,8 @@ echo MOJT_HARDWARE_MOUNTS_PASS'''.replace("@RELEASE@", release) if physical else
             (output / "disk.img").rename(baseline / "disk.img")
             system.write(baseline / "build.json", json.dumps(dict(
                 format=1, boot_mode="uefi", login_mode="password", disk_layout=parts,
-                system_step=0, hardware={"profile": args.hardware_profile} if physical else None)))
+                system_step=0, hardware={"profile": args.hardware_profile} if physical else None,
+                boot_record=boot_records[0], additional_boot_records=boot_records[1:])))
             spec = importlib.util.spec_from_file_location("mojt_serial_smoke",
                         Path(__file__).resolve().parents[1] / "tools/mojt-vm-serial.py")
             adapter = importlib.util.module_from_spec(spec)
