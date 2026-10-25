@@ -156,7 +156,7 @@ sudo python3 tools/mojt-vm-build.py \
   --base-generation "$BASE_A" --system-generation system-A \
   --additional-generations "$WORK/generations.toml" \
   --disk-size-mib 8192 --login-mode password \
-  --root-shell /run/mojt-system/bin/bash
+  --root-shell /run/mojt-system/bin/bash </dev/tty
 printf '\nImage built. Launcher: %s/run-qemu.sh\n' "$IMAGE"
 MOJT_BUILD
 ```
@@ -171,6 +171,8 @@ bash "$HOME/mojt-generations.XXXXXX/image/run-qemu.sh" || printf '%s\n' 'QEMU st
 ```
 
 The builder still prompts if the copied machine state has no root password.
+The `</dev/tty` redirection gives that prompt terminal input even though Bash
+is reading the surrounding block from a heredoc.
 For serial-only QEMU, omit the hardware profile and firmware option; use an
 appropriate System payload and matching kernel/module set. Hardware boot
 continues to require password login and step 6. Ensure every selected System
