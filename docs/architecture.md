@@ -6,6 +6,16 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Mojt Architecture (experimental)
 
+## Explicit boot generations (2026-10-25 experiment)
+
+New UEFI builds pin both Base and System in each boot pair, independently of
+their `current` links. The builder can compose multiple pairs in a fresh image;
+each pair has its own initramfs and a GRUB entry naming both selections. The
+same `/etc`, `/var` and Nix store are used by every pair. This does not roll
+back state, introduce a System release format or update existing boot disks.
+See [the generation experiment](boot-generations.md) for the conservative ABI
+gate, filesystem layout, build recipe and acceptance boundaries.
+
 This document records **current decisions and open questions**, not stable promises. For the enduring design goals, see [the manifesto](manifesto.md).
 
 ## Layers

@@ -132,6 +132,12 @@ host-service requirements belong to MPM's separate capability model. See the
 [accepted interim policy](docs/architecture.md#accepted-early-nixsystem-policy-2026-10-23)
 for the decision and implementation boundaries.
 
+The [Base/System generation experiment](docs/boot-generations.md) composes
+several explicitly pinned boot pairs in one new UEFI image, with shared
+persistent state and retained System closures. It includes a compatible Base B
+recipe and manual A/A → A/B → B/B → A/A acceptance. This is image composition;
+updating an existing running installation remains future work.
+
 ```sh
 python3 -m unittest discover -s tests -p 'test_system_vm.py' -v
 ```

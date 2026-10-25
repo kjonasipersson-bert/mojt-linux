@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-2.0-only
 # First self-booting Mojt disk
 
 The owner approved a simple UEFI/GPT/GRUB image on 2026-10-24. The new opt-in
-`--boot-mode uefi` uses one boot entry and the same host kernel source as the
+`--boot-mode uefi` uses one boot entry by default and the same host kernel source as the
 accepted direct-boot VM. It reuses the System step 5 payload, including Bash.
 The default `direct` mode remains available.
 
@@ -17,13 +17,14 @@ The default `direct` mode remains available.
 | --- | --- |
 | GPT partition 1 | 128 MiB FAT32 EFI partition; standalone GRUB at `EFI/BOOT/BOOTX64.EFI` |
 | GPT partition 2 | ext4 Mojt filesystem with existing Base/System/State/Nix layout |
-| `/boot/mojt/0.2-step5/` on ext4 | Kernel, initramfs, one-entry GRUB config and `boot.json` |
+| `/boot/mojt/0.2-step5/<base>/` on ext4 | Kernel, initramfs, one-entry GRUB config and `boot.json` |
 | Output `build.json` | Build provenance, partition extents/UUID, boot-input hashes and System metadata |
 
 GRUB searches ext4 by UUID. The kernel command line names that UUID and the
-exact System generation; initramfs validates both and mounts that generation
-directly, including its identity files. It does not consult a newer
-`system/current` for this boot pair. Kernel, initramfs and source module hashes
+exact Base and System generations; initramfs validates all three and mounts
+the selected generations directly, including their identity files. It does not
+consult `base/current` or `system/current` for this boot pair. The shared menu
+is `/boot/mojt/grub.cfg`; see [multiple boot pairs](boot-generations.md). Kernel, initramfs and source module hashes
 are recorded for inspection; this is not a signed/Secure Boot implementation.
 
 The builder uses `sfdisk`, `mkfs.ext4`, `mkfs.vfat`, `grub-mkstandalone` and
@@ -108,7 +109,7 @@ After the GRUB menu and normal root login:
 test -d /sys/firmware/efi && echo 'PASS: UEFI firmware boot'
 cat /proc/cmdline
 printf 'Bash: %s\n' "$BASH_VERSION"
-cat /run/mojt-disk/boot/mojt/0.2-step5/boot.json
+cat /run/mojt-disk/boot/mojt/0.2-step5/"$(. /usr/lib/os-release; printf '%s' "$VERSION_ID")"/boot.json
 mojt-system-check boot
 mojt-system-check admin
 mojt-system-check network

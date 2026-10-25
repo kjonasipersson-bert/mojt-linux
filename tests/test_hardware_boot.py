@@ -87,7 +87,7 @@ class HardwareTests(unittest.TestCase):
                        env={**os.environ, "FAIL_MODULE": ""})
         self.assertEqual(knob.read_text(), "3\n")
         script = hw.init_script(system.init_script(vm.INIT))
-        script = vm.boot.init_script(script, UUID, "s")
+        script = vm.boot.init_script(script, UUID, "s", "b")
         self.assertIn("/sysroot/system/s/kernel/lib/modules", script)
         self.assertIn("/newroot/lib/firmware", script)
         self.assertNotIn("/sysroot/system/current", script)
@@ -120,7 +120,7 @@ class HardwareTests(unittest.TestCase):
             hw.checked_tree(root)
 
     def test_local_boot_uses_firmware_console_and_kernel_tty0(self):
-        command = vm.boot.cmdline(UUID, "s", console="local")
+        command = vm.boot.cmdline(UUID, "s", "b", console="local")
         self.assertIn("console=ttyS0,115200 console=tty0", command)
         self.assertIn("terminal_input console serial", vm.boot.terminal("local"))
         for bus in ("sata", "usb"):
