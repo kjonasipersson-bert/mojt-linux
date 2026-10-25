@@ -268,9 +268,8 @@ System-generation mounts. `tests/run-uefi-smoke.py --hardware-profile
 thinkpad-x1-carbon-3 --disk-bus sata|usb` exercises firmware/GRUB, UUID disk
 discovery, local kernel console, module/firmware mounts and state persistence
 with a synthetic static guest. Its firmware fixture does not drive hardware.
-Full step 6 services/login in Mojt and the physical ThinkPad
-remain owner-side checks until separately reported. This prepares a test
-build; it does not claim completed physical-hardware acceptance.
+The owner-reported physical checks are recorded below. Repeatable cold/warm
+boot and persistence across a physical reboot remain to be reported.
 
 ### Agent-side real Debian boot probes (2026-10-25)
 
@@ -295,3 +294,22 @@ explicitly reopen the console instead of inheriting the module-list input.
 The boot probe also supports `--disk-bus sata --switch-bus usb` to change the
 device path between boots while retaining the same disk and firmware variables.
 CI includes this transition alongside the separate SATA and USB tests.
+
+### Owner-reported physical acceptance (2026-10-25)
+
+The owner booted the USB image on the ThinkPad X1 Carbon 3rd generation and
+supplied a photograph showing local root login, the step 6 hardware profile,
+Base 0.1.3, kernel 6.12.107+deb13-amd64, i915 framebuffer output and a started
+NetworkManager. The owner then reported that the requested checks worked,
+nearby wireless networks were visible and nmcli successfully connected to the
+home Wi-Fi network. They ran `mpm ports update`, installed Neovim with
+`mpm ports install neovim`, and edited a file with Neovim on the machine.
+These are owner-side physical-hardware results, separate from the agent's
+synthetic boot probes.
+
+Earlier physical boot attempts showed a black screen followed by reboot
+before any visible GRUB menu. Several otherwise identical attempts eventually
+booted successfully; no cause or corrective change has been established.
+Intermittent pre-GRUB startup therefore remains an open issue. Persistence of
+the Wi-Fi connection, installed Ports and files after a physical reboot has
+not yet been separately reported.
