@@ -25,7 +25,71 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_system_vm.py' -v
       - name: Check UEFI contracts and real GPT FAT GRUB image assembly
         run: python3 -m unittest discover -s tests -p 'test_uefi_boot.py' -v
+      - name: Check hardware input staging and local console contracts
+        run: python3 -m unittest discover -s tests -p 'test_hardware_boot.py' -v
       - name: Check MPM/Nix orchestration with simulated backend
         run: python3 -m unittest discover -s tests -p 'test_mpm_nix_prototype.py' -v
       - name: Check pacman environment orchestration with simulated backend
         run: python3 -m unittest discover -s tests -p 'test_mpm_pacman_prototype.py' -v
+
+  hardware-disk-boot:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install firmware boot probe tools and a matching kernel/module set
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y linux-image-generic \
+            busybox-static cpio kmod zstd grub-common grub-efi-amd64-bin \
+            fdisk dosfstools mtools ovmf qemu-system-x86
+      - name: Boot the hardware profile with SATA and USB disks
+        run: |
+          # Follow the installed metapackage, not the runner's newer Azure kernel.
+          kernel_package="$(dpkg-query -W -f='${Depends}\n' linux-image-generic |
+            tr ',' '\n' |
+            sed -n 's/^[[:space:]]*\(linux-image-[^[:space:](]*-generic\).*/\1/p')"
+          test -n "$kernel_package"
+          kernel="$(dpkg-query -L "$kernel_package" |
+            sed -n '\|^/boot/vmlinuz-[^/]*-generic$|p')"
+          test -f "$kernel"
+          release="${kernel##*/vmlinuz-}"
+          test -d "/lib/modules/$release"
+          printf 'Boot probe kernel: %s (%s)\n' "$kernel" "$kernel_package"
+          for bus in sata usb; do
+            sudo python3 tests/run-uefi-smoke.py \
+              --kernel "$kernel" --modules-dir "/lib/modules/$release" \
+              --hardware-profile thinkpad-x1-carbon-3 --disk-bus "$bus" \
+              --output "$RUNNER_TEMP/mojt-hardware-$bus"
+          done
+          sudo python3 tests/run-uefi-smoke.py \
+            --kernel "$kernel" --modules-dir "/lib/modules/$release" \
+            --hardware-profile thinkpad-x1-carbon-3 --disk-bus sata --switch-bus usb \
+            --output "$RUNNER_TEMP/mojt-hardware-sata-to-usb"
+      - name: Collect boot probe logs
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/mojt-boot-logs"
+          sudo python3 - "$RUNNER_TEMP" <<'PY'
+          import os
+          from pathlib import Path
+          import shutil
+          import sys
+
+          os.umask(0o022)
+          temporary = Path(sys.argv[1])
+          for scenario in ("sata", "usb", "sata-to-usb"):
+              source = temporary / ("mojt-hardware-" + scenario)
+              if not source.is_dir():
+                  continue
+              for log in source.rglob("*.log"):
+                  target = temporary / "mojt-boot-logs" / source.name / log.relative_to(source)
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  shutil.copyfile(log, target)
+                  target.chmod(0o644)
+          PY
+      - name: Retain boot probe logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hardware-boot-logs
+          path: ${{ runner.temp }}/mojt-boot-logs/

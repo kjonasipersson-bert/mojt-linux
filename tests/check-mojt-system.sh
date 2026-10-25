@@ -29,8 +29,8 @@ case "$action" in
         for service in dbus.service NetworkManager.service; do
             systemctl is-active --quiet "$service" || fail "$service is not active"
         done
-        device="$(nmcli -t -f DEVICE,TYPE device status | sed -n 's/:ethernet$//p' | head -n 1)"
-        [ -n "$device" ] || fail "no Ethernet device"
+        device="${MOJT_TEST_INTERFACE:-$(nmcli -t -f DEVICE,TYPE device status | sed -n 's/:ethernet$//p' | head -n 1)}"
+        [ -n "$device" ] || fail "no Ethernet device; set MOJT_TEST_INTERFACE for Wi-Fi"
         # Observe NetworkManager's autoconnection without restarting it.
         # An active connection need not have finished IPv4 configuration.
         tries=0

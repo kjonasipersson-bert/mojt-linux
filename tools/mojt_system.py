@@ -20,6 +20,7 @@ ROLES = {
     3: {"nix": "nix", "python": "python3"},
     4: {"procps": "procps", "util-linux": "util-linux", "less": "less", "editor": "nvi"},
     5: {"shell": "bashInteractive"},
+    6: {"kmod": "kmod", "wpa-supplicant": "wpa_supplicant", "iw": "iw"},
 }
 ADMIN_COMMANDS = {
     "procps": ("ps", "top", "free", "pgrep", "uptime"),
@@ -60,7 +61,7 @@ def require(condition, message):
 
 
 def roles(step):
-    require(type(step) is int and step in ROLES, "System step must be 1, 2, 3, 4 or 5")
+    require(type(step) is int and step in ROLES, "System step must be an integer from 1 to 6")
     return {key: value for n in range(1, step + 1) for key, value in ROLES[n].items()}
 
 
@@ -191,6 +192,10 @@ def load_payload(path):
                 executable(path, record, role, "bin/" + name, "sbin/" + name)
     if record["step"] >= 5:
         executable(path, record, "shell", "bin/bash")
+    if record["step"] >= 6:
+        for role, name in (("kmod", "modprobe"), ("kmod", "lsmod"),
+                           ("wpa-supplicant", "wpa_supplicant"), ("iw", "iw")):
+            executable(path, record, role, "bin/" + name, "sbin/" + name)
     return record
 
 
@@ -215,10 +220,14 @@ def unit(description, executable_path, extra="", dependencies=""):
             f"[Service]\nExecStart={executable_path}\n{extra}\n")
 
 
-def install(tree, payload, record, busybox, login_mode, repo):
+def install(tree, payload, record, busybox, login_mode, repo, console="serial", hardware_profile=None):
     """Install only into a NEW copied VM tree. Original Base/state stay intact."""
     step = record["step"]
+    require(console in ("serial", "local"), "unsupported console")
+    require(hardware_profile in (None, "thinkpad-x1-carbon-3"), "unsupported hardware profile")
     key = VERSION + "-step" + str(step)
+    if hardware_profile:
+        key += "-" + hardware_profile
     system = tree / "system" / key
     system.mkdir(parents=True)
     (tree / "system/current").symlink_to(key)
@@ -264,16 +273,18 @@ def install(tree, payload, record, busybox, login_mode, repo):
         path.unlink(missing_ok=True)
         write(path, contents)
 
-    console = ("/run/mojt-system/busybox getty -L -f /run/mojt/issue "
-               "-l /run/mojt-system/login 115200 ttyS0 vt100"
+    tty = "tty1" if console == "local" else "ttyS0"
+    getty = ("38400 tty1 linux" if console == "local" else "-L 115200 ttyS0 vt100")
+    console_command = ("/run/mojt-system/busybox getty -f /run/mojt/issue "
+               "-l /run/mojt-system/login " + getty
                if login_mode == "password" else "/bin/sh -i")
     if login_mode == "password":
         (system / "login").symlink_to("busybox")
     put_unit("mojt-console.service", unit(
-        "Mojt serial console (" + login_mode + ")", console,
+        "Mojt " + console + " console (" + login_mode + ")", console_command,
         "Restart=always\nRestartSec=1\nEnvironment=PATH=/run/mojt-system/bin:/usr/bin:/bin\n"
         "StandardInput=tty\nStandardOutput=tty\n"
-        "StandardError=journal\nTTYPath=/dev/ttyS0\nTTYReset=yes\nTTYVHangup=yes",
+        "StandardError=journal\nTTYPath=/dev/" + tty + "\nTTYReset=yes\nTTYVHangup=yes",
         "After=systemd-user-sessions.service\n"))
     setup = [
         "#!/bin/sh", "set -eu", "PATH=/run/mojt-system/bin:/usr/bin:/bin",
@@ -415,6 +426,16 @@ def install(tree, payload, record, busybox, login_mode, repo):
             write(history_file, "", 0o600)
         history_file.chmod(0o600)
         os.chown(history_file, 0, 0)
+    if step >= 6:
+        for name in ("modprobe", "lsmod"):
+            export(name, "kmod", "bin/" + name, "sbin/" + name)
+        setup += ["printf '%s\\n' /run/mojt-system/bin/modprobe >/proc/sys/kernel/modprobe"]
+        export("iw", "iw", "bin/iw", "sbin/iw")
+        wpa = export("wpa_supplicant", "wpa-supplicant", "bin/wpa_supplicant", "sbin/wpa_supplicant")
+        put_unit("wpa_supplicant.service", unit("Mojt Wi-Fi supplicant", wpa + " -u -s",
+                 "Type=dbus\nBusName=fi.w1.wpa_supplicant1\nRestart=on-failure",
+                 "Requires=dbus.service\nAfter=dbus.service\nBefore=NetworkManager.service\n"))
+        wanted += ["wpa_supplicant.service"]
     setup += ['echo "Mojt System setup complete"']
     write(system / "setup", "\n".join(setup) + "\n", 0o755)
     put_unit("mojt-setup.service", unit("Mojt System setup", "/run/mojt-system/setup",

@@ -36,6 +36,9 @@ import uuid
 _boot_spec = importlib.util.spec_from_file_location("mojt_boot", Path(__file__).with_name("mojt_boot.py"))
 boot = importlib.util.module_from_spec(_boot_spec)
 _boot_spec.loader.exec_module(boot)
+_hardware_spec = importlib.util.spec_from_file_location("mojt_hardware", Path(__file__).with_name("mojt_hardware.py"))
+hardware = importlib.util.module_from_spec(_hardware_spec)
+_hardware_spec.loader.exec_module(hardware)
 
 
 LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]*\Z")
@@ -71,15 +74,18 @@ exec </dev/console >/dev/console 2>&1
 panic() {
     echo "Mojt early boot: $*" >&2
     echo "Dropping into initramfs shell." >&2
-    exec /bin/sh
+    exec /bin/sh </dev/console >/dev/console 2>&1
 }
 echo "Mojt Linux - early boot"
 mount -t devtmpfs devtmpfs /dev || panic "cannot mount /dev"
 mount -t proc proc /proc || panic "cannot mount /proc"
 mount -t sysfs sysfs /sys || panic "cannot mount /sys"
+# kmod includes optional soft dependencies and drivers for absent hardware.
+# Continue after an unavailable module; disk discovery and ext4 mounting are
+# the fatal checks for the storage path actually used by this boot.
 while IFS= read -r module; do
     [ -n "$module" ] || continue
-    insmod "$module" || panic "module load failed: $module"
+    insmod "$module" || echo "Mojt early boot: module unavailable: $module"
 done </modules.list
 tries=0
 while [ ! -b /dev/vda ]; do
@@ -403,7 +409,7 @@ def prepare_vm_root_shell(tree, version, replacement=None, system_shell=None):
     return replacement
 
 
-def provision_vm_root_login(tree, password_hash=None):
+def provision_vm_root_login(tree, password_hash=None, console="serial"):
     """Initialize *copied* guest shadow files, never host credentials.
 
     Existing shadow files are preserved; a missing one needs an explicitly
@@ -477,6 +483,7 @@ def provision_vm_root_login(tree, password_hash=None):
         os.chown(gshadow, 0, 0)
         gshadow.chmod(0o600)
 
+    tty = "tty1" if console == "local" else "ttyS0"
     securetty = etc / "securetty"
     if securetty.is_symlink() or (securetty.exists() and not securetty.is_file()):
         fail("unsafe /etc/securetty")
@@ -484,11 +491,11 @@ def provision_vm_root_login(tree, password_hash=None):
         allowed = {
             line.strip() for line in securetty.read_text(encoding="utf-8").splitlines()
         }
-        if "ttyS0" not in allowed:
-            fail("existing /etc/securetty does not permit root on ttyS0")
+        if tty not in allowed:
+            fail(f"existing /etc/securetty does not permit root on {tty}")
     else:
         with securetty.open("x", encoding="ascii") as stream:
-            stream.write("ttyS0\n")
+            stream.write(tty + "\n")
         securetty.chmod(0o644)
 
 
@@ -513,14 +520,15 @@ def kernel_release_from_path(path):
     return label(path.name[len("vmlinuz-"):])
 
 
-def module_paths(release, modules_dir, network=False):
+def module_paths(release, modules_dir, network=False, names=None):
     """Use kmod on the host for dependency ordering; do not load modules."""
     root = modules_dir.resolve(strict=True)
     if root.name != release or root.parent.name != "modules" or root.parent.parent.name != "lib":
         fail("modules directory must end in lib/modules/<kernel-release>")
     seen = set()
     paths = []
-    for name in ("virtio_pci", "virtio_blk", "ext4") + (("virtio_net",) if network else ()):
+    for name in (names if names is not None else
+                 ("virtio_pci", "virtio_blk", "ext4") + (("virtio_net",) if network else ())):
         result = subprocess.run(
             ["modprobe", "--dirname", str(root.parents[2]),
              "--set-version", release, "--show-depends", name],
@@ -636,6 +644,14 @@ def build(args):
     if platform.machine() != "x86_64":
         fail("first VM builder supports x86_64 only")
     uefi = getattr(args, "boot_mode", "direct") == "uefi"
+    physical = getattr(args, "hardware_profile", None)
+    console = "local" if physical else "serial"
+    if physical and (physical != hardware.PROFILE or not uefi or args.login_mode != "password"):
+        fail("hardware profile requires UEFI and password login")
+    if getattr(args, "firmware_root", None) and not physical:
+        fail("--firmware-root requires --hardware-profile")
+    if physical:
+        hardware.firmware_inputs(getattr(args, "firmware_root", None))
     if uefi and not getattr(args, "system_payload", None):
         fail("UEFI boot requires --system-payload")
     parts = boot.layout(args.disk_size_mib) if uefi else None
@@ -678,6 +694,8 @@ def build(args):
         spec.loader.exec_module(support)
         payload = payload.absolute()
         record = support.load_payload(payload)
+        if physical and record["step"] < 6:
+            fail("hardware profile requires a System step 6 payload")
         applets = set(subprocess.run([str(busybox), "--list"], check=True,
                                     text=True, capture_output=True).stdout.splitlines())
         missing = {"cp", "ln", "umount", "halt"} - applets
@@ -701,7 +719,11 @@ def build(args):
                 fail(f"required installation metadata missing: {path}")
         for name in ("etc", "var", "dev", "proc", "sys"):
             require_directory(generation / name, f"Base /{name}")
-        modules = module_paths(release, modules_dir, network=network)
+        modules = module_paths(release, modules_dir, network=network,
+                               names=hardware.EARLY_MODULES if physical else None)
+        if physical:
+            # Validate the runtime drivers now, rather than discovering omissions after boot.
+            module_paths(release, modules_dir, names=hardware.RUNTIME_MODULES)
         output.parent.mkdir(parents=True, exist_ok=True)
 
         with tempfile.TemporaryDirectory(prefix=".mojt-vm-", dir=output.parent) as temp:
@@ -722,11 +744,17 @@ def build(args):
                         fail(f"Base mountpoint /{name} must be empty for System assembly")
                     path.mkdir(exist_ok=True)
                 system_version = support.install(
-                    tree, payload, record, busybox, args.login_mode, Path(__file__).resolve().parents[1])
+                    tree, payload, record, busybox, args.login_mode, Path(__file__).resolve().parents[1],
+                    console=console, hardware_profile=physical)
                 assembled_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 (tree / "system" / system_version / "assembled-at-utc").write_text(assembled_at + "\n")
                 init_script = support.init_script(INIT)
                 shutdown_script = support.SHUTDOWN
+                hardware_record = None
+                if physical:
+                    hardware_record = hardware.stage(tree, system_version, modules_dir, release,
+                                                     args.firmware_root, support)
+                    init_script = hardware.init_script(init_script)
             else:
                 assembled_at = install_system_init(tree, busybox, args.login_mode)
                 system_version = SYSTEM_VERSION
@@ -740,7 +768,7 @@ def build(args):
                 password_hash = None
                 if not copied_shadow.exists() and not copied_shadow.is_symlink():
                     password_hash = password_hash_from_terminal()
-                provision_vm_root_login(tree, password_hash)
+                provision_vm_root_login(tree, password_hash, console=console)
             else:
                 warn_missing_shadow(tree)
                 print("mojt-vm-build: WARNING: development mode gives unauthenticated "
@@ -753,7 +781,8 @@ def build(args):
             boot_record = None
             if uefi:
                 boot_record = boot.stage(tree, kernel, initramfs, modules, release=release,
-                                         base=version, system=system_version, root_uuid=root_uuid)
+                                         base=version, system=system_version, root_uuid=root_uuid,
+                                         console=console)
             used = int(subprocess.run(["du", "-s", "--block-size=1", str(tree)], check=True,
                                      capture_output=True, text=True).stdout.split()[0])
             usable = parts["root_bytes"] if uefi else args.disk_size_mib * 1024 * 1024
@@ -762,7 +791,8 @@ def build(args):
             disk = result / "disk.img"
             disk_layout = None
             if uefi:
-                disk_layout = boot.build_disk(disk, tree, temp, args.disk_size_mib, root_uuid, system_version)
+                disk_layout = boot.build_disk(disk, tree, temp, args.disk_size_mib, root_uuid,
+                                              system_version, console=console)
             else:
                 with disk.open("xb") as stream:
                     stream.truncate(args.disk_size_mib * 1024 * 1024)
@@ -771,7 +801,7 @@ def build(args):
             (result / "initramfs.cpio.gz").write_bytes(initramfs)
             shutil.copy2(kernel, result / "vmlinuz")
             (result / "run-qemu.sh").write_text(
-                boot.run_script(network) if uefi else run_script(network), encoding="ascii")
+                boot.run_script(network, local_console=bool(physical)) if uefi else run_script(network), encoding="ascii")
             (result / "run-qemu.sh").chmod(0o755)
             if uefi:
                 (result / "run-qemu-direct.sh").write_text(
@@ -786,6 +816,7 @@ def build(args):
                             "system_source": record["source"] if record else None,
                             "vm_assembled_utc": assembled_at,
                             "boot_mode": "uefi" if uefi else "direct",
+                            "hardware": hardware_record if support else None,
                             "disk_layout": disk_layout, "boot_record": boot_record,
                             "login_mode": args.login_mode}, indent=2) + "\n",
                 encoding="ascii",
@@ -827,7 +858,11 @@ def main():
     parser.add_argument("--boot-mode", choices=("direct", "uefi"), default="direct",
                         help="uefi: self-booting GPT disk with GRUB (requires System payload)")
     parser.add_argument("--system-payload", type=Path,
-                        help="opt-in System payload from mojt-system-prepare.py (steps 1-5)")
+                        help="opt-in System payload from mojt-system-prepare.py (steps 1-6)")
+    parser.add_argument("--hardware-profile", choices=(hardware.PROFILE,),
+                        help="USB/SATA boot, full modules/firmware and local console; requires UEFI/password/step 6")
+    parser.add_argument("--firmware-root", type=Path,
+                        help="extracted Debian firmware packages, including usr/share/doc licenses")
     parser.add_argument("--root-shell", metavar="PATH",
                         help="password mode only: explicitly select root's shell "
                              "in the NEW VM's copied /etc/passwd (e.g. /bin/sh or "

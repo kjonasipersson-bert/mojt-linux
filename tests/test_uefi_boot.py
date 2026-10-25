@@ -108,7 +108,7 @@ class UefiTests(unittest.TestCase):
         self.assertEqual(run.call_args.args[0][:3], ["modprobe", "--dirname", str(self.root / "kernel")])
 
     def test_uefi_without_system_fails_before_host_commands_or_output_creation(self):
-        args = mock.Mock(boot_mode="uefi", system_payload=None)
+        args = mock.Mock(boot_mode="uefi", system_payload=None, hardware_profile=None, firmware_root=None)
         with mock.patch.object(vm.os, "geteuid", return_value=0), \
                 mock.patch.object(vm.platform, "machine", return_value="x86_64"), \
                 mock.patch.object(vm.subprocess, "run") as run:

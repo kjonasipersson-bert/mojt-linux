@@ -49,8 +49,18 @@ def layout(size_mib):
             "root_bytes": (size_mib - ESP_MIB - 2) * MIB}
 
 
-def cmdline(root_uuid, system):
-    return f"console=ttyS0,115200 rdinit=/init root=UUID={fs_uuid(root_uuid)} mojt.system={generation(system)}"
+def terminal(console):
+    if console not in ("serial", "local"):
+        raise ValueError("unsupported boot console")
+    return SERIAL if console == "serial" else SERIAL.replace(
+        "terminal_input serial", "terminal_input console serial").replace(
+        "terminal_output serial", "terminal_output console serial")
+
+
+def cmdline(root_uuid, system, console="serial"):
+    terminal(console)
+    return ("console=ttyS0,115200 " + ("console=tty0 " if console == "local" else "") +
+            f"rdinit=/init root=UUID={fs_uuid(root_uuid)} mojt.system={generation(system)}")
 
 
 def init_script(script, root_uuid, system):
@@ -87,7 +97,7 @@ def digest(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
-def stage(tree, kernel, initramfs, modules, *, release, base, system, root_uuid):
+def stage(tree, kernel, initramfs, modules, *, release, base, system, root_uuid, console="serial"):
     """Stage an image-owned boot pair and a record of its exact inputs."""
     generation(system)
     generation(release)
@@ -100,10 +110,11 @@ def stage(tree, kernel, initramfs, modules, *, release, base, system, root_uuid)
               "kernel_sha256": digest(path / "vmlinuz"),
               "initramfs_sha256": digest(path / "initramfs.cpio.gz"),
               "module_inputs": [{"name": p.name, "sha256": digest(p)} for p in modules],
-              "cmdline": cmdline(root_uuid, system)}
+              "console": console, "cmdline": cmdline(root_uuid, system, console)}
     (path / "boot.json").write_text(json.dumps(record, indent=2) + "\n", encoding="ascii")
     prefix = "/boot/mojt/" + system
-    config = SERIAL + "set timeout=3\nset default=0\n" + \
+    config = terminal(console) + ("set gfxpayload=keep\n" if console == "local" else "") + \
+        "set timeout=3\nset default=0\n" + \
         f"menuentry 'Mojt {system} (Linux {release})' {{\n" + \
         f"    linux {prefix}/vmlinuz {record['cmdline']}\n" + \
         f"    initrd {prefix}/initramfs.cpio.gz\n}}\n"
@@ -132,7 +143,7 @@ def copy_partition(source, destination, offset, length):
                 outgoing.seek(len(block), 1)
 
 
-def build_disk(disk, tree, work, size_mib, root_uuid, system):
+def build_disk(disk, tree, work, size_mib, root_uuid, system, console="serial"):
     """Create a NEW regular GPT disk, with standalone GRUB in the EFI fallback path."""
     parts = layout(size_mib)
     fs_uuid(root_uuid)
@@ -157,7 +168,7 @@ def build_disk(disk, tree, work, size_mib, root_uuid, system):
     config = tree / "boot/mojt" / system / "grub.cfg"
     subprocess.run(["grub-script-check", str(config)], check=True)
     stub = work / "grub-embedded.cfg"
-    stub.write_text(SERIAL + f"if search --no-floppy --fs-uuid --set=mojt_root {root_uuid}; then\n"
+    stub.write_text(terminal(console) + f"if search --no-floppy --fs-uuid --set=mojt_root {root_uuid}; then\n"
                     "    set root=$mojt_root\n"
                     f"    configfile ($mojt_root)/boot/mojt/{system}/grub.cfg\nfi\n"
                     "echo 'Mojt boot filesystem not found'\nhalt\n", encoding="ascii")
@@ -178,8 +189,8 @@ def build_disk(disk, tree, work, size_mib, root_uuid, system):
     return {**parts, "root_uuid": root_uuid, "efi_loader_sha256": digest(loader)}
 
 
-def run_script(network=False):
-    return '''#!/usr/bin/env bash
+def run_script(network=False, local_console=False):
+    script = '''#!/usr/bin/env bash
 # Mojt Linux
 # Copyright (C) 2026 Jonas Persson
 # SPDX-License-Identifier: GPL-2.0-only
@@ -203,3 +214,16 @@ exec qemu-system-x86_64 \\
     -nic ''' + ("user,model=virtio-net-pci" if network else "none") + ''' \\
     -display none -serial mon:stdio -no-reboot
 '''
+    if local_console:
+        # Keep one image/launcher for both non-VirtIO probes. No host disk is exposed.
+        script = script.replace('exec qemu-system-x86_64', '''disk_args=(-drive "file=$here/disk.img,if=none,id=mojt,format=raw")
+case "${QEMU_DISK_BUS:-sata}" in
+    sata) disk_args+=(-device ide-hd,drive=mojt,bus=ide.0,bootindex=1) ;;
+    usb) disk_args+=(-device qemu-xhci,id=xhci -device usb-storage,drive=mojt,bus=xhci.0,bootindex=1) ;;
+    *) echo 'QEMU_DISK_BUS must be sata or usb' >&2; exit 1 ;;
+esac
+exec qemu-system-x86_64''')
+        script = script.replace('-drive "file=$here/disk.img,if=virtio,format=raw"', '"${disk_args[@]}"')
+        script = script.replace('-display none', '-vga std -display "${QEMU_DISPLAY:-gtk}"')
+        script = script.replace('user,model=virtio-net-pci', 'user,model=e1000e')
+    return script

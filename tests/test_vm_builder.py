@@ -165,6 +165,19 @@ class VmBuilderTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "overwrite"):
                     vm.provision_vm_root_login(tree, "$6$new$hash")
 
+    def test_local_login_permits_only_tty1_and_preserves_existing_serial_policy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            etc = self.make_guest_account_tree(tree)
+            with mock.patch.object(vm.os, "chown"):
+                vm.provision_vm_root_login(tree, "$6$test$hash", console="local")
+            securetty = etc / "securetty"
+            self.assertEqual(securetty.read_text(), "tty1\n")
+            securetty.write_text("ttyS0\n")
+            with mock.patch.object(vm.os, "chown"), self.assertRaisesRegex(ValueError, "tty1"):
+                vm.provision_vm_root_login(tree, console="local")
+            self.assertEqual(securetty.read_text(), "ttyS0\n")
+
     def test_locked_or_unsafe_shadow_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             tree = Path(tmp)
