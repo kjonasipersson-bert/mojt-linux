@@ -65,9 +65,31 @@ jobs:
             --kernel "$kernel" --modules-dir "/lib/modules/$release" \
             --hardware-profile thinkpad-x1-carbon-3 --disk-bus sata --switch-bus usb \
             --output "$RUNNER_TEMP/mojt-hardware-sata-to-usb"
+      - name: Collect boot probe logs
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/mojt-boot-logs"
+          sudo python3 - "$RUNNER_TEMP" <<'PY'
+          import os
+          from pathlib import Path
+          import shutil
+          import sys
+
+          os.umask(0o022)
+          temporary = Path(sys.argv[1])
+          for scenario in ("sata", "usb", "sata-to-usb"):
+              source = temporary / ("mojt-hardware-" + scenario)
+              if not source.is_dir():
+                  continue
+              for log in source.rglob("*.log"):
+                  target = temporary / "mojt-boot-logs" / source.name / log.relative_to(source)
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  shutil.copyfile(log, target)
+                  target.chmod(0o644)
+          PY
       - name: Retain boot probe logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: hardware-boot-logs
-          path: ${{ runner.temp }}/mojt-hardware-*/**/*.log
+          path: ${{ runner.temp }}/mojt-boot-logs/
