@@ -69,6 +69,23 @@ class HardwareTests(unittest.TestCase):
                          "synthetic regulatory database")
         self.assertEqual(result, json.loads((profile / "hardware.json").read_text()))
         self.assertTrue((profile / "units/mojt.target.wants/mojt-hardware.service").is_file())
+        # Execute the generated driver script with a fake module loader and
+        # sysctl file. Driver failure must not suppress its boot diagnostics.
+        commands = self.root / "commands"
+        commands.mkdir()
+        system.write(commands / "modprobe", '#!/bin/sh\n[ "$1" != "${FAIL_MODULE-}" ]\n', 0o755)
+        knob = self.root / "printk"
+        driver = (profile / "load-hardware").read_text().replace(
+            ". /run/mojt-system/environment", f'PATH="{commands}:$PATH"\nexport PATH').replace(
+            "/proc/sys/kernel/printk", str(knob))
+        knob.write_text("7\n")
+        failed = subprocess.run(["sh"], input=driver, text=True,
+                                env={**os.environ, "FAIL_MODULE": hw.RUNTIME_MODULES[0]})
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertEqual(knob.read_text(), "7\n")
+        subprocess.run(["sh"], input=driver, text=True, check=True,
+                       env={**os.environ, "FAIL_MODULE": ""})
+        self.assertEqual(knob.read_text(), "3\n")
         script = hw.init_script(system.init_script(vm.INIT))
         script = vm.boot.init_script(script, UUID, "s")
         self.assertIn("/sysroot/system/s/kernel/lib/modules", script)

@@ -32,6 +32,21 @@ ends in `tty0`. Serial kernel logging remains available. No unauthenticated
 local shell is enabled. This is a text-console profile with a US keyboard
 layout, not a desktop or a general hardware installer.
 
+After successful hardware loading, before the local console service starts,
+the profile sets the kernel console log level to 3. Critical/emergency kernel
+messages remain visible; ordinary errors, warnings and informational messages
+remain in the kernel buffer/journal without interrupting interactive editing.
+To apply that console level immediately in an already running Mojt image:
+
+```sh
+dmesg -n 3
+```
+
+Use `dmesg`, `journalctl -k -b`, or `dmesg -n 7` for diagnosis; the last command
+restores verbose kernel output on the console. Existing USB images need no
+rewrite to use the runtime command. The automatic default arrives with the
+next image build and does not alter persistent machine configuration.
+
 ## 1. Export System step 6 in the Nix Distrobox
 
 Step 6 adds kmod, `iw`, and `wpa_supplicant` to step 5. NetworkManager is
@@ -269,7 +284,8 @@ thinkpad-x1-carbon-3 --disk-bus sata|usb` exercises firmware/GRUB, UUID disk
 discovery, local kernel console, module/firmware mounts and state persistence
 with a synthetic static guest. Its firmware fixture does not drive hardware.
 The owner-reported physical checks are recorded below. Repeatable cold/warm
-boot and persistence across a physical reboot remain to be reported.
+boot remains to be established; persistence across a physical reboot is now
+owner-reported below.
 
 ### Agent-side real Debian boot probes (2026-10-25)
 
@@ -310,6 +326,14 @@ synthetic boot probes.
 Earlier physical boot attempts showed a black screen followed by reboot
 before any visible GRUB menu. Several otherwise identical attempts eventually
 booted successfully; no cause or corrective change has been established.
-Intermittent pre-GRUB startup therefore remains an open issue. Persistence of
-the Wi-Fi connection, installed Ports and files after a physical reboot has
-not yet been separately reported.
+The initial intermittent startup before any visible GRUB output remains an
+open observation.
+
+The owner subsequently reported a successful reboot that started immediately.
+All requested post-reboot checks worked: the saved file remained, nmcli showed
+the Wi-Fi network, and `mpm ports list` retained Neovim with version 0.12.6,
+matching Neovim's own reported version. This verifies owner-side physical
+reboot persistence and network reconnection. The owner suspects the earlier
+startup behavior was associated with powering off and removing the USB device
+rather than an ordinary reboot; that causal explanation has not been
+established, and repeated cold-start acceptance is still separate.

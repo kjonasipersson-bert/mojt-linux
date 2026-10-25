@@ -105,7 +105,9 @@ def stage(tree, system, modules_dir, release, firmware_root, support):
     # Explicit known devices first; udev can load additional drivers from the same tree.
     support.write(profile / "load-hardware", "#!/bin/sh\nset -eu\n"
                   ". /run/mojt-system/environment\n" +
-                  "".join("modprobe " + name + "\n" for name in RUNTIME_MODULES), 0o755)
+                  "".join("modprobe " + name + "\n" for name in RUNTIME_MODULES) +
+                  "# Keep kernel logs in the ring buffer/journal; only critical messages on the login console.\n"
+                  "printf '3\\n' >/proc/sys/kernel/printk\n", 0o755)
     support.write(profile / "units/mojt-hardware.service", support.unit(
         "Mojt hardware drivers", "/run/mojt-system/load-hardware",
         "Type=oneshot\nRemainAfterExit=yes",
