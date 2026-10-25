@@ -52,10 +52,23 @@ adding a harmless marker; existing generations are retained. Installation
 uses `--no-activate`, so the source `base/current` is preserved. The installer
 still applies its usual add-missing configuration policy.
 
+Paste each complete block, including its final heredoc delimiter. The blocks
+run in a separate Bash process: an error stops that process and prints a
+diagnostic without changing the SSH login shell's options or exiting it.
+Adjust `TARGET` if the installed Base lives elsewhere. Preparation prints its
+retained work directory and saves the values needed by the build, so they do
+not depend on variables surviving an SSH reconnect.
+
 ```bash
+bash <<'MOJT_PREPARE' || printf '%s\n' 'Base preparation stopped; see the error above.' >&2
 set -euo pipefail
+trap 'printf "Base preparation failed at line %s; work directory: %s\\n" "$LINENO" "${WORK:-not created}" >&2' ERR
 export PATH="/usr/sbin:/sbin:$PATH"
 TARGET="$HOME/mojt-lab/root-test-013"
+if [ ! -L "$TARGET/base/current" ]; then
+  printf 'No installed Base selection at %s/base/current; correct TARGET.\n' "$TARGET" >&2
+  exit 1
+fi
 BASE_A="$(readlink "$TARGET/base/current")"
 BASE_B="${BASE_A}-gen-b"
 WORK="$(mktemp -d "$HOME/mojt-generations.XXXXXX")"
@@ -82,22 +95,59 @@ sudo tools/mojt-base-pack "$WORK/rootfs" "$WORK/base-b.toml" "$WORK/releases"
 sudo tools/mojt-base-install install "$WORK/releases/base-$BASE_B-x86_64" \
   --target "$TARGET" --no-activate
 test "$(readlink "$TARGET/base/current")" = "$BASE_A"
+python3 - "$TARGET" "$BASE_A" "$BASE_B" "$WORK" <<'PY'
+from pathlib import Path
+import shlex
+import sys
+target, first, second, work = sys.argv[1:]
+settings = Path(work) / 'experiment.env'
+settings.write_text(''.join(f'{key}={shlex.quote(value)}\n' for key, value in
+                           [('TARGET', target), ('BASE_A', first), ('BASE_B', second)]))
+settings.chmod(0o600)
+PY
+printf '\nPrepared Base B. Retained experiment directory: %s\n' "$WORK"
+MOJT_PREPARE
 ```
 
 ## Build A/A, A/B and B/B in one new image
 
-Keep the `INPUTS`, `KERNEL`, `MODULES` and step 6 `PAYLOAD` from the
-[ThinkPad preparation](thinkpad-usb-boot.md). The following plan inherits these
-kernel/module/firmware/payload inputs. Initially System A and B deliberately
+Use the experiment directory printed above and the retained `mojt-thinkpad-inputs.*`
+directory from the [ThinkPad preparation](thinkpad-usb-boot.md). Replace the two
+example paths on the first line below with those real directories. The block
+reloads the experiment settings and derives the kernel/module paths again;
+it does not require variables from the previous SSH session. Adjust `PAYLOAD`
+if the existing step 6 payload lives elsewhere. Initially System A and B deliberately
 use the same upstream components under separate profiles: this tests selection
 and retention, not an upstream kernel/package upgrade.
 
 ```bash
+bash -s -- "$HOME/mojt-generations.XXXXXX" "$HOME/mojt-thinkpad-inputs.YYYYYY" <<'MOJT_BUILD' || printf '%s\n' 'Image build stopped; see the error above.' >&2
+set -euo pipefail
+trap 'printf "Image build failed at line %s.\\n" "$LINENO" >&2' ERR
+export PATH="/usr/sbin:/sbin:$PATH"
+WORK="$1"
+INPUTS="$2"
+if [ ! -f "$WORK/experiment.env" ]; then
+  printf 'Completed experiment settings missing: %s/experiment.env\n' "$WORK" >&2
+  exit 1
+fi
+. "$WORK/experiment.env"
+set -- "$INPUTS/root"/boot/vmlinuz-*
+if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
+  printf 'Expected one retained kernel under %s/root/boot; correct the input directory.\n' "$INPUTS" >&2
+  exit 1
+fi
+KERNEL="$1"
+KREL="${KERNEL##*/vmlinuz-}"
+MODULES="$INPUTS/root/usr/lib/modules/$KREL"
+if [ ! -d "$MODULES" ]; then MODULES="$INPUTS/root/lib/modules/$KREL"; fi
 printf 'format = 1\n\n[[boot]]\nbase = "%s"\nsystem = "system-B"\n\n[[boot]]\nbase = "%s"\nsystem = "system-B"\n' \
   "$BASE_A" "$BASE_B" >"$WORK/generations.toml"
 PAYLOAD="$HOME/mojt-lab/mpm-nix-home/mpm-system-test/system-step6"
 IMAGE="$WORK/image"
-test -f "$KERNEL" && test -d "$MODULES" && test -d "$INPUTS/root"
+test -d "$MODULES"
+test -d "$INPUTS/root"
+test -d "$PAYLOAD"
 sudo python3 tools/mojt-vm-build.py \
   --target "$TARGET" --output "$IMAGE" \
   --kernel "$KERNEL" --modules-dir "$MODULES" \
@@ -107,7 +157,17 @@ sudo python3 tools/mojt-vm-build.py \
   --additional-generations "$WORK/generations.toml" \
   --disk-size-mib 8192 --login-mode password \
   --root-shell /run/mojt-system/bin/bash
-"$IMAGE/run-qemu.sh"
+printf '\nImage built. Launcher: %s/run-qemu.sh\n' "$IMAGE"
+MOJT_BUILD
+```
+
+Start the launcher separately, using the real experiment directory again.
+The hardware profile needs a graphical Debian session or working X11
+forwarding for the guest's local console. Keeping the launcher outside the
+build heredoc also preserves its terminal input.
+
+```bash
+bash "$HOME/mojt-generations.XXXXXX/image/run-qemu.sh" || printf '%s\n' 'QEMU stopped; see any error above.' >&2
 ```
 
 The builder still prompts if the copied machine state has no root password.
@@ -144,7 +204,9 @@ system_payload = "/home/user/system-payload-B"
 1. Boot A/A. Inspect `cat /proc/cmdline`, `cat /usr/lib/os-release`,
    `cat /run/mojt-system/version`, `uname -r` and `cat /run/mojt/motd`.
 2. Write a unique marker into `/etc/generation-marker` and
-   `/var/generation-marker`. Cleanly power off with `systemctl poweroff`.
+   `/var/generation-marker`. Inside the Mojt guest, cleanly power off with
+   `systemctl poweroff`. Run that command in the guest console, not in the
+   Debian host's SSH shell.
 3. Select A/B in GRUB. Confirm Base A, System B, the expected kernel and both
    markers. Verify login, networking and an already installed MPM command.
 4. Select B/B. Confirm Base B, System B and the new
