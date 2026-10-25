@@ -174,6 +174,35 @@ On a graphical Debian session:
 QEMU_DISK_BUS=usb "$IMAGE/run-qemu.sh"       # xHCI + USB mass storage
 ```
 
+The launcher explicitly assigns `bootindex=1` to the image device on either
+bus. This tells OVMF which disk to prioritize even when the persistent variable
+file contains a boot entry for the previous SATA device path.
+
+If an image built with an earlier launcher drops into `UEFI Interactive Shell`
+after switching buses, and its EFI partition is mapped as `FS0:`, try:
+
+```text
+fs0:\EFI\BOOT\BOOTX64.EFI
+```
+
+That starts the EFI fallback loader already on the disk. If it reaches GRUB,
+the firmware's automatic boot selection was the failed step, before the
+kernel. To add the explicit priority to an existing generated launcher, shut
+down the guest and exit QEMU, then run on the Debian host:
+
+```sh
+: "${IMAGE:?Set IMAGE to the existing image directory}"
+sed -i.before-bootindex \
+  -e 's/bus=ide\.0)/bus=ide.0,bootindex=1)/' \
+  -e 's/bus=xhci\.0)/bus=xhci.0,bootindex=1)/' \
+  "$IMAGE/run-qemu.sh"
+QEMU_DISK_BUS=usb "$IMAGE/run-qemu.sh"
+```
+
+The edit preserves the original launcher as `run-qemu.sh.before-bootindex`.
+It does not rebuild or edit `disk.img`, remove firmware variables, or change
+the guest's persistent state. New launchers include this setting directly.
+
 For an SSH-only build host, `QEMU_DISPLAY=vnc=127.0.0.1:1` exposes the local
 screen through VNC on the host loopback interface (use an SSH tunnel).
 `QEMU_DISPLAY=none` is for automated boot probes, not interactive local login.
@@ -262,3 +291,7 @@ CPU and a BusyBox bind-remount lookup through `/lib -> usr/lib`. The loader
 now logs unavailable modules and continues to the mandatory disk/mount
 checks; bind remounts name both source and destination. Emergency shells
 explicitly reopen the console instead of inheriting the module-list input.
+
+The boot probe also supports `--disk-bus sata --switch-bus usb` to change the
+device path between boots while retaining the same disk and firmware variables.
+CI includes this transition alongside the separate SATA and USB tests.

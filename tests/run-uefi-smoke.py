@@ -30,6 +30,8 @@ def main():
     parser.add_argument("--output", type=Path, required=True, help="new retained test directory")
     parser.add_argument("--hardware-profile", choices=("thinkpad-x1-carbon-3",))
     parser.add_argument("--disk-bus", choices=("sata", "usb"), default="sata")
+    parser.add_argument("--switch-bus", choices=("sata", "usb"),
+                        help="second boot changes bus while retaining the same disk and OVMF variables")
     parser.add_argument("--firmware-root", type=Path,
                         help="optional real extracted Debian firmware root instead of the synthetic fixture")
     args = parser.parse_args()
@@ -41,6 +43,8 @@ def main():
     release = vm.kernel_release_from_path(args.kernel)
     vm.validate_busybox_applets(args.busybox, extra=("findfs", "cp", "ln", "uname", "cat", "grep"))
     physical = bool(args.hardware_profile)
+    if args.switch_bus and not physical:
+        parser.error("--switch-bus requires --hardware-profile")
     console = "local" if physical else "serial"
     modules = vm.module_paths(release, args.modules_dir,
                              names=vm.hardware.EARLY_MODULES if physical else None)
@@ -128,10 +132,11 @@ echo MOJT_HARDWARE_MOUNTS_PASS'''.replace("@RELEASE@", release) if physical else
     launcher.write_text(vm.boot.run_script(local_console=physical))
     launcher.chmod(0o755)
     for number in (1, 2):
+        bus = args.switch_bus if number == 2 and args.switch_bus else args.disk_bus
         try:
             run = subprocess.run(["bash", str(launcher)], stdout=subprocess.PIPE,
                                  stderr=subprocess.STDOUT, timeout=90,
-                                 env={**os.environ, "QEMU_DISPLAY": "none", "QEMU_DISK_BUS": args.disk_bus})
+                                 env={**os.environ, "QEMU_DISPLAY": "none", "QEMU_DISK_BUS": bus})
         except subprocess.TimeoutExpired as error:
             (output / f"boot-{number}.log").write_bytes(error.stdout or b"")
             raise RuntimeError(f"firmware boot {number} timed out; inspect {output}/boot-{number}.log") from error
@@ -140,13 +145,16 @@ echo MOJT_HARDWARE_MOUNTS_PASS'''.replace("@RELEASE@", release) if physical else
         if run.returncode or b"MOJT_UEFI_SMOKE_BOOT_PASS" not in run.stdout or expected not in run.stdout:
             raise RuntimeError(f"firmware boot {number} failed; inspect {output}/boot-{number}.log")
         print(f"PASS: UEFI/GRUB boot {number}; UUID discovery, pinned System and persistent state", flush=True)
+        if args.switch_bus:
+            print(f"PASS: {bus} disk boot with shared firmware variables", flush=True)
     fresh = output / "disk-only-copy"
     fresh.mkdir()
     subprocess.run(["cp", "--sparse=always", str(output / "disk.img"), str(fresh / "disk.img")], check=True)
     (fresh / "run-qemu.sh").write_text(vm.boot.run_script(local_console=physical))
     run = subprocess.run(["bash", str(fresh / "run-qemu.sh")], stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT, timeout=90,
-                         env={**os.environ, "QEMU_DISPLAY": "none", "QEMU_DISK_BUS": args.disk_bus})
+                         env={**os.environ, "QEMU_DISPLAY": "none",
+                              "QEMU_DISK_BUS": args.switch_bus or args.disk_bus})
     (fresh / "boot.log").write_bytes(run.stdout)
     if run.returncode or b"MOJT_UEFI_SMOKE_PERSISTED" not in run.stdout:
         raise RuntimeError(f"disk-only copy boot failed; inspect {fresh}/boot.log")

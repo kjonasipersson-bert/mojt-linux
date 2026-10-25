@@ -109,6 +109,8 @@ class HardwareTests(unittest.TestCase):
         for bus in ("sata", "usb"):
             script = vm.boot.run_script(network=True, local_console=True)
             self.assertIn(bus + ")", script)
+            self.assertIn("bus=ide.0,bootindex=1", script)
+            self.assertIn("bus=xhci.0,bootindex=1", script)
             self.assertIn("user,model=e1000e", script)
             self.assertIn('QEMU_DISPLAY:-gtk', script)
             self.assertNotIn("if=virtio", script)

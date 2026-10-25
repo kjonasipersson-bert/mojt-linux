@@ -218,8 +218,8 @@ exec qemu-system-x86_64 \\
         # Keep one image/launcher for both non-VirtIO probes. No host disk is exposed.
         script = script.replace('exec qemu-system-x86_64', '''disk_args=(-drive "file=$here/disk.img,if=none,id=mojt,format=raw")
 case "${QEMU_DISK_BUS:-sata}" in
-    sata) disk_args+=(-device ide-hd,drive=mojt,bus=ide.0) ;;
-    usb) disk_args+=(-device qemu-xhci,id=xhci -device usb-storage,drive=mojt,bus=xhci.0) ;;
+    sata) disk_args+=(-device ide-hd,drive=mojt,bus=ide.0,bootindex=1) ;;
+    usb) disk_args+=(-device qemu-xhci,id=xhci -device usb-storage,drive=mojt,bus=xhci.0,bootindex=1) ;;
     *) echo 'QEMU_DISK_BUS must be sata or usb' >&2; exit 1 ;;
 esac
 exec qemu-system-x86_64''')
