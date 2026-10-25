@@ -44,8 +44,17 @@ jobs:
             fdisk dosfstools mtools ovmf qemu-system-x86
       - name: Boot the hardware profile with SATA and USB disks
         run: |
-          kernel="$(find /boot -maxdepth 1 -name 'vmlinuz-*' -type f | sort -V | tail -n 1)"
+          # Follow the installed metapackage, not the runner's newer Azure kernel.
+          kernel_package="$(dpkg-query -W -f='${Depends}\n' linux-image-generic |
+            tr ',' '\n' |
+            sed -n 's/^[[:space:]]*\(linux-image-[^[:space:](]*-generic\).*/\1/p')"
+          test -n "$kernel_package"
+          kernel="$(dpkg-query -L "$kernel_package" |
+            sed -n '\|^/boot/vmlinuz-[^/]*-generic$|p')"
+          test -f "$kernel"
           release="${kernel##*/vmlinuz-}"
+          test -d "/lib/modules/$release"
+          printf 'Boot probe kernel: %s (%s)\n' "$kernel" "$kernel_package"
           for bus in sata usb; do
             sudo python3 tests/run-uefi-smoke.py \
               --kernel "$kernel" --modules-dir "/lib/modules/$release" \
