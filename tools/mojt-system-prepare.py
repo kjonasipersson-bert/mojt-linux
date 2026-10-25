@@ -104,7 +104,7 @@ def prepare(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--step", type=int, choices=(1, 2, 3, 4, 5), required=True)
+    parser.add_argument("--step", type=int, choices=(1, 2, 3, 4, 5, 6), required=True)
     parser.add_argument("--source-manifest", type=Path,
                         default=REPO / "manifests/mpm-nix-example.toml")
     parser.add_argument("--output", type=Path, required=True)

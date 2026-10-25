@@ -62,6 +62,8 @@ class SystemVmTests(unittest.TestCase):
                 "curl": ["bin/curl"], "cacert": [], "iproute2": ["bin/ip"],
                 "nix": ["bin/nix", "bin/nix-store", "bin/nix-instantiate"], "python": ["bin/python3"],
                 "shell": ["bin/bash"],
+                "kmod": ["bin/modprobe", "bin/lsmod"],
+                "wpa-supplicant": ["bin/wpa_supplicant"], "iw": ["bin/iw"],
                 **{role: ["bin/" + name for name in names]
                    for role, names in system.ADMIN_COMMANDS.items()},
             }[role]
@@ -100,8 +102,8 @@ class SystemVmTests(unittest.TestCase):
     def test_steps_are_cumulative_and_explicit(self):
         self.assertEqual(set(system.roles(1)), {"systemd"})
         self.assertTrue(set(system.roles(1)) < set(system.roles(2)) < set(system.roles(3))
-                        < set(system.roles(4)) < set(system.roles(5)))
-        for value in (0, 6, True, "1"):
+                        < set(system.roles(4)) < set(system.roles(5)) < set(system.roles(6)))
+        for value in (0, 7, True, "1"):
             with self.assertRaises(ValueError):
                 system.roles(value)
 
@@ -125,7 +127,7 @@ class SystemVmTests(unittest.TestCase):
             disk_size_mib=512, target=self.tree, output=output, kernel=kernel,
             modules_dir=modules, busybox=self.busybox, login_mode="development", root_shell=None)
 
-        def fail_assembly(disk, *unused):
+        def fail_assembly(disk, *unused, **options):
             disk.write_bytes(b"incomplete GPT image")
             raise ValueError("synthetic GRUB assembly failure")
 
@@ -290,7 +292,7 @@ class SystemVmTests(unittest.TestCase):
         self.assertIn("Requires=mojt-setup.service dbus.socket", service)
         self.assertIn("Requires=dbus.service", (directory / "units/NetworkManager.service").read_text())
 
-    def run_network_check(self, address_after, route_after):
+    def run_network_check(self, address_after, route_after, interface=None):
         guest = Path(tempfile.mkdtemp(prefix="network-guest-", dir=self.root))
         tools, trace, count = guest / "bin", guest / "trace", guest / "queries"
         tools.mkdir()
@@ -337,8 +339,36 @@ esac""")
         script = guest / "check.sh"
         script.write_text(source)
         result = subprocess.run(["/bin/sh", str(script), "network"], capture_output=True, text=True,
-                                env={**os.environ, "PATH": str(tools)})
+                                env={**os.environ, "PATH": str(tools),
+                                     **({"MOJT_TEST_INTERFACE": interface} if interface else {})})
         return result, trace.read_text().splitlines()
+
+    def test_network_check_accepts_an_explicit_interface_without_reconnecting(self):
+        result, trace = self.run_network_check(1, 1, interface="eth0")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("nmcli -t -f DEVICE,TYPE device status", trace)
+
+    def test_step6_provides_supplicant_kmod_and_local_authenticated_console(self):
+        record = self.fixture(6)
+        system.load_payload(self.payload)
+        before = system.tree_hash(self.tree / "base")
+        with mock.patch.object(system.os, "chown"):
+            key = system.install(self.tree, self.payload, record, self.busybox, "password", REPO,
+                                 console="local", hardware_profile="thinkpad-x1-carbon-3")
+        profile = self.tree / "system" / key
+        self.assertIn("thinkpad-x1-carbon-3", key)
+        self.assertEqual(before, system.tree_hash(self.tree / "base"))
+        unit = (profile / "units/mojt-console.service").read_text()
+        self.assertIn("TTYPath=/dev/tty1", unit)
+        self.assertIn("38400 tty1 linux", unit)
+        self.assertIn("/run/mojt-system/login", unit)
+        self.assertNotIn("ttyS0", unit)
+        supplicant = (profile / "units/wpa_supplicant.service").read_text()
+        self.assertIn("BusName=fi.w1.wpa_supplicant1", supplicant)
+        self.assertIn("Before=NetworkManager.service", supplicant)
+        self.assertIn("wpa_supplicant.service", (profile / "units/mojt.target").read_text())
+        for name in ("modprobe", "lsmod", "iw", "wpa_supplicant"):
+            self.assertTrue((profile / "bin" / name).is_symlink())
 
     def test_network_check_observes_ready_or_delayed_ipv4_without_reconnecting(self):
         for address_after, route_after, sleeps in ((1, 1, 0), (3, 4, 3)):

@@ -25,7 +25,36 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_system_vm.py' -v
       - name: Check UEFI contracts and real GPT FAT GRUB image assembly
         run: python3 -m unittest discover -s tests -p 'test_uefi_boot.py' -v
+      - name: Check hardware input staging and local console contracts
+        run: python3 -m unittest discover -s tests -p 'test_hardware_boot.py' -v
       - name: Check MPM/Nix orchestration with simulated backend
         run: python3 -m unittest discover -s tests -p 'test_mpm_nix_prototype.py' -v
       - name: Check pacman environment orchestration with simulated backend
         run: python3 -m unittest discover -s tests -p 'test_mpm_pacman_prototype.py' -v
+
+  hardware-disk-boot:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install firmware boot probe tools and a matching kernel/module set
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y linux-image-generic \
+            busybox-static cpio kmod zstd grub-common grub-efi-amd64-bin \
+            fdisk dosfstools mtools ovmf qemu-system-x86
+      - name: Boot the hardware profile with SATA and USB disks
+        run: |
+          kernel="$(find /boot -maxdepth 1 -name 'vmlinuz-*' -type f | sort -V | tail -n 1)"
+          release="${kernel##*/vmlinuz-}"
+          for bus in sata usb; do
+            sudo python3 tests/run-uefi-smoke.py \
+              --kernel "$kernel" --modules-dir "/lib/modules/$release" \
+              --hardware-profile thinkpad-x1-carbon-3 --disk-bus "$bus" \
+              --output "$RUNNER_TEMP/mojt-hardware-$bus"
+          done
+      - name: Retain boot probe logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hardware-boot-logs
+          path: ${{ runner.temp }}/mojt-hardware-*/**/*.log
