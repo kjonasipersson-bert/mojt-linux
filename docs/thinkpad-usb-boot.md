@@ -70,37 +70,69 @@ git clone --single-branch --branch feature/thinkpad-usb-boot \
   https://github.com/kjonasipersson-bert/mojt-linux.git mojt-thinkpad
 cd mojt-thinkpad
 
-INPUTS="$(mktemp -d "$HOME/mojt-thinkpad-inputs.XXXXXX")"
+INPUTS="$(mktemp -d "$HOME/mojt-thinkpad-inputs.XXXXXX")" &&
 (
 set -eu
+export LC_ALL=C
+export PATH="/usr/sbin:/sbin:$PATH"
+command -v depmod >/dev/null
 mkdir "$INPUTS/debs" "$INPUTS/root"
 cd "$INPUTS/debs"
-KPKG="$(apt-cache depends linux-image-amd64 |
+KPKG="$(apt-cache depends linux-image-amd64/trixie |
   sed -n 's/^  Depends: \(linux-image-[^ ]*\)$/\1/p' | head -n 1)"
 test -n "$KPKG"
-apt-get download "$KPKG" firmware-iwlwifi firmware-intel-graphics wireless-regdb
+printf 'Selected Trixie kernel package: %s\n' "$KPKG"
+apt-get download "$KPKG/trixie" firmware-iwlwifi/trixie \
+  firmware-intel-graphics/trixie wireless-regdb/trixie
 sha256sum ./*.deb >"$INPUTS/root/SHA256SUMS"
 for package in ./*.deb; do
   dpkg-deb -f "$package" Package Version >>"$INPUTS/root/packages.txt"
   dpkg-deb -x "$package" "$INPUTS/root"
 done
-KREL="${KPKG#linux-image-}"
+set -- "$INPUTS/root"/boot/vmlinuz-*
+if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
+  echo 'Expected one extracted kernel image; refusing incomplete kernel inputs.' >&2
+  exit 1
+fi
+KREL="${1##*/vmlinuz-}"
 MODULE_ROOT="$INPUTS/root/usr"
 if [ ! -d "$MODULE_ROOT/lib/modules/$KREL" ]; then MODULE_ROOT="$INPUTS/root"; fi
+test -d "$MODULE_ROOT/lib/modules/$KREL/kernel" || {
+  echo 'Matching kernel modules missing; refusing incomplete kernel inputs.' >&2
+  exit 1
+}
 depmod -b "$MODULE_ROOT" "$KREL"
+test -s "$MODULE_ROOT/lib/modules/$KREL/modules.dep"
+printf 'Prepared kernel: %s\nRetained inputs: %s\n' "$KREL" "$INPUTS"
 )
-printf 'Retained inputs: %s\n' "$INPUTS"
 ```
 
 Stop if preparation fails; do not continue with partial inputs. APT verifies
 downloads against its authenticated repository metadata. Retain the `.deb`
 files alongside the recorded versions/hashes to rebuild this exact input set.
+Every download selects `/trixie` explicitly, so installed backports kernels,
+APT priorities and a newer default `linux-image-amd64` candidate do not select
+a backports kernel. This recipe requires the selected stable kernel package
+to contain the image and matching modules; missing payloads fail before the
+success message. The release is read from the extracted kernel filename,
+not inferred from a potentially empty transitional package.
+The subshell includes `/usr/sbin` and `/sbin` in PATH because `depmod` may not
+be in an ordinary Debian user's login PATH. Neither depmod nor extraction
+requires sudo when operating on these user-owned input files.
 `depmod` generates the dependency metadata normally created by Debian's
 kernel post-install script. The builder selects the signed Debian regulatory
 database normally selected by `wireless-regdb`'s alternatives post-install
 script. Neither post-install script is executed on the build host.
 Firmware copyright files accompany the firmware inside System. CPU microcode
 updates are not added by this first profile.
+
+If an earlier attempt failed (for example, `depmod: command not found` after
+downloading a small backports kernel metapackage), leave that partial directory
+alone and rerun the updated preparation block to create a fresh `INPUTS`.
+Reuse the existing checkout with `git pull --ff-only`; do not clone it again.
+The old recipe printed a retained-input path even after failure; the updated
+recipe prints its success message only after validating the kernel, modules
+and generated dependency metadata.
 
 ## 3. Build a fresh image on Debian
 
