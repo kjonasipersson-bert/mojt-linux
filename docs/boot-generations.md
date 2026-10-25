@@ -238,5 +238,33 @@ kernel/initramfs/filesystem commands are simulated in those assembly tests.
 real GRUB over serial, then boots a disk-only copy using fresh firmware state.
 Both `current` links deliberately point to absent generations. Its static
 BusyBox guest verifies selected identities and shared `/etc`/`/var` markers;
-it does not test full systemd, Nix registration or real Wi-Fi. Full Mojt and
-physical hardware acceptance remain separate manual steps.
+it does not test full systemd, Nix registration or real Wi-Fi. The owner's real
+Mojt VM boot acceptance is recorded below; physical hardware generation switching
+remains a separate manual step.
+
+## Owner VM boot acceptance (2026-10-25)
+
+The owner built and booted a real Mojt image on the Debian host using the
+step 6 System payload, the ThinkPad hardware profile and Debian kernel
+`6.12.107+deb13-amd64` with matching modules. Authenticated root login worked
+throughout this manual GRUB selection sequence:
+
+| Boot | Base | System | Observed result |
+| --- | --- | --- | --- |
+| Initial A/A | `0.1.3` | `system-A` | Base identity, System identity, kernel and explicit boot parameters agreed |
+| A/B | `0.1.3` | `system-B` | System selection changed; markers written under A/A remained in both `/etc` and `/var` |
+| B/B | `0.1.3-gen-b` | `system-B` | Base identity changed; the Base B image marker was present; persistent markers remained |
+| Return to A/A | `0.1.3` | `system-A` | Original identities and boot parameters returned; the Base B image marker was absent; persistent markers remained |
+
+The owner supplied console captures for all four boots and confirmed success.
+This establishes real Mojt boot selection and return to the retained pair,
+with shared configuration/state across the sequence. It complements the
+synthetic automated guest rather than replacing its failure-injection checks.
+
+Both System labels used the same kernel and upstream payload. Base B was an
+intentionally compatible image with a different version and an added marker.
+A different-kernel/payload upgrade, networking and Ports behavior across these
+pairs, manual build interruption, and physical hardware generation switching
+were not verified by this run. Existing automated tests cover failure during
+second-pair assembly; updates to an existing boot disk and power-loss recovery
+remain outside this image-composition experiment.
