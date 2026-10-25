@@ -6,6 +6,10 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Base/System boot generation experiment
 
+For terminal-based operation of an already built VM, see the
+[SSH/serial console and interruption guide](vm-serial-console.md). It retains
+the tested image's state in a separate copy and avoids graphical command entry.
+
 The UEFI builder can compose a **new** image containing several explicit
 Base/System pairs. GRUB selects a pair; initramfs checks `root=UUID=...`,
 `mojt.base=...` and `mojt.system=...` against its embedded expectations. It

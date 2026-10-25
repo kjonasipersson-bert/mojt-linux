@@ -138,6 +138,10 @@ persistent state and retained System closures. It includes a compatible Base B
 recipe and manual A/A → A/B → B/B → A/A acceptance. This is image composition;
 updating an existing running installation remains future work.
 
+The [serial-console guide](docs/vm-serial-console.md) prepares a private copy
+of an existing VM for password login and guest commands directly from an SSH
+terminal, retaining its generations and persistent state.
+
 ```sh
 python3 -m unittest discover -s tests -p 'test_system_vm.py' -v
 ```
