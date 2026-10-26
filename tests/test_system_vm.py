@@ -59,7 +59,7 @@ class SystemVmTests(unittest.TestCase):
             base = self.payload / value.lstrip("/")
             names = {
                 "systemd": ["lib/systemd/systemd", "bin/systemctl", "bin/journalctl",
-                            "bin/udevadm", "bin/systemd-sysusers", "bin/timedatectl", "bin/systemd-cat",
+                            "bin/udevadm", "bin/systemd-sysusers", "bin/timedatectl", "bin/systemd-cat", "bin/systemd-machine-id-setup",
                             "lib/systemd/systemd-timesyncd"],
                 "dbus": ["bin/dbus-daemon"], "networkmanager": ["bin/NetworkManager", "bin/nmcli"],
                 "curl": ["bin/curl"], "cacert": [], "iproute2": ["bin/ip", "bin/ss"],
@@ -221,6 +221,12 @@ class SystemVmTests(unittest.TestCase):
         bus = (directory / "dbus.conf").read_text()
         ET.fromstring(bus)
         self.assertIn('own="org.freedesktop.timesync1"', bus)
+        commit = (directory / "units/mojt-machine-id-commit.service").read_text()
+        self.assertIn("systemd-machine-id-setup --commit", commit)
+        self.assertIn("DefaultDependencies=no", commit)
+        self.assertIn("After=mojt-setup.service", commit)
+        self.assertIn("Before=systemd-journald.service dbus.service", commit)
+        self.assertTrue((directory / "units/sysinit.target.wants/mojt-machine-id-commit.service").is_symlink())
         quiet = (directory / "units/mojt-console-quiet.service").read_text()
         self.assertIn("Before=mojt-console.service mojt-serial-console.service", quiet)
         self.assertIn("mojt-console-quiet.service", (directory / "units/mojt.target").read_text())

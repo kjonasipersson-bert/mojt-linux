@@ -247,6 +247,7 @@ def load_payload(path):
         executable(path, record, "systemd", "lib/systemd/systemd-timesyncd")
         executable(path, record, "systemd", "bin/timedatectl")
         executable(path, record, "systemd", "bin/systemd-cat")
+        executable(path, record, "systemd", "bin/systemd-machine-id-setup")
     return record
 
 
@@ -551,6 +552,11 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
                  "Restart=on-failure\nRestartSec=5s",
                  "Requires=mojt-setup.service dbus.service\n"
                  "After=mojt-setup.service dbus.service NetworkManager.service\n"))
+        machine_id_setup = export("systemd-machine-id-setup", "systemd", "bin/systemd-machine-id-setup")
+        put_unit("mojt-machine-id-commit.service", unit("Persist Mojt machine identity",
+                 machine_id_setup + " --commit", "Type=oneshot\nRemainAfterExit=yes",
+                 "DefaultDependencies=no\nRequires=mojt-setup.service\nAfter=mojt-setup.service\n"
+                 "Before=systemd-journald.service dbus.service mojt-console.service mojt-serial-console.service\n"))
         put_unit("mojt-journal-flush.service", unit("Persist Mojt journal",
                  "/run/mojt-system/bin/journalctl --flush", "Type=oneshot\nRemainAfterExit=yes",
                  "Requires=systemd-journald.service mojt-setup.service\n"
@@ -560,7 +566,8 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
                  "/run/mojt-system/console-quiet", "Type=oneshot\nRemainAfterExit=yes",
                  "Requires=mojt-setup.service\nAfter=mojt-setup.service\n"
                  "Before=mojt-console.service mojt-serial-console.service\n"))
-        wanted += ["systemd-timesyncd.service", "mojt-journal-flush.service", "mojt-console-quiet.service"]
+        wanted += ["systemd-timesyncd.service", "mojt-journal-flush.service",
+                   "mojt-console-quiet.service", "mojt-machine-id-commit.service"]
         dbus_config = system / "dbus.conf"
         policy = ('  <policy user="systemd-timesync">\n'
                   '    <allow own="org.freedesktop.timesync1"/>\n'
@@ -579,6 +586,8 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
     wants = system / "units/sysinit.target.wants"
     wants.mkdir()
     (wants / "mojt-setup.service").symlink_to("../mojt-setup.service")
+    if step >= 8:
+        (wants / "mojt-machine-id-commit.service").symlink_to("../mojt-machine-id-commit.service")
     put_unit("mojt.target", "[Unit]\nDescription=Mojt experimental System\n"
              "Requires=basic.target mojt-setup.service\nAfter=basic.target mojt-setup.service\n"
              "Wants=" + " ".join(wanted) + "\nAllowIsolate=yes\n")

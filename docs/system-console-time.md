@@ -193,3 +193,23 @@ This uses normal systemd shutdown ordering, without --force. It is a temporary
 root administration recipe, not an ordinary-user authorization/inhibitor policy.
 Full logind/session integration belongs to the account stage. Do not treat the
 absence of logind as a reason to bypass filesystem shutdown.
+
+## Persistent files found under changing machine identities
+
+On a subsequent B boot the owner supplied evidence that /etc/machine-id was
+mounted from tmpfs and /var/log/journal contained three different machine-ID
+directories, each with an 8 MiB system.journal. Journal logs confirmed a
+successful runtime-to-disk flush. Thus journal files survived, but normal
+journalctl selection did not show the previous identity's boots. The proposed
+--merge/--list-boots combination is unsupported; inspect each directory with
+journalctl --directory instead.
+
+Step 8 now explicitly runs the selected systemd-machine-id-setup --commit
+after Mojt setup and before journald/D-Bus/login. The unit has no default
+dependencies (to avoid a sysinit/journald ordering cycle) and is pulled into
+sysinit.target. It commits an existing transient ID rather than generating
+a replacement or overwriting a valid persistent identity. /etc is already
+mounted from writable persistent state before PID 1 starts. The commit helper
+is verified as part of the payload's System output. A stable identity across
+subsequent boots and cross-generation journal visibility still need owner
+acceptance. No historical journal directories are removed or merged by this fix.
