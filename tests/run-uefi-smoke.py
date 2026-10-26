@@ -121,7 +121,7 @@ def main():
         work = Path(temp)
         tree = work / "tree"
         basepath = tree / "base" / base
-        for name in ("usr/bin", "usr/lib", "etc", "var", "dev", "proc", "sys", "run", "nix", "tmp"):
+        for name in ("usr/bin", "usr/lib", "etc", "var", "home", "root", "dev", "proc", "sys", "run", "nix", "tmp"):
             (basepath / name).mkdir(parents=True)
         (basepath / "bin").symlink_to("usr/bin")
         (basepath / "lib").symlink_to("usr/lib")
@@ -133,6 +133,8 @@ def main():
         (tree / "base/current").symlink_to(base)
         (tree / "state/etc").mkdir(parents=True)
         (tree / "state/var").mkdir()
+        (tree / "state/home").mkdir()
+        (tree / "state/root").mkdir(mode=0o700)
         (tree / "state/etc/hostname").write_text("mojt-smoke\n")
         password = "mojt-serial-test-only" if args.serial_login else None
         if args.serial_login:
@@ -186,12 +188,18 @@ echo "MOJT_GENERATION_PAIR_${base}_${selected}"
 @HARDWARE_CHECK@
 if [ -f /etc/uefi-smoke-marker ]; then
     [ "$(cat /var/uefi-smoke-marker)" = retained ]
+    [ "$(cat /home/uefi-smoke-marker)" = retained ]
+    [ "$(cat /root/uefi-smoke-marker)" = retained ]
     echo MOJT_UEFI_SMOKE_PERSISTED
 else
     echo retained >/etc/uefi-smoke-marker
     echo retained >/var/uefi-smoke-marker
+    echo retained >/home/uefi-smoke-marker
+    echo retained >/root/uefi-smoke-marker
     echo MOJT_UEFI_SMOKE_FIRST_BOOT
 fi
+grep -q ' /home ' /proc/mounts
+grep -q ' /root ' /proc/mounts
 echo MOJT_UEFI_SMOKE_BOOT_PASS
 if [ -f /etc/systemd/system/mojt-serial-console.service ]; then
     grep -q 'TTYPath=/dev/ttyS0' /etc/systemd/system/mojt-serial-console.service
