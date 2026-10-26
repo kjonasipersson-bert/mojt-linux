@@ -61,15 +61,15 @@ class UefiTests(unittest.TestCase):
     def test_boot_selectors_cannot_inject_shell_or_grub_syntax(self):
         for value in ("../current", "a/b", "a'b", "a;b", "a b", ""):
             with self.subTest(value=value), self.assertRaises(ValueError):
-                boot.cmdline(UUID, value)
+                boot.cmdline(UUID, value, "0.1.3")
         for value in ("root=/dev/vda", UUID.upper(), "not-a-uuid"):
             with self.assertRaises(ValueError):
-                boot.cmdline(value, SYSTEM)
+                boot.cmdline(value, SYSTEM, "0.1.3")
 
     def test_early_init_uses_uuid_and_exact_system_including_identity_reads(self):
-        script = boot.init_script(system.init_script(vm.INIT), UUID, SYSTEM)
+        script = boot.init_script(system.init_script(vm.INIT), UUID, SYSTEM, "0.1.3")
         self.assertIn('findfs "$mojt_root"', script)
-        self.assertIn('root=*) mojt_root=${mojt_arg#root=}', script)
+        self.assertIn('mojt_root=${mojt_arg#root=}', script)
         self.assertIn(f'[ "$mojt_system" = "{SYSTEM}" ]', script)
         self.assertIn(f'/sysroot/system/{SYSTEM}/start', script)
         self.assertIn(f'/sysroot/system/{SYSTEM}/version', script)
@@ -77,18 +77,18 @@ class UefiTests(unittest.TestCase):
         self.assertNotIn('/dev/vda', script)
         subprocess.run(["sh", "-n"], input=script, text=True, check=True, capture_output=True)
         with self.assertRaisesRegex(ValueError, "template"):
-            boot.init_script(vm.INIT, UUID, SYSTEM)
+            boot.init_script(vm.INIT, UUID, SYSTEM, "0.1.3")
 
     def test_stage_records_hashes_of_exact_disk_boot_pair_and_module_inputs(self):
         tree, record = self.stage()
-        path = tree / "boot/mojt" / SYSTEM
+        path = tree / "boot/mojt" / SYSTEM / "0.1.3"
         self.assertEqual(record["kernel_sha256"], boot.digest(path / "vmlinuz"))
         self.assertEqual(record["initramfs_sha256"], boot.digest(path / "initramfs.cpio.gz"))
         self.assertEqual(record["module_inputs"][0]["sha256"], boot.digest(self.root / "virtio.ko"))
         self.assertEqual(json.loads((path / "boot.json").read_text()), record)
         config = (path / "grub.cfg").read_text()
         self.assertIn(record["cmdline"], config)
-        self.assertIn(f'initrd /boot/mojt/{SYSTEM}/initramfs.cpio.gz', config)
+        self.assertIn(f'initrd /boot/mojt/{SYSTEM}/0.1.3/initramfs.cpio.gz', config)
         self.assertEqual(config.count("menuentry "), 1)
 
     def test_findfs_applet_required_for_uefi_only(self):
@@ -173,12 +173,12 @@ class UefiTests(unittest.TestCase):
         disk = self.root / "existing.img"
         disk.write_bytes(b"keep this disk")
         with self.assertRaises(FileExistsError):
-            boot.build_disk(disk, self.root, self.root, 512, UUID, SYSTEM)
+            boot.build_disk(disk, self.root, self.root, 512, UUID, SYSTEM, "0.1.3")
         self.assertEqual(disk.read_bytes(), b"keep this disk")
         link = self.root / "link.img"
         link.symlink_to(self.root / "outside.img")
         with self.assertRaisesRegex(ValueError, "symlink"):
-            boot.build_disk(link, self.root, self.root, 512, UUID, SYSTEM)
+            boot.build_disk(link, self.root, self.root, 512, UUID, SYSTEM, "0.1.3")
         self.assertFalse((self.root / "outside.img").exists())
 
     @unittest.skipUnless(all(shutil.which(c) for c in boot.COMMANDS + ("debugfs",)),
@@ -188,7 +188,7 @@ class UefiTests(unittest.TestCase):
         work = self.root / "work"
         work.mkdir()
         disk = self.root / "disk.img"
-        parts = boot.build_disk(disk, tree, work, 512, UUID, SYSTEM)
+        parts = boot.build_disk(disk, tree, work, 512, UUID, SYSTEM, "0.1.3")
         self.assertEqual(disk.stat().st_size, 512 * boot.MIB)
         with disk.open("rb") as stream:
             stream.seek(512)
@@ -205,7 +205,7 @@ class UefiTests(unittest.TestCase):
         for filename, expected in (("vmlinuz", b"synthetic kernel"),
                                    ("initramfs.cpio.gz", b"synthetic initramfs")):
             destination = self.root / ("extracted-" + filename)
-            subprocess.run(["debugfs", "-R", f"dump /boot/mojt/{SYSTEM}/{filename} {destination}", str(root)],
+            subprocess.run(["debugfs", "-R", f"dump /boot/mojt/{SYSTEM}/0.1.3/{filename} {destination}", str(root)],
                            capture_output=True, check=True)
             self.assertEqual(destination.read_bytes(), expected)
         self.assertEqual(record["root_uuid"], parts["root_uuid"])

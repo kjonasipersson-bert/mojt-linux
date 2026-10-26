@@ -220,7 +220,8 @@ def unit(description, executable_path, extra="", dependencies=""):
             f"[Service]\nExecStart={executable_path}\n{extra}\n")
 
 
-def install(tree, payload, record, busybox, login_mode, repo, console="serial", hardware_profile=None):
+def install(tree, payload, record, busybox, login_mode, repo, console="serial", hardware_profile=None,
+            generation=None):
     """Install only into a NEW copied VM tree. Original Base/state stay intact."""
     step = record["step"]
     require(console in ("serial", "local"), "unsupported console")
@@ -228,6 +229,10 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
     key = VERSION + "-step" + str(step)
     if hardware_profile:
         key += "-" + hardware_profile
+    if generation is not None:
+        require(isinstance(generation, str) and generation != "current" and
+                re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+-]*", generation), "unsafe System generation")
+        key = generation
     system = tree / "system" / key
     system.mkdir(parents=True)
     (tree / "system/current").symlink_to(key)
@@ -386,15 +391,20 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
                     "build-users-group =\nmax-jobs = 0\nrequire-sigs = true\n"
                     "substituters = https://cache.nixos.org/\n"
                     "trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=\n")
+        roots = "/nix/var/nix/gcroots/mojt-system/" + key
+        marker = "/nix/var/nix/.mojt-registration-loaded-" + key
         setup += [
-            "mkdir -p /nix/var/nix/db /nix/var/nix/gcroots/mojt-system",
-            "if [ ! -f /nix/var/nix/.mojt-registration-loaded ]; then",
+            "mkdir -p /nix/var/nix/db " + roots,
+            f"if [ ! -f {marker} ]; then",
             "    nix-store --load-db </run/mojt-system/registration",
-            "    touch /nix/var/nix/.mojt-registration-loaded", "fi",
+            f"    touch {marker}", "fi",
         ]
+        root_directory = tree / roots.lstrip("/")
+        root_directory.mkdir(parents=True)
         for obj in record["objects"]:
             name = Path(obj["path"]).name
-            setup.append(f"ln -sfn {obj['path']} /nix/var/nix/gcroots/mojt-system/{name}")
+            (root_directory / name).symlink_to(obj["path"])
+            setup.append(f"ln -sfn {obj['path']} {roots}/{name}")
     if step >= 4:
         for role, commands in ADMIN_COMMANDS.items():
             for name in commands:

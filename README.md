@@ -26,6 +26,12 @@ Mojt is an experimental Linux distribution inspired by BSD's separation of the b
 
 Read the [manifesto](docs/manifesto.md), [architecture notes](docs/architecture.md), [Base format specification](docs/base-format.md), and the draft [MPM package-management contract](docs/mpm.md).
 
+The accepted update model keeps Base as complete releases, System as coherent
+generations, and Ports as parallel program versions with active selections
+and transaction history. Shared MPM verbs preserve those different units of
+change. See the [roadmap](docs/roadmap.md) for completed experiments and the
+next priorities; these policies are broader than the implemented CLI.
+
 ## Status
 
 **Experimental prototype with verified QEMU boot.** On x86-64/glibc, the current
@@ -36,6 +42,12 @@ and MPM/Nix binary imports with parallel Python versions inside Mojt.
 There is no production installer, System release format or signed release
 channel yet. See the [System guide](docs/system-nix-vm.md) for measured scope
 and remaining integration work.
+
+The owner has also verified explicit Base/System generation selection and
+return, persistent markers, authenticated serial-console access from SSH,
+and controlled new-image build interruption. Both tested System labels used
+the same kernel/payload. A different-kernel test and updates to an existing
+boot disk remain separate work.
 
 ## Requirements on the build/test host
 
@@ -131,6 +143,16 @@ well as Ports through a shared store. Mojt controls System activation;
 host-service requirements belong to MPM's separate capability model. See the
 [accepted interim policy](docs/architecture.md#accepted-early-nixsystem-policy-2026-10-23)
 for the decision and implementation boundaries.
+
+The [Base/System generation experiment](docs/boot-generations.md) composes
+several explicitly pinned boot pairs in one new UEFI image, with shared
+persistent state and retained System closures. It includes a compatible Base B
+recipe and manual A/A → A/B → B/B → A/A acceptance. This is image composition;
+updating an existing running installation remains future work.
+
+The [serial-console guide](docs/vm-serial-console.md) prepares a private copy
+of an existing VM for password login and guest commands directly from an SSH
+terminal, retaining its generations and persistent state.
 
 ```sh
 python3 -m unittest discover -s tests -p 'test_system_vm.py' -v

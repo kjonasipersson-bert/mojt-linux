@@ -39,6 +39,10 @@ _boot_spec.loader.exec_module(boot)
 _hardware_spec = importlib.util.spec_from_file_location("mojt_hardware", Path(__file__).with_name("mojt_hardware.py"))
 hardware = importlib.util.module_from_spec(_hardware_spec)
 _hardware_spec.loader.exec_module(hardware)
+_generations_spec = importlib.util.spec_from_file_location(
+    "mojt_generations", Path(__file__).with_name("mojt_generations.py"))
+generations = importlib.util.module_from_spec(_generations_spec)
+_generations_spec.loader.exec_module(generations)
 
 
 LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]*\Z")
@@ -638,6 +642,57 @@ exec qemu-system-x86_64 \\
 """
 
 
+def additional_pairs(entries, *, tree, work, target, first_base, support, args,
+                     root_uuid, console, assembled_at):
+    """Assemble each pair privately, then merge only compatible immutable inputs."""
+    records = []
+    network = False
+    for number, entry in enumerate(entries):
+        base, selected = entry["base"], entry["system"]
+        generations.compatible_base(target, first_base, base)
+        kernel = entry.get("kernel", args.kernel).resolve(strict=True)
+        release = kernel_release_from_path(kernel)
+        modules_dir = entry.get("modules_dir", args.modules_dir)
+        modules_dir = modules_dir or Path("/lib/modules") / release
+        require_directory(modules_dir, "matching kernel modules")
+        payload = entry.get("system_payload", args.system_payload)
+        record = support.load_payload(payload)
+        network = network or record["step"] >= 2
+        physical = getattr(args, "hardware_profile", None)
+        if physical and record["step"] < 6:
+            fail("hardware generation needs System step 6")
+        modules = module_paths(release, modules_dir, network=record["step"] >= 2,
+                               names=hardware.EARLY_MODULES if physical else None)
+        candidate = work / ("generation-" + str(number))
+        candidate.mkdir()
+        populate_disk_tree(target, base, candidate)
+        generations.scaffold(candidate / "base" / base, require_directory)
+        support.install(candidate, payload, record, args.busybox, args.login_mode,
+                        Path(__file__).resolve().parents[1], console=console,
+                        hardware_profile=physical, generation=selected)
+        (candidate / "system" / selected / "assembled-at-utc").write_text(assembled_at + "\n")
+        script = support.init_script(INIT)
+        if physical:
+            module_paths(release, modules_dir, names=hardware.RUNTIME_MODULES)
+            hardware.stage(candidate, selected, modules_dir, release,
+                           entry.get("firmware_root", args.firmware_root), support)
+            script = hardware.init_script(script)
+        # Prove the shared account's selected shell is available in each pair.
+        if args.login_mode == "password":
+            shell = (record["packages"]["shell"]["output"] + "/bin/bash"
+                     if "shell" in record["packages"] else None)
+            vm_state = candidate / "state/etc/passwd"
+            shutil.copy2(tree / "state/etc/passwd", vm_state)
+            prepare_vm_root_shell(candidate, base, system_shell=shell)
+        script = boot.init_script(script, root_uuid, selected, base)
+        initramfs = make_initramfs(work / ("initroot-" + str(number)), args.busybox, modules,
+                                  script, support.SHUTDOWN, extra_applets=("findfs",))
+        generations.merge(tree, candidate, base, selected, support.tree_hash)
+        records.append(boot.stage(tree, kernel, initramfs, modules, release=release,
+                                  base=base, system=selected, root_uuid=root_uuid, console=console))
+    return records, network
+
+
 def build(args):
     if os.geteuid() != 0:
         fail("run as root (sudo) to preserve Base ownership and create /dev nodes")
@@ -654,6 +709,18 @@ def build(args):
         hardware.firmware_inputs(getattr(args, "firmware_root", None))
     if uefi and not getattr(args, "system_payload", None):
         fail("UEFI boot requires --system-payload")
+    plan_path = getattr(args, "additional_generations", None)
+    explicit_system = getattr(args, "system_generation", None)
+    explicit_base = getattr(args, "base_generation", None)
+    if (plan_path or explicit_system or explicit_base) and not uefi:
+        fail("explicit boot generations require --boot-mode uefi")
+    entries = generations.plan(plan_path, boot.generation)
+    if entries and not explicit_system:
+        fail("--additional-generations requires an explicit --system-generation for the default pair")
+    if explicit_system:
+        boot.generation(explicit_system)
+    if explicit_base:
+        boot.generation(explicit_base)
     parts = boot.layout(args.disk_size_mib) if uefi else None
     commands = ["cp", "cpio", "mkfs.ext4", "modprobe", "zstd", "du"]
     if uefi:
@@ -708,7 +775,9 @@ def build(args):
         link = target / "base/current"
         if not link.is_symlink():
             fail("source has no base/current symlink")
-        version = label(os.readlink(link))
+        version = label(explicit_base or os.readlink(link))
+        if any((e["base"], e["system"]) == (version, explicit_system) for e in entries):
+            fail("additional generation duplicates the default boot pair")
         generation = target / "base" / version
         require_directory(generation, "Base generation")
         for name in ("state/etc", "state/var"):
@@ -745,7 +814,7 @@ def build(args):
                     path.mkdir(exist_ok=True)
                 system_version = support.install(
                     tree, payload, record, busybox, args.login_mode, Path(__file__).resolve().parents[1],
-                    console=console, hardware_profile=physical)
+                    console=console, hardware_profile=physical, generation=explicit_system)
                 assembled_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 (tree / "system" / system_version / "assembled-at-utc").write_text(assembled_at + "\n")
                 init_script = support.init_script(INIT)
@@ -775,7 +844,7 @@ def build(args):
                       "root access on the VM console.", file=sys.stderr)
             root_uuid = str(uuid.uuid4()) if uefi else None
             if uefi:
-                init_script = boot.init_script(init_script, root_uuid, system_version)
+                init_script = boot.init_script(init_script, root_uuid, system_version, version)
             initramfs = make_initramfs(temp / "initroot", busybox, modules, init_script,
                                       shutdown_script, extra_applets=("findfs",) if uefi else ())
             boot_record = None
@@ -783,6 +852,11 @@ def build(args):
                 boot_record = boot.stage(tree, kernel, initramfs, modules, release=release,
                                          base=version, system=system_version, root_uuid=root_uuid,
                                          console=console)
+            extra_records, extra_network = additional_pairs(
+                entries, tree=tree, work=temp, target=target, first_base=version,
+                support=support, args=args, root_uuid=root_uuid, console=console,
+                assembled_at=assembled_at)
+            network = network or extra_network
             used = int(subprocess.run(["du", "-s", "--block-size=1", str(tree)], check=True,
                                      capture_output=True, text=True).stdout.split()[0])
             usable = parts["root_bytes"] if uefi else args.disk_size_mib * 1024 * 1024
@@ -792,7 +866,7 @@ def build(args):
             disk_layout = None
             if uefi:
                 disk_layout = boot.build_disk(disk, tree, temp, args.disk_size_mib, root_uuid,
-                                              system_version, console=console)
+                                              system_version, version, console=console)
             else:
                 with disk.open("xb") as stream:
                     stream.truncate(args.disk_size_mib * 1024 * 1024)
@@ -818,6 +892,7 @@ def build(args):
                             "boot_mode": "uefi" if uefi else "direct",
                             "hardware": hardware_record if support else None,
                             "disk_layout": disk_layout, "boot_record": boot_record,
+                            "additional_boot_records": extra_records,
                             "login_mode": args.login_mode}, indent=2) + "\n",
                 encoding="ascii",
             )
@@ -838,6 +913,8 @@ def build(args):
     print(f"Kernel:  {release}")
     print(f"Modules: {len(modules)}")
     print(f"Launch:  {output / 'run-qemu.sh'}")
+    if uefi:
+        print(f"Boot pairs: {1 + len(entries)}; default Base {version} / System {system_version}")
     print("Experimental UEFI/GPT/GRUB disk boot." if uefi else
           "Experimental direct-kernel boot; no bootloader or partitions.")
 
@@ -859,6 +936,10 @@ def main():
                         help="uefi: self-booting GPT disk with GRUB (requires System payload)")
     parser.add_argument("--system-payload", type=Path,
                         help="opt-in System payload from mojt-system-prepare.py (steps 1-6)")
+    parser.add_argument("--base-generation", help="UEFI: exact installed Base (default: source base/current)")
+    parser.add_argument("--system-generation", help="UEFI: explicit immutable System label in the NEW image")
+    parser.add_argument("--additional-generations", type=Path,
+                        help="UEFI: TOML plan of additional explicit Base/System boot pairs")
     parser.add_argument("--hardware-profile", choices=(hardware.PROFILE,),
                         help="USB/SATA boot, full modules/firmware and local console; requires UEFI/password/step 6")
     parser.add_argument("--firmware-root", type=Path,

@@ -4,16 +4,19 @@ Copyright (C) 2026 Jonas Persson
 SPDX-License-Identifier: GPL-2.0-only
 -->
 
-# Mojt Package Management Contract (draft 0.1)
+# Mojt Package Management Contract (draft 0.2)
 
-**Status:** design contract; **not implemented**. This document records
-agreed architecture and accepted high-level selector semantics:
+**Status:** accepted design contract with a partial experimental implementation.
+The current CLI implements a subset of Ports operations; the commands below
+are design examples unless identified as implemented in section 6. This
+document records the update model accepted on 2026-10-26 and the previously
+accepted high-level selector semantics:
 `@3.0` selects the newest eligible stable release in the 3.0 line, while
 `@=3.0` matches an exact package-release identifier. The full identifier
 grammar, version comparison and backend adaptation remain to be specified
 before implementing a parser. Nix is selected for Ports and, for early Mojt
 versions, for System package acquisition and shared dependency storage.
-System release/deployment formats remain open.
+System release/deployment formats and the full command grammar remain open.
 
 The guiding rule is that Mojt can update **Base, System, Kernel, and Ports
 independently**, without silently updating applications or pinned project
@@ -38,6 +41,11 @@ mpm <area> <action> [arguments]
 | `system` | System userspace, init, services, profiles | Independent release lifecycle and package construction |
 | `kernel` | Linux kernel, matching modules and boot artifacts | Separate, version-unique System component; independently selectable at boot |
 | `ports` | Applications, toolchains and their libraries | Parallel, versioned installations with independently activated profiles |
+
+Base is distributed and managed as one complete release. Its construction
+may use packages or source builds, but the installed Base is not maintained
+through individual runtime package upgrades. Build provenance remains
+inspectable. See the [Base release unit](base-format.md#accepted-base-release-unit-2026-10-26).
 
 `kernel` is a CLI area for a **System-owned component**, not an independent
 fifth OS layer. Its release identity includes a unique build identity; a
@@ -76,7 +84,7 @@ A declared `provides` is not a substitute for checking the actual ABI.
 | --- | --- |
 | `update` | Refresh local repository/release catalog metadata, like `apt update`. No packages installed, removed, or activated. |
 | `install` | Resolve and retain a selected release plus dependencies. For Ports, first installation of a directly requested application also establishes its default activation; later installs leave the existing activation unchanged. |
-| `upgrade` | Show a complete proposed upgrade **within the selected area**; after approval, install eligible releases while preserving old versions. Tracked Ports series aliases may advance; an active *series selection* stays the same. |
+| `upgrade` | Propose changes to tracked requests **within the selected area**, respecting their policies and pins. After approval, retain eligible new releases and advance permitted selections, preserving previous content. Boot-area selections take effect at the next boot; Ports selections apply to new program starts. |
 | `activate` | Select an **already installed** version for a chosen profile, or a bootable deployment for Base/System/Kernel. |
 | `remove` | Remove selected Ports installations from the current profile; if an active installation is removed, choose an installed replacement by the history rule below. Physical collection is separate and must preserve dependencies, project pins and rollback references. Base/System/Kernel deployment removal needs separate safeguards. |
 
@@ -91,6 +99,7 @@ mpm ports install gimp
 mpm ports install gimp@3.0
 mpm ports activate gimp@3.0
 mpm ports install gcc@14
+mpm ports upgrade neovim
 ```
 
 `update` operates on the **local catalog**, not installed payloads. The user
@@ -109,6 +118,10 @@ activation/reboot implications, and preserved prior versions. A `-y` flag
 may skip confirmation of **that** plan; it cannot bypass validation,
 cross-area safeguards, or version pins.
 
+Consistent verbs do not require the same unit of update or recovery in every
+area. Base uses complete releases, System uses coherent generations, and
+Ports uses independent application installations and active selections.
+
 Installation and activation are separate operations, **with one deliberate
 Ports convenience exception**: the first successful installation of a
 directly requested application, when no version of that application was
@@ -116,6 +129,9 @@ previously installed or active, also activates the selected version/series
 as the system-wide default. This first-install activation MUST be included
 in the transaction preview. Installing further versions of that application
 MUST NOT change its active selection, even if the new version is newer.
+Outside this first-install Ports exception, `install` retains content without
+advancing the selected profile/deployment. Approved `upgrade` may advance a
+selection under its stored policy; explicit `activate` chooses installed content.
 Dependency installations do not independently claim default command names.
 If a default command is already owned by unrelated/local software, MPM must
 not overwrite it; report the conflict and require explicit handling.
@@ -127,10 +143,118 @@ the running kernel's module tree. For Base/System, a deployment references
 a known compatible combination rather than forming every possible Cartesian
 product of independent versions.
 
-Rollback selects previously published, still available content. Persistent
+Boot rollback selects a previously published, still available deployment.
+Ports recovery normally selects an installed application version explicitly;
+it does not require restoring a whole Ports generation. Persistent
 `/etc`, `/var`, and future user data are not automatically rolled back.
 An old System may be incompatible with newly migrated state; reactivation
 must warn about known compatibility/security problems.
+
+### System generations and boot deployments (accepted 2026-10-26)
+
+A successful upgrade that changes System content MUST publish a new immutable
+System generation. Each generation records its exact composition, requests,
+source/catalog inputs and resolved dependency references. Previously published
+generations retain their original contents. Resolution with no changes reports
+a no-op rather than creating a duplicate content generation.
+
+Tracked requests belong to the selected logical profile. A generation kept
+for recovery is a historical result, not another independent upgrade request.
+An upgrade does not iterate over every retained generation and update each
+one. Requested policy, resolved artifact identity and selected content MUST
+remain distinguishable; an exact resolved reference alone does not imply an
+exact-version upgrade policy.
+
+A boot deployment binds exact Base, System and Kernel build identities to
+the required modules and boot artifacts. These component identities and the
+deployment identity are distinct:
+
+| Operation | New content and deployment | Preserved component choices |
+| --- | --- | --- |
+| `mpm base upgrade` | Install a complete published Base release and prepare a deployment using it | System userspace and Kernel |
+| `mpm system upgrade` | Publish a changed System generation and prepare a deployment using it | Base and Kernel |
+| `mpm kernel upgrade` | Retain the new Kernel build, matching modules and boot artifacts, and prepare a deployment using them | Base and System userspace |
+
+A Base upgrade installs an existing release identity; it does not manufacture
+a new Base release version locally. A Kernel-only change need not create a
+new System userspace release. Kernel remains a System-owned component, with
+its own MPM upgrade scope. Compatibility validation may reject a proposed
+combination or require an explicitly approved cross-area plan.
+
+After approval and validation, an upgrade advances the selected deployment
+where the stored policy permits it. Explicit pins remain effective. The
+candidate and its boot artifacts must be complete before selection; a failure
+before that commit point leaves the previously selected deployment in place.
+The initial activation model selects the next boot; it neither reboots the
+machine automatically nor switches the running root, kernel or services.
+Live System activation would require a separate, explicit design.
+
+This is the accepted user model, not the current builder's on-disk format.
+The [generation experiment](boot-generations.md) composes fresh images and
+uses System labels that also bind kernel inputs. It has not implemented
+independent Kernel selection or an updater for an existing boot disk.
+
+### Installed, selected and running state (accepted 2026-10-26)
+
+Status and transaction previews MUST distinguish:
+
+- Installed content: available exact releases and their retained dependencies.
+- Selected content: what new program starts or the next boot will use,
+  together with its selection/upgrade policy.
+- Running content: the currently booted Base/System/Kernel; already running
+  applications may likewise continue using earlier content.
+
+For boot areas, subsequent mutations use the selected deployment as their
+baseline even when another deployment is still running. If S17 is running
+and S18 is selected for the next boot, a further upgrade starts from S18's
+profile and requests. The plan shows both the running and selected identities
+and the baseline it will change. Read-only inspection can describe either.
+
+The user must be able to inspect each System generation's directly selected
+components, exact builds, source inputs, dependency closure and differences
+from a previous generation. A generation number alone is insufficient.
+Views should separate explicit choices from their dependencies. Exact
+inspection command names and output schemas remain to be specified.
+
+### Ports recovery and transaction history (accepted 2026-10-26)
+
+Ports does not require a user-managed, numbered generation of the entire
+application collection after every upgrade. Its public model is parallel
+installed versions, per-application active selections and upgrade policies,
+and readable transaction history. `mpm ports upgrade neovim` targets the
+tracked Neovim requests and shows any affected series; unrelated application
+requests and active selections remain unchanged. Immutable dependency
+objects may be acquired or reused without changing those other selections.
+
+Previous installed versions remain available. In the intended interface,
+if the exact release is available from the selected catalog, recovery can be:
+
+```sh
+mpm ports install neovim@=0.12.5
+mpm ports activate neovim@=0.12.5
+```
+
+These are contract examples, not commands accepted by the current CLI.
+If the version is already installed, only activation is needed.
+Installing another version preserves the existing active choice. Explicit
+exact activation pins the default command to that release. Separately tracked
+upgrade requests are not silently removed or rewritten by that activation.
+Historical release availability is not guaranteed by a version string alone;
+retained installed artifacts provide the normal recovery path.
+
+Transaction history MUST identify the request and policy, source/catalog,
+exact old/new builds, installed-set and active-selection changes, and retained
+previous versions. A general transaction-undo command is a possible later
+convenience, not an accepted command or a prerequisite for application-level
+recovery. Its interaction with later changes would need a separate design.
+
+MPM still publishes complete, validated profile changes atomically. Internal
+profile snapshots are an implementation mechanism, not a requirement to
+expose or permanently retain a numbered Ports generation for every operation.
+History/checkpoint retention and physical GC policy remain future work.
+Collection MUST preserve still-installed versions, dependencies, project pins
+and explicitly retained recovery references across all areas. The current
+prototype retains old profiles and roots; this decision does not add pruning.
 
 ### Ports removal and historical fallback (accepted 2026-10-24)
 
@@ -482,29 +606,39 @@ and [NixOS's separate package/service integration](https://nixos.org/manual/nixo
 6. Complete production integration of the selected Nix Ports backend and the
    interim Nix System backend; define verified host-service/Base/Kernel
    capabilities and supported direct-Nix/reconciliation behavior.
-7. Establish System release composition and how System-owned files are made
-   visible beside the Base tree. Avoid committing to an overlay/prefix
-   mechanism before testing it.
+7. Specify the release/deployment formats and production integration for the
+   accepted System-generation and independent Kernel model. The current
+   experiment's System labels are not the final public identity format.
 8. Specify transactional publication, boot success/fallback behavior and
    state migration warnings. No automatic state rollback is promised.
+9. Specify readable transaction history, retention and collection, without
+   requiring a user-visible whole-Ports generation after each operation.
+   A general Ports transaction-undo command remains optional future design.
 
 ## 6. Implementation status
 
-**Implemented today:** versioned whole-image Base packaging, multi-generation
-installation/activation and conservative preservation of persistent state;
-a QEMU VM prototype with a System-owned BusyBox init/login, a host-supplied
-kernel and a combined System/Base login banner. The opt-in System experiment
-also composes pinned Nixpkgs binaries with systemd, NetworkManager/D-Bus and
-Nix/management Python. Its three initial real VM acceptance steps passed,
-including persistent state, networking and MPM/Nix binary Ports imports with
-parallel Python versions, independent activation and a captured generation.
+**Implemented today:** host-side whole-image Base packaging and generation
+installation/selection, persistent-state preservation, and fresh UEFI images
+with explicit Base/System boot pairs. The owner verified full Mojt
+A/A → A/B → B/B → A/A boots, authenticated serial login, and controlled
+new-image build interruption with no published output and an unchanged
+completed VM disk. Both System labels used the same kernel/payload; this is
+not evidence of a different-kernel upgrade or an existing-disk updater.
 
-**Not implemented:** the complete production `mpm` contract, production System
-release packaging/composition policy, a selector parser, production project
-profiles/locks, upgrade/removal/GC policy, external capability packages,
-signed catalogs and a production boot selector. The narrow Nix adapter's
-installation/activation behavior is documented in the
-[Nix experiment](mpm-nix-experiment.md); it is not the full interface above.
+The full System VM uses systemd, NetworkManager/D-Bus, Nix and management
+Python. Its earlier VM acceptance also covered networking and binary Ports
+imports with parallel Python versions. The current `mpm` CLI accepts only
+the `ports` area: `update`, `install`, `activate`, `remove`, `status`, `list`,
+`search` and `info`. It supports exact installed artifact selection and
+history-based removal fallback; that event ordering is not yet the readable
+transaction-history interface specified above. See the
+[ordinary Ports guide](mpm-ports.md) for runnable commands and limits.
 
-This draft is a contract for future design review, not a command reference
-for existing Mojt tools.
+**Not implemented:** MPM Base/System/Kernel commands, `upgrade` (including
+Ports), release-series selectors and their full parser, readable transaction
+history, user-facing rollback/undo, production project profiles/locks,
+pruning/GC, verified external capabilities, signed catalogs, production
+deployment formats, and durable updates to existing boot disks.
+
+These accepted policies guide future implementation; this document is not
+a complete command reference. See the [roadmap](roadmap.md) for the next work.
