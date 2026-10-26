@@ -237,6 +237,28 @@ PYTHON
         journalctl --list-boots --no-pager
         journalctl --disk-usage
         echo "PASS: previous boot journal retained" ;;
+    homes-write|homes-check)
+        for name in home root; do
+            [ "$(findmnt -n -o FSROOT -T "/$name")" = "/state/$name" ] ||
+                fail "/$name is not mounted from persistent state"
+        done
+        if [ "$1" = homes-write ]; then
+            for name in home root; do
+                [ ! -e "/$name/.mojt-home-probe" ] && [ ! -L "/$name/.mojt-home-probe" ] ||
+                    fail "home probe already exists in /$name"
+            done
+            cat /proc/sys/kernel/random/boot_id >/root/.mojt-home-probe
+            cp /root/.mojt-home-probe /home/.mojt-home-probe
+            sync
+            echo "Home markers written. Boot the same disk again, then homes-check."
+        else
+            saved="$(cat /root/.mojt-home-probe)" || fail "root home probe missing"
+            [ -n "$saved" ] && [ "$saved" = "$(cat /home/.mojt-home-probe)" ] ||
+                fail "home markers differ"
+            [ "$saved" != "$(cat /proc/sys/kernel/random/boot_id)" ] ||
+                fail "another boot is required"
+            echo "PASS: /home and /root markers survived a different boot"
+        fi ;;
     persistence-write)
         [ ! -e /etc/mojt-system-persistence-test ] || fail "test marker already exists"
         [ ! -L /etc/mojt-system-persistence-test ] || fail "test marker is a symlink"
@@ -255,5 +277,5 @@ PYTHON
         current="$(cat /proc/sys/kernel/random/boot_id)" || fail "cannot read current boot ID"
         [ "$old" != "$current" ] || fail "a second boot is required"
         echo "PASS: both /etc and /var markers survived a different boot" ;;
-    *) fail "use boot, network, ports, programs, admin, diagnostics, diagnostics-network, environment, clock, journal-write, journal-check, persistence-write or persistence-check" ;;
+    *) fail "use boot, network, ports, programs, admin, diagnostics, diagnostics-network, environment, clock, journal-write, journal-check, homes-write, homes-check, persistence-write or persistence-check" ;;
 esac

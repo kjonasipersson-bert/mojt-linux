@@ -83,9 +83,12 @@ packages = "packages.txt"     # optional
   The installed `/etc/issue` is populated only if missing. A raw rootfs
   still has an empty `/etc` by design; container orchestration must arrange
   configuration if it needs a getty/issue file.
-- `/etc`, `/var`: empty directories in the image, mounted from persistent state at runtime.
+- `/etc`, `/var`, `/home`, `/root`: empty directories in the image, mounted
+  from separate persistent state directories at runtime. See the
+  [state layout](state-layout.md) for the additive home extension and migration limits.
 - `/run`, `/tmp`: runtime or temporary data, not contents carried across a Base update.
-- `/home`, `/root`, `/srv`, `/opt`, `/usr/local`: empty mount points in the prototype image; final persistence policies are still to be specified.
+- `/srv`, `/opt`, `/usr/local`: empty mount points in the prototype image;
+  final persistence policies are still to be specified.
 
 `mojt-base-install` preserves existing entries in persistent `/etc`, adds missing defaults, and does not delete them on rollback. It requires `/etc/os-release -> ../usr/lib/os-release` in the persistent state. It can switch a `base/current` symlink to an installed generation; it does not mount state automatically or change the root filesystem of a running process.
 

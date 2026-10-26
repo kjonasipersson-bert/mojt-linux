@@ -102,6 +102,28 @@ class InstallFailureTests(unittest.TestCase):
         self.assertFalse((self.target / "base/current").is_symlink())
         self.assertFalse((self.target / "releases" / f"base-{self.version}.toml").exists())
 
+    def test_install_adds_private_root_and_preserves_existing_home_state(self):
+        self.setup_existing_state()
+        home = self.target / "state/home/example"
+        home.mkdir(parents=True, mode=0o700)
+        (home / "data").write_text("personal data")
+        self.install()
+        self.assertEqual((home / "data").read_text(), "personal data")
+        self.assertEqual((home.stat().st_mode & 0o777), 0o700)
+        self.assertEqual((self.target / "state/root").stat().st_mode & 0o777, 0o700)
+
+    def test_conflicting_home_link_rejected_without_touching_its_target(self):
+        self.setup_existing_state()
+        outside = self.root / "outside"
+        outside.mkdir()
+        (outside / "data").write_text("keep")
+        (self.target / "state/home").symlink_to(outside)
+        with self.assertRaisesRegex(installer.InstallError, "mount point"):
+            self.install()
+        self.assertEqual((outside / "data").read_text(), "keep")
+        self.assertFalse((self.target / "state/root").exists())
+        self.assert_no_generation()
+
     def test_corrupted_hash_rejected_without_state_mutation(self):
         etc, var = self.setup_existing_state()
         image = self.release / "rootfs.tar.zst"

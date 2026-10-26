@@ -55,6 +55,9 @@ etc_policy = "add-missing"
 var_policy = "persistent"
 ''')
         system.write(self.target / "state/var/retained", "machine data")
+        system.write(self.target / "state/home/example/data", "personal data")
+        system.write(self.target / "state/root/.lesshst", "root history")
+        (self.target / "state/root").chmod(0o700)
         kernel = self.root / "vmlinuz-test"
         kernel.write_bytes(b"kernel A")
         modules = self.root / "modules"
@@ -113,6 +116,8 @@ var_policy = "persistent"
             self.assertEqual((tree / "base/current").readlink().as_posix(), "0.1.3")
             self.assertEqual((tree / "system/current").readlink().as_posix(), "A")
             self.assertEqual((tree / "state/var/retained").read_text(), "machine data")
+            self.assertEqual((tree / "state/home/example/data").read_text(), "personal data")
+            self.assertEqual((tree / "state/root/.lesshst").read_text(), "root history")
             for name in ("passwd", "inittab"):
                 self.assertEqual((tree / "state/etc" / name).read_bytes(),
                                  (self.target / "state/etc" / name).read_bytes())
