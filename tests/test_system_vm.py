@@ -59,13 +59,16 @@ class SystemVmTests(unittest.TestCase):
                 "systemd": ["lib/systemd/systemd", "bin/systemctl", "bin/journalctl",
                             "bin/udevadm", "bin/systemd-sysusers"],
                 "dbus": ["bin/dbus-daemon"], "networkmanager": ["bin/NetworkManager", "bin/nmcli"],
-                "curl": ["bin/curl"], "cacert": [], "iproute2": ["bin/ip"],
+                "curl": ["bin/curl"], "cacert": [], "iproute2": ["bin/ip", "bin/ss"],
                 "nix": ["bin/nix", "bin/nix-store", "bin/nix-instantiate"], "python": ["bin/python3"],
                 "shell": ["bin/bash"],
-                "kmod": ["bin/modprobe", "bin/lsmod"],
+                "kmod": ["bin/modprobe", "bin/lsmod", "bin/modinfo"],
                 "wpa-supplicant": ["bin/wpa_supplicant"], "iw": ["bin/iw"],
                 **{role: ["bin/" + name for name in names]
                    for role, names in system.ADMIN_COMMANDS.items()},
+                **{role: ["bin/" + name for name in names]
+                   for role, names in system.DIAGNOSTIC_COMMANDS.items()
+                   if role not in ("iproute2", "kmod")},
             }[role]
             base.mkdir(parents=True)
             for name in names:
@@ -89,6 +92,9 @@ class SystemVmTests(unittest.TestCase):
         system.write(self.payload / "registration", "synthetic registration")
         record = dict(format=1, step=step, packages=packages, source=source, objects=objects,
                       registration_sha256=system.file_hash(self.payload / "registration"))
+        if step >= 7:
+            system.write(self.payload / "hwdb.bin", "synthetic database" * 8)
+            record["hwdb_sha256"] = system.file_hash(self.payload / "hwdb.bin")
         system.write(self.payload / "system.json", json.dumps(record))
         return record
 
@@ -102,8 +108,8 @@ class SystemVmTests(unittest.TestCase):
     def test_steps_are_cumulative_and_explicit(self):
         self.assertEqual(set(system.roles(1)), {"systemd"})
         self.assertTrue(set(system.roles(1)) < set(system.roles(2)) < set(system.roles(3))
-                        < set(system.roles(4)) < set(system.roles(5)) < set(system.roles(6)))
-        for value in (0, 7, True, "1"):
+                        < set(system.roles(4)) < set(system.roles(5)) < set(system.roles(6)) < set(system.roles(7)))
+        for value in (0, 8, True, "1"):
             with self.assertRaises(ValueError):
                 system.roles(value)
 
@@ -146,6 +152,129 @@ class SystemVmTests(unittest.TestCase):
         self.assertFalse(output.exists())
         self.assertEqual(list(self.root.glob(".mojt-vm-*")), [])
         self.assertEqual(system.tree_hash(self.tree), before)
+
+    def test_step7_adds_diagnostics_preserving_base_credentials_and_no_privileged_modes(self):
+        before = system.tree_hash(self.tree / "base")
+        passwd = (self.tree / "state/etc/passwd").read_bytes()
+        directory, record = self.install(7, "password")
+        self.assertEqual(before, system.tree_hash(self.tree / "base"))
+        self.assertEqual(passwd, (self.tree / "state/etc/passwd").read_bytes())
+        self.assertEqual(record["packages"]["dnsutils"]["attribute"], "bind.dnsutils")
+        expected = {name for names in system.DIAGNOSTIC_COMMANDS.values() for name in names}
+        self.assertEqual(set((directory / "diagnostic-commands").read_text().splitlines()), expected)
+        for role, names in system.DIAGNOSTIC_COMMANDS.items():
+            for name in names:
+                link = directory / "bin" / name
+                self.assertEqual(str(link.readlink()), record["packages"][role]["output"] + "/bin/" + name)
+                self.assertFalse(system.virtual_file(self.tree, str(link.readlink())).stat().st_mode & 0o6000)
+        self.assertFalse((directory / "units/named.service").exists())
+        self.assertEqual((self.tree / "state/etc/udev/hwdb.bin").readlink(),
+                         Path("/run/mojt-system/hwdb.bin"))
+        self.assertEqual((directory / "hwdb.bin").read_bytes(), (self.payload / "hwdb.bin").read_bytes())
+        self.assertNotIn("ping_group_range", (directory / "setup").read_text())
+        subprocess.run(["sh", "-n", str(directory / "bin/mojt-system-check")], check=True)
+
+    def test_step6_does_not_export_step7_diagnostics(self):
+        directory, _ = self.install(6)
+        self.assertFalse((directory / "diagnostic-commands").exists())
+        for name in ("ping", "dig", "strace", "ss", "modinfo"):
+            self.assertFalse((directory / "bin" / name).is_symlink())
+
+    def test_hwdb_compilation_uses_selected_sources_and_private_root(self):
+        selected = self.root / "selected-systemd"
+        system.write(selected / "lib/udev/hwdb.d/20-usb.hwdb", "usb:v1234*\n ID_VENDOR_FROM_DATABASE=Test\n")
+        compiler = selected / "bin/systemd-hwdb"
+        system.write(compiler, '#!/bin/sh\nroot="${1#--root=}"\n'
+                     'test "$2" = update || exit 1\n'
+                     'test -f "$root/etc/udev/hwdb.d/20-usb.hwdb" || exit 1\n'
+                     'mkdir -p "$root/etc/systemd/hwdb"\n'
+                     'printf "%0100d" 0 >"$root/etc/systemd/hwdb/hwdb.bin"\n', 0o755)
+        work = self.root / "compile-work"
+        digest = system.prepare_hwdb(self.payload, {"systemd": {"output": str(selected)}}, work)
+        self.assertEqual(digest, system.file_hash(self.payload / "hwdb.bin"))
+        self.assertTrue((work / "hwdb-root/etc/udev/hwdb.d/20-usb.hwdb").is_file())
+        system.write(compiler, "#!/bin/sh\nexit 0\n", 0o755)
+        with self.assertRaisesRegex(ValueError, "no valid database"):
+            system.prepare_hwdb(self.payload, {"systemd": {"output": str(selected)}}, self.root / "no-output")
+
+    def test_hwdb_tampering_and_linked_persistent_configuration_are_rejected(self):
+        record = self.fixture(7)
+        (self.payload / "hwdb.bin").write_text("modified" * 15)
+        with self.assertRaisesRegex(ValueError, "System hwdb changed"):
+            system.load_payload(self.payload)
+        (self.tree / "state/etc/udev").symlink_to(self.root)
+        with mock.patch.object(system.os, "chown"):
+            with self.assertRaisesRegex(ValueError, "unsafe persistent udev"):
+                system.install(self.tree, self.payload, record, self.busybox, "password", REPO)
+
+    def test_step7_rejects_wrong_dns_output_even_with_valid_transfer_hash(self):
+        record = self.fixture(7)
+        output = record["packages"]["dnsutils"]["output"]
+        root = self.payload / output.lstrip("/")
+        (root / "bin/dig").unlink()
+        system.write(root / "bin/named", "#!/bin/sh\nexit 0\n", 0o755)
+        for obj in record["objects"]:
+            if obj["path"] == output:
+                obj["tree_sha256"] = system.tree_hash(root)
+        system.write(self.payload / "system.json", json.dumps(record))
+        with self.assertRaisesRegex(ValueError, "missing dnsutils executable"):
+            system.load_payload(self.payload)
+
+    def test_diagnostic_checker_executes_tools_and_cleans_up_on_failure(self):
+        guest = self.root / "diagnostic-guest"
+        tools = guest / "run/mojt-system/bin"
+        log = self.root / "calls"
+        for name in ("cat", "grep", "mktemp", "rm", "rmdir", "head", "sed"):
+            tools.mkdir(parents=True, exist_ok=True)
+            (tools / name).symlink_to(shutil.which(name))
+        system.write(guest / "run/mojt-system/record.json", "{}")
+        system.write(guest / "run/mojt-system/environment", f"export PATH={tools}\n")
+        system.write(guest / "proc/1/comm", "systemd\n")
+        names = [name for group in system.DIAGNOSTIC_COMMANDS.values() for name in group]
+        system.write(guest / "run/mojt-system/diagnostic-commands", "\n".join(names))
+        for path in ("etc", "var", "tmp", "lib/modules/test-release"):
+            (guest / path).mkdir(parents=True)
+        commands = {name: "exit 0" for name in names}
+        commands.update(id="echo 0", systemctl="exit 0", journalctl="exit 0", uname="echo test-release")
+        commands["strace"] = 'printf "execve(test) = 0\\n+++ exited with 0 +++\\n" >"$2"'
+        for name, body in commands.items():
+            system.write(tools / name, f"#!/bin/sh\necho '{name}' \"$@\" >>'{log}'\n{body}\n", 0o755)
+        source = (REPO / "tests/check-mojt-system.sh").read_text()
+        for path in ("/run/mojt-system", "/proc/1/comm", "/lib/modules", "/tmp/mojt-diagnostics", "/etc", "/var"):
+            source = source.replace(path, str(guest / path.lstrip("/")))
+        script = guest / "check.sh"
+        script.write_text(source)
+        environment = {**os.environ, "PATH": str(tools), "MOJT_TEST_INTERFACE": "eth0"}
+        result = subprocess.run(["/bin/sh", str(script), "diagnostics"], capture_output=True, text=True, env=environment)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("PASS: System diagnostics", result.stdout)
+        self.assertIn("ping -n -c 2 -W 2 127.0.0.1", log.read_text())
+        self.assertIn("modinfo -k test-release ext4", log.read_text())
+        self.assertEqual(list((guest / "tmp").iterdir()), [])
+        system.write(tools / "strace", "#!/bin/sh\nexit 1\n", 0o755)
+        result = subprocess.run(["/bin/sh", str(script), "diagnostics"], capture_output=True, text=True, env=environment)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("PASS: System diagnostics", result.stdout)
+        self.assertEqual(list((guest / "tmp").iterdir()), [])
+
+        # Network diagnostics must reject an empty successful DNS response.
+        system.write(tools / "mojt-system-check", "#!/bin/sh\nexit 0\n", 0o755)
+        result = subprocess.run(["/bin/sh", str(script), "diagnostics-network"],
+                                capture_output=True, text=True, env=environment)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("DNS returned no answer", result.stderr)
+        system.write(tools / "dig", "#!/bin/sh\necho 203.0.113.1\n", 0o755)
+        result = subprocess.run(["/bin/sh", str(script), "diagnostics-network"],
+                                capture_output=True, text=True, env=environment)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("PASS: DNS tools", result.stdout)
+        self.assertIn("ethtool -i eth0", log.read_text())
+        system.write(tools / "lsusb", '#!/bin/sh\nprintf "unable to initialize usb spec" >&2\nexit 0\n', 0o755)
+        result = subprocess.run(["/bin/sh", str(script), "diagnostics"], capture_output=True, text=True, env=environment)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("USB enumeration emitted diagnostics", result.stderr)
+        self.assertNotIn("PASS: System diagnostics", result.stdout)
+        self.assertEqual(list((guest / "tmp").iterdir()), [])
 
     def test_transfer_digest_covers_bytes_mode_and_link_target(self):
         data = self.root / "objects"

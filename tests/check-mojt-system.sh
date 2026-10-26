@@ -124,6 +124,60 @@ EX
         cleanup_admin
         trap - 0 HUP INT TERM
         echo "PASS: System process, memory, disk, mount, pager and vi tools" ;;
+    diagnostics)
+        PATH=/run/mojt-system/bin:/usr/bin:/bin
+        LC_ALL=C
+        export PATH LC_ALL
+        boot_check
+        [ -r /run/mojt-system/diagnostic-commands ] || fail "requires a step 7 VM"
+        for name in $(cat /run/mojt-system/diagnostic-commands); do
+            [ "$(command -v "$name")" = "/run/mojt-system/bin/$name" ] ||
+                fail "$name is not available from System"
+        done
+        # Local checks do not depend on Internet ICMP forwarding in QEMU user networking.
+        ping -n -c 2 -W 2 127.0.0.1
+        tracepath -n -m 2 127.0.0.1
+        arping -V
+        dig -v
+        nslookup -version
+        ethtool --version
+        lspci -nn
+        probe="$(mktemp -d /tmp/mojt-diagnostics.XXXXXX)"
+        cleanup_diagnostics() { rm -f "$probe/trace" "$probe/usb-error"; rmdir "$probe"; }
+        trap cleanup_diagnostics 0
+        trap 'exit 1' HUP INT TERM
+        if ! lsusb -t 2>"$probe/usb-error"; then
+            cat "$probe/usb-error" >&2
+            fail "USB enumeration failed"
+        fi
+        if [ -s "$probe/usb-error" ]; then
+            cat "$probe/usb-error" >&2
+            fail "USB enumeration emitted diagnostics"
+        fi
+        ss -lntu
+        release="$(uname -r)"
+        [ -d "/lib/modules/$release" ] || fail "matching runtime modules missing; use hardware-profile build"
+        modinfo -k "$release" ext4
+        strace -o "$probe/trace" /run/mojt-system/busybox true
+        grep -q 'execve(' "$probe/trace" || fail "strace did not record execve"
+        grep -Fq '+++ exited with 0 +++' "$probe/trace" || fail "traced command did not exit successfully"
+        cleanup_diagnostics
+        trap - 0 HUP INT TERM
+        echo "PASS: System diagnostics, loopback ICMP, hardware enumeration, modules and syscall tracing" ;;
+    diagnostics-network)
+        PATH=/run/mojt-system/bin:/usr/bin:/bin
+        LC_ALL=C
+        export PATH LC_ALL
+        [ -r /run/mojt-system/diagnostic-commands ] || fail "requires a step 7 VM"
+        /run/mojt-system/bin/mojt-system-check network
+        answer="$(dig +time=3 +tries=1 +short cache.nixos.org A)"
+        [ -n "$answer" ] || fail "DNS returned no answer"
+        printf '%s\n' "$answer"
+        nslookup -timeout=3 -retry=1 cache.nixos.org
+        device="${MOJT_TEST_INTERFACE:-$(nmcli -t -f DEVICE,TYPE device status | sed -n 's/:ethernet$//p' | head -n 1)}"
+        [ -n "$device" ] || fail "no interface for driver inspection"
+        ethtool -i "$device"
+        echo "PASS: DNS tools and network driver inspection" ;;
     persistence-write)
         [ ! -e /etc/mojt-system-persistence-test ] || fail "test marker already exists"
         [ ! -L /etc/mojt-system-persistence-test ] || fail "test marker is a symlink"
@@ -142,5 +196,5 @@ EX
         current="$(cat /proc/sys/kernel/random/boot_id)" || fail "cannot read current boot ID"
         [ "$old" != "$current" ] || fail "a second boot is required"
         echo "PASS: both /etc and /var markers survived a different boot" ;;
-    *) fail "use boot, network, ports, programs, admin, persistence-write or persistence-check" ;;
+    *) fail "use boot, network, ports, programs, admin, diagnostics, diagnostics-network, persistence-write or persistence-check" ;;
 esac

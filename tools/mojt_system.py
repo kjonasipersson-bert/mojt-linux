@@ -10,6 +10,7 @@ from pathlib import Path, PurePosixPath
 import re
 import shutil
 import stat
+import subprocess
 
 
 STORE_NAME = r"[0-9abcdfghijklmnpqrsvwxyz]{32}-[A-Za-z0-9+._?=-]+"
@@ -21,12 +22,24 @@ ROLES = {
     4: {"procps": "procps", "util-linux": "util-linux", "less": "less", "editor": "nvi"},
     5: {"shell": "bashInteractive"},
     6: {"kmod": "kmod", "wpa-supplicant": "wpa_supplicant", "iw": "iw"},
+    7: {"iputils": "iputils", "dnsutils": "bind.dnsutils", "ethtool": "ethtool",
+        "pciutils": "pciutils", "usbutils": "usbutils", "strace": "strace"},
 }
 ADMIN_COMMANDS = {
     "procps": ("ps", "top", "free", "pgrep", "uptime"),
     "util-linux": ("lsblk", "findmnt", "mount", "umount", "dmesg", "blkid"),
     "less": ("less",),
     "editor": ("vi", "ex"),
+}
+DIAGNOSTIC_COMMANDS = {
+    "iputils": ("ping", "tracepath", "arping"),
+    "dnsutils": ("dig", "nslookup"),
+    "ethtool": ("ethtool",),
+    "pciutils": ("lspci",),
+    "usbutils": ("lsusb",),
+    "strace": ("strace",),
+    "iproute2": ("ss",),
+    "kmod": ("modinfo",),
 }
 VERSION = "0.2"
 BASH_RC = r'''# Mojt System interactive Bash defaults; user startup files may override these.
@@ -61,7 +74,7 @@ def require(condition, message):
 
 
 def roles(step):
-    require(type(step) is int and step in ROLES, "System step must be an integer from 1 to 6")
+    require(type(step) is int and step in ROLES, "System step must be an integer from 1 to 7")
     return {key: value for n in range(1, step + 1) for key, value in ROLES[n].items()}
 
 
@@ -75,6 +88,31 @@ def store_path(value):
 def file_hash(path):
     with path.open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def prepare_hwdb(payload, packages, work):
+    """Compile selected System data in a private root, never the host /etc."""
+    selected = Path(packages["systemd"]["output"])
+    compiler = selected / "bin/systemd-hwdb"
+    sources = selected / "lib/udev/hwdb.d"
+    require(compiler.is_file() and os.access(compiler, os.X_OK), "missing System systemd-hwdb")
+    require(sources.is_dir(), "missing System hwdb sources")
+    root = work / "hwdb-root"
+    dest = root / "etc/udev/hwdb.d"
+    dest.mkdir(parents=True)
+    files = sorted(sources.glob("*.hwdb"))
+    require(files, "empty System hwdb sources")
+    for source in files:
+        require(source.is_file(), "invalid System hwdb source")
+        shutil.copyfile(source, dest / source.name)
+    subprocess.run([str(compiler), "--root=" + str(root), "update"], check=True)
+    result = next((p for p in (root / "etc/systemd/hwdb/hwdb.bin",
+                               root / "etc/udev/hwdb.bin") if p.is_file()),
+                  root / "etc/udev/hwdb.bin")
+    require(result.is_file() and not result.is_symlink() and result.stat().st_size > 80,
+            "System hwdb compiler produced no valid database")
+    shutil.copyfile(result, payload / "hwdb.bin")
+    return file_hash(payload / "hwdb.bin")
 
 
 def tree_hash(root):
@@ -196,6 +234,14 @@ def load_payload(path):
         for role, name in (("kmod", "modprobe"), ("kmod", "lsmod"),
                            ("wpa-supplicant", "wpa_supplicant"), ("iw", "iw")):
             executable(path, record, role, "bin/" + name, "sbin/" + name)
+    if record["step"] >= 7:
+        database = path / "hwdb.bin"
+        require(database.is_file() and not database.is_symlink() and database.stat().st_size > 80,
+                "missing compiled System hwdb; export a new step 7 payload")
+        require(file_hash(database) == record.get("hwdb_sha256"), "System hwdb changed")
+        for role, commands in DIAGNOSTIC_COMMANDS.items():
+            for name in commands:
+                executable(path, record, role, "bin/" + name, "sbin/" + name)
     return record
 
 
@@ -446,6 +492,25 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
                  "Type=dbus\nBusName=fi.w1.wpa_supplicant1\nRestart=on-failure",
                  "Requires=dbus.service\nAfter=dbus.service\nBefore=NetworkManager.service\n"))
         wanted += ["wpa_supplicant.service"]
+    if step >= 7:
+        shutil.copyfile(payload / "hwdb.bin", system / "hwdb.bin")
+        (system / "hwdb.bin").chmod(0o644)
+        udev_config = tree / "state/etc/udev"
+        require(not udev_config.is_symlink() and
+                (not udev_config.exists() or udev_config.is_dir()), "unsafe persistent udev directory")
+        udev_config.mkdir(exist_ok=True)
+        database = udev_config / "hwdb.bin"
+        if not database.exists() and not database.is_symlink():
+            database.symlink_to("/run/mojt-system/hwdb.bin")
+        else:
+            require((database.is_symlink() and os.readlink(database) == "/run/mojt-system/hwdb.bin") or
+                    (not database.is_symlink() and database.is_file()),
+                    "conflicting persistent hwdb configuration")
+        for role, commands in DIAGNOSTIC_COMMANDS.items():
+            for name in commands:
+                export(name, role, "bin/" + name, "sbin/" + name)
+        write(system / "diagnostic-commands", "\n".join(
+            name for commands in DIAGNOSTIC_COMMANDS.values() for name in commands) + "\n")
     setup += ['echo "Mojt System setup complete"']
     write(system / "setup", "\n".join(setup) + "\n", 0o755)
     put_unit("mojt-setup.service", unit("Mojt System setup", "/run/mojt-system/setup",
