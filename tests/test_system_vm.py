@@ -221,7 +221,39 @@ class SystemVmTests(unittest.TestCase):
         bus = (directory / "dbus.conf").read_text()
         ET.fromstring(bus)
         self.assertIn('own="org.freedesktop.timesync1"', bus)
+        quiet = (directory / "units/mojt-console-quiet.service").read_text()
+        self.assertIn("Before=mojt-console.service mojt-serial-console.service", quiet)
+        self.assertIn("mojt-console-quiet.service", (directory / "units/mojt.target").read_text())
+        subprocess.run(["sh", "-n", str(directory / "console-quiet")], check=True)
         subprocess.run(["sh", "-n", str(directory / "bin/mojt-console-size")], check=True)
+
+    def test_journal_check_normalizes_kernel_uuid_for_journalctl(self):
+        guest = self.root / "journal-guest"
+        tools = guest / "tools"
+        for name in ("cat", "grep", "tr"):
+            tools.mkdir(parents=True, exist_ok=True)
+            (tools / name).symlink_to(shutil.which(name))
+        for name, body in {"id": "echo 0", "systemctl": "exit 0"}.items():
+            system.write(tools / name, "#!/bin/sh\n" + body + "\n", 0o755)
+        log = guest / "calls"
+        system.write(tools / "journalctl", '#!/bin/sh\nprintf "%s\\n" "$*" >>"' + str(log) + '"\n'
+                     'case "$1" in --boot=*) echo "Mojt journal persistence probe" ;; esac\n', 0o755)
+        system.write(guest / "run/mojt-system/record.json", "{}")
+        system.write(guest / "run/mojt-system/environment", f"export PATH={tools}\n")
+        system.write(guest / "proc/1/comm", "systemd\n")
+        system.write(guest / "proc/sys/kernel/random/boot_id", "22222222-2222-4222-8222-222222222222\n")
+        system.write(guest / "var/lib/mojt/journal-probe-boot", "0dcf711c-c436-48fc-9bfd-eefd269fcb73\n")
+        (guest / "etc").mkdir()
+        source = (REPO / "tests/check-mojt-system.sh").read_text()
+        for path in ("/run/mojt-system", "/proc/1/comm", "/proc/sys/kernel/random/boot_id", "/var", "/etc"):
+            source = source.replace(path, str(guest / path.lstrip("/")))
+        script = guest / "check.sh"
+        script.write_text(source)
+        result = subprocess.run(["/bin/sh", str(script), "journal-check"], text=True,
+                                capture_output=True, env={**os.environ, "PATH": str(tools)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--boot=0dcf711cc43648fc9bfdeefd269fcb73", log.read_text())
+        self.assertIn("PASS: previous boot journal retained", result.stdout)
 
     @unittest.skipUnless(shutil.which("dbus-daemon"), "requires dbus-daemon")
     def test_step8_policy_is_accepted_by_a_real_private_dbus_daemon(self):

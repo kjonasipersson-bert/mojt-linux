@@ -158,3 +158,38 @@ with the generated policy, changing only host-test identity/transport.
 This is a builder-only correction; the exported step 8 payload can be reused
 with the updated checkout to build a fresh image. No corrected real bus or NTP
 acceptance is claimed until the owner boots the corrected image.
+
+## Owner tools-B findings and follow-up
+
+The corrected image at `/home/jonasp/mojt-console-time-fixed.qeCpek` booted
+with functioning D-Bus. The owner observed initial NTP synchronization under A
+at 2026-10-26 15:32:06 UTC, then created the journal/state markers and installed
+hello. On B, the supplied output confirms kernel/modules 7.2.9+deb13-amd64,
+terminal geometry 72x138 and confirmed timesyncd synchronization to
+194.58.204.148, with two received packets. These are actual owner VM results.
+
+The initial journal-check rejected the saved hyphenated /proc boot UUID before
+querying journal contents. The checker now validates and normalizes it to the
+32-character form accepted by journalctl. The remainder of the owner's chained
+checks did not execute after that failure; persistence/Ports checks for B and
+return acceptance remain pending. This was not evidence of journal data loss.
+
+Informational kernel driver messages could still arrive after the serial login
+prompt because the serial getty was ordered after setup, not after hardware
+loading. A new oneshot now sets the console printk threshold before both local
+and adapted serial gettys. Messages remain in the kernel ring buffer/journal;
+errors may still appear on the console. It intentionally does not silence all
+boot diagnostics. This correction requires a new image to verify its boot order.
+
+The image has no logind yet. The ordinary systemctl poweroff command reports
+missing org.freedesktop.login1 before its successful fallback. For the current
+root-operated VM, use the equivalent direct PID 1 target request:
+
+```sh
+systemctl start poweroff.target --job-mode=replace-irreversibly --no-block
+```
+
+This uses normal systemd shutdown ordering, without --force. It is a temporary
+root administration recipe, not an ordinary-user authorization/inhibitor policy.
+Full logind/session integration belongs to the account stage. Do not treat the
+absence of logind as a reason to bypass filesystem shutdown.

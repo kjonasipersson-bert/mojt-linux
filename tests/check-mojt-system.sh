@@ -199,6 +199,9 @@ EX
         boot_check
         old="$(cat /var/lib/mojt/journal-probe-boot)" || fail "journal probe missing"
         [ "$old" != "$(cat /proc/sys/kernel/random/boot_id)" ] || fail "another boot is required"
+        old="$(printf '%s' "$old" | tr -d '-')"
+        [ "${#old}" -eq 32 ] || fail "invalid saved journal boot ID"
+        case "$old" in *[!0-9a-f]*) fail "invalid saved journal boot ID" ;; esac
         text="$(journalctl --boot="$old" --identifier=mojt-journal-probe --no-pager --output=cat)"
         printf '%s\n' "$text" | grep -Fxq 'Mojt journal persistence probe' || fail "previous boot's journal marker missing"
         journalctl --list-boots --no-pager

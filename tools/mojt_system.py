@@ -555,7 +555,12 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
                  "/run/mojt-system/bin/journalctl --flush", "Type=oneshot\nRemainAfterExit=yes",
                  "Requires=systemd-journald.service mojt-setup.service\n"
                  "After=systemd-journald.service mojt-setup.service\n"))
-        wanted += ["systemd-timesyncd.service", "mojt-journal-flush.service"]
+        write(system / "console-quiet", "#!/bin/sh\nset -eu\nprintf '4\\n' >/proc/sys/kernel/printk\n", 0o755)
+        put_unit("mojt-console-quiet.service", unit("Mojt console kernel log threshold",
+                 "/run/mojt-system/console-quiet", "Type=oneshot\nRemainAfterExit=yes",
+                 "Requires=mojt-setup.service\nAfter=mojt-setup.service\n"
+                 "Before=mojt-console.service mojt-serial-console.service\n"))
+        wanted += ["systemd-timesyncd.service", "mojt-journal-flush.service", "mojt-console-quiet.service"]
         dbus_config = system / "dbus.conf"
         policy = ('  <policy user="systemd-timesync">\n'
                   '    <allow own="org.freedesktop.timesync1"/>\n'
