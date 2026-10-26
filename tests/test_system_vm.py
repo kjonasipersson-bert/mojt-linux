@@ -326,9 +326,12 @@ class SystemVmTests(unittest.TestCase):
         self.assertEqual((self.tree / "state/etc/localtime").read_text(), "existing timezone")
         self.assertEqual((self.tree / "state/etc/timezone").read_text(), "Existing/Zone\n")
         self.assertTrue((directory / "bin/man").is_symlink())
+        self.assertEqual((directory / "tests/run-mpm-nix-upgrade.py").read_bytes(),
+                         (REPO / "tests/run-mpm-nix-upgrade.py").read_bytes())
         self.assertIn("IgnoreSIGPIPE=no", (directory / "units/mojt-console.service").read_text())
         paths = (directory / "manual-path").read_text().strip().split(":")
-        self.assertEqual(set(paths), {p["output"] + "/share/man" for role, p in record["packages"].items()
+        self.assertEqual((directory / "share/man/man1/mpm.1").read_text(), (REPO / "man/mpm.1").read_text())
+        self.assertEqual(set(paths), {"/run/mojt-system/share/man"} | {p["output"] + "/share/man" for role, p in record["packages"].items()
                                      if role == "man-db" or role.startswith("manual-")})
         environment = directory / "environment"
         code = '. "$1"; printf "%s\\n" "$MANPATH" "$TZDIR" "${TZ-unset}" "${LOCALE_ARCHIVE-unset}"'

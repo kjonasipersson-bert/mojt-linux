@@ -50,8 +50,8 @@ updates to an existing boot disk or power-loss recovery.
 | Priority | Track | Next work |
 | --- | --- | --- |
 | 1 | Base/System generations | VM Base/System and different-kernel return experiments completed. Retain the reference images; production boot-disk updates, compatibility and automatic fallback remain future work. |
-| 2 | More complete System | Diagnostics and console/time/journal acceptance completed. Timezone/UTF-8/manual checks accepted on System A; separate A/B checks deferred to the next stage. The account A/B/A run now preserves new users, identity and home data, with working PAM/sudo, session cleanup and shared Ports. Superseded-password rejection is owner-confirmed. Finish PR review before the MPM track. |
-| 3 | MPM development | Implement the accepted upgrade policies, explicit request/selection state and readable history; develop project locks, then retention/pruning and physical collection. |
+| 2 | More complete System | Diagnostics and console/time/journal acceptance completed. Timezone/UTF-8/manual checks accepted on System A; separate A/B checks deferred to the next stage. The account A/B/A run now preserves new users, identity and home data, with working PAM/sudo, session cleanup and shared Ports. Superseded-password rejection is owner-confirmed. Account integration merged; retain its reference image. |
+| 3 | MPM development | Review/test the first Ports attribute-upgrade engine, explicit request/selection state, committed history and bundled MPM manual. Then specify full version/series adapters and System deployment compatibility; develop project locks before pruning and physical collection. |
 | 4 | Build System on Mojt | Run the existing build tools inside Mojt with pinned inputs and a controlled build environment, producing a new Mojt image. |
 | 5 | Own-built Linux kernel | Establish a documented kernel build/configuration and package matching modules as a versioned Kernel input; start near the working Debian configuration. |
 
@@ -76,8 +76,10 @@ recommendations for discussion, not accepted policy or implemented capabilities.
 ## Implementation boundaries
 
 The current MPM CLI implements a subset of Ports commands. It does not yet
-provide `upgrade`, Base/System/Kernel operations, release-series selectors,
-readable transaction history, general undo, production project locks or GC.
+provide Base/System/Kernel operations, release-series selectors, general undo,
+production project locks or GC. The first Ports upgrade/history implementation
+uses saved Nix attributes, numeric version ordering and format-2 request/policy
+metadata; real Distrobox/VM acceptance is pending.
 System release/deployment schemas, independent Kernel selection, compatibility
 enforcement and production boot publication/fallback remain work to specify
 and implement. Future status/plans must show installed, selected and running

@@ -6,6 +6,7 @@
 
 import argparse
 import copy
+from datetime import datetime, timezone
 import fcntl
 import json
 import os
@@ -240,7 +241,8 @@ def load_state(root):
     generation = root / selected
     require(not generation.is_symlink(), "unmanaged generation")
     state = json.loads((generation / "state.json").read_text())
-    require(state["format"] == 1, "unsupported state format")
+    require(type(state["format"]) is int and state["format"] in (1, 2), "unsupported state format")
+    validate_model(state)
     bin_dir = generation / "bin"
     require(bin_dir.is_dir() and not bin_dir.is_symlink(), "unmanaged profile bin")
     expected = command_aliases(state)
@@ -278,17 +280,102 @@ def installed_selection(state, request):
     return matches[0]
 
 
-def plan(state, action, catalog=None, names=(), request=None, records=None, inactive=False):
+def model(state):
+    if state["format"] == 1:
+        state["format"] = 2
+        state["requests"] = {}
+        state["selection_policy"] = {name: None for name in state["active"]}
+    return state
+
+
+def request_id(record):
+    return record["name"] + ":" + record["attribute"]
+
+
+def validate_model(state):
+    if state["format"] == 1:
+        return
+    require(isinstance(state.get("requests"), dict) and isinstance(state.get("selection_policy"), dict),
+            "invalid request/selection state")
+    require(set(state["selection_policy"]) == set(state["active"]), "selection policy differs from active names")
+    for key, request in state["requests"].items():
+        require(set(request) == {"name", "attribute", "policy", "target"} and
+                request["policy"] == "attribute" and key == request_id(request), "invalid tracked request")
+        require(re.fullmatch(ATTRIBUTE, request["attribute"]) and re.fullmatch(ATTRIBUTE, request["name"]),
+                "invalid tracked attribute/name")
+        target = state["installed"].get(request["target"])
+        require(target is not None and target["name"] == request["name"] and
+                target["attribute"] == request["attribute"], "tracked target missing or mismatched")
+    for name, key in state["selection_policy"].items():
+        if key is not None:
+            require(key in state["requests"] and state["requests"][key]["name"] == name and
+                    state["requests"][key]["target"] == state["active"][name], "active request target differs")
+
+
+def version_order(value):
+    require(re.fullmatch(r"[0-9]+(?:\.[0-9]+)*", value),
+            "version ordering needs an explicit adapter for this release; refusing to guess: " + value)
+    parts = [int(x) for x in value.split(".")]
+    while len(parts) > 1 and parts[-1] == 0:
+        parts.pop()
+    return tuple(parts)
+
+
+def upgrade_plan(state, names):
+    require(state["catalog"] is not None, "run mpm ports update first")
+    require(state["format"] == 2 and state["requests"],
+            "no recorded upgrade requests; explicitly install the intended name/attribute first")
+    known = {r["name"] for r in state["requests"].values()}
+    require(set(names) <= known, "upgrade name has no recorded request")
+    proposed = copy.deepcopy(state)
+    for rid, request in state["requests"].items():
+        if names and request["name"] not in names:
+            continue
+        old_key = request["target"]
+        old = state["installed"][old_key]
+        catalog = state["catalog"]
+        cached = catalog["packages"].get(request["name"])
+        candidate = (copy.deepcopy(cached) if cached and cached["attribute"] == request["attribute"] else
+                     resolve_package(catalog["source"], request["name"], request["attribute"]))
+        new_key = identity(candidate)
+        if new_key == old_key:
+            continue
+        if candidate["version"] != old["version"]:
+            require(version_order(candidate["version"]) >= version_order(old["version"]),
+                    "catalog proposes a downgrade; keep the old request target")
+        if new_key in proposed["installed"]:
+            existing = proposed["installed"][new_key]
+            require(candidate["commands"] is None or existing["commands"] == candidate["commands"],
+                    "exports for retained object changed")
+        else:
+            proposed["installed"][new_key] = candidate
+            remember(proposed, "installed", new_key)
+        proposed["requests"][rid]["target"] = new_key
+        if state["selection_policy"].get(request["name"]) == rid:
+            proposed["active"][request["name"]] = new_key
+            remember(proposed, "activated", new_key)
+    validate_model(proposed)
+    command_aliases(proposed)
+    return proposed
+
+
+def plan(state, action, catalog=None, names=(), request=None, records=None, inactive=False, follow=False):
+    if action == "upgrade":
+        return upgrade_plan(state, names)
     proposed = copy.deepcopy(state)
     if action == "update":
         proposed["catalog"] = catalog
     elif action == "install":
         require(state["catalog"] is not None, "run mpm ports update first")
         available = records if records is not None else state["catalog"]["packages"]
+        model(proposed)
         for name in names or available:
             require(name in available, f"port not in local catalog: {name}")
             record = copy.deepcopy(available[name])
             key = identity(record)
+            rid = request_id(record)
+            proposed["requests"].setdefault(rid, dict(name=record["name"], attribute=record["attribute"],
+                                                      policy="attribute", target=key))
             existing = proposed["installed"].get(key)
             if existing:
                 require(record["commands"] is None or existing["commands"] == record["commands"],
@@ -301,10 +388,16 @@ def plan(state, action, catalog=None, names=(), request=None, records=None, inac
             first = not any(r["name"] == name for r in state["installed"].values())
             if first and not inactive:
                 proposed["active"][name] = key
+                proposed["selection_policy"][name] = rid
                 remember(proposed, "activated", key)
     elif action == "activate":
         key = installed_selection(state, request)
         name = state["installed"][key]["name"]
+        model(proposed)
+        rid = request_id(state["installed"][key])
+        can_follow = rid in proposed["requests"] and proposed["requests"][rid]["target"] == key
+        require(not follow or can_follow, "--follow requires the current target of a recorded request")
+        proposed["selection_policy"][name] = rid if can_follow and (follow or "@" not in request) else None
         if state["active"].get(name) != key:
             history(proposed)
             proposed["active"][name] = key
@@ -330,6 +423,22 @@ def plan(state, action, catalog=None, names=(), request=None, records=None, inac
                 remember(proposed, "activated", fallback)
             else:
                 del proposed["active"][name]
+    if action == "remove":
+        model(proposed)
+        for rid, tracked in list(proposed["requests"].items()):
+            if tracked["target"] not in proposed["installed"]:
+                candidates = [k for k, r in proposed["installed"].items()
+                              if r["name"] == tracked["name"] and r["attribute"] == tracked["attribute"]]
+                if candidates:
+                    tracked["target"] = max(candidates, key=lambda k: (events["activated"].get(k, 0), events["installed"].get(k, 0)))
+                else:
+                    del proposed["requests"][rid]
+        proposed["selection_policy"] = {name: rid if rid in proposed["requests"] and proposed["requests"][rid]["target"] == key else None
+                                        for name, key in proposed["active"].items()
+                                        for rid in [proposed["selection_policy"].get(name)]}
+    if proposed != state:
+        model(proposed)
+    validate_model(proposed)
     command_aliases(proposed)
     return proposed
 
@@ -360,6 +469,12 @@ def describe(old, new):
             print(f"Activate: {name} -> {key}")
     for name in old["active"].keys() - new["active"].keys():
         print(f"Deactivate: {name}; no installed replacement")
+    if old["format"] != new["format"]:
+        print("Metadata format 1 -> 2; older MPM writers will refuse this state. Existing program links remain usable.")
+    if old.get("requests") != new.get("requests"):
+        print("Tracked requests: " + json.dumps(new.get("requests", {}), sort_keys=True))
+    if old.get("selection_policy") != new.get("selection_policy"):
+        print("Selection policy (null = exact pin): " + json.dumps(new.get("selection_policy", {}), sort_keys=True))
     print("Known external capabilities: not audited by this probe.")
 
 
@@ -396,7 +511,32 @@ def sync_directory(path):
         os.close(descriptor)
 
 
-def publish(root, old, state):
+def transactions(root, limit=20):
+    require(1 <= limit <= 1000, "history limit must be between 1 and 1000")
+    current = root / "current"
+    selected = os.readlink(current) if current.is_symlink() else None
+    rows, seen = [], set()
+    while selected and len(rows) < limit:
+        require(re.fullmatch(r"profiles/[0-9a-f]{32}", selected) and selected not in seen,
+                "invalid transaction ancestry")
+        seen.add(selected)
+        directory = root / selected
+        require(directory.is_dir() and not directory.is_symlink(), "missing transaction profile")
+        path = directory / "transaction.json"
+        require(not path.is_symlink(), "unmanaged transaction file")
+        if not path.exists():
+            break  # Legacy profiles have no transaction log; do not invent one.
+        row = json.loads(path.read_text())
+        require(row["format"] == 1 and row["profile"] == selected and
+                type(row["sequence"]) is int and row["sequence"] > 0, "invalid transaction record")
+        if rows:
+            require(row["sequence"] == rows[-1]["sequence"] - 1, "transaction sequence differs")
+        rows.append(row)
+        selected = row["parent"]
+    return rows
+
+
+def publish(root, old, state, action="publish"):
     if state["catalog"]:
         retain(root, state["catalog"]["source"]["store"])
     for key, record in state["installed"].items():
@@ -424,10 +564,20 @@ def publish(root, old, state):
     published = False
     try:
         (generation / "bin").mkdir()
-        with (generation / "state.json").open("w") as stream:
-            stream.write(json.dumps(state, indent=2) + "\n")
-            stream.flush()
-            os.fsync(stream.fileno())
+        prior = transactions(root, 1)
+        transaction = dict(format=1, profile="profiles/" + generation.name,
+                           parent=os.readlink(root / "current") if (root / "current").is_symlink() else None,
+                           sequence=prior[0]["sequence"] + 1 if prior else 1,
+                           action=action, uid=os.geteuid(), utc=datetime.now(timezone.utc).isoformat(),
+                           installed=sorted(state["installed"].keys() - old["installed"].keys()),
+                           removed=sorted(old["installed"].keys() - state["installed"].keys()),
+                           before={k: old.get(k) for k in ("catalog", "active", "requests", "selection_policy")},
+                           after={k: state.get(k) for k in ("catalog", "active", "requests", "selection_policy")})
+        for filename, document in (("state.json", state), ("transaction.json", transaction)):
+            with (generation / filename).open("w") as stream:
+                stream.write(json.dumps(document, indent=2) + "\n")
+                stream.flush()
+                os.fsync(stream.fileno())
         for name, destination in aliases.items():
             (generation / "bin" / name).symlink_to(destination)
         sync_directory(generation / "bin")
@@ -524,7 +674,7 @@ def main(argv=None):
                         help="initial source pin for ports update; never an implicit channel refresh")
     parser.add_argument("area", choices=["ports"])
     actions = parser.add_subparsers(dest="action", required=True)
-    for action in ("update", "install", "activate", "remove", "status", "list", "search", "info"):
+    for action in ("update", "install", "activate", "remove", "upgrade", "status", "list", "search", "info", "history"):
         sub = actions.add_parser(action)
         if action == "update":
             sub.add_argument("--manifest", type=Path, help="explicit source pin and optional curated entries")
@@ -534,8 +684,15 @@ def main(argv=None):
             sub.add_argument("--no-activate", action="store_true", help="retain without first-install activation")
         if action == "activate":
             sub.add_argument("request", help="artifact identity from ports list --exact, or unambiguous name")
+            sub.add_argument("--follow", action="store_true",
+                             help="follow the recorded request whose current target is this artifact")
+        if action == "upgrade":
+            sub.add_argument("names", nargs="*", help="tracked Ports names; default: all recorded requests")
         if action == "remove":
             sub.add_argument("names", nargs="+", help="exact identities, or names with one installed version")
+        if action == "history":
+            sub.add_argument("--json", action="store_true")
+            sub.add_argument("--limit", type=int, default=20)
         if action == "list":
             view = sub.add_mutually_exclusive_group()
             view.add_argument("--json", action="store_true")
@@ -549,12 +706,29 @@ def main(argv=None):
             sub.add_argument("--limit", type=int, default=50)
         if action == "info":
             sub.add_argument("name", help="Ports name, Nixpkgs attribute or installed exact identity")
-        if action in ("update", "install", "activate", "remove"):
+        if action in ("update", "install", "activate", "remove", "upgrade"):
             sub.add_argument("--dry-run", action="store_true")
             sub.add_argument("-y", "--yes", action="store_true")
     args = parser.parse_args(argv)
     root = args.root.absolute()
     try:
+        if args.action == "history":
+            load_state(root)
+            rows = transactions(root, args.limit)
+            if args.json:
+                print(json.dumps(rows, indent=2))
+            else:
+                for row in rows:
+                    print(f"{row['sequence']} {row['utc']} {row['action']} uid={row['uid']}")
+                    print("  Installed: " + (", ".join(row["installed"]) or "none"))
+                    print("  Removed: " + (", ".join(row["removed"]) or "none"))
+                    for key in ("active", "requests", "selection_policy"):
+                        if row["before"][key] != row["after"][key]:
+                            print(f"  {key}: {json.dumps(row['before'][key], sort_keys=True)} -> "
+                                  f"{json.dumps(row['after'][key], sort_keys=True)}")
+                if not rows:
+                    print("No recorded transactions; legacy history is unknown.")
+            return 0
         if args.action in ("status", "list", "search", "info"):
             inspect(load_state(root), args)
             return 0
@@ -577,7 +751,7 @@ def main(argv=None):
                        if args.action == "install" else None)
             proposed = plan(old, args.action, catalog, getattr(args, "names", ()),
                             getattr(args, "request", None), records,
-                            getattr(args, "no_activate", False))
+                            getattr(args, "no_activate", False), getattr(args, "follow", False))
             describe(old, proposed)
             if args.dry_run:
                 print("Preview only; no MPM state, GC roots or payloads written.")
@@ -588,7 +762,7 @@ def main(argv=None):
             if not args.yes and input("Apply this plan? [y/N] ").strip().lower() != "y":
                 print("Cancelled.")
                 return
-            publish(root, old, proposed)
+            publish(root, old, proposed, args.action)
             print("Published complete MPM/Nix profile.")
 
         if args.dry_run:
