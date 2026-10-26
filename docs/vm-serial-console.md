@@ -140,14 +140,22 @@ kernel `6.12.107+deb13-amd64`. Both `/etc/generation-marker` and
 This verifies authenticated console login and guest shell commands with the
 full System payload.
 
-The owner then pressed Ctrl-C at the new build's password prompt and observed
+The owner pressed Ctrl-C at the new build's password prompt and observed
 `mojt-vm-build: password entry aborted`. The completed serial VM restarted
-successfully with the same Base/System identities and both state markers.
-The original shell probe printed its generic failure instead of PASS: it
-required the waiting Bash process to receive SIGINT as well as the builder.
-That requirement can fail with a sudo terminal relay and has been removed.
-The transcript did not confirm the unpublished output or unchanged disk
-checksum; a repeat with the corrected probe above is still pending.
+successfully with Base `0.1.3`, System `system-A`, `/dev/ttyS0` and both
+existing state markers.
+
+The owner then repeated the interruption with the corrected probe above
+while the completed VM was stopped. It reported:
+
+```text
+PASS: interrupted build published no image; completed VM disk unchanged.
+```
+
+This confirms the builder's abort diagnostic and nonzero exit status, absence
+of a published `interrupted-image` path (including a symlink), and an unchanged
+SHA256 checksum for the completed serial VM disk. Together with the observed
+post-abort restart, the controlled manual interruption acceptance is complete.
 
 ## Validation boundaries
 
@@ -161,5 +169,6 @@ adapted copy, authenticates a synthetic BusyBox guest on `ttyS0`, executes
 shell commands and repeats the generation sequence and disk-only transfer.
 Its fixture dispatches the getty directly after checking the unit/link; it
 does not run systemd or the real Nix payload. The full Mojt systemd serial-console
-acceptance and post-abort restart are recorded above; the corrected manual
-interruption probe's publication and checksum checks remain pending.
+acceptance, post-abort restart, and manual interruption publication/checksum
+checks are recorded above. These are controlled new-image build checks;
+updates to an existing boot disk and power-loss recovery remain outside scope.
