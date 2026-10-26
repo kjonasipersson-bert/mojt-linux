@@ -423,5 +423,31 @@ now also locates and renders `mpm(1)`.
 The available broader local suite passed 202 tests with eight tool/environment
 skips. The separate Base archive ownership test could not run because this
 runtime rejects its `chown(..., 1000, 1000)` setup; it remains enabled in CI.
-Real Nix changed-artifact upgrade and fresh Mojt VM acceptance are still pending.
+At that validation point real Nix changed-artifact and fresh Mojt VM acceptance
+were pending; the subsequent owner-run Distrobox evidence is recorded below.
 Earlier Ports and account VM reports do not establish acceptance of this change.
+
+## Owner-reported real upgrade acceptance (2026-10-26)
+
+The owner completed the isolated Distrobox no-op/import/policy/history runner,
+then the two-snapshot changed-artifact test:
+
+- Old source: `ac62194c3917d5f474c1a844b6fd6da2db95077d`, archived NixOS 25.05.
+- New source: `5adc50831c259f87faeb09ddf930d43597197473`, the retained test snapshot.
+- Old artifact: `hello@=2.12.1-nix-na5dnb0l6rjkzrbld3xn4188dd8nknhh`.
+- New artifact: `hello@=2.12.3-nix-pa6rydwgjxxmmvdxap7qk9c85h8jbimy`.
+
+The changed-artifact runner passed, retaining the old installation while the
+request advanced and an exact active pin remained fixed. Explicit following
+activation selected the new artifact, whose executable reported GNU Hello 2.12.3.
+A separate fresh profile then passed following-default advancement from 2.12.1
+to 2.12.3 and a repeated upgrade published no further profile. Supplied history
+showed install, metadata-only source update and upgrade as distinct transactions.
+
+The owner also reported successful exact reactivation of 2.12.1, an upgrade
+no-op preserving that pin and the newer request target, and explicit `--follow`
+reactivation of 2.12.3 with both installed records retained. History sequences
+5 and 6 recorded those selection/policy changes without installations/removals.
+These are owner-run real Nix Distrobox results, not agent execution or VM evidence.
+Fresh Mojt VM integration, ordinary-user history reads and reboot retention of
+the new request/policy/history metadata remain to be checked.
