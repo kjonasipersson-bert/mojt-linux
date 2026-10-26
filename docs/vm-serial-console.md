@@ -76,8 +76,10 @@ and reconnect using `tmux attach -t mojt`.
 After confirming login in the serial copy, shut down that guest. Keep it
 stopped while checking its disk hash. The following block builds toward a
 different output path. At **New Mojt VM root password**, press `Ctrl-C`.
-It must report an interruption, leave no published interrupted image, and
-retain the completed serial VM's disk hash.
+The probe checks the builder's `password entry aborted` diagnostic, a nonzero
+exit status, no published interrupted image, and the completed serial VM's disk
+hash. It does not require the waiting Bash process to receive SIGINT: `sudo`
+may deliver the terminal interruption only to the builder.
 
 ```bash
 bash <<'MOJT_INTERRUPT' || printf '%s\n' 'Interruption probe stopped; see the error above.' >&2
@@ -87,12 +89,14 @@ WORK="$HOME/mojt-generations.9eMyMQ"
 . "$WORK/experiment.env"
 . "$WORK/hardware.env"
 PAYLOAD="$HOME/mojt-lab/mpm-nix-home/mpm-system-test/system-step6"
-test ! -e "$WORK/interrupted-image"
-test ! -L "$WORK/interrupted-image"
+fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
+if [ -e "$WORK/interrupted-image" ] || [ -L "$WORK/interrupted-image" ]; then
+  fail 'interrupted-image already exists; choose a fresh output path'
+fi
 sudo -v </dev/tty
 before="$(sha256sum "$WORK/serial-image/disk.img")"
-interrupted=0
-trap 'interrupted=1' INT
+probe_log="$(mktemp "$WORK/interruption-probe.XXXXXX")"
+trap ':' INT
 if sudo python3 "$WORK/source/tools/mojt-vm-build.py" \
   --target "$TARGET" --output "$WORK/interrupted-image" \
   --kernel "$KERNEL" --modules-dir "$MODULES" \
@@ -101,17 +105,21 @@ if sudo python3 "$WORK/source/tools/mojt-vm-build.py" \
   --base-generation "$BASE_A" --system-generation system-A \
   --additional-generations "$WORK/generations.toml" \
   --disk-size-mib 8192 --login-mode password \
-  --root-shell /run/mojt-system/bin/bash </dev/tty; then
+  --root-shell /run/mojt-system/bin/bash </dev/tty 2>"$probe_log"; then
   status=0
 else
   status=$?
 fi
 trap - INT
-test "$interrupted" -eq 1
-test "$status" -ne 0
-test ! -e "$WORK/interrupted-image"
-test ! -L "$WORK/interrupted-image"
-test "$before" = "$(sha256sum "$WORK/serial-image/disk.img")"
+cat "$probe_log" >&2
+test "$status" -ne 0 || fail 'builder unexpectedly succeeded'
+grep -Fq 'mojt-vm-build: password entry aborted' "$probe_log" ||
+  fail "builder did not report a password-entry abort; see $probe_log"
+if [ -e "$WORK/interrupted-image" ] || [ -L "$WORK/interrupted-image" ]; then
+  fail 'interrupted output was published'
+fi
+test "$before" = "$(sha256sum "$WORK/serial-image/disk.img")" ||
+  fail 'completed VM disk checksum changed'
 printf '\nPASS: interrupted build published no image; completed VM disk unchanged.\n'
 MOJT_INTERRUPT
 ```
@@ -130,8 +138,16 @@ kernel `6.12.107+deb13-amd64`. Both `/etc/generation-marker` and
 `/var/generation-marker` still contained `generation-test-9eMyMQ`.
 
 This verifies authenticated console login and guest shell commands with the
-full System payload. Restart after a controlled build interruption remains
-the next manual check.
+full System payload.
+
+The owner then pressed Ctrl-C at the new build's password prompt and observed
+`mojt-vm-build: password entry aborted`. The completed serial VM restarted
+successfully with the same Base/System identities and both state markers.
+The original shell probe printed its generic failure instead of PASS: it
+required the waiting Bash process to receive SIGINT as well as the builder.
+That requirement can fail with a sudo terminal relay and has been removed.
+The transcript did not confirm the unpublished output or unchanged disk
+checksum; a repeat with the corrected probe above is still pending.
 
 ## Validation boundaries
 
@@ -145,4 +161,5 @@ adapted copy, authenticates a synthetic BusyBox guest on `ttyS0`, executes
 shell commands and repeats the generation sequence and disk-only transfer.
 Its fixture dispatches the getty directly after checking the unit/link; it
 does not run systemd or the real Nix payload. The full Mojt systemd serial-console
-acceptance is recorded above; the owner's manual interruption run is pending.
+acceptance and post-abort restart are recorded above; the corrected manual
+interruption probe's publication and checksum checks remain pending.
