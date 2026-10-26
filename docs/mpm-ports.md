@@ -449,5 +449,40 @@ no-op preserving that pin and the newer request target, and explicit `--follow`
 reactivation of 2.12.3 with both installed records retained. History sequences
 5 and 6 recorded those selection/policy changes without installations/removals.
 These are owner-run real Nix Distrobox results, not agent execution or VM evidence.
-Fresh Mojt VM integration, ordinary-user history reads and reboot retention of
-the new request/policy/history metadata remain to be checked.
+The subsequent fresh Mojt VM integration results are recorded below.
+
+## Owner-reported Mojt MPM A/B/A acceptance (2026-10-26)
+
+The owner built a fresh step-10 VM at
+`/home/jonasp/mojt-mpm-upgrade.tQvldL/serial-image`, using the new checkout's
+MPM and bundled manual. System userspace and Base 0.1.3 were fixed; the boot
+sequence was system-mpm-A / 6.12.107+deb13-amd64, system-mpm-B /
+7.2.9+deb13-amd64, then A / 6.12.107+deb13-amd64. These are compatible
+System profiles with different kernel/module inputs, not two MPM versions or
+a test of an existing-disk System updater.
+
+On A, the owner confirmed interactive `man mpm` use. Shared Ports imported
+hello 2.12.3, first installation recorded the following request, dry-run and
+upgrade with the unchanged snapshot produced no extra transaction, and history
+showed the two update/install records. The ordinary mpmtest account could read
+history and its attempted shared upgrade was denied with the administrator
+requirement. Its user/session/runtime check and home marker were reported
+successful on B.
+
+Before switching to B, the supplied test froze complete MPM state/history,
+machine and user identity and the hello path in an A checkpoint. A B-side exact
+activation changed hello's selection policy to an exact pin while retaining
+the installed artifact and request. The B checkpoint was written only after
+asserting an upgrade no-op preserved the pinned state and full history.
+
+On the return to A, the owner supplied all final PASS lines: stable machine
+and user identities; complete state equality against the B checkpoint with
+the exact pin still set; complete history equality; the same hello artifact
+and user home marker; and another upgrade no-op preserving state and history.
+The journal listed all three boots and retained the previous-boot marker;
+/etc, /var, /home and /root persistence checks passed. No failed units remained.
+The earlier full root comparison output from B was not pasted; final A evidence
+is the complete comparison against B's validated checkpoint, plus the reported
+ordinary-user checks on B. Real changed-version upgrade was established in
+Distrobox; this VM run establishes integration and metadata persistence across
+the two kernel sets, not a changed-version import inside the VM.
