@@ -1,0 +1,192 @@
+<!--
+Mojt Linux
+Copyright (C) 2026 Jonas Persson
+SPDX-License-Identifier: GPL-2.0-only
+-->
+
+# System step 7: diagnostics
+
+Step 7 extends the existing cumulative step 6 payload. It retains the pinned
+Nixpkgs source and adds six explicit package roles. Base, earlier payload
+definitions, account state and service configuration are unchanged.
+
+| Nixpkgs attribute | System commands |
+| --- | --- |
+| `iputils` | `ping`, `tracepath`, `arping` |
+| `bind.dnsutils` | `dig`, `nslookup` |
+| `ethtool` | `ethtool` |
+| `pciutils` | `lspci` |
+| `usbutils` | `lsusb` |
+| `strace` | `strace` |
+| Existing `iproute2` | additionally export `ss` |
+| Existing `kmod` | additionally export `modinfo` |
+
+The exporter evaluates the explicit `bind.dnsutils` output, retains its runtime
+closure and validates dig/nslookup before publication. This does not enable a
+DNS server. All commands are linked from the selected System profile into
+`/run/mojt-system/bin`. Complete runtime dependencies, including any Nix glibc,
+are retained without replacing Base libraries or setting LD_LIBRARY_PATH.
+No new daemon, sysctl setting, setuid wrapper or file capability is installed.
+Initial ping/arping acceptance is root-operated; ordinary-user privilege policy
+is a separate account-integration step.
+
+## Export in the existing Nix Distrobox
+
+Enter `distrobox enter mojt-mpm-nix` on the Debian host, then run the following
+inside that container, as the ordinary user. The checkout and payload paths
+must be new; retain step 6 and earlier completed VM images.
+
+```bash
+bash <<'MOJT_DIAGNOSTICS' || printf '%s\n' 'Diagnostic preparation stopped; see the error above.' >&2
+set -euo pipefail
+mkdir -p "$HOME/mpm-system-test"
+SOURCE="$HOME/mpm-system-test/mojt-system-diagnostics"
+PAYLOAD="$HOME/mpm-system-test/system-step7"
+test ! -e "$SOURCE"
+test ! -e "$PAYLOAD"
+test ! -L "$PAYLOAD"
+git clone --single-branch --branch feature/system-diagnostics \
+  https://github.com/kjonasipersson-bert/mojt-linux.git "$SOURCE"
+git -C "$SOURCE" rev-parse HEAD
+python3 "$SOURCE/tools/mojt-system-prepare.py" \
+  --step 7 --output "$PAYLOAD" --dry-run
+python3 "$SOURCE/tools/mojt-system-prepare.py" \
+  --step 7 --output "$PAYLOAD" -y
+MOJT_DIAGNOSTICS
+```
+
+The preview evaluates the exact package outputs and checks realization with
+the configured binary-only backend. Export verifies store contents and requires
+all listed executables. A missing substitute or command must stop preparation;
+do not proceed from partial output. No claim is made that a package definition
+alone establishes signed binary-cache availability. After success, exit the
+container to the Debian host.
+
+## Build with the retained two kernel sets
+
+The following paths are those retained by the owner's completed kernel test.
+The Distrobox home is mounted from `$HOME/mojt-lab/mpm-nix-home` on Debian.
+Adjust that mapping if the container configuration differs. The build creates
+a fresh image from the original directory installation; it does not import
+later state changes from the earlier VM disks. Save the printed test directory.
+
+```bash
+bash <<'MOJT_DIAGNOSTIC_VM' || printf '%s\n' 'Diagnostic VM build stopped; see the error above.' >&2
+set -euo pipefail
+export PATH="/usr/sbin:/sbin:$PATH"
+PREVIOUS="$HOME/mojt-generations.9eMyMQ"
+. "$PREVIOUS/experiment.env"
+. "$PREVIOUS/hardware.env"
+. "$HOME/mojt-kernel-test.2csGdx/kernel.env"
+SOURCE="$HOME/mojt-lab/mpm-nix-home/mpm-system-test/mojt-system-diagnostics"
+PAYLOAD="$HOME/mojt-lab/mpm-nix-home/mpm-system-test/system-step7"
+test -f "$SOURCE/tools/mojt-vm-serial.py"
+test -f "$PAYLOAD/system.json"
+test -f "$KERNEL"
+test -d "$MODULES"
+test -d "$INPUTS/root"
+test -f "$KWORK/root/boot/vmlinuz-$KREL"
+test -d "$KWORK/root/lib/modules/$KREL"
+TEST_VM="$(mktemp -d "$HOME/mojt-diagnostics.XXXXXX")"
+printf 'Test directory: %s\n' "$TEST_VM"
+git -C "$SOURCE" rev-parse HEAD >"$TEST_VM/source-commit"
+python3 - "$TEST_VM" "$BASE_A" "$KWORK" "$KREL" <<'PY'
+import json
+from pathlib import Path
+import sys
+work, base, inputs, release = sys.argv[1:]
+fields = dict(base=base, system="system-tools-B",
+              kernel=str(Path(inputs) / "root/boot" / f"vmlinuz-{release}"),
+              modules_dir=str(Path(inputs) / "root/lib/modules" / release))
+Path(work, "generations.toml").write_text(
+    "format = 1\n\n[[boot]]\n" +
+    "".join(f"{key} = {json.dumps(value)}\n" for key, value in fields.items()))
+PY
+sudo python3 "$SOURCE/tools/mojt-vm-build.py" \
+  --target "$TARGET" --output "$TEST_VM/image" \
+  --kernel "$KERNEL" --modules-dir "$MODULES" \
+  --firmware-root "$INPUTS/root" --system-payload "$PAYLOAD" \
+  --boot-mode uefi --hardware-profile thinkpad-x1-carbon-3 \
+  --base-generation "$BASE_A" --system-generation system-tools-A \
+  --additional-generations "$TEST_VM/generations.toml" \
+  --disk-size-mib 8192 --login-mode password \
+  --root-shell /run/mojt-system/bin/bash </dev/tty
+python3 "$SOURCE/tools/mojt-vm-serial.py" \
+  --source "$TEST_VM/image" --output "$TEST_VM/serial-image"
+printf '\nREADY: %s/serial-image/run-qemu.sh\n' "$TEST_VM"
+MOJT_DIAGNOSTIC_VM
+```
+
+Start the printed launcher separately in the interactive SSH terminal. Select
+Base 0.1.3 / system-tools-A first and log in with the new VM password.
+Expected kernel A is `6.12.107+deb13-amd64`; B is `7.2.9+deb13-amd64`.
+Both choices contain the same step 7 userspace and firmware input.
+
+## Acceptance inside the Mojt guest
+
+```sh
+cat /run/mojt-system/version
+grep '^VERSION_ID=' /usr/lib/os-release
+uname -r
+ls -1 /lib/modules/
+mojt-system-check diagnostics
+mojt-system-check diagnostics-network
+mojt-system-check admin
+```
+
+The local diagnostic check uses System-first PATH even if Ports shadows a
+command. It checks loopback ping/tracepath, tool startup, PCI/USB enumeration,
+socket inspection, ext4 module metadata for the running kernel and a traced
+BusyBox command in a private temporary directory. The trace is removed on
+success or failure. A runtime module tree is required, hence the hardware
+profile in the recipe. No public-host ping success is required: QEMU user
+networking and external ICMP filtering are separate from tool correctness.
+
+The explicit network check runs the existing boot/DHCP/DNS/HTTPS check, then
+dig/nslookup and read-only network driver inspection with ethtool. Set
+`MOJT_TEST_INTERFACE` explicitly for a non-Ethernet interface. Driver inspection
+may need separate interpretation on devices without ethtool support. The
+arping executable is version-checked only; no unsolicited ARP probes or NIC
+configuration changes are made. Physical Wi-Fi/USB hardware is not validated
+by a QEMU enumeration result.
+
+Inspect remaining Base commands without installing duplicate providers:
+
+```sh
+for name in id groups getent hostname; do command -v "$name" || :; done
+getent passwd root
+getent hosts localhost
+id root
+```
+
+Write test markers and install a small Ports application under A:
+
+```sh
+mojt-system-check persistence-write
+mpm ports update -y && mpm ports install hello -y && hash -r && hello
+readlink -f "$(command -v hello)" >/var/lib/mojt/diagnostic-hello-path
+mpm ports list --exact
+```
+
+Power off inside Mojt, start the same launcher and select system-tools-B.
+Repeat identity/module, diagnostics, diagnostics-network and admin checks.
+Then run:
+
+```sh
+mojt-system-check persistence-check
+hello
+test "$(readlink -f "$(command -v hello)")" = \
+     "$(cat /var/lib/mojt/diagnostic-hello-path)" && echo 'PASS: same Ports artifact'
+```
+
+Return to system-tools-A and repeat those checks. Keep the earlier step 6
+kernel-test VM as a separate reference. This test exercises new userspace on
+both kernels, not an in-place System upgrade or automatic boot fallback.
+
+## Validation status
+
+Synthetic regressions cover cumulative roles, unchanged earlier exports,
+preserved Base/account data, exact command links, missing DNS command rejection,
+and executed local-check success/failure cleanup. They do not establish real
+Nix evaluation, signed binary availability or guest behavior of these tools.
+Owner-side payload export and the above full-Mojt boot checks are pending.

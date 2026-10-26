@@ -21,12 +21,24 @@ ROLES = {
     4: {"procps": "procps", "util-linux": "util-linux", "less": "less", "editor": "nvi"},
     5: {"shell": "bashInteractive"},
     6: {"kmod": "kmod", "wpa-supplicant": "wpa_supplicant", "iw": "iw"},
+    7: {"iputils": "iputils", "dnsutils": "bind.dnsutils", "ethtool": "ethtool",
+        "pciutils": "pciutils", "usbutils": "usbutils", "strace": "strace"},
 }
 ADMIN_COMMANDS = {
     "procps": ("ps", "top", "free", "pgrep", "uptime"),
     "util-linux": ("lsblk", "findmnt", "mount", "umount", "dmesg", "blkid"),
     "less": ("less",),
     "editor": ("vi", "ex"),
+}
+DIAGNOSTIC_COMMANDS = {
+    "iputils": ("ping", "tracepath", "arping"),
+    "dnsutils": ("dig", "nslookup"),
+    "ethtool": ("ethtool",),
+    "pciutils": ("lspci",),
+    "usbutils": ("lsusb",),
+    "strace": ("strace",),
+    "iproute2": ("ss",),
+    "kmod": ("modinfo",),
 }
 VERSION = "0.2"
 BASH_RC = r'''# Mojt System interactive Bash defaults; user startup files may override these.
@@ -61,7 +73,7 @@ def require(condition, message):
 
 
 def roles(step):
-    require(type(step) is int and step in ROLES, "System step must be an integer from 1 to 6")
+    require(type(step) is int and step in ROLES, "System step must be an integer from 1 to 7")
     return {key: value for n in range(1, step + 1) for key, value in ROLES[n].items()}
 
 
@@ -196,6 +208,10 @@ def load_payload(path):
         for role, name in (("kmod", "modprobe"), ("kmod", "lsmod"),
                            ("wpa-supplicant", "wpa_supplicant"), ("iw", "iw")):
             executable(path, record, role, "bin/" + name, "sbin/" + name)
+    if record["step"] >= 7:
+        for role, commands in DIAGNOSTIC_COMMANDS.items():
+            for name in commands:
+                executable(path, record, role, "bin/" + name, "sbin/" + name)
     return record
 
 
@@ -446,6 +462,12 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
                  "Type=dbus\nBusName=fi.w1.wpa_supplicant1\nRestart=on-failure",
                  "Requires=dbus.service\nAfter=dbus.service\nBefore=NetworkManager.service\n"))
         wanted += ["wpa_supplicant.service"]
+    if step >= 7:
+        for role, commands in DIAGNOSTIC_COMMANDS.items():
+            for name in commands:
+                export(name, role, "bin/" + name, "sbin/" + name)
+        write(system / "diagnostic-commands", "\n".join(
+            name for commands in DIAGNOSTIC_COMMANDS.values() for name in commands) + "\n")
     setup += ['echo "Mojt System setup complete"']
     write(system / "setup", "\n".join(setup) + "\n", 0o755)
     put_unit("mojt-setup.service", unit("Mojt System setup", "/run/mojt-system/setup",

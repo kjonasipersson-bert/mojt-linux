@@ -138,6 +138,11 @@ console login, full versioned kernel modules and Debian firmware for an X1
 Carbon 3rd generation. System step 6 adds kmod and Wi-Fi userspace; the same
 disk can be probed with SATA and USB storage in QEMU before physical testing.
 
+[System step 7](docs/system-diagnostics.md) adds iputils, DNS client tools,
+ethtool, PCI/USB inspection and strace, plus ss/modinfo from existing packages.
+It provides separate local and network diagnostic probes and a two-kernel
+serial-VM recipe. Real package export and owner VM acceptance remain pending.
+
 For early Mojt versions, Nix remains exposed and supplies System packages as
 well as Ports through a shared store. Mojt controls System activation;
 host-service requirements belong to MPM's separate capability model. See the
