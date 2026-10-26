@@ -137,12 +137,16 @@ has been **accepted as the design contract**, but is not yet implemented.
 Detailed version ordering and backend adapters remain open.
 
 Nix is now the selected Ports backend after the binary-import and pacman
-comparisons. The contract's upgrade/selector/project-lock policies are still
-design requirements, not completed features. For early Mojt versions, Nix is
+comparisons. The full selector/project-lock policies remain design requirements. For early Mojt versions, Nix is
 also selected for System package acquisition and dependency storage, using a
 shared store. The current CLI implements Ports installation, activation,
-removal and inspection, but no upgrade engine or Base/System/Kernel area.
-System release and deployment formats require separate evaluation.
+removal, inspection, recorded attribute upgrades and committed transaction
+history. Exact active selections remain pinned while following selections may
+advance. Format-2 metadata and its compatibility limits are documented in the
+[Ports guide](mpm-ports.md); `mpm(1)` is maintained in the repository and bundled
+with manual-enabled System builds. Base/System/Kernel areas remain unimplemented.
+System release and deployment formats require separate evaluation, including
+compatibility between the selected System's MPM and persistent metadata.
 
 ## Accepted early Nix/System policy (2026-10-23)
 
