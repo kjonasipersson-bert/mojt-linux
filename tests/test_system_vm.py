@@ -16,6 +16,8 @@ import tempfile
 import unittest
 from unittest import mock
 import types
+import pwd
+import select
 import xml.etree.ElementTree as ET
 
 
@@ -220,6 +222,38 @@ class SystemVmTests(unittest.TestCase):
         ET.fromstring(bus)
         self.assertIn('own="org.freedesktop.timesync1"', bus)
         subprocess.run(["sh", "-n", str(directory / "bin/mojt-console-size")], check=True)
+
+    @unittest.skipUnless(shutil.which("dbus-daemon"), "requires dbus-daemon")
+    def test_step8_policy_is_accepted_by_a_real_private_dbus_daemon(self):
+        directory, _ = self.install(8, "password")
+        text = (directory / "dbus.conf").read_text()
+        # Keep generated policy semantics; adapt only identity and transport
+        # to this unprivileged, isolated host test. Never use the host bus.
+        user = pwd.getpwuid(os.getuid()).pw_name
+        text = text.replace('<user>messagebus</user>', '').replace(
+            '<listen>systemd:</listen>', f'<listen>unix:path={self.root}/private-bus</listen>')
+        text = text.replace('user="root"', f'user="{user}"').replace(
+            'user="systemd-timesync"', f'user="{user}"')
+        text = text.replace('<includedir>/etc/dbus-1/system.d</includedir>', '')
+        config = self.root / "private-dbus.conf"
+        config.write_text(text)
+        process = subprocess.Popen(["dbus-daemon", "--nofork", "--nopidfile",
+                                    "--config-file=" + str(config), "--print-address"],
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            self.assertTrue(select.select([process.stdout], [], [], 3)[0], "bus did not become ready")
+            address = process.stdout.readline()
+            if not address.startswith("unix:"):
+                process.wait(timeout=3)
+                error = process.stderr.read()
+                if "Failed to open socket: Operation not permitted" in error:
+                    self.skipTest("runtime forbids private Unix sockets after successful policy parsing")
+                self.fail(error)
+            self.assertIsNone(process.poll())
+        finally:
+            if process.poll() is None:
+                process.terminate()
+            process.communicate(timeout=3)
 
     def test_hwdb_tampering_and_linked_persistent_configuration_are_rejected(self):
         record = self.fixture(7)

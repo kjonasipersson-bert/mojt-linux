@@ -558,11 +558,13 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
         wanted += ["systemd-timesyncd.service", "mojt-journal-flush.service"]
         dbus_config = system / "dbus.conf"
         policy = ('  <policy user="systemd-timesync">\n'
-                  '    <allow user="systemd-timesync"/>\n'
                   '    <allow own="org.freedesktop.timesync1"/>\n'
                   '    <allow send_destination="org.freedesktop.DBus"/>\n'
                   '  </policy>\n')
-        dbus_config.write_text(dbus_config.read_text().replace("</busconfig>", policy + "</busconfig>"))
+        dbus_config.write_text(dbus_config.read_text().replace(
+            '<allow user="root"/>',
+            '<allow user="root"/>\n    <allow user="systemd-timesync"/>', 1).replace(
+                "</busconfig>", policy + "</busconfig>"))
     setup += ['echo "Mojt System setup complete"']
     write(system / "setup", "\n".join(setup) + "\n", 0o755)
     put_unit("mojt-setup.service", unit("Mojt System setup", "/run/mojt-system/setup",

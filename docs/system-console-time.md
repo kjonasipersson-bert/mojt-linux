@@ -138,3 +138,23 @@ terminal reply support; those require the owner VM run above.
 Upstream references:
 [timesyncd](https://www.freedesktop.org/software/systemd/man/latest/systemd-timesyncd.service.html),
 [journald configuration](https://www.freedesktop.org/software/systemd/man/latest/journald.conf.html).
+
+## Initial owner run and D-Bus correction
+
+The owner exported 191 objects and built the serial VM at
+`/home/jonasp/mojt-console-time.oyCH7A`. On system-console-A with kernel
+6.12.107+deb13-amd64, mojt-console-size changed the tty from 0x0 to 72x138,
+and stty confirmed it. Journal flush completed successfully and journalctl
+reported 8 MiB; cross-boot persistence has not yet been tested.
+
+The bus failed to start, so timesyncd was not started due to a failed dependency.
+The generator had put an allow-user connection rule inside a per-user policy.
+A real private dbus-daemon reproduced the parser rejection: that rule has
+bus-global semantics. The corrected generator places connection permission in
+the default policy while keeping service name ownership and messaging rules
+scoped to the service account. A new regression starts a real isolated daemon
+with the generated policy, changing only host-test identity/transport.
+
+This is a builder-only correction; the exported step 8 payload can be reused
+with the updated checkout to build a fresh image. No corrected real bus or NTP
+acceptance is claimed until the owner boots the corrected image.
