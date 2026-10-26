@@ -26,6 +26,12 @@ Mojt is an experimental Linux distribution inspired by BSD's separation of the b
 
 Read the [manifesto](docs/manifesto.md), [architecture notes](docs/architecture.md), [Base format specification](docs/base-format.md), and the draft [MPM package-management contract](docs/mpm.md).
 
+The accepted update model keeps Base as complete releases, System as coherent
+generations, and Ports as parallel program versions with active selections
+and transaction history. Shared MPM verbs preserve those different units of
+change. See the [roadmap](docs/roadmap.md) for completed experiments and the
+next priorities; these policies are broader than the implemented CLI.
+
 ## Status
 
 **Experimental prototype with verified QEMU boot.** On x86-64/glibc, the current
@@ -36,6 +42,12 @@ and MPM/Nix binary imports with parallel Python versions inside Mojt.
 There is no production installer, System release format or signed release
 channel yet. See the [System guide](docs/system-nix-vm.md) for measured scope
 and remaining integration work.
+
+The owner has also verified explicit Base/System generation selection and
+return, persistent markers, authenticated serial-console access from SSH,
+and controlled new-image build interruption. Both tested System labels used
+the same kernel/payload. A different-kernel test and updates to an existing
+boot disk remain separate work.
 
 ## Requirements on the build/test host
 

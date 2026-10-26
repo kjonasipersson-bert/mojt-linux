@@ -11,6 +11,15 @@ It installs command-line applications from a pinned local Nixpkgs source,
 without a new TOML entry for every application. It does not implement the
 entire [MPM contract](mpm.md), NixOS service activation or desktop integration.
 
+The [accepted Ports update/recovery model](mpm.md#ports-recovery-and-transaction-history-accepted-2026-10-26)
+uses parallel application versions, active selections and readable transaction
+history. It does not require a user-managed generation of all Ports after
+each program update. This prototype's retained internal profiles and event
+sequences are implementation mechanisms; they are not yet the readable history
+interface or an upgrade engine. `upgrade`, release-series selectors and a
+general undo command remain unimplemented. New design examples in the
+contract do not change the runnable commands below.
+
 ## Inside a newly built step 3 Mojt VM
 
 The guest entry point now accepts the area explicitly: **`mpm ports ...`**.

@@ -18,6 +18,9 @@ gate, filesystem layout, build recipe and acceptance boundaries.
 
 This document records **current decisions and open questions**, not stable promises. For the enduring design goals, see [the manifesto](manifesto.md).
 
+The [roadmap](roadmap.md) distinguishes the completed generation experiment
+from the next kernel-change test and later System/MPM work.
+
 ## Layers
 
 | Layer | Purpose | Intended lifecycle |
@@ -30,6 +33,48 @@ This document records **current decisions and open questions**, not stable promi
 The current Base prototype has no kernel, init, or desktop. The experimental
 System implementation uses systemd. BusyBox remains an early-boot/rescue component and
 a temporary console-login tool in the VM experiment.
+
+## Accepted update units and activation model (2026-10-26)
+
+Each layer uses the unit appropriate to its responsibility:
+
+- **Base:** one complete, immutable, versioned release. It may be built from
+  packages or sources; individual runtime Base package upgrades are outside
+  the model. A new installation retains the previous Base release.
+- **System:** a content-changing upgrade publishes a new coherent generation
+  with exact component/dependency references. Old generations remain historical
+  snapshots, rather than independent requests to upgrade. A no-op need not
+  create a new content generation.
+- **Ports:** parallel application versions, explicit active choices and
+  upgrade policies, with readable transaction history. A per-program upgrade
+  does not require a user-managed generation of the entire Ports collection.
+  Atomic internal profile snapshots remain an implementation option.
+
+A boot deployment binds exact Base, System userspace and Kernel build
+identities to matching modules and boot artifacts. Kernel is architecturally
+part of System, but has a separate MPM upgrade scope. A System upgrade
+preserves Base/Kernel selections; a Kernel upgrade preserves Base/System
+userspace selections. Any required cross-area changes need an explicit plan.
+These are accepted semantics; the independent Kernel/deployment formats are
+not implemented by the current fresh-image builder.
+
+Boot-area activation selects the next boot, without automatically restarting
+the machine or changing its running services. Further changes start from the
+selected deployment, even if an older one is still running. Status and plans
+must distinguish installed, selected and running content. Users must be able
+to inspect explicit System choices, dependencies and changes between
+generations, rather than relying on opaque generation numbers.
+
+Ports selection affects new program starts; existing processes can continue
+using earlier content. Returning to an installed application version uses
+explicit activation. Additional installation preserves the existing active
+choice; the accepted first-install convenience exception still applies.
+A general Ports transaction-undo command and retention/GC policy remain
+future work. Persistent configuration and application/service data are not
+automatically restored by any content selection change.
+
+The [MPM contract](mpm.md#2-operations) defines the shared verbs, pins, preview
+requirements and the boundary between accepted policy and working commands.
 
 ## Existing prototype pipeline
 
@@ -67,9 +112,9 @@ has verified both state directories across guest boots.
 
 Rollback does **not** revert persistent state or database formats. Future compatibility checks and explicit state migrations will be necessary.
 
-## MPM front-end contract (design only)
+## MPM front-end contract (partial implementation)
 
-The proposed user-facing package interface is documented in
+The accepted user-facing package model is documented in
 [the MPM contract](mpm.md). It specifies `mpm <area> <action>`,
 metadata-only `update`, explicit installation versus activation,
 independent Base/System/Kernel/Ports transactions, and versioned Ports
@@ -82,7 +127,9 @@ Nix is now the selected Ports backend after the binary-import and pacman
 comparisons. The contract's upgrade/selector/project-lock policies are still
 design requirements, not completed features. For early Mojt versions, Nix is
 also selected for System package acquisition and dependency storage, using a
-shared store. System release and deployment formats require separate evaluation.
+shared store. The current CLI implements Ports installation, activation,
+removal and inspection, but no upgrade engine or Base/System/Kernel area.
+System release and deployment formats require separate evaluation.
 
 ## Accepted early Nix/System policy (2026-10-23)
 

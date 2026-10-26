@@ -6,6 +6,29 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Mojt Base Release Format (prototype format 1)
 
+## Accepted Base release unit (2026-10-26)
+
+Base is distributed, installed, selected and recovered as one complete,
+versioned release. This is the accepted management unit, independent of the
+archive/compression format. The build may use distribution packages or source
+builds and should record their provenance; the installed Base does not acquire
+a mutable runtime package set or individual package-upgrade interface.
+A fix to a Base component produces a new complete release. Existing release
+content is preserved, and earlier installed releases remain available.
+
+The future `mpm base upgrade` installs an eligible published release and
+prepares a compatible boot deployment with the selected System and Kernel.
+It does not assign a new upstream Base version locally or silently upgrade
+those other components. Boot activation selects the next start and leaves
+the running system in place. Persistent `/etc` and `/var` keep their state;
+missing defaults follow the add-missing policy below.
+
+This is the accepted user model, not a claim that MPM Base commands or an
+existing-disk updater are implemented. See the [MPM contract](mpm.md) and
+[generation experiment](boot-generations.md) for the implementation boundary.
+
+## Release files
+
 A release is a directory containing:
 
 ```text

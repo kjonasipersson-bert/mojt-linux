@@ -34,17 +34,32 @@ Base is delivered as a complete, versioned filesystem image. It can be installed
 
 Small, complete updates are a reasonable starting point. Incremental distribution can be introduced later if it solves a real problem.
 
+The complete release is the management unit even when its build uses
+individual packages. Published Base content remains fixed and inspectable;
+fixes are delivered in a new release.
+
 ### 3. Installation and activation are separate operations
 
 Multiple versions of an application and its dependencies must be able to coexist. Installing a version makes it available; activating it selects where and for whom it is used.
 
 Profiles and project environments should select explicit installed versions without globally replacing programs or libraries. Switching a profile should be simple and reversible.
 
+The explicit first installation of a Ports application may also establish its
+default command, as specified in the [MPM contract](mpm.md). Installing
+additional versions preserves the active choice.
+
 ### 4. Updates must be deliberate and predictable
 
 A normal system or application update must not silently replace the toolchain used by an existing project. Development environments should be lockable to exact versions, including transitive dependencies, until the user explicitly updates them.
 
 Ordinary applications may follow update channels; pinned environments remain pinned. Security issues in pinned software should be visible even when automatic updates are disabled.
+
+System upgrades produce coherent generations that can be selected at boot.
+Ports keeps independent program versions and choices; routine application
+updates should not require users to manage generations of the entire
+application collection. The shared command vocabulary must respect these
+different units of change. Plans, content inspection and history should show
+exactly what changed and what remains available for recovery.
 
 ### 5. Dependency isolation is not the same as sandboxing
 

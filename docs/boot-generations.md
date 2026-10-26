@@ -10,6 +10,14 @@ For terminal-based operation of an already built VM, see the
 [SSH/serial console and interruption guide](vm-serial-console.md). It retains
 the tested image's state in a separate copy and avoids graphical command entry.
 
+The [accepted MPM update model](mpm.md#system-generations-and-boot-deployments-accepted-2026-10-26)
+distinguishes complete Base releases, System userspace generations and exact
+Kernel builds, combined in a boot deployment. The builder below is a
+fresh-image experiment: its System labels also bind kernel inputs, and its
+on-disk layout is not the final independent Kernel/deployment interface.
+The next test uses a genuinely different kernel and matching modules; it is
+not yet part of the measured acceptance below. See the [roadmap](roadmap.md).
+
 The UEFI builder can compose a **new** image containing several explicit
 Base/System pairs. GRUB selects a pair; initramfs checks `root=UUID=...`,
 `mojt.base=...` and `mojt.system=...` against its embedded expectations. It
