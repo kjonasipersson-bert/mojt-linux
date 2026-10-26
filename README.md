@@ -158,7 +158,9 @@ next System stage.
 login, logind sessions and password-authenticated sudo on the separate home
 state layout. Privileged helpers are selected-generation copies in volatile
 storage; store objects and retained profiles remain without setuid bits.
-Real binary export and guest authentication/privilege acceptance are pending.
+The owner verified binary export, PAM login, password changes, sudo authorization,
+clean logout and account/home/Ports preservation across A/B/A after the documented
+user-manager correction. Superseded-password rejection awaits explicit confirmation.
 
 For early Mojt versions, Nix remains exposed and supplies System packages as
 well as Ports through a shared store. Mojt controls System activation;
@@ -183,7 +185,7 @@ python3 -m unittest discover -s tests -p 'test_system_vm.py' -v
 The [persistent state layout](docs/state-layout.md) documents how the runtime
 `/etc`, `/var`, `/home` and `/root` paths attach to shared machine state, and
 how this differs from adding or selecting a boot generation. New home mounting
-is prepared for the account stage; real VM acceptance is pending.
+was exercised in the account-stage A/B/A run.
 
 ## Project layout
 

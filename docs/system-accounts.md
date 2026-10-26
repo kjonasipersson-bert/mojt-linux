@@ -6,7 +6,8 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # System step 10: local accounts and administration
 
-Status: prepared integration, real Nix export and owner VM acceptance pending.
+Status: owner A/B/A account, home and Ports evidence recorded below.
+Explicit rejection of the superseded administrator password awaits confirmation.
 The owner accepted local-account preparation and separate persistent
 `state/home` and `state/root` storage. See [state layout](state-layout.md).
 Synthetic tests do not establish working PAM authentication or setuid behavior.
@@ -270,7 +271,7 @@ the missing target. The console login remains a separate session scope.
 
 Authenticate anew and log out as a real ordinary user, then verify from a fresh
 root session that user@ ends with Result=success and /run/user/<uid> disappears.
-Actual clean logout and the remaining generation regressions are still pending.
+The subsequent clean logout and generation results are recorded below.
 The correction changes builder/units only; the exported payload can be reused.
 
 References for the selected release:
@@ -278,3 +279,42 @@ References for the selected release:
 [systemd-exit.service](https://github.com/systemd/systemd/blob/v262/units/user/systemd-exit.service),
 [shutdown.target](https://github.com/systemd/systemd/blob/v262/units/user/shutdown.target),
 [logind service](https://github.com/systemd/systemd/blob/v262/units/systemd-logind.service.in).
+
+## Owner A/B/A acceptance after the correction
+
+On the same stopped/restarted disk, the owner completed system-accounts-A
+(kernel 6.12.107+deb13-amd64) → system-accounts-B (7.2.9+deb13-amd64) → A,
+keeping Base 0.1.3. B reported exactly its matching module release. The owner
+applied the user-exit and logind correction through persistent `/etc` files;
+those corrections survived the boot choices. The corrected builder itself has
+not received a separate fresh-image acceptance run after that repair.
+
+After a fresh ordinary login/logout on A, user@1000.service ended inactive with
+Result=success, its runtime directory disappeared, only root remained listed
+and no units were failed. The ordinary account ran the shared hello command
+and listed its exact installed identity. On B, three account logouts likewise
+left only root, no ordinary runtime directories and no failed units.
+
+On B, probes confirmed stable machine ID, independent `/home` and `/root`
+markers, retained previous-boot journal and matching `/etc`/`/var` markers.
+Root account integration and environment/manual probes passed. mojtuser logged
+in with its changed password, read its original home marker, passed the actual
+user/session/runtime/ping check, ran hello and listed the shared Ports profile.
+Its resolved hello path matched the saved exact artifact. mojtadmin likewise
+passed the user check and authenticated sudo to UID 0.
+
+Under B, the owner changed mojtadmin's password again and created mojtnew
+(UID 1002), authenticated it and wrote a home marker. Returning to A, mojtnew
+logged in, retained the complete saved id output and read its B-created marker.
+mojtadmin passed the user check, authenticated sudo to UID 0 and ran the same
+hello artifact. The exact shared artifact throughout was
+`hello@=2.12.3-nix-pa6rydwgjxxmmvdxap7qk9c85h8jbimy`.
+
+The transcripts prove preserved later account creation, identity, home data and
+working administrator authentication after return. Rejection of the superseded
+administrator password was requested but has not been explicitly confirmed;
+do not describe that negative test as passed. The earlier A run established
+ordinary-user authorization denials and own-password changes. A separate
+account-stage network/NTP regression, configured local-timezone persistence,
+local graphical-VT resize behavior and deliberate recovery/mount-failure probes
+are not established by these account transcripts. Root remains unlocked.

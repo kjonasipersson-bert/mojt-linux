@@ -50,7 +50,7 @@ updates to an existing boot disk or power-loss recovery.
 | Priority | Track | Next work |
 | --- | --- | --- |
 | 1 | Base/System generations | VM Base/System and different-kernel return experiments completed. Retain the reference images; production boot-disk updates, compatibility and automatic fallback remain future work. |
-| 2 | More complete System | Diagnostics and console/time/journal acceptance completed. Timezone/UTF-8/manual checks accepted on System A; separate A/B checks deferred to the next stage. Next: inventory and integrate the account stage from the [System proposal](system-completeness-proposal.md). |
+| 2 | More complete System | Diagnostics and console/time/journal acceptance completed. Timezone/UTF-8/manual checks accepted on System A; separate A/B checks deferred to the next stage. The account A/B/A run now preserves new users, identity and home data, with working PAM/sudo, session cleanup and shared Ports. Confirm superseded-password rejection and finish PR review before the MPM track. |
 | 3 | MPM development | Implement the accepted upgrade policies, explicit request/selection state and readable history; develop project locks, then retention/pruning and physical collection. |
 | 4 | Build System on Mojt | Run the existing build tools inside Mojt with pinned inputs and a controlled build environment, producing a new Mojt image. |
 | 5 | Own-built Linux kernel | Establish a documented kernel build/configuration and package matching modules as a versioned Kernel input; start near the working Debian configuration. |
