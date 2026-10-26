@@ -24,6 +24,7 @@ ROLES = {
     6: {"kmod": "kmod", "wpa-supplicant": "wpa_supplicant", "iw": "iw"},
     7: {"iputils": "iputils", "dnsutils": "bind.dnsutils", "ethtool": "ethtool",
         "pciutils": "pciutils", "usbutils": "usbutils", "strace": "strace"},
+    8: {},
 }
 ADMIN_COMMANDS = {
     "procps": ("ps", "top", "free", "pgrep", "uptime"),
@@ -74,7 +75,7 @@ def require(condition, message):
 
 
 def roles(step):
-    require(type(step) is int and step in ROLES, "System step must be an integer from 1 to 7")
+    require(type(step) is int and step in ROLES, "System step must be an integer from 1 to 8")
     return {key: value for n in range(1, step + 1) for key, value in ROLES[n].items()}
 
 
@@ -242,6 +243,11 @@ def load_payload(path):
         for role, commands in DIAGNOSTIC_COMMANDS.items():
             for name in commands:
                 executable(path, record, role, "bin/" + name, "sbin/" + name)
+    if record["step"] >= 8:
+        executable(path, record, "systemd", "lib/systemd/systemd-timesyncd")
+        executable(path, record, "systemd", "bin/timedatectl")
+        executable(path, record, "systemd", "bin/systemd-cat")
+        executable(path, record, "systemd", "bin/systemd-machine-id-setup")
     return record
 
 
@@ -511,6 +517,66 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
                 export(name, role, "bin/" + name, "sbin/" + name)
         write(system / "diagnostic-commands", "\n".join(
             name for commands in DIAGNOSTIC_COMMANDS.values() for name in commands) + "\n")
+    if step >= 8:
+        export("timedatectl", "systemd", "bin/timedatectl")
+        export("systemd-cat", "systemd", "bin/systemd-cat")
+        python = record["packages"]["python"]["output"] + "/bin/python3"
+        write(system / "tools/mojt-console-size.py", (repo / "tools/mojt-console-size.py").read_text())
+        write(system / "bin/mojt-console-size", "#!/bin/sh\nexec " + python +
+              ' -I /run/mojt-system/tools/mojt-console-size.py "$@"\n', 0o755)
+        defaults = {
+            "journald.conf": "[Journal]\nStorage=persistent\nSystemMaxUse=64M\n"
+                             "RuntimeMaxUse=16M\nMaxRetentionSec=14day\n"
+                             "ForwardToConsole=no\nForwardToKMsg=no\n",
+            "timesyncd.conf": "[Time]\nNTP=0.pool.ntp.org 1.pool.ntp.org\nFallbackNTP=\n",
+        }
+        config = tree / "state/etc/systemd"
+        require(not config.is_symlink() and (not config.exists() or config.is_dir()),
+                "unsafe persistent systemd configuration directory")
+        config.mkdir(exist_ok=True)
+        for name, text in defaults.items():
+            write(system / "defaults" / name, text)
+            dest = config / name
+            if not dest.exists() and not dest.is_symlink():
+                dest.symlink_to("/run/mojt-system/defaults/" + name)
+        with (system / "sysusers.conf").open("a") as accounts:
+            accounts.write('u systemd-timesync - "Time synchronization" /var/lib/systemd/timesync\n')
+        setup += ["mkdir -p /var/log/journal", "chgrp systemd-journal /var/log/journal",
+                  "chmod 2755 /var/log/journal"]
+        daemon = executable(payload, record, "systemd", "lib/systemd/systemd-timesyncd")
+        put_unit("systemd-timesyncd.service", unit("Mojt time synchronization", daemon,
+                 "Type=notify\nBusName=org.freedesktop.timesync1\nUser=systemd-timesync\n"
+                 "AmbientCapabilities=CAP_SYS_TIME\nCapabilityBoundingSet=CAP_SYS_TIME\n"
+                 "NoNewPrivileges=yes\nProtectHome=yes\nPrivateTmp=yes\n"
+                 "StateDirectory=systemd/timesync\nRuntimeDirectory=systemd/timesync\n"
+                 "Restart=on-failure\nRestartSec=5s",
+                 "Requires=mojt-setup.service dbus.service\n"
+                 "After=mojt-setup.service dbus.service NetworkManager.service\n"))
+        machine_id_setup = export("systemd-machine-id-setup", "systemd", "bin/systemd-machine-id-setup")
+        put_unit("mojt-machine-id-commit.service", unit("Persist Mojt machine identity",
+                 machine_id_setup + " --commit", "Type=oneshot\nRemainAfterExit=yes",
+                 "DefaultDependencies=no\nRequires=mojt-setup.service\nAfter=mojt-setup.service\n"
+                 "Before=systemd-journald.service dbus.service mojt-console.service mojt-serial-console.service\n"))
+        put_unit("mojt-journal-flush.service", unit("Persist Mojt journal",
+                 "/run/mojt-system/bin/journalctl --flush", "Type=oneshot\nRemainAfterExit=yes",
+                 "Requires=systemd-journald.service mojt-setup.service\n"
+                 "After=systemd-journald.service mojt-setup.service\n"))
+        write(system / "console-quiet", "#!/bin/sh\nset -eu\nprintf '4\\n' >/proc/sys/kernel/printk\n", 0o755)
+        put_unit("mojt-console-quiet.service", unit("Mojt console kernel log threshold",
+                 "/run/mojt-system/console-quiet", "Type=oneshot\nRemainAfterExit=yes",
+                 "Requires=mojt-setup.service\nAfter=mojt-setup.service\n"
+                 "Before=mojt-console.service mojt-serial-console.service\n"))
+        wanted += ["systemd-timesyncd.service", "mojt-journal-flush.service",
+                   "mojt-console-quiet.service", "mojt-machine-id-commit.service"]
+        dbus_config = system / "dbus.conf"
+        policy = ('  <policy user="systemd-timesync">\n'
+                  '    <allow own="org.freedesktop.timesync1"/>\n'
+                  '    <allow send_destination="org.freedesktop.DBus"/>\n'
+                  '  </policy>\n')
+        dbus_config.write_text(dbus_config.read_text().replace(
+            '<allow user="root"/>',
+            '<allow user="root"/>\n    <allow user="systemd-timesync"/>', 1).replace(
+                "</busconfig>", policy + "</busconfig>"))
     setup += ['echo "Mojt System setup complete"']
     write(system / "setup", "\n".join(setup) + "\n", 0o755)
     put_unit("mojt-setup.service", unit("Mojt System setup", "/run/mojt-system/setup",
@@ -520,6 +586,8 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
     wants = system / "units/sysinit.target.wants"
     wants.mkdir()
     (wants / "mojt-setup.service").symlink_to("../mojt-setup.service")
+    if step >= 8:
+        (wants / "mojt-machine-id-commit.service").symlink_to("../mojt-machine-id-commit.service")
     put_unit("mojt.target", "[Unit]\nDescription=Mojt experimental System\n"
              "Requires=basic.target mojt-setup.service\nAfter=basic.target mojt-setup.service\n"
              "Wants=" + " ".join(wanted) + "\nAllowIsolate=yes\n")

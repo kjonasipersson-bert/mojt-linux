@@ -143,6 +143,10 @@ ethtool, PCI/USB inspection and strace, plus ss/modinfo from existing packages.
 It provides separate local and network diagnostic probes and a two-kernel
 serial-VM recipe. Real package export and owner VM acceptance remain pending.
 
+[System step 8](docs/system-console-time.md) integrates explicit terminal-size
+measurement, persistent bounded journal defaults and systemd-timesyncd.
+Owner VM acceptance remains pending.
+
 For early Mojt versions, Nix remains exposed and supplies System packages as
 well as Ports through a shared store. Mojt controls System activation;
 host-service requirements belong to MPM's separate capability model. See the

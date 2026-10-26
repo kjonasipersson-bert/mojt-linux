@@ -14,13 +14,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install archive tool
-        run: sudo apt-get update && sudo apt-get install -y zstd grub-common grub-efi-amd64-bin fdisk dosfstools mtools qemu-utils qemu-system-x86
+        run: sudo apt-get update && sudo apt-get install -y dbus zstd grub-common grub-efi-amd64-bin fdisk dosfstools mtools qemu-utils qemu-system-x86
       - name: Run synthetic installer regression tests
         run: python3 -m unittest discover -s tests -p 'test_base_install_failures.py' -v
       - name: Verify packed Base root ownership
         run: sudo python3 -m unittest discover -s tests -p 'test_base_pack_root.py' -v
       - name: Check VM builder contracts
         run: python3 -m unittest discover -s tests -p 'test_vm_builder.py' -v
+      - name: Check terminal geometry with real PTYs
+        run: python3 -m unittest discover -s tests -p 'test_console_size.py' -v
       - name: Check System payload and VM assembly contracts
         run: python3 -m unittest discover -s tests -p 'test_system_vm.py' -v
       - name: Check UEFI contracts and real GPT FAT GRUB image assembly

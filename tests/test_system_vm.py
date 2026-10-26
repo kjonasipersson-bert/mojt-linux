@@ -16,6 +16,8 @@ import tempfile
 import unittest
 from unittest import mock
 import types
+import pwd
+import select
 import xml.etree.ElementTree as ET
 
 
@@ -57,7 +59,8 @@ class SystemVmTests(unittest.TestCase):
             base = self.payload / value.lstrip("/")
             names = {
                 "systemd": ["lib/systemd/systemd", "bin/systemctl", "bin/journalctl",
-                            "bin/udevadm", "bin/systemd-sysusers"],
+                            "bin/udevadm", "bin/systemd-sysusers", "bin/timedatectl", "bin/systemd-cat", "bin/systemd-machine-id-setup",
+                            "lib/systemd/systemd-timesyncd"],
                 "dbus": ["bin/dbus-daemon"], "networkmanager": ["bin/NetworkManager", "bin/nmcli"],
                 "curl": ["bin/curl"], "cacert": [], "iproute2": ["bin/ip", "bin/ss"],
                 "nix": ["bin/nix", "bin/nix-store", "bin/nix-instantiate"], "python": ["bin/python3"],
@@ -109,7 +112,7 @@ class SystemVmTests(unittest.TestCase):
         self.assertEqual(set(system.roles(1)), {"systemd"})
         self.assertTrue(set(system.roles(1)) < set(system.roles(2)) < set(system.roles(3))
                         < set(system.roles(4)) < set(system.roles(5)) < set(system.roles(6)) < set(system.roles(7)))
-        for value in (0, 8, True, "1"):
+        for value in (0, 9, True, "1"):
             with self.assertRaises(ValueError):
                 system.roles(value)
 
@@ -196,6 +199,99 @@ class SystemVmTests(unittest.TestCase):
         system.write(compiler, "#!/bin/sh\nexit 0\n", 0o755)
         with self.assertRaisesRegex(ValueError, "no valid database"):
             system.prepare_hwdb(self.payload, {"systemd": {"output": str(selected)}}, self.root / "no-output")
+
+    def test_step8_time_journal_and_console_keep_base_and_admin_configuration(self):
+        system.write(self.tree / "state/etc/systemd/journald.conf", "[Journal]\nStorage=volatile\n")
+        before = system.tree_hash(self.tree / "base")
+        directory, record = self.install(8, "password")
+        self.assertEqual(system.roles(8), system.roles(7))
+        self.assertEqual(system.tree_hash(self.tree / "base"), before)
+        self.assertEqual((self.tree / "state/etc/systemd/journald.conf").read_text(), "[Journal]\nStorage=volatile\n")
+        self.assertEqual((self.tree / "state/etc/systemd/timesyncd.conf").readlink(),
+                         Path("/run/mojt-system/defaults/timesyncd.conf"))
+        defaults = (directory / "defaults/journald.conf").read_text()
+        self.assertIn("Storage=persistent", defaults)
+        self.assertIn("ForwardToConsole=no", defaults)
+        unit = (directory / "units/systemd-timesyncd.service").read_text()
+        self.assertIn(record["packages"]["systemd"]["output"] + "/lib/systemd/systemd-timesyncd", unit)
+        self.assertIn("User=systemd-timesync", unit)
+        self.assertIn("CAP_SYS_TIME", unit)
+        self.assertNotIn("network-online.target", unit)
+        self.assertIn("systemd-timesyncd.service", (directory / "units/mojt.target").read_text())
+        bus = (directory / "dbus.conf").read_text()
+        ET.fromstring(bus)
+        self.assertIn('own="org.freedesktop.timesync1"', bus)
+        commit = (directory / "units/mojt-machine-id-commit.service").read_text()
+        self.assertIn("systemd-machine-id-setup --commit", commit)
+        self.assertIn("DefaultDependencies=no", commit)
+        self.assertIn("After=mojt-setup.service", commit)
+        self.assertIn("Before=systemd-journald.service dbus.service", commit)
+        self.assertTrue((directory / "units/sysinit.target.wants/mojt-machine-id-commit.service").is_symlink())
+        quiet = (directory / "units/mojt-console-quiet.service").read_text()
+        self.assertIn("Before=mojt-console.service mojt-serial-console.service", quiet)
+        self.assertIn("mojt-console-quiet.service", (directory / "units/mojt.target").read_text())
+        subprocess.run(["sh", "-n", str(directory / "console-quiet")], check=True)
+        subprocess.run(["sh", "-n", str(directory / "bin/mojt-console-size")], check=True)
+
+    def test_journal_check_normalizes_kernel_uuid_for_journalctl(self):
+        guest = self.root / "journal-guest"
+        tools = guest / "tools"
+        for name in ("cat", "grep", "tr"):
+            tools.mkdir(parents=True, exist_ok=True)
+            (tools / name).symlink_to(shutil.which(name))
+        for name, body in {"id": "echo 0", "systemctl": "exit 0"}.items():
+            system.write(tools / name, "#!/bin/sh\n" + body + "\n", 0o755)
+        log = guest / "calls"
+        system.write(tools / "journalctl", '#!/bin/sh\nprintf "%s\\n" "$*" >>"' + str(log) + '"\n'
+                     'case "$1" in --boot=*) echo "Mojt journal persistence probe" ;; esac\n', 0o755)
+        system.write(guest / "run/mojt-system/record.json", "{}")
+        system.write(guest / "run/mojt-system/environment", f"export PATH={tools}\n")
+        system.write(guest / "proc/1/comm", "systemd\n")
+        system.write(guest / "proc/sys/kernel/random/boot_id", "22222222-2222-4222-8222-222222222222\n")
+        system.write(guest / "var/lib/mojt/journal-probe-boot", "0dcf711c-c436-48fc-9bfd-eefd269fcb73\n")
+        (guest / "etc").mkdir()
+        source = (REPO / "tests/check-mojt-system.sh").read_text()
+        for path in ("/run/mojt-system", "/proc/1/comm", "/proc/sys/kernel/random/boot_id", "/var", "/etc"):
+            source = source.replace(path, str(guest / path.lstrip("/")))
+        script = guest / "check.sh"
+        script.write_text(source)
+        result = subprocess.run(["/bin/sh", str(script), "journal-check"], text=True,
+                                capture_output=True, env={**os.environ, "PATH": str(tools)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--boot=0dcf711cc43648fc9bfdeefd269fcb73", log.read_text())
+        self.assertIn("PASS: previous boot journal retained", result.stdout)
+
+    @unittest.skipUnless(shutil.which("dbus-daemon"), "requires dbus-daemon")
+    def test_step8_policy_is_accepted_by_a_real_private_dbus_daemon(self):
+        directory, _ = self.install(8, "password")
+        text = (directory / "dbus.conf").read_text()
+        # Keep generated policy semantics; adapt only identity and transport
+        # to this unprivileged, isolated host test. Never use the host bus.
+        user = pwd.getpwuid(os.getuid()).pw_name
+        text = text.replace('<user>messagebus</user>', '').replace(
+            '<listen>systemd:</listen>', f'<listen>unix:path={self.root}/private-bus</listen>')
+        text = text.replace('user="root"', f'user="{user}"').replace(
+            'user="systemd-timesync"', f'user="{user}"')
+        text = text.replace('<includedir>/etc/dbus-1/system.d</includedir>', '')
+        config = self.root / "private-dbus.conf"
+        config.write_text(text)
+        process = subprocess.Popen(["dbus-daemon", "--nofork", "--nopidfile",
+                                    "--config-file=" + str(config), "--print-address"],
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            self.assertTrue(select.select([process.stdout], [], [], 3)[0], "bus did not become ready")
+            address = process.stdout.readline()
+            if not address.startswith("unix:"):
+                process.wait(timeout=3)
+                error = process.stderr.read()
+                if "Failed to open socket: Operation not permitted" in error:
+                    self.skipTest("runtime forbids private Unix sockets after successful policy parsing")
+                self.fail(error)
+            self.assertIsNone(process.poll())
+        finally:
+            if process.poll() is None:
+                process.terminate()
+            process.communicate(timeout=3)
 
     def test_hwdb_tampering_and_linked_persistent_configuration_are_rejected(self):
         record = self.fixture(7)
