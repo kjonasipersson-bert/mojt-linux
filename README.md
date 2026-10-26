@@ -154,6 +154,15 @@ export, local timezone, UTF-8 and manual rendering after correcting console
 SIGPIPE handling. A separate step 9 A/B run was explicitly deferred to the
 next System stage.
 
+[System step 10](docs/system-accounts.md) prepares local accounts, PAM console
+login, logind sessions and password-authenticated sudo on the separate home
+state layout. Privileged helpers are selected-generation copies in volatile
+storage; store objects and retained profiles remain without setuid bits.
+The owner verified binary export, PAM login, password changes, sudo authorization,
+clean logout and account/home/Ports preservation across A/B/A after the documented
+user-manager correction. The owner also confirmed that the superseded password
+was rejected after returning to A.
+
 For early Mojt versions, Nix remains exposed and supplies System packages as
 well as Ports through a shared store. Mojt controls System activation;
 host-service requirements belong to MPM's separate capability model. See the
@@ -177,7 +186,7 @@ python3 -m unittest discover -s tests -p 'test_system_vm.py' -v
 The [persistent state layout](docs/state-layout.md) documents how the runtime
 `/etc`, `/var`, `/home` and `/root` paths attach to shared machine state, and
 how this differs from adding or selecting a boot generation. New home mounting
-is prepared for the account stage; real VM acceptance is pending.
+was exercised in the account-stage A/B/A run.
 
 ## Project layout
 

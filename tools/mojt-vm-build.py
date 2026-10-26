@@ -663,7 +663,7 @@ exec qemu-system-x86_64 \\
 
 
 def additional_pairs(entries, *, tree, work, target, first_base, support, args,
-                     root_uuid, console, assembled_at):
+                     root_uuid, console, assembled_at, account_mode=False):
     """Assemble each pair privately, then merge only compatible immutable inputs."""
     records = []
     network = False
@@ -677,6 +677,8 @@ def additional_pairs(entries, *, tree, work, target, first_base, support, args,
         require_directory(modules_dir, "matching kernel modules")
         payload = entry.get("system_payload", args.system_payload)
         record = support.load_payload(payload)
+        if (record["step"] >= 10) != account_mode:
+            fail("account-enabled and legacy System profiles cannot share this test disk")
         network = network or record["step"] >= 2
         physical = getattr(args, "hardware_profile", None)
         if physical and record["step"] < 6:
@@ -875,7 +877,7 @@ def build(args):
             extra_records, extra_network = additional_pairs(
                 entries, tree=tree, work=temp, target=target, first_base=version,
                 support=support, args=args, root_uuid=root_uuid, console=console,
-                assembled_at=assembled_at)
+                assembled_at=assembled_at, account_mode=bool(record and record["step"] >= 10))
             network = network or extra_network
             used = int(subprocess.run(["du", "-s", "--block-size=1", str(tree)], check=True,
                                      capture_output=True, text=True).stdout.split()[0])

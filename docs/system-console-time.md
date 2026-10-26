@@ -259,3 +259,12 @@ timezone configuration, timedated/logind, account management, physical hardware
 coverage and in-place boot-disk updates remain separate work. A timezone such
 as Europe/Stockholm is persistent machine configuration; NTP synchronization
 alone does not select it.
+
+## Local consoles and later account-stage update
+
+The step 10 console tool recognizes Linux virtual consoles through KDGETMODE
+and reads their kernel-provided TIOCGWINSZ geometry instead of sending CSI 18 t.
+This avoids a serial-terminal query on tty1. It does not propagate QEMU window
+resizing: a local console's grid follows the guest display mode, while a serial
+console still needs an explicit query or known rows/columns. See the
+[account-stage console notes](system-accounts.md#console-size-local-versus-serial).

@@ -6,6 +6,7 @@
 
 import importlib.util
 import contextlib
+import configparser
 import io
 import json
 import os
@@ -60,11 +61,14 @@ class SystemVmTests(unittest.TestCase):
             names = [] if role.startswith("manual-") else {
                 "systemd": ["lib/systemd/systemd", "bin/systemctl", "bin/journalctl",
                             "bin/udevadm", "bin/systemd-sysusers", "bin/timedatectl", "bin/systemd-cat", "bin/systemd-machine-id-setup",
-                            "lib/systemd/systemd-timesyncd"],
+                            "lib/systemd/systemd-timesyncd", "lib/systemd/systemd-logind",
+                            "lib/systemd/systemd-user-runtime-dir", "lib/systemd/systemd-sysctl", "bin/loginctl"],
                 "dbus": ["bin/dbus-daemon"], "networkmanager": ["bin/NetworkManager", "bin/nmcli"],
                 "curl": ["bin/curl"], "cacert": [], "iproute2": ["bin/ip", "bin/ss"],
                 "nix": ["bin/nix", "bin/nix-store", "bin/nix-instantiate"], "python": ["bin/python3"],
                 "shell": ["bin/bash"], "tzdata": [], "man-db": ["bin/man", "bin/manpath"],
+                "shadow": ["bin/" + n for n in system.accounts.COMMANDS],
+                "pam": ["bin/unix_chkpwd"], "sudo": ["bin/sudo", "sbin/visudo"],
                 "kmod": ["bin/modprobe", "bin/lsmod", "bin/modinfo"],
                 "wpa-supplicant": ["bin/wpa_supplicant"], "iw": ["bin/iw"],
                 **{role: ["bin/" + name for name in names]
@@ -76,6 +80,15 @@ class SystemVmTests(unittest.TestCase):
             base.mkdir(parents=True)
             for name in names:
                 system.write(base / name, "#!/bin/sh\nexit 0\n", 0o755)
+            if step >= 10 and role in ("shadow", "pam", "sudo"):
+                for name in names:
+                    system.write(base / name, "\x7fELFsynthetic", 0o755)
+            if step >= 10 and role in ("systemd", "pam"):
+                modules = ("pam_systemd",) if role == "systemd" else system.accounts.PAM_MODULES
+                for name in modules:
+                    system.write(base / "lib/security" / (name + ".so"), "synthetic PAM module")
+            if role == "sudo":
+                system.write(base / "libexec/sudo/sudoers.so", "synthetic plugin")
             if role.startswith("manual-") or role == "man-db":
                 system.write(base / "share/man/man1/example.1", ".TH EXAMPLE 1\n")
             if role == "tzdata":
@@ -87,8 +100,22 @@ class SystemVmTests(unittest.TestCase):
                              "systemd-udevd.service", "systemd-udev-trigger.service"):
                     system.write(vendor / name, "[Unit]\nDescription=Synthetic vendor unit\n")
                 system.write(base / "lib/udev/rules.d/50-synthetic.rules", "# synthetic\n")
+                if step >= 10:
+                    user_units = {
+                        "exit.target": "[Unit]\nDefaultDependencies=no\nRequires=systemd-exit.service\nAfter=systemd-exit.service\nAllowIsolate=yes\n",
+                        "systemd-exit.service": "[Unit]\nDefaultDependencies=no\nRequires=shutdown.target\nAfter=shutdown.target\nSuccessAction=exit-force\n[Service]\nSlice=-.slice\n",
+                        "shutdown.target": "[Unit]\nDefaultDependencies=no\nRefuseManualStart=yes\n",
+                    }
+                    for name, text in user_units.items():
+                        system.write(base / "example/systemd/user" / name, text)
+
             if role == "cacert":
                 system.write(base / "etc/ssl/certs/ca-bundle.crt", "synthetic cert")
+        if step >= 10:
+            system.write(self.tree / "state/etc/group", "root:x:0:\n")
+            system.write(self.tree / "state/etc/shadow", "root:!:0:0:99999:7:::\n", 0o600)
+            system.write(self.tree / "state/etc/gshadow", "root:*::\n", 0o600)
+            system.write(self.tree / "state/etc/nsswitch.conf", "passwd: files\ngroup: files\nshadow: files\n")
         source = dict(store="/nix/store/" + "a" * 32 + "-nixpkgs",
                       path="/nix/store/" + "a" * 32 + "-nixpkgs/nixpkgs",
                       revision="b" * 40, system="x86_64-linux")
@@ -116,7 +143,7 @@ class SystemVmTests(unittest.TestCase):
         self.assertEqual(set(system.roles(1)), {"systemd"})
         self.assertTrue(set(system.roles(1)) < set(system.roles(2)) < set(system.roles(3))
                         < set(system.roles(4)) < set(system.roles(5)) < set(system.roles(6)) < set(system.roles(7)))
-        for value in (0, 10, True, "1"):
+        for value in (0, 11, True, "1"):
             with self.assertRaises(ValueError):
                 system.roles(value)
 
@@ -203,6 +230,92 @@ class SystemVmTests(unittest.TestCase):
         system.write(compiler, "#!/bin/sh\nexit 0\n", 0o755)
         with self.assertRaisesRegex(ValueError, "no valid database"):
             system.prepare_hwdb(self.payload, {"systemd": {"output": str(selected)}}, self.root / "no-output")
+
+    def test_step10_auth_has_no_privilege_on_disk_and_preserves_credentials(self):
+        directory, record = self.install(10, "password")
+        self.assertEqual((self.tree / "state/etc/shadow").read_text(), "root:!:0:0:99999:7:::\n")
+        self.assertEqual((directory / "login").readlink().as_posix(), record["packages"]["shadow"]["output"] + "/bin/login")
+        self.assertEqual((directory / "bin/sudo").readlink().as_posix(), "/run/mojt-privileged/sudo")
+        self.assertIn("sudoers_file=/etc/sudoers", (self.tree / "state/etc/sudo.conf").read_text())
+        self.assertNotIn("/nix/store", (self.tree / "state/etc/sudo.conf").read_text())
+        self.assertIn("session required /run/mojt-system/pam/pam_systemd.so", (self.tree / "state/etc/pam.d/login").read_text())
+        self.assertNotIn("nullok", (self.tree / "state/etc/pam.d/login").read_text())
+        self.assertEqual((self.tree / "state/etc/sudoers").stat().st_mode & 0o777, 0o440)
+        for p in self.tree.rglob("*"):
+            if p.is_file() and not p.is_symlink():
+                self.assertFalse(p.stat().st_mode & 0o6000, str(p))
+        bus = ET.fromstring((directory / "dbus.conf").read_text())
+        self.assertIsNotNone(bus.find('./policy[@context="default"]/allow[@user="*"]'))
+        self.assertIn("Requires=mojt-privileged.service", (directory / "units/mojt-console.service").read_text())
+        self.assertNotIn("/ports/", (self.tree / "state/etc/sudoers").read_text())
+
+    def test_step10_user_shutdown_transaction_keeps_the_complete_upstream_chain(self):
+        directory, record = self.install(10, "password")
+        units = {}
+        for name in system.accounts.USER_SHUTDOWN_UNITS:
+            source = (directory / "user-units" / name).readlink().as_posix()
+            self.assertEqual(source, record["packages"]["systemd"]["output"] + "/example/systemd/user/" + name)
+            parser = configparser.ConfigParser(interpolation=None)
+            parser.read_string(system.virtual_file(self.payload, source).read_text())
+            units[name] = parser
+        self.assertIn("systemd-exit.service", units["exit.target"]["Unit"]["Requires"].split())
+        self.assertIn("shutdown.target", units["systemd-exit.service"]["Unit"]["Requires"].split())
+        self.assertEqual(units["systemd-exit.service"]["Unit"]["SuccessAction"], "exit-force")
+        for parser in units.values():
+            self.assertEqual(parser["Unit"]["DefaultDependencies"], "no")
+        self.assertIn("SYSTEMD_UNIT_PATH=/etc/systemd/user:/run/mojt-system/user-units",
+                      (directory / "units/user@.service").read_text())
+        self.assertIn("FileDescriptorStoreMax=768", (directory / "units/systemd-logind.service").read_text())
+
+    def test_step10_rejects_incomplete_user_shutdown_payload(self):
+        record = self.fixture(10)
+        output = record["packages"]["systemd"]["output"]
+        folder = self.payload / output.lstrip("/")
+        (folder / "example/systemd/user/exit.target").unlink()
+        for item in record["objects"]:
+            if item["path"] == output:
+                item["tree_sha256"] = system.tree_hash(folder)
+        system.write(self.payload / "system.json", json.dumps(record))
+        with self.assertRaisesRegex(ValueError, "missing System user shutdown unit: exit.target"):
+            system.load_payload(self.payload)
+
+    def test_step10_does_not_invent_credentials_before_builder_password_prompt(self):
+        record = self.fixture(10)
+        for name in ("shadow", "gshadow"):
+            (self.tree / "state/etc" / name).unlink()
+        with mock.patch.object(system.os, "chown"):
+            system.install(self.tree, self.payload, record, self.busybox, "password", REPO)
+        self.assertFalse((self.tree / "state/etc/shadow").exists())
+        self.assertFalse((self.tree / "state/etc/gshadow").exists())
+
+    def test_step10_rejects_linked_authentication_directory_without_external_writes(self):
+        record = self.fixture(10)
+        outside = self.root / "outside-pam"
+        outside.mkdir()
+        (self.tree / "state/etc/pam.d").symlink_to(outside)
+        with mock.patch.object(system.os, "chown"), self.assertRaisesRegex(ValueError, "unsafe.*directory"):
+            system.install(self.tree, self.payload, record, self.busybox, "password", REPO)
+        self.assertEqual(list(outside.iterdir()), [])
+
+    def test_step10_preserves_conflicting_machine_authentication_config(self):
+        record = self.fixture(10)
+        config = self.tree / "state/etc/pam.d/login"
+        system.write(config, "administrator authentication policy\n")
+        with mock.patch.object(system.os, "chown"), self.assertRaisesRegex(ValueError, "conflicts"):
+            system.install(self.tree, self.payload, record, self.busybox, "password", REPO)
+        self.assertEqual(config.read_text(), "administrator authentication policy\n")
+
+    def test_step10_rejects_script_helpers_even_with_matching_tree_hash(self):
+        record = self.fixture(10)
+        output = record["packages"]["sudo"]["output"]
+        folder = self.payload / output.lstrip("/")
+        system.write(folder / "bin/sudo", "#!/bin/sh\n", 0o755)
+        for item in record["objects"]:
+            if item["path"] == output:
+                item["tree_sha256"] = system.tree_hash(folder)
+        system.write(self.payload / "system.json", json.dumps(record))
+        with self.assertRaisesRegex(ValueError, "must be ELF"):
+            system.load_payload(self.payload)
 
     def test_step9_manuals_and_timezone_preserve_machine_settings(self):
         system.write(self.tree / "state/etc/localtime", "existing timezone")

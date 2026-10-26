@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 # Explicitly run inside the NEW Mojt VM, never on the Debian/Distrobox host.
 set -eu
-[ "$(id -u)" = 0 ] || { echo "Run at the Mojt VM root console" >&2; exit 1; }
+[ "$(id -u)" = 0 ] || [ "${1-}" = user ] || { echo "Run at the Mojt VM root console (or use user for an ordinary session)" >&2; exit 1; }
 [ -f /run/mojt-system/record.json ] || { echo "Not the System experiment VM" >&2; exit 1; }
 . /run/mojt-system/environment
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -178,6 +178,42 @@ EX
         [ -n "$device" ] || fail "no interface for driver inspection"
         ethtool -i "$device"
         echo "PASS: DNS tools and network driver inspection" ;;
+    accounts)
+        PATH=/run/mojt-system/bin:/usr/bin:/bin
+        export PATH
+        boot_check
+        systemctl is-active --quiet mojt-privileged.service systemd-logind.service \
+            systemd-user-sessions.service mojt-account-sysctl.service || fail "account services not ready"
+        visudo -c
+        loginctl list-sessions --no-pager
+        for name in sudo passwd; do
+            [ "$(stat -c '%u:%g:%a' "/run/mojt-privileged/$name")" = 0:0:4755 ] ||
+                fail "incorrect privileged helper mode: $name"
+        done
+        [ "$(stat -c '%u:%g:%a' /root)" = 0:0:700 ] || fail "root home is not private"
+        echo "PASS: account service integration and privileged runtime (interactive authentication still required)" ;;
+    user)
+        PATH=/run/mojt-system/bin:/usr/bin:/bin
+        export PATH
+        [ "$(id -u)" -ge 1000 ] || fail "use an ordinary account, logged in through getty"
+        [ -n "${XDG_SESSION_ID-}" ] || fail "missing login session"
+        /run/mojt-system/bin/python3 - <<'PYTHON'
+import os
+from pathlib import Path
+import stat
+uid = os.getuid()
+home = Path.home()
+assert home.parent == Path("/home") and not home.is_symlink()
+assert home.stat().st_uid == uid and stat.S_IMODE(home.stat().st_mode) == 0o700
+runtime = Path(os.environ["XDG_RUNTIME_DIR"])
+assert str(runtime) == f"/run/user/{uid}" and not runtime.is_symlink()
+assert runtime.stat().st_uid == uid and stat.S_IMODE(runtime.stat().st_mode) == 0o700
+assert not os.access("/etc/shadow", os.R_OK)
+assert not os.access("/root", os.R_OK)
+PYTHON
+        loginctl show-session "$XDG_SESSION_ID" -p User -p State -p Type --no-pager
+        ping -c 1 -W 2 127.0.0.1
+        echo "PASS: ordinary user home, runtime, session and loopback ping (sudo tests are separate)" ;;
     environment)
         PATH=/run/mojt-system/bin:/usr/bin:/bin
         export PATH
@@ -277,5 +313,5 @@ PYTHON
         current="$(cat /proc/sys/kernel/random/boot_id)" || fail "cannot read current boot ID"
         [ "$old" != "$current" ] || fail "a second boot is required"
         echo "PASS: both /etc and /var markers survived a different boot" ;;
-    *) fail "use boot, network, ports, programs, admin, diagnostics, diagnostics-network, environment, clock, journal-write, journal-check, homes-write, homes-check, persistence-write or persistence-check" ;;
+    *) fail "use boot, network, ports, programs, admin, diagnostics, diagnostics-network, accounts, user, environment, clock, journal-write, journal-check, homes-write, homes-check, persistence-write or persistence-check" ;;
 esac

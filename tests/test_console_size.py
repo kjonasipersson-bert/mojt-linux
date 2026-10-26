@@ -7,11 +7,13 @@ import fcntl
 import importlib.util
 from pathlib import Path
 import os
+import select
 import pty
 import struct
 import termios
 import threading
 import unittest
+from unittest import mock
 
 spec = importlib.util.spec_from_file_location("console_size", Path(__file__).parents[1] / "tools/mojt-console-size.py")
 console = importlib.util.module_from_spec(spec)
@@ -33,6 +35,17 @@ class ConsoleSizeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             console.resize(self.slave, 0, 140)
         self.assertEqual(self.size(), (40, 140))
+
+    def test_linux_vt_reads_kernel_geometry_without_sending_query(self):
+        console.resize(self.slave, 50, 120)
+        real_ioctl = fcntl.ioctl
+        def ioctl(fd, request, data):
+            if request == 0x4B3B:
+                return struct.pack("i", 0)
+            return real_ioctl(fd, request, data)
+        with mock.patch.object(console.fcntl, "ioctl", side_effect=ioctl):
+            self.assertEqual(console.resize(self.slave), (50, 120))
+        self.assertFalse(select.select([self.master], [], [], 0)[0])
 
     def test_query_sets_size_and_restores_terminal_flags(self):
         original = termios.tcgetattr(self.slave)

@@ -106,5 +106,20 @@ ownership, privacy and credentials across compatible choices.
 
 Local tests cover missing-state initialization, preservation of existing home
 data/modes, rejection of unsafe or nonempty paths, source preservation and
-installer failure cleanup. Real home-mount and account VM acceptance remains
-pending; earlier `/etc` and `/var` acceptance does not prove these new mounts.
+installer failure cleanup. Owner VM evidence now confirms the home mounts and account/home retention
+across the account A/B/A run; see the acceptance record below.
+
+## Owner home-state acceptance
+
+In `/home/jonasp/mojt-accounts.Vxdthq/serial-image`, the owner observed separate
+ext4 binds from state/home and state/root and mode/private-owner checks through
+actual PAM logins. A → B retained independent home/root probes alongside the
+existing machine ID, `/etc`, `/var` and journal probes. A normal user's home
+marker remained readable on B. A new user created under B returned to A with
+UID 1002, the same complete id output and its B-created home marker intact.
+
+This establishes persistent home state on the tested shared disk and compatible
+boot choices, not a general disk updater or migration of an old nonempty Base
+home. Account/user-manager corrections were applied to this test image's
+persistent `/etc`; the full scope and remaining checks are recorded in
+[account acceptance](system-accounts.md#owner-aba-acceptance-after-the-correction).

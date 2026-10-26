@@ -4,6 +4,7 @@
 """Shared helpers for the opt-in System/Nix VM experiment."""
 
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -12,6 +13,11 @@ import shutil
 import stat
 import subprocess
 
+
+_accounts_spec = importlib.util.spec_from_file_location(
+    "mojt_accounts", Path(__file__).with_name("mojt_accounts.py"))
+accounts = importlib.util.module_from_spec(_accounts_spec)
+_accounts_spec.loader.exec_module(accounts)
 
 STORE_NAME = r"[0-9abcdfghijklmnpqrsvwxyz]{32}-[A-Za-z0-9+._?=-]+"
 ROLES = {
@@ -26,6 +32,7 @@ ROLES = {
         "pciutils": "pciutils", "usbutils": "usbutils", "strace": "strace"},
     8: {},
     9: {"tzdata": "tzdata", "man-db": "man-db"},
+    10: {"shadow": "shadow", "pam": "pam", "sudo": "sudo"},
 }
 ADMIN_COMMANDS = {
     "procps": ("ps", "top", "free", "pgrep", "uptime"),
@@ -95,10 +102,12 @@ def require(condition, message):
 
 
 def roles(step):
-    require(type(step) is int and step in ROLES, "System step must be an integer from 1 to 9")
+    require(type(step) is int and step in ROLES, "System step must be an integer from 1 to 10")
     result = {key: value for n in range(1, step + 1) for key, value in ROLES[n].items()}
     if step >= 9:
         result.update(MANUAL_ROLES)
+    if step >= 10:
+        result.update({"manual-" + name: name for name in ("shadow", "pam", "sudo")})
     return result
 
 
@@ -197,6 +206,38 @@ def executable(payload, record, role, *candidates):
     raise ValueError(f"missing {role} executable: {candidates}")
 
 
+def account_inputs(payload, record):
+    result = {"shadow": {}, "pam": {}, "helpers": {}}
+    for name in accounts.COMMANDS:
+        result["shadow"][name] = executable(payload, record, "shadow", "bin/" + name, "sbin/" + name)
+    for name in accounts.PAM_MODULES + ("pam_systemd",):
+        role = "systemd" if name == "pam_systemd" else "pam"
+        value = record["packages"][role]["output"] + "/lib/security/" + name + ".so"
+        require(virtual_file(payload, value).is_file(), "missing PAM module: " + name)
+        result["pam"][name] = value
+    for name in accounts.SYSTEMD_PROGRAMS:
+        result[name] = executable(payload, record, "systemd", "lib/systemd/" + name)
+    for name, role in (("loginctl", "systemd"), ("visudo", "sudo"), ("python3", "python")):
+        result["python" if name == "python3" else name] = executable(payload, record, role, "bin/" + name, "sbin/" + name)
+    result["systemd"] = executable(payload, record, "systemd", "lib/systemd/systemd")
+    for name, role in (("sudo", "sudo"), ("passwd", "shadow"), ("unix_chkpwd", "pam")):
+        value = executable(payload, record, role, "bin/" + name, "sbin/" + name)
+        path = virtual_file(payload, value)
+        require(path.read_bytes().startswith(b"\x7fELF"), "privileged helper must be ELF: " + name)
+        require(not path.stat().st_mode & 0o6000, "store helper must not be setuid/setgid")
+        result["helpers"][name] = {"source": value, "sha256": file_hash(path)}
+    plugin = record["packages"]["sudo"]["output"] + "/libexec/sudo/sudoers.so"
+    require(virtual_file(payload, plugin).is_file(), "missing sudoers plugin")
+    result["sudo_plugin"] = plugin
+    result["user_shutdown_units"] = {}
+    vendor = record["packages"]["systemd"]["output"] + "/example/systemd/user/"
+    for name in accounts.USER_SHUTDOWN_UNITS:
+        path = vendor + name
+        require(virtual_file(payload, path).is_file(), "missing System user shutdown unit: " + name)
+        result["user_shutdown_units"][name] = path
+    return result
+
+
 def load_payload(path):
     require(path.is_dir() and not path.is_symlink(), "System payload must be a real directory")
     record_file = path / "system.json"
@@ -277,6 +318,8 @@ def load_payload(path):
         zone = virtual_file(path, record["packages"]["tzdata"]["output"] + "/share/zoneinfo/Europe/Stockholm")
         require(zone.is_file() and zone.read_bytes().startswith(b"TZif"), "missing Stockholm timezone data")
         manual_paths(path, record)
+    if record["step"] >= 10:
+        account_inputs(path, record)
     return record
 
 
@@ -316,6 +359,7 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
             generation=None):
     """Install only into a NEW copied VM tree. Original Base/state stay intact."""
     step = record["step"]
+    require(step < 10 or login_mode == "password", "account stage requires password login")
     require(console in ("serial", "local"), "unsupported console")
     require(hardware_profile in (None, "thinkpad-x1-carbon-3"), "unsupported hardware profile")
     key = VERSION + "-step" + str(step)
@@ -580,8 +624,8 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
             dest = config / name
             if not dest.exists() and not dest.is_symlink():
                 dest.symlink_to("/run/mojt-system/defaults/" + name)
-        with (system / "sysusers.conf").open("a") as accounts:
-            accounts.write('u systemd-timesync - "Time synchronization" /var/lib/systemd/timesync\n')
+        with (system / "sysusers.conf").open("a") as account_file:
+            account_file.write('u systemd-timesync - "Time synchronization" /var/lib/systemd/timesync\n')
         setup += ["mkdir -p /var/log/journal", "chgrp systemd-journal /var/log/journal",
                   "chmod 2755 /var/log/journal"]
         daemon = executable(payload, record, "systemd", "lib/systemd/systemd-timesyncd")
@@ -623,6 +667,9 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
         export("manpath", "man-db", "bin/manpath")
         write(system / "manual-path", ":".join(manual_paths(payload, record)) + "\n")
         write(system / "zoneinfo-path", record["packages"]["tzdata"]["output"] + "/share/zoneinfo\n")
+    if step >= 10:
+        wanted += accounts.install(tree, system, account_inputs(payload, record), repo,
+                                   write, add_default, put_unit, unit)
     setup += ['echo "Mojt System setup complete"']
     write(system / "setup", "\n".join(setup) + "\n", 0o755)
     put_unit("mojt-setup.service", unit("Mojt System setup", "/run/mojt-system/setup",
@@ -653,6 +700,9 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
                               ":".join(manual_paths(payload, record)) + ':/usr/share/man}"\n')
             environment.write('export TZDIR="${TZDIR:-' +
                               record["packages"]["tzdata"]["output"] + '/share/zoneinfo}"\n')
+    if step >= 10:
+        with (system / "environment").open("a") as environment:
+            environment.write('export LANG="${LANG:-C.UTF-8}"\n')
     # PID 1 applies presets on first boot, before mojt-setup.service can run.
     # Mojt's target supplies explicit dependencies; merely exposing a vendor
     # unit must not enable its optional services or sockets.
