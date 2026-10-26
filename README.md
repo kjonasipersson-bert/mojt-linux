@@ -45,9 +45,9 @@ and remaining integration work.
 
 The owner has also verified explicit Base/System generation selection and
 return, persistent markers, authenticated serial-console access from SSH,
-and controlled new-image build interruption. Both tested System labels used
-the same kernel/payload. A different-kernel test and updates to an existing
-boot disk remain separate work.
+and controlled new-image build interruption. The owner subsequently verified
+two different kernels with matching modules and retained machine state. Updates
+to an existing boot disk remain separate work.
 
 ## Requirements on the build/test host
 
@@ -141,11 +141,16 @@ disk can be probed with SATA and USB storage in QEMU before physical testing.
 [System step 7](docs/system-diagnostics.md) adds iputils, DNS client tools,
 ethtool, PCI/USB inspection and strace, plus ss/modinfo from existing packages.
 It provides separate local and network diagnostic probes and a two-kernel
-serial-VM recipe. Real package export and owner VM acceptance remain pending.
+serial-VM recipe. The owner completed package export and VM acceptance.
 
 [System step 8](docs/system-console-time.md) integrates explicit terminal-size
 measurement, persistent bounded journal defaults and systemd-timesyncd.
-Owner VM acceptance remains pending.
+The owner verified both kernels, stable machine identity, retained journals,
+NTP synchronization and quiet login prompts.
+
+[System step 9](docs/system-environment.md) prepares timezone data, man-db and
+selected System manuals, retaining C.UTF-8 as the default. Real export and VM
+acceptance for this step remain pending.
 
 For early Mojt versions, Nix remains exposed and supplies System packages as
 well as Ports through a shared store. Mojt controls System activation;

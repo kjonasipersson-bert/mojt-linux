@@ -40,12 +40,12 @@ def prepare(args):
     nix = nix_adapter()
     source = nix.catalog_from_manifest(args.source_manifest)["source"]
     system.require(source["system"] == "x86_64-linux", "System VM requires x86_64-linux")
-    requests = [dict(name=name, attribute=attribute, commands=[])
+    requests = [dict(name=name, attribute=attribute, commands=[], manual=name.startswith("manual-"))
                 for name, attribute in system.roles(args.step).items()]
     selected = json.loads(nix.run(
         "nix-instantiate", "--eval", "--strict", "--json",
         "--option", "allow-import-from-derivation", "false",
-        "--expr", nix.EVALUATE, "--argstr", "requestJSON",
+        "--expr", system.MANUAL_EVALUATE if args.step >= 9 else nix.EVALUATE, "--argstr", "requestJSON",
         json.dumps(dict(source=source, ports=requests))))
     packages = {item["name"]: {k: item[k] for k in ("attribute", "version", "output")}
                 for item in selected}

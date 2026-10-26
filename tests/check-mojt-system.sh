@@ -178,6 +178,36 @@ EX
         [ -n "$device" ] || fail "no interface for driver inspection"
         ethtool -i "$device"
         echo "PASS: DNS tools and network driver inspection" ;;
+    environment)
+        PATH=/run/mojt-system/bin:/usr/bin:/bin
+        export PATH
+        [ -r /run/mojt-system/manual-path ] || fail "requires a step 9 VM"
+        MANPATH="$(cat /run/mojt-system/manual-path)"
+        MANPAGER=cat
+        export MANPATH MANPAGER
+        for page in man systemctl curl ping; do
+            man -w "$page" || fail "missing manual: $page"
+        done
+        work="$(mktemp -d /tmp/mojt-environment.XXXXXX)"
+        trap 'rm -rf -- "$work"' 0 HUP INT TERM
+        man --pager=cat ping >"$work/ping.txt"
+        [ -s "$work/ping.txt" ] || fail "manual rendering produced no text"
+        /run/mojt-system/bin/python3 - <<'PYTHON'
+import datetime
+import locale
+from pathlib import Path
+from zoneinfo import ZoneInfo
+locale.setlocale(locale.LC_ALL, "C.UTF-8")
+assert locale.nl_langinfo(locale.CODESET).upper() == "UTF-8"
+root = Path("/run/mojt-system/zoneinfo-path").read_text().strip()
+with (Path(root) / "Europe/Stockholm").open("rb") as stream:
+    zone = ZoneInfo.from_file(stream)
+assert datetime.datetime(2026, 1, 15, tzinfo=zone).utcoffset() == datetime.timedelta(hours=1)
+assert datetime.datetime(2026, 7, 15, tzinfo=zone).utcoffset() == datetime.timedelta(hours=2)
+PYTHON
+        rm -rf -- "$work"
+        trap - 0 HUP INT TERM
+        echo "PASS: System UTF-8, Stockholm timezone data and readable manuals" ;;
     clock)
         PATH=/run/mojt-system/bin:/usr/bin:/bin
         export PATH
@@ -225,5 +255,5 @@ EX
         current="$(cat /proc/sys/kernel/random/boot_id)" || fail "cannot read current boot ID"
         [ "$old" != "$current" ] || fail "a second boot is required"
         echo "PASS: both /etc and /var markers survived a different boot" ;;
-    *) fail "use boot, network, ports, programs, admin, diagnostics, diagnostics-network, clock, journal-write, journal-check, persistence-write or persistence-check" ;;
+    *) fail "use boot, network, ports, programs, admin, diagnostics, diagnostics-network, environment, clock, journal-write, journal-check, persistence-write or persistence-check" ;;
 esac

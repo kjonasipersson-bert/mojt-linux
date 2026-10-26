@@ -25,6 +25,7 @@ ROLES = {
     7: {"iputils": "iputils", "dnsutils": "bind.dnsutils", "ethtool": "ethtool",
         "pciutils": "pciutils", "usbutils": "usbutils", "strace": "strace"},
     8: {},
+    9: {"tzdata": "tzdata", "man-db": "man-db"},
 }
 ADMIN_COMMANDS = {
     "procps": ("ps", "top", "free", "pgrep", "uptime"),
@@ -42,6 +43,25 @@ DIAGNOSTIC_COMMANDS = {
     "iproute2": ("ss",),
     "kmod": ("modinfo",),
 }
+# Resolve documentation from the same derivations, independently of binary outputs.
+MANUAL_ROLES = {"manual-systemd": "systemd", "manual-curl": "curl",
+                "manual-iputils": "iputils", "manual-tzdata": "tzdata"}
+MANUAL_EVALUATE = r'''
+{ requestJSON }:
+let
+  r = builtins.fromJSON requestJSON;
+  pkgs = import (builtins.toPath r.source.path) {
+    system = r.source.system; config = {}; overlays = [];
+  };
+in map (item:
+  let p = pkgs.lib.attrByPath (pkgs.lib.splitString "." item.attribute)
+    (throw "Mojt: missing System attribute") pkgs;
+      selected = if item.manual or false then
+        pkgs.lib.getOutput "man" (p // { outputSpecified = false; }) else p;
+  in { inherit (item) name attribute commands;
+       version = p.version; output = selected.outPath; }
+) r.ports
+'''
 VERSION = "0.2"
 BASH_RC = r'''# Mojt System interactive Bash defaults; user startup files may override these.
 case $- in *i*) ;; *) return 0 ;; esac
@@ -75,8 +95,11 @@ def require(condition, message):
 
 
 def roles(step):
-    require(type(step) is int and step in ROLES, "System step must be an integer from 1 to 8")
-    return {key: value for n in range(1, step + 1) for key, value in ROLES[n].items()}
+    require(type(step) is int and step in ROLES, "System step must be an integer from 1 to 9")
+    result = {key: value for n in range(1, step + 1) for key, value in ROLES[n].items()}
+    if step >= 9:
+        result.update(MANUAL_ROLES)
+    return result
 
 
 def store_path(value):
@@ -248,7 +271,24 @@ def load_payload(path):
         executable(path, record, "systemd", "bin/timedatectl")
         executable(path, record, "systemd", "bin/systemd-cat")
         executable(path, record, "systemd", "bin/systemd-machine-id-setup")
+    if record["step"] >= 9:
+        for name in ("man", "manpath"):
+            executable(path, record, "man-db", "bin/" + name)
+        zone = virtual_file(path, record["packages"]["tzdata"]["output"] + "/share/zoneinfo/Europe/Stockholm")
+        require(zone.is_file() and zone.read_bytes().startswith(b"TZif"), "missing Stockholm timezone data")
+        manual_paths(path, record)
     return record
+
+
+def manual_paths(payload, record):
+    paths = []
+    for role, package in record["packages"].items():
+        if role == "man-db" or role.startswith("manual-"):
+            value = package["output"] + "/share/man"
+            require(virtual_file(payload, value).is_dir(), "missing manual hierarchy for " + role)
+            if value not in paths:
+                paths.append(value)
+    return paths
 
 
 def write(path, text, mode=0o644):
@@ -577,6 +617,11 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
             '<allow user="root"/>',
             '<allow user="root"/>\n    <allow user="systemd-timesync"/>', 1).replace(
                 "</busconfig>", policy + "</busconfig>"))
+    if step >= 9:
+        export("man", "man-db", "bin/man")
+        export("manpath", "man-db", "bin/manpath")
+        write(system / "manual-path", ":".join(manual_paths(payload, record)) + "\n")
+        write(system / "zoneinfo-path", record["packages"]["tzdata"]["output"] + "/share/zoneinfo\n")
     setup += ['echo "Mojt System setup complete"']
     write(system / "setup", "\n".join(setup) + "\n", 0o755)
     put_unit("mojt-setup.service", unit("Mojt System setup", "/run/mojt-system/setup",
@@ -601,6 +646,12 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
           ("export NIX_REMOTE=local\n" if step >= 3 else "") +
           ('export EDITOR="${EDITOR:-vi}"\nexport VISUAL="${VISUAL:-vi}"\n'
            'export PAGER="${PAGER:-less}"\n' if step >= 4 else ""))
+    if step >= 9:
+        with (system / "environment").open("a") as environment:
+            environment.write('export MANPATH="${MANPATH:-' +
+                              ":".join(manual_paths(payload, record)) + ':/usr/share/man}"\n')
+            environment.write('export TZDIR="${TZDIR:-' +
+                              record["packages"]["tzdata"]["output"] + '/share/zoneinfo}"\n')
     # PID 1 applies presets on first boot, before mojt-setup.service can run.
     # Mojt's target supplies explicit dependencies; merely exposing a vendor
     # unit must not enable its optional services or sockets.

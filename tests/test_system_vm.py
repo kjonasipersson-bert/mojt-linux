@@ -54,17 +54,17 @@ class SystemVmTests(unittest.TestCase):
     def fixture(self, step):
         packages = {}
         for index, (role, attribute) in enumerate(system.roles(step).items(), 1):
-            value = "/nix/store/" + "0123456789abcdfghijklmnpqrsvwxyz"[index] * 32 + "-" + role
+            value = "/nix/store/" + f"{index:032d}" + "-" + role
             packages[role] = dict(attribute=attribute, output=value, version="test-version")
             base = self.payload / value.lstrip("/")
-            names = {
+            names = [] if role.startswith("manual-") else {
                 "systemd": ["lib/systemd/systemd", "bin/systemctl", "bin/journalctl",
                             "bin/udevadm", "bin/systemd-sysusers", "bin/timedatectl", "bin/systemd-cat", "bin/systemd-machine-id-setup",
                             "lib/systemd/systemd-timesyncd"],
                 "dbus": ["bin/dbus-daemon"], "networkmanager": ["bin/NetworkManager", "bin/nmcli"],
                 "curl": ["bin/curl"], "cacert": [], "iproute2": ["bin/ip", "bin/ss"],
                 "nix": ["bin/nix", "bin/nix-store", "bin/nix-instantiate"], "python": ["bin/python3"],
-                "shell": ["bin/bash"],
+                "shell": ["bin/bash"], "tzdata": [], "man-db": ["bin/man", "bin/manpath"],
                 "kmod": ["bin/modprobe", "bin/lsmod", "bin/modinfo"],
                 "wpa-supplicant": ["bin/wpa_supplicant"], "iw": ["bin/iw"],
                 **{role: ["bin/" + name for name in names]
@@ -76,6 +76,10 @@ class SystemVmTests(unittest.TestCase):
             base.mkdir(parents=True)
             for name in names:
                 system.write(base / name, "#!/bin/sh\nexit 0\n", 0o755)
+            if role.startswith("manual-") or role == "man-db":
+                system.write(base / "share/man/man1/example.1", ".TH EXAMPLE 1\n")
+            if role == "tzdata":
+                system.write(base / "share/zoneinfo/Europe/Stockholm", "TZif synthetic")
             if role == "systemd":
                 vendor = base / "example/systemd/system"
                 for name in ("basic.target", "sysinit.target", "poweroff.target", "reboot.target",
@@ -112,7 +116,7 @@ class SystemVmTests(unittest.TestCase):
         self.assertEqual(set(system.roles(1)), {"systemd"})
         self.assertTrue(set(system.roles(1)) < set(system.roles(2)) < set(system.roles(3))
                         < set(system.roles(4)) < set(system.roles(5)) < set(system.roles(6)) < set(system.roles(7)))
-        for value in (0, 9, True, "1"):
+        for value in (0, 10, True, "1"):
             with self.assertRaises(ValueError):
                 system.roles(value)
 
@@ -199,6 +203,43 @@ class SystemVmTests(unittest.TestCase):
         system.write(compiler, "#!/bin/sh\nexit 0\n", 0o755)
         with self.assertRaisesRegex(ValueError, "no valid database"):
             system.prepare_hwdb(self.payload, {"systemd": {"output": str(selected)}}, self.root / "no-output")
+
+    def test_step9_manuals_and_timezone_preserve_machine_settings(self):
+        system.write(self.tree / "state/etc/localtime", "existing timezone")
+        system.write(self.tree / "state/etc/timezone", "Existing/Zone\n")
+        before = system.tree_hash(self.tree / "base")
+        directory, record = self.install(9, "password")
+        self.assertEqual(system.tree_hash(self.tree / "base"), before)
+        self.assertEqual((self.tree / "state/etc/localtime").read_text(), "existing timezone")
+        self.assertEqual((self.tree / "state/etc/timezone").read_text(), "Existing/Zone\n")
+        self.assertTrue((directory / "bin/man").is_symlink())
+        paths = (directory / "manual-path").read_text().strip().split(":")
+        self.assertEqual(set(paths), {p["output"] + "/share/man" for role, p in record["packages"].items()
+                                     if role == "man-db" or role.startswith("manual-")})
+        environment = directory / "environment"
+        code = '. "$1"; printf "%s\\n" "$MANPATH" "$TZDIR" "${TZ-unset}" "${LOCALE_ARCHIVE-unset}"'
+        clean = {key: value for key, value in os.environ.items()
+                 if key not in ("MANPATH", "TZDIR", "TZ", "LOCALE_ARCHIVE")}
+        result = subprocess.run(["/bin/sh", "-c", code, "sh", str(environment)],
+                                env=clean, text=True, capture_output=True, check=True)
+        self.assertEqual(result.stdout.splitlines(), [":".join(paths) + ":/usr/share/man",
+                         record["packages"]["tzdata"]["output"] + "/share/zoneinfo", "unset", "unset"])
+        result = subprocess.run(["/bin/sh", "-c", code, "sh", str(environment)],
+                                env={**clean, "MANPATH": "/custom/man", "TZDIR": "/custom/zones"},
+                                text=True, capture_output=True, check=True)
+        self.assertEqual(result.stdout.splitlines()[:2], ["/custom/man", "/custom/zones"])
+
+    def test_step9_missing_manuals_rejected_after_content_verification(self):
+        record = self.fixture(9)
+        output = record["packages"]["manual-systemd"]["output"]
+        directory = self.payload / output.lstrip("/")
+        shutil.rmtree(directory / "share/man")
+        for item in record["objects"]:
+            if item["path"] == output:
+                item["tree_sha256"] = system.tree_hash(directory)
+        system.write(self.payload / "system.json", json.dumps(record))
+        with self.assertRaisesRegex(ValueError, "missing manual hierarchy"):
+            system.load_payload(self.payload)
 
     def test_step8_time_journal_and_console_keep_base_and_admin_configuration(self):
         system.write(self.tree / "state/etc/systemd/journald.conf", "[Journal]\nStorage=volatile\n")
@@ -973,6 +1014,17 @@ esac""")
         self.assertIn(record["source"]["store"], {item["path"] for item in record["objects"]})
         query = next(c for c in calls if c[:3] == ("nix-store", "--query", "--requisites"))
         self.assertIn(record["source"]["store"], query[3:])
+
+    def test_step9_preview_requests_documentation_outputs_without_writes(self):
+        output, calls = self.prepare_with_fake_nix(step=9, dry_run=True)
+        self.assertFalse(output.exists())
+        self.assertFalse(any(c[0] == "retain" for c in calls))
+        evaluation = next(c for c in calls if c[0] == "nix-instantiate")
+        request = json.loads(evaluation[-1])
+        manuals = [item for item in request["ports"] if item["manual"]]
+        self.assertEqual({item["name"] for item in manuals}, set(system.MANUAL_ROLES))
+        self.assertEqual({item["attribute"] for item in manuals},
+                         {"systemd", "curl", "iputils", "tzdata"})
 
     def test_export_preview_does_not_write_or_retain(self):
         output, calls = self.prepare_with_fake_nix(dry_run=True)
