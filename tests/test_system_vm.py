@@ -6,6 +6,7 @@
 
 import importlib.util
 import contextlib
+import configparser
 import io
 import json
 import os
@@ -99,6 +100,15 @@ class SystemVmTests(unittest.TestCase):
                              "systemd-udevd.service", "systemd-udev-trigger.service"):
                     system.write(vendor / name, "[Unit]\nDescription=Synthetic vendor unit\n")
                 system.write(base / "lib/udev/rules.d/50-synthetic.rules", "# synthetic\n")
+                if step >= 10:
+                    user_units = {
+                        "exit.target": "[Unit]\nDefaultDependencies=no\nRequires=systemd-exit.service\nAfter=systemd-exit.service\nAllowIsolate=yes\n",
+                        "systemd-exit.service": "[Unit]\nDefaultDependencies=no\nRequires=shutdown.target\nAfter=shutdown.target\nSuccessAction=exit-force\n[Service]\nSlice=-.slice\n",
+                        "shutdown.target": "[Unit]\nDefaultDependencies=no\nRefuseManualStart=yes\n",
+                    }
+                    for name, text in user_units.items():
+                        system.write(base / "example/systemd/user" / name, text)
+
             if role == "cacert":
                 system.write(base / "etc/ssl/certs/ca-bundle.crt", "synthetic cert")
         if step >= 10:
@@ -238,6 +248,36 @@ class SystemVmTests(unittest.TestCase):
         self.assertIsNotNone(bus.find('./policy[@context="default"]/allow[@user="*"]'))
         self.assertIn("Requires=mojt-privileged.service", (directory / "units/mojt-console.service").read_text())
         self.assertNotIn("/ports/", (self.tree / "state/etc/sudoers").read_text())
+
+    def test_step10_user_shutdown_transaction_keeps_the_complete_upstream_chain(self):
+        directory, record = self.install(10, "password")
+        units = {}
+        for name in system.accounts.USER_SHUTDOWN_UNITS:
+            source = (directory / "user-units" / name).readlink().as_posix()
+            self.assertEqual(source, record["packages"]["systemd"]["output"] + "/example/systemd/user/" + name)
+            parser = configparser.ConfigParser(interpolation=None)
+            parser.read_string(system.virtual_file(self.payload, source).read_text())
+            units[name] = parser
+        self.assertIn("systemd-exit.service", units["exit.target"]["Unit"]["Requires"].split())
+        self.assertIn("shutdown.target", units["systemd-exit.service"]["Unit"]["Requires"].split())
+        self.assertEqual(units["systemd-exit.service"]["Unit"]["SuccessAction"], "exit-force")
+        for parser in units.values():
+            self.assertEqual(parser["Unit"]["DefaultDependencies"], "no")
+        self.assertIn("SYSTEMD_UNIT_PATH=/etc/systemd/user:/run/mojt-system/user-units",
+                      (directory / "units/user@.service").read_text())
+        self.assertIn("FileDescriptorStoreMax=768", (directory / "units/systemd-logind.service").read_text())
+
+    def test_step10_rejects_incomplete_user_shutdown_payload(self):
+        record = self.fixture(10)
+        output = record["packages"]["systemd"]["output"]
+        folder = self.payload / output.lstrip("/")
+        (folder / "example/systemd/user/exit.target").unlink()
+        for item in record["objects"]:
+            if item["path"] == output:
+                item["tree_sha256"] = system.tree_hash(folder)
+        system.write(self.payload / "system.json", json.dumps(record))
+        with self.assertRaisesRegex(ValueError, "missing System user shutdown unit: exit.target"):
+            system.load_payload(self.payload)
 
     def test_step10_does_not_invent_credentials_before_builder_password_prompt(self):
         record = self.fixture(10)

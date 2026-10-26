@@ -225,3 +225,56 @@ automatic QEMU window-resize feature.
 - [sudo packaging](https://github.com/NixOS/nixpkgs/blob/5adc50831c259f87faeb09ddf930d43597197473/pkgs/by-name/su/sudo/package.nix)
 - [NixOS PAM helper integration](https://github.com/NixOS/nixpkgs/blob/5adc50831c259f87faeb09ddf930d43597197473/nixos/modules/security/pam.nix)
 - [Upstream user runtime unit](https://github.com/systemd/systemd/blob/v262/units/user-runtime-dir@.service.in)
+
+## Initial owner acceptance and user-manager shutdown correction
+
+The owner exported 206 store objects and built
+`/home/jonasp/mojt-accounts.Vxdthq/serial-image`. On system-accounts-A with
+kernel 6.12.107+deb13-amd64, root PAM login, logind, the separate home mounts,
+volatile privileged runtime and environment checks passed. mojtadmin (UID 1000)
+and mojtuser (UID 1001) both passed real login/session/runtime and loopback ping
+checks, and both changed their own password. mojtadmin authenticated through
+sudo and obtained UID 0. mojtuser was denied sudo, another user's password
+change, shadow/private home reads and shared Ports mutation. Root imported and
+ran hello successfully. Per-user shared Ports reads remain to be confirmed.
+
+Logout exposed an incomplete minimal user unit set: exit.target was missing.
+The user manager could start but could not enqueue its shutdown transaction,
+so PID 1 killed it after a 90-second stop timeout. Runtime-directory cleanup
+then succeeded, explaining its temporary presence after logout. This was not
+a successful cleanup acceptance. Home probes were written; journal-write
+stopped at the failed-unit check and persistence-write was not reached.
+
+The builder now exposes the selected systemd output's upstream exit.target,
+systemd-exit.service and shutdown.target together. Their default-dependency
+and ordering settings are retained verbatim; systemd 262 uses SuccessAction=
+exit-force in its final user exit service. No stop timeout is shortened to hide
+failure. The explicit user unit search path also includes root-managed
+/etc/systemd/user for administrative corrections. Payload validation requires
+all three upstream shutdown units, already present in the existing export.
+
+Logind's unit now follows upstream FileDescriptorStoreMax=768 and
+RuntimeDirectoryPreserve=yes, addressing the observed FDSTORE warnings without
+restarting logind during active-session testing.
+
+For the existing disposable test VM, copy those three files from the selected
+`systemd` output's `example/systemd/user` into `/etc/systemd/user`, and add a
+persistent user@ service drop-in selecting
+`SYSTEMD_UNIT_PATH=/etc/systemd/user:/run/mojt-system/user-units`. A logind drop-in
+sets the two properties above. Reload PID 1's unit configuration. Captured old
+user-manager failures may then be reset, but that reset is not acceptance.
+The already-running root user manager still has its old search path; an
+explicit `systemctl --user --force exit` exits only that minimal user manager
+through its private management interface before logout, without waiting for
+the missing target. The console login remains a separate session scope.
+
+Authenticate anew and log out as a real ordinary user, then verify from a fresh
+root session that user@ ends with Result=success and /run/user/<uid> disappears.
+Actual clean logout and the remaining generation regressions are still pending.
+The correction changes builder/units only; the exported payload can be reused.
+
+References for the selected release:
+[exit.target](https://github.com/systemd/systemd/blob/v262/units/user/exit.target),
+[systemd-exit.service](https://github.com/systemd/systemd/blob/v262/units/user/systemd-exit.service),
+[shutdown.target](https://github.com/systemd/systemd/blob/v262/units/user/shutdown.target),
+[logind service](https://github.com/systemd/systemd/blob/v262/units/systemd-logind.service.in).

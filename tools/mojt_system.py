@@ -229,6 +229,12 @@ def account_inputs(payload, record):
     plugin = record["packages"]["sudo"]["output"] + "/libexec/sudo/sudoers.so"
     require(virtual_file(payload, plugin).is_file(), "missing sudoers plugin")
     result["sudo_plugin"] = plugin
+    result["user_shutdown_units"] = {}
+    vendor = record["packages"]["systemd"]["output"] + "/example/systemd/user/"
+    for name in accounts.USER_SHUTDOWN_UNITS:
+        path = vendor + name
+        require(virtual_file(payload, path).is_file(), "missing System user shutdown unit: " + name)
+        result["user_shutdown_units"][name] = path
     return result
 
 

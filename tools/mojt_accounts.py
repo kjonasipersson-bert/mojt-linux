@@ -11,6 +11,7 @@ COMMANDS = ("login", "useradd", "usermod", "userdel", "groupadd", "groupmod",
             "groupdel", "gpasswd", "passwd", "pwck", "grpck")
 PAM_MODULES = ("pam_unix", "pam_deny", "pam_permit", "pam_loginuid", "pam_motd")
 SYSTEMD_PROGRAMS = ("systemd-logind", "systemd-user-runtime-dir", "systemd-sysctl")
+USER_SHUTDOWN_UNITS = ("exit.target", "systemd-exit.service", "shutdown.target")
 
 
 def install(tree, profile, inputs, repo, write, add_default, put_unit, unit):
@@ -18,7 +19,7 @@ def install(tree, profile, inputs, repo, write, add_default, put_unit, unit):
     etc = tree / "state/etc"
     # The real builder runs as root; tests may stage images as their own user.
     owner = os.geteuid()
-    for directory in (etc,) + tuple(etc / name for name in ("pam.d", "default", "systemd", "sysctl.d", "skel")):
+    for directory in (etc,) + tuple(etc / name for name in ("pam.d", "default", "systemd", "systemd/user", "sysctl.d", "skel")):
         if directory.is_symlink() or (directory.exists() and not directory.is_dir()):
             raise ValueError("unsafe account configuration directory: " + str(directory))
         if directory.exists():
@@ -131,7 +132,7 @@ root ALL=(ALL:ALL) ALL
     put_unit("systemd-logind.service", unit("Mojt login sessions", inputs["systemd-logind"],
              "Type=notify\nBusName=org.freedesktop.login1\nRestart=on-failure\n"
              "RuntimeDirectory=systemd/sessions systemd/seats systemd/users systemd/inhibit systemd/shutdown\n"
-             "StateDirectory=systemd/linger\n",
+             "StateDirectory=systemd/linger\nFileDescriptorStoreMax=768\nRuntimeDirectoryPreserve=yes\n",
              "Requires=mojt-privileged.service dbus.service\nAfter=mojt-privileged.service dbus.service\n"))
     put_unit("systemd-user-sessions.service", "[Unit]\nDescription=Mojt login readiness\n"
              "Requires=mojt-privileged.service systemd-logind.service\n"
@@ -149,11 +150,13 @@ root ALL=(ALL:ALL) ALL
              "After=systemd-logind.service\n"))
     put_unit("user@.service", unit("Mojt user manager", inputs["systemd"] + " --user",
              "User=%i\nPAMName=systemd-user\nType=notify\nKillMode=mixed\nDelegate=yes\nSlice=user-%i.slice\n"
-             "Environment=SYSTEMD_UNIT_PATH=/run/mojt-system/user-units\n"
+             "Environment=SYSTEMD_UNIT_PATH=/etc/systemd/user:/run/mojt-system/user-units\n"
              "Environment=XDG_RUNTIME_DIR=/run/user/%i\n"
              "Environment=PATH=/run/mojt-system/bin:/usr/bin:/bin\n",
              "Requires=user-runtime-dir@%i.service\nAfter=user-runtime-dir@%i.service systemd-logind.service\n"))
     write(profile / "user-units/default.target", "[Unit]\nDescription=Mojt user session\n")
+    for name, path in inputs["user_shutdown_units"].items():
+        (profile / "user-units" / name).symlink_to(path)
     console = profile / "units/mojt-console.service"
     console.write_text(console.read_text().replace("[Unit]\n", "[Unit]\n"
                       "Requires=mojt-privileged.service systemd-logind.service mojt-account-sysctl.service\n"
