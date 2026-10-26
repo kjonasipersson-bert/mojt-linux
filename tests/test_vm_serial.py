@@ -93,6 +93,7 @@ class SerialCopyTests(unittest.TestCase):
         self.assertEqual((output / "disk.img").stat().st_mode & 0o777, 0o600)
         self.assertEqual((output / "OVMF_VARS.fd").read_bytes(), b"retained firmware fixture")
         with self.root_partition(output) as fs:
+            self.assertIn(b"IgnoreSIGPIPE=no", fs.read(serial.SERVICE))
             self.assertEqual(fs.read("/state/etc/securetty"), b"# Machine policy\ntty1\nttyS0\n")
             self.assertEqual(fs.read("/state/etc/shadow"), b"root:$6$synthetic-test-fixture:0:0:99999:7:::\n")
             self.assertEqual(fs.inode("/state/etc/shadow")["mode"], 0o600)

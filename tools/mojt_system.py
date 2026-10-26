@@ -379,7 +379,8 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
         (system / "login").symlink_to("busybox")
     put_unit("mojt-console.service", unit(
         "Mojt " + console + " console (" + login_mode + ")", console_command,
-        "Restart=always\nRestartSec=1\nEnvironment=PATH=/run/mojt-system/bin:/usr/bin:/bin\n"
+        "Restart=always\nRestartSec=1\nIgnoreSIGPIPE=no\n"
+        "Environment=PATH=/run/mojt-system/bin:/usr/bin:/bin\n"
         "StandardInput=tty\nStandardOutput=tty\n"
         "StandardError=journal\nTTYPath=/dev/" + tty + "\nTTYReset=yes\nTTYVHangup=yes",
         "After=systemd-user-sessions.service\n"))

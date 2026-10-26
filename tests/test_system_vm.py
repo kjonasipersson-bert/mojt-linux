@@ -213,6 +213,7 @@ class SystemVmTests(unittest.TestCase):
         self.assertEqual((self.tree / "state/etc/localtime").read_text(), "existing timezone")
         self.assertEqual((self.tree / "state/etc/timezone").read_text(), "Existing/Zone\n")
         self.assertTrue((directory / "bin/man").is_symlink())
+        self.assertIn("IgnoreSIGPIPE=no", (directory / "units/mojt-console.service").read_text())
         paths = (directory / "manual-path").read_text().strip().split(":")
         self.assertEqual(set(paths), {p["output"] + "/share/man" for role, p in record["packages"].items()
                                      if role == "man-db" or role.startswith("manual-")})

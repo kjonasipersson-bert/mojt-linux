@@ -36,6 +36,7 @@ After=mojt-setup.service systemd-user-sessions.service
 ExecStart=/run/mojt-system/busybox getty -f /run/mojt/issue -l /run/mojt-system/login -L 115200 ttyS0 vt100
 Restart=always
 RestartSec=1
+IgnoreSIGPIPE=no
 Environment=PATH=/run/mojt-system/bin:/usr/bin:/bin
 StandardInput=tty
 StandardOutput=tty
