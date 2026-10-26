@@ -171,3 +171,18 @@ systemctl daemon-reload
 This does not change signals in the current shell. Log out and authenticate
 again, then rerun `mojt-system-check environment` and interactive manuals.
 The drop-ins survive generation changes because they reside in `/etc`.
+
+## Accepted scope after the signal correction
+
+The owner applied the persistent console drop-ins, logged in again and
+confirmed IgnoreSIGPIPE=no. All four manual lookups completed without gzip
+warnings, and `mojt-system-check environment` passed. The owner confirmed the
+fix works and explicitly chose to omit a separate step 9 A/B run, carrying
+these checks into the next System stage instead. Do not report step 9 timezone
+or manual persistence across generations as tested. The earlier step 8 A/B/A
+acceptance remains the kernel/identity/journal reference.
+
+Next work is preparation of the coherent local-account stage described in the
+[System proposal](system-completeness-proposal.md), beginning with an inventory
+of existing homes, shell paths and local account/session configuration before
+changing authentication. Root recovery remains enabled during acceptance.

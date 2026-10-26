@@ -149,8 +149,10 @@ The owner verified both kernels, stable machine identity, retained journals,
 NTP synchronization and quiet login prompts.
 
 [System step 9](docs/system-environment.md) prepares timezone data, man-db and
-selected System manuals, retaining C.UTF-8 as the default. Real export and VM
-acceptance for this step remain pending.
+selected System manuals, retaining C.UTF-8 as the default. The owner verified
+export, local timezone, UTF-8 and manual rendering after correcting console
+SIGPIPE handling. A separate step 9 A/B run was explicitly deferred to the
+next System stage.
 
 For early Mojt versions, Nix remains exposed and supplies System packages as
 well as Ports through a shared store. Mojt controls System activation;
