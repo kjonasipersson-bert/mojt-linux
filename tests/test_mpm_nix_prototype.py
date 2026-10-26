@@ -428,6 +428,9 @@ commands = ["hello"]
         self.update()
         a = self.variant("a", "4", "1.0")
         b = self.variant("b", "5", "1.0-rebuild")
+        active_history = self.state()["history"]["activated"]
+        self.cli("activate", a, "-y")  # Explicit exact activation pins, without reordering.
+        self.assertEqual(self.state()["history"]["activated"], active_history)
         before = os.readlink(self.root / "current")
         self.assertIn("No changes.", self.cli("activate", a, "-y"))
         self.assertEqual(os.readlink(self.root / "current"), before)
@@ -522,6 +525,213 @@ commands = ["hello"]
         self.assertIn("reserved System management command", self.cli("install", "other", "-y", success=False))
         self.cli("install", "other", "--no-activate", "-y")
         self.assertNotIn("other", self.state()["active"])
+
+
+    def prepare_upgrade(self, version="2.0"):
+        self.update()
+        self.cli("install", "hello", "-y")
+        old = copy.deepcopy(self.state())
+        self.selected[0].update(version=version, output=str(self.output2))
+        self.update()
+        return old
+
+    def test_upgrade_retains_old_artifact_and_advances_following_selection(self):
+        old = self.prepare_upgrade()
+        captured = next(self.root.glob("profiles/*/state.json"))
+        source = self.state()["catalog"]["source"]
+        self.cli("upgrade", "hello", "-y")
+        state = self.state()
+        old_key = old["active"]["hello"]
+        new_key = state["active"]["hello"]
+        self.assertNotEqual(new_key, old_key)
+        self.assertIn(old_key, state["installed"])
+        self.assertEqual(state["installed"][old_key], old["installed"][old_key])
+        self.assertEqual(state["requests"]["hello:hello"]["target"], new_key)
+        self.assertEqual(state["selection_policy"]["hello"], "hello:hello")
+        self.assertEqual(state["catalog"]["source"], source)
+        self.assertTrue(captured.exists())
+        self.assertEqual(self.hello(), "1.0-rebuild")
+        before = os.readlink(self.root / "current")
+        self.assertIn("No changes.", self.cli("upgrade", "-y"))
+        self.assertEqual(os.readlink(self.root / "current"), before)
+
+    def test_exact_active_pin_survives_upgrade_and_can_explicitly_follow_again(self):
+        old = self.prepare_upgrade()
+        old_key = old["active"]["hello"]
+        self.cli("activate", old_key, "-y")
+        self.cli("upgrade", "-y")
+        state = self.state()
+        self.assertEqual(state["active"], old["active"])
+        self.assertIsNone(state["selection_policy"]["hello"])
+        new_key = state["requests"]["hello:hello"]["target"]
+        self.cli("activate", old_key, "--follow", "-y", success=False)
+        self.cli("activate", new_key, "--follow", "-y")
+        self.assertEqual(self.state()["selection_policy"]["hello"], "hello:hello")
+        self.assertEqual(self.state()["active"]["hello"], new_key)
+
+    def test_upgrade_preview_cancel_and_failures_leave_snapshot_and_history(self):
+        self.prepare_upgrade()
+        before = os.readlink(self.root / "current")
+        roots = set(self.registered_roots)
+        records = self.cli("history", "--json")
+        self.cli("upgrade", "--dry-run")
+        self.cli("upgrade", answer="n")
+        self.assertEqual(set(self.registered_roots), roots)
+        self.assertEqual(os.readlink(self.root / "current"), before)
+        with mock.patch.object(mpm.os, "replace", side_effect=OSError("injected before commit")):
+            self.cli("upgrade", "-y", success=False)
+        self.assertEqual(os.readlink(self.root / "current"), before)
+        self.assertEqual(self.cli("history", "--json"), records)
+        self.assertEqual(self.hello(), "1.0")
+
+    def test_upgrade_refuses_downgrades_unknown_versions_and_untracked_names(self):
+        for version in ("0.9", "2.0-rc1"):
+            with self.subTest(version=version):
+                if not self.root.exists():
+                    self.prepare_upgrade(version)
+                else:
+                    self.selected[0]["version"] = version
+                    self.update()
+                before = os.readlink(self.root / "current")
+                self.cli("upgrade", "-y", success=False)
+                self.assertEqual(os.readlink(self.root / "current"), before)
+        self.assertIn("no recorded request", self.cli("upgrade", "missing", "-y", success=False))
+
+    def test_equal_numeric_version_rebuild_upgrades_without_replacing_old_build(self):
+        self.prepare_upgrade("1.0")
+        self.cli("upgrade", "-y")
+        self.assertEqual(len(self.state()["installed"]), 2)
+        self.assertEqual(self.hello(), "1.0-rebuild")
+
+    def test_upgrade_uses_saved_snapshot_not_changed_backend_catalog(self):
+        self.prepare_upgrade()
+        self.selected[0]["output"] = str(self.output)  # Unpublished backend change.
+        self.calls.clear()
+        self.cli("upgrade", "-y")
+        self.assertEqual(self.hello(), "1.0-rebuild")
+        self.assertFalse(any(c[0] == "nix-instantiate" for c in self.calls))
+
+    def test_multiple_requests_and_inactive_request_upgrade_independently(self):
+        self.update()
+        a = self.variant("a", "4", "1.0")
+        b = self.variant("b", "5", "1.0")
+        new_a = self.object("6", "hello-a-2.0", command="hello", version="2.0-a")
+        new_b = self.object("7", "hello-b-2.0", command="hello", version="2.0-b")
+        self.attributes["a"].update(output=str(new_a), version="2.0")
+        self.attributes["b"].update(output=str(new_b), version="2.0")
+        self.cli("upgrade", "hello", "-y")
+        state = self.state()
+        self.assertEqual(len(state["requests"]), 2)
+        self.assertEqual(len(state["installed"]), 4)
+        self.assertNotEqual(state["requests"]["hello:b"]["target"], b)
+        self.assertEqual(state["active"]["hello"], state["requests"]["hello:a"]["target"])
+        self.assertIn(a, state["installed"])
+        self.assertEqual(self.hello(), "2.0-a")
+
+    def test_failed_multi_request_upgrade_does_not_publish_first_success(self):
+        self.update()
+        self.variant("a", "4", "1.0")
+        self.variant("b", "5", "1.0")
+        new_a = self.object("6", "hello-a-2.0", command="hello", version="2.0-a")
+        self.attributes["a"].update(output=str(new_a), version="2.0")
+        self.attributes["b"].update(output=str(self.output2), version="0.9")
+        before = self.state()
+        self.cli("upgrade", "-y", success=False)
+        self.assertEqual(self.state(), before)
+
+    def test_legacy_migration_does_not_infer_intent_or_active_following(self):
+        self.update()
+        self.cli("install", "-y")
+        path = self.root / "current/state.json"
+        legacy = self.state()
+        legacy["format"] = 1
+        del legacy["requests"], legacy["selection_policy"]
+        path.write_text(json.dumps(legacy))
+        self.assertEqual(self.state()["format"], 1)
+        self.cli("upgrade", "-y", success=False)
+        self.cli("install", "hello", "--dry-run")
+        self.assertEqual(self.state()["format"], 1)
+        self.cli("install", "hello", "-y")
+        state = self.state()
+        self.assertEqual(state["format"], 2)
+        self.assertEqual(state["active"], legacy["active"])
+        self.assertIsNone(state["selection_policy"]["hello"])
+        self.cli("activate", "hello", "--follow", "-y")
+        self.assertEqual(self.state()["selection_policy"]["hello"], "hello:hello")
+
+    def test_history_records_only_commits_and_needs_no_nix(self):
+        self.prepare_upgrade()
+        self.cli("upgrade", "-y")
+        self.calls.clear()
+        rows = json.loads(self.cli("history", "--json"))
+        self.assertEqual([r["sequence"] for r in rows], [4, 3, 2, 1])
+        self.assertEqual([r["action"] for r in rows], ["upgrade", "update", "install", "update"])
+        self.assertEqual(rows[0]["parent"], rows[1]["profile"])
+        self.assertEqual(rows[0]["after"]["requests"], self.state()["requests"])
+        self.assertEqual(rows[0]["uid"], os.getuid())
+        self.assertEqual(len(json.loads(self.cli("history", "--json", "--limit", "1"))), 1)
+        self.assertEqual(self.calls, [])
+        self.cli("history", "--limit", "0", success=False)
+
+    def test_remove_reconciles_request_and_policy_without_dangling_targets(self):
+        old = self.prepare_upgrade()
+        self.cli("upgrade", "-y")
+        latest = self.state()["active"]["hello"]
+        self.cli("remove", latest, "-y")
+        self.assertEqual(self.state()["requests"]["hello:hello"]["target"], old["active"]["hello"])
+        self.cli("remove", "hello", "-y")
+        self.assertEqual(self.state()["requests"], {})
+        self.assertEqual(self.state()["selection_policy"], {})
+
+    def test_upgrade_retains_intentionally_inactive_request(self):
+        self.update()
+        self.cli("install", "hello", "--no-activate", "-y")
+        self.selected[0].update(output=str(self.output2), version="2.0")
+        self.update()
+        self.cli("upgrade", "-y")
+        state = self.state()
+        self.assertEqual(state["active"], {})
+        self.assertEqual(len(state["installed"]), 2)
+        self.assertEqual(len(state["requests"]), 1)
+
+    def test_upgrade_filter_changes_only_named_request_and_not_other_area_files(self):
+        self.update()
+        self.cli("install", "hello", "-y")
+        other = self.object("4", "less-1", command="less", version="1")
+        self.attributes["less"] = dict(output=str(other), version="1", description="Less")
+        self.cli("install", "less", "-y")
+        prior = self.state()
+        sentinel = self.directory / "system-deployment.json"
+        sentinel.write_text('{"selected":"system-A","running":"system-B"}')
+        self.selected[0].update(output=str(self.output2), version="2.0")
+        self.update()
+        self.cli("upgrade", "hello", "-y")
+        state = self.state()
+        self.assertEqual(state["active"]["less"], prior["active"]["less"])
+        self.assertEqual(state["requests"]["less:less"], prior["requests"]["less:less"])
+        self.assertEqual(sentinel.read_text(), '{"selected":"system-A","running":"system-B"}')
+
+    def test_acceptance_runner_allows_empty_mktemp_root_and_reports_no_changed_artifact(self):
+        runner_loader = importlib.machinery.SourceFileLoader("upgrade_acceptance", str(REPO / "tests/run-mpm-nix-upgrade.py"))
+        runner_spec = importlib.util.spec_from_loader(runner_loader.name, runner_loader)
+        runner = importlib.util.module_from_spec(runner_spec)
+        runner_loader.exec_module(runner)
+        self.root.mkdir()  # The documented mktemp -d path already exists.
+
+        def invoke(command, **options):
+            output, errors = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+                code = mpm.main(command[2:])
+            if code:
+                raise subprocess.CalledProcessError(code, command, output.getvalue(), errors.getvalue())
+            return subprocess.CompletedProcess(command, code, output.getvalue(), errors.getvalue())
+
+        with mock.patch.object(runner.subprocess, "run", side_effect=invoke), \
+                mock.patch("sys.argv", ["runner", "--root", str(self.root), "--from-manifest", str(self.manifest)]), \
+                contextlib.redirect_stdout(io.StringIO()) as output:
+            runner.main()
+        self.assertIn("NO changed artifact tested", output.getvalue())
+        self.assertEqual(len(self.state()["installed"]), 1)
 
 
 if __name__ == "__main__":

@@ -629,14 +629,15 @@ The full System VM uses systemd, NetworkManager/D-Bus, Nix and management
 Python. Its earlier VM acceptance also covered networking and binary Ports
 imports with parallel Python versions. The current `mpm` CLI accepts only
 the `ports` area: `update`, `install`, `activate`, `remove`, `status`, `list`,
-`search` and `info`. It supports exact installed artifact selection and
-history-based removal fallback; that event ordering is not yet the readable
-transaction-history interface specified above. See the
+`search`, `info`, `upgrade` and `history`. Recorded Nix attribute requests and
+exact/following active selection policies are separate. Upgrade uses the saved
+snapshot, retains old versions and changes only following defaults. Readable
+committed history is published with each changed profile; legacy history is
+not reconstructed. This is a limited attribute policy with numeric version
+ordering, not the future release-series selector engine. See the
 [ordinary Ports guide](mpm-ports.md) for runnable commands and limits.
 
-**Not implemented:** MPM Base/System/Kernel commands, `upgrade` (including
-Ports), release-series selectors and their full parser, readable transaction
-history, user-facing rollback/undo, production project profiles/locks,
+**Not implemented:** MPM Base/System/Kernel commands, release-series selectors and their full parser, user-facing rollback/undo, production project profiles/locks,
 pruning/GC, verified external capabilities, signed catalogs, production
 deployment formats, and durable updates to existing boot disks.
 

@@ -13,12 +13,12 @@ entire [MPM contract](mpm.md), NixOS service activation or desktop integration.
 
 The [accepted Ports update/recovery model](mpm.md#ports-recovery-and-transaction-history-accepted-2026-10-26)
 uses parallel application versions, active selections and readable transaction
-history. It does not require a user-managed generation of all Ports after
-each program update. This prototype's retained internal profiles and event
-sequences are implementation mechanisms; they are not yet the readable history
-interface or an upgrade engine. `upgrade`, release-series selectors and a
-general undo command remain unimplemented. New design examples in the
-contract do not change the runnable commands below.
+history. This iteration implements a first upgrade engine for recorded
+Nix attribute requests and a committed history interface. Retained internal
+profiles are implementation details; users do not need to manage a whole-Ports
+generation after every update. Release-series selectors and general undo remain
+unimplemented. The command reference lives in [man/mpm.1](../man/mpm.1)
+and is included in new System builds with manual support (step 9 or later).
 
 ## Inside a newly built step 3 Mojt VM
 
@@ -80,7 +80,11 @@ The first install activates default commands. Further versions leave the
 default unchanged. Every installed application exports fixed command aliases
 containing its upstream version and full Nix output hash. Activation accepts
 an installed exact identity; a bare name is accepted only when unambiguous.
-It never fetches another version. Series selectors/upgrades remain deferred.
+It never fetches another version. Release-series selectors remain deferred.
+Use `activate EXACT --follow` to explicitly follow its recorded request, provided
+that artifact is the request's current target. Without `--follow`, an exact
+activation pins the default; an unambiguous bare name follows its current
+request target when one exists.
 
 The ordinary `list` view shows **installed versions**, not request constraints:
 
@@ -96,9 +100,9 @@ the Nix output hash, for activation/removal of a particular build. `list
 --json` keeps the detailed records and `identity` field unchanged. An artifact
 identity containing `@=` does not mean the user requested an exact-version
 lock: `install vim` still resolves a concrete immutable output from the
-saved source. Requested selectors, resolved artifacts and future upgrade
-policies are separate concepts. This iteration has no upgrade engine and
-does not infer a requested pin from the resolved output.
+saved source. Recorded requests, resolved artifacts and active selection policies are
+separate concepts. `status` shows all three. Exact active pins result from
+explicit selection, never from the mere presence of `@=` in an artifact ID.
 
 The adapter chooses Nixpkgs' binary output (`lib.getBin`: `bin`, otherwise
 `out`, otherwise the default). It discovers executable files in that output's
@@ -133,6 +137,85 @@ explicitly or add the hook yourself. Existing built VM disks contain the old
 wrapper: rebuilding with this checkout is required to get the new guest CLI.
 The existing exported step 3 payload can be reused; the wrapper comes from
 the VM builder's checkout, not from the payload.
+
+## Upgrade and recovery history
+
+```sh
+mpm ports update --manifest /path/to/local-source-pin.toml --dry-run
+mpm ports update --manifest /path/to/local-source-pin.toml -y
+mpm ports upgrade --dry-run
+mpm ports upgrade hello -y
+mpm ports history
+mpm ports history --json --limit 10
+mpm ports status
+man mpm
+```
+
+The source must already exist locally and match its declared revision.
+`upgrade` uses the saved snapshot, never refreshes it implicitly, and never
+changes another area's selections. Repeating `update` without another manifest
+keeps the same pin; a subsequent upgrade can therefore legitimately do nothing.
+
+Every explicit name/attribute installation records one request. Several
+attributes under one logical name remain independent requests. Their targets
+advance together when that name is upgraded, but only the request followed by
+the active selection changes unqualified commands. An inactive request stays
+inactive. An exact active pin stays on its artifact even if a newer request
+target is imported. Old artifacts, fixed aliases and closure/source roots remain.
+Reinstalling another build retains it without advancing an existing request
+or changing defaults; use approved `upgrade` to advance a request.
+
+The initial version adapter supports dotted integers, refuses numerical
+downgrades, and accepts same-version rebuilds with different output hashes.
+Changed nonnumeric versions fail rather than guessing an order. This is an
+attribute policy, **not** the future `@series` policy: moving an attribute to
+another major release may be proposed and must be reviewed in the plan.
+There is no `install NAME@series` or exact-release install parser yet.
+
+Changed operations publish metadata **format 2**. Existing format-1 selections
+become exact pins; the old files do not establish user intent. To adopt an
+existing installation, explicitly `install NAME --attribute ATTRIBUTE`, then
+use `activate TARGET --follow` if its active default should follow that
+recorded request. An ordinary read, preview or unchanged plan does not migrate.
+An old MPM writer refuses format 2; binaries and existing command links remain
+usable. Returning to an older System is therefore not the same as returning to
+an earlier MPM state. Review the compatibility warning and retain reference disks.
+
+Each successful changed operation publishes `transaction.json` alongside
+`state.json` in its profile, with one atomic `current` selection. History follows
+the committed parent chain, so failed/unpublished profiles are excluded.
+Sequences establish order; UTC timestamps and effective invoking UIDs provide
+context, not a tamper-proof audit trail or proof of which sudo user initiated it.
+JSON includes the selected catalog and before/after request, policy and active
+state; text summarizes installation/removal and selection changes. Legacy
+profiles without records end the chain. General undo and pruning are deferred.
+
+`mpm system upgrade` is still design only. Its shared principles are explicit
+catalog/request/resolution/selection state, a reviewable plan, retained content
+and an atomic commit. Its effect differs: a changed immutable System generation
+is prepared for next boot, with selected deployment distinct from running
+content. Ports defaults change immediately. A future System updater must validate
+persistent MPM metadata compatibility with its bundled writer and preserve
+independent Base, Kernel and Ports choices. No account or application data
+rollback follows automatically from selecting an older System.
+
+## Upgrade acceptance in an isolated lab
+
+Inside the Nix Distrobox, from this checkout:
+
+```sh
+LAB="$(mktemp -d "$HOME/mpm-nix-test/upgrade.XXXXXX")"
+python3 tests/run-mpm-nix-upgrade.py --root "$LAB"
+```
+
+The default uses one pinned source: it checks real imports, repeat no-ops,
+exact pin/follow policy, preview isolation and committed history. To exercise
+an actual version change, pass `--from-manifest OLD.toml --to-manifest NEW.toml`
+with two already available pinned snapshots and `--name hello` (or another
+standalone program). The runner reports explicitly whether a different artifact
+was available; a same-snapshot pass is not evidence of a real version upgrade.
+It keeps the lab and roots, never operates on the live shared Ports root, and
+does not change System. Repeat VM acceptance in a fresh image before merging.
 
 ## Removal
 
@@ -325,3 +408,81 @@ Expected: MPM and the selected Ports are available after normal login; the
 installed set and active defaults survived the boot. If a custom existing
 `/etc/profile` does not source `profile.d`, inspect the add-missing login hook
 described above rather than overwriting administrator configuration.
+
+## Upgrade implementation validation (2026-10-26)
+
+Agent-side simulated Nix tests: 47 passed, including following/pinned defaults,
+inactive and multiple requests, explicit name filtering, preserved sources and
+old artifacts, numerical downgrade/unknown-version rejection, legacy adoption,
+request removal/fallback, dry-run/cancellation, failure before publication and
+committed transaction ancestry. System assembly tests passed (59, one skipped),
+including copying the MPM manual and adding its hierarchy to the default MANPATH.
+The roff source rendered with groff without warnings; the VM environment checker
+now also locates and renders `mpm(1)`.
+
+The available broader local suite passed 202 tests with eight tool/environment
+skips. The separate Base archive ownership test could not run because this
+runtime rejects its `chown(..., 1000, 1000)` setup; it remains enabled in CI.
+At that validation point real Nix changed-artifact and fresh Mojt VM acceptance
+were pending; the subsequent owner-run Distrobox evidence is recorded below.
+Earlier Ports and account VM reports do not establish acceptance of this change.
+
+## Owner-reported real upgrade acceptance (2026-10-26)
+
+The owner completed the isolated Distrobox no-op/import/policy/history runner,
+then the two-snapshot changed-artifact test:
+
+- Old source: `ac62194c3917d5f474c1a844b6fd6da2db95077d`, archived NixOS 25.05.
+- New source: `5adc50831c259f87faeb09ddf930d43597197473`, the retained test snapshot.
+- Old artifact: `hello@=2.12.1-nix-na5dnb0l6rjkzrbld3xn4188dd8nknhh`.
+- New artifact: `hello@=2.12.3-nix-pa6rydwgjxxmmvdxap7qk9c85h8jbimy`.
+
+The changed-artifact runner passed, retaining the old installation while the
+request advanced and an exact active pin remained fixed. Explicit following
+activation selected the new artifact, whose executable reported GNU Hello 2.12.3.
+A separate fresh profile then passed following-default advancement from 2.12.1
+to 2.12.3 and a repeated upgrade published no further profile. Supplied history
+showed install, metadata-only source update and upgrade as distinct transactions.
+
+The owner also reported successful exact reactivation of 2.12.1, an upgrade
+no-op preserving that pin and the newer request target, and explicit `--follow`
+reactivation of 2.12.3 with both installed records retained. History sequences
+5 and 6 recorded those selection/policy changes without installations/removals.
+These are owner-run real Nix Distrobox results, not agent execution or VM evidence.
+The subsequent fresh Mojt VM integration results are recorded below.
+
+## Owner-reported Mojt MPM A/B/A acceptance (2026-10-26)
+
+The owner built a fresh step-10 VM at
+`/home/jonasp/mojt-mpm-upgrade.tQvldL/serial-image`, using the new checkout's
+MPM and bundled manual. System userspace and Base 0.1.3 were fixed; the boot
+sequence was system-mpm-A / 6.12.107+deb13-amd64, system-mpm-B /
+7.2.9+deb13-amd64, then A / 6.12.107+deb13-amd64. These are compatible
+System profiles with different kernel/module inputs, not two MPM versions or
+a test of an existing-disk System updater.
+
+On A, the owner confirmed interactive `man mpm` use. Shared Ports imported
+hello 2.12.3, first installation recorded the following request, dry-run and
+upgrade with the unchanged snapshot produced no extra transaction, and history
+showed the two update/install records. The ordinary mpmtest account could read
+history and its attempted shared upgrade was denied with the administrator
+requirement. Its user/session/runtime check and home marker were reported
+successful on B.
+
+Before switching to B, the supplied test froze complete MPM state/history,
+machine and user identity and the hello path in an A checkpoint. A B-side exact
+activation changed hello's selection policy to an exact pin while retaining
+the installed artifact and request. The B checkpoint was written only after
+asserting an upgrade no-op preserved the pinned state and full history.
+
+On the return to A, the owner supplied all final PASS lines: stable machine
+and user identities; complete state equality against the B checkpoint with
+the exact pin still set; complete history equality; the same hello artifact
+and user home marker; and another upgrade no-op preserving state and history.
+The journal listed all three boots and retained the previous-boot marker;
+/etc, /var, /home and /root persistence checks passed. No failed units remained.
+The earlier full root comparison output from B was not pasted; final A evidence
+is the complete comparison against B's validated checkpoint, plus the reported
+ordinary-user checks on B. Real changed-version upgrade was established in
+Distrobox; this VM run establishes integration and metadata persistence across
+the two kernel sets, not a changed-version import inside the VM.

@@ -221,13 +221,15 @@ PYTHON
         MANPATH="$(cat /run/mojt-system/manual-path)"
         MANPAGER=cat
         export MANPATH MANPAGER
-        for page in man systemctl curl ping; do
+        for page in mpm man systemctl curl ping; do
             man -w "$page" || fail "missing manual: $page"
         done
         work="$(mktemp -d /tmp/mojt-environment.XXXXXX)"
         trap 'rm -rf -- "$work"' 0 HUP INT TERM
         man --pager=cat ping >"$work/ping.txt"
         [ -s "$work/ping.txt" ] || fail "manual rendering produced no text"
+        man --pager=cat mpm >"$work/mpm.txt"
+        [ -s "$work/mpm.txt" ] || fail "MPM manual rendering produced no text"
         /run/mojt-system/bin/python3 - <<'PYTHON'
 import datetime
 import locale

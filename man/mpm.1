@@ -1,0 +1,175 @@
+.\" Mojt Linux
+.\" Copyright (C) 2026 Jonas Persson
+.\" SPDX-License-Identifier: GPL-2.0-only
+.TH MPM 1 "2026-10-26" "Mojt Linux" "User Commands"
+.SH NAME
+mpm \- manage Mojt Ports from a pinned Nixpkgs source
+.SH SYNOPSIS
+.B mpm
+.RI [ global-options ] " ports " action " " [ arguments ]
+.SH DESCRIPTION
+MPM is Mojt's experimental package manager. The implemented area is
+.BR ports :
+shared command-line applications, retained side by side in the Nix store.
+Imports use binary substitutes only; unavailable substitutes fail instead
+of starting source builds. System services and desktop integration are not
+automatically configured for installed applications.
+.PP
+Catalog selection, recorded requests, installed artifacts and active command
+selections are separate. An artifact identity from
+.B list --exact
+identifies an installed build; it is not itself an upgrade request.
+.SH GLOBAL OPTIONS
+.TP
+.BI --root " DIRECTORY"
+Dedicated state directory; default /var/lib/mojt/ports.
+Use a new empty directory for experiments. Never move an initialized root:
+Nix indirect garbage-collection roots refer to its original location.
+.TP
+.BI --source-manifest " FILE"
+Initial source pin for update. Used only when no catalog has been saved.
+Global options precede the area name.
+.SH PORTS ACTIONS
+.TP
+.BR "update " [ "--manifest FILE" ]
+Save a local pinned source and optional curated catalog entries. Without
+an explicit manifest, reuse the saved snapshot. Does not refresh channels,
+install payloads or change active commands. A manifest contains format = 1
+and a [nixpkgs] section with path, revision and system.
+.TP
+.BI "install " "[NAME ...] [--attribute ATTRIBUTE] [--no-activate]"
+Resolve names from the saved snapshot. With no names, install curated entries.
+An attribute override requires exactly one name. Record the name/attribute
+request for future upgrade. First installation activates defaults unless
+--no-activate is given; later installations retain the existing defaults
+and existing request target. Reinstallation does not infer legacy intent.
+.TP
+.BI "upgrade " "[NAME ...]"
+Advance recorded attribute requests using the saved catalog snapshot.
+With no names, consider all recorded requests. Does not run update or fetch
+a newer Nixpkgs snapshot. Retain previous builds and their fixed aliases.
+Only active selections following an upgraded request move to its new target;
+exact active selections stay pinned. Inactive requests can acquire new builds
+without changing defaults. All selected requests form one atomic profile plan.
+.PP
+.RS
+Different versions must be dotted nonnegative integers; numeric downgrades
+are refused. An equal version with a different output hash is an eligible
+rebuild. Nonnumeric version transitions fail pending a backend version adapter.
+Release-series selectors such as @3.0 are not implemented. Legacy state has
+no recorded requests: explicitly install the intended attribute to adopt it.
+.RE
+.TP
+.BI "activate " "IDENTITY_OR_NAME [--follow]"
+Select an already installed artifact. An exact identity pins active commands.
+A bare name is accepted only when exactly one artifact of that name is
+installed; it follows that artifact's recorded request if it is the request's
+current target. --follow explicitly follows the request whose current target
+is the selected artifact, including when using an exact identity. Fails if
+no such request exists. Does not fetch anything.
+.TP
+.BI "remove " "IDENTITY_OR_NAME ..."
+Remove artifacts from the current installation set. Bare names must be
+unambiguous. If an active artifact is removed, select the most recently active
+remaining artifact, or the most recently installed if none was active.
+A removed request target falls back to the most recently active/installed
+remaining artifact of its own name and attribute, or its request is removed
+if none remains. A fallback only follows a request if it matches its target.
+No store objects, old profiles or GC roots are physically deleted.
+.TP
+.BR "list " [ --exact | --json ]
+Show installed versions and active defaults. --exact shows immutable identities
+for activation/removal. --json shows detailed installed records.
+.TP
+.B status
+Print JSON containing catalog, requests, installed records, active selections,
+selection policies and recency metadata. A null selection policy is an exact pin.
+.TP
+.BI "history " "[--json] [--limit N]"
+Show committed transactions, newest first; default limit 20, range 1 to 1000.
+Records include sequence, UTC timestamp, effective invoking UID, action,
+installed/removed identities and before/after catalog, request and active
+selection state. Text output summarizes changes; --json includes catalog detail.
+Ordering uses sequence, not the wall clock. Legacy profiles without records
+end the history chain. This is recovery information, not a tamper-proof audit
+log or an undo command.
+.TP
+.BI "search " "FRAGMENT [--scope ATTRIBUTE] [--limit N] [--json]"
+Search attribute names in the saved snapshot. Default limit 50; maximum 200.
+.TP
+.BI "info " "NAME_OR_IDENTITY [--json]"
+Inspect a catalog attribute or exact installed artifact.
+.SH MUTATION OPTIONS
+update, install, upgrade, activate and remove accept:
+.TP
+.B --dry-run
+Preview without writing MPM state, GC roots or payloads. Nix evaluation may
+populate its own evaluation caches. Unavailable command exports are discovered
+only after import; a later collision still aborts profile publication.
+.TP
+.BR -y , " --yes"
+Apply the displayed plan without an interactive confirmation. Does not expand
+scope to Base, System, Kernel or another source snapshot.
+.SH RECOVERY AND COMPATIBILITY
+Mutations are serialized with a lock. A complete profile, state.json and
+transaction.json are flushed before atomically switching current. Failures
+before the switch preserve the old profile; downloaded objects may remain.
+A failure after the switch is reported as possibly committed and the profile
+is retained. Complete backend power-loss recovery is not established.
+.PP
+The first changed operation upgrades format-1 metadata to format 2. Legacy
+active selections become exact pins; missing intent is not guessed. Older MPM
+writers refuse format 2. Returning to an older System can therefore leave
+installed commands usable while its older MPM cannot manage the new state.
+Keep a tested reference disk and review the plan's compatibility warning.
+.PP
+Fixed aliases include the command, version and full Nix output hash.
+After changing command availability, the current shell may need
+.BR "hash -r" .
+There is no general undo, pruning/GC, production project lock or automatic
+reconciliation of direct Nix changes.
+.SH RELATION TO SYSTEM UPGRADE
+mpm system upgrade is accepted design, not an implemented command. It must
+plan against the selected deployment, distinguish selected from running
+content, and publish a new immutable System generation for next boot.
+Ports upgrade changes the current shared application profile immediately.
+Neither operation may silently change the other area's requests, catalog or
+activation, nor Base or Kernel selections. Sharing immutable Nix objects
+does not merge those policies. A future System updater must check whether
+its bundled MPM can read/write the selected persistent metadata format;
+mutable account, home and application state is not automatically rolled back.
+.SH FILES
+.TP
+.B /var/lib/mojt/ports/current
+Atomic selection of an internal retained profile.
+.TP
+.B /var/lib/mojt/ports/profiles/*/state.json
+Authoritative snapshot of Ports metadata for that profile.
+.TP
+.B /var/lib/mojt/ports/profiles/*/transaction.json
+Transaction and ancestry, published with its snapshot. No separate database.
+.TP
+.B /var/lib/mojt/ports/gcroots
+Retained Nix source and payload roots.
+.SH EXAMPLES
+.nf
+mpm ports update --dry-run
+mpm ports update -y
+mpm ports install hello -y
+mpm ports upgrade hello --dry-run
+mpm ports upgrade hello -y
+mpm ports list --exact
+mpm ports activate 'IDENTITY_FROM_LIST' -y
+mpm ports activate 'CURRENT_REQUEST_TARGET_FROM_LIST' --follow -y
+mpm ports history
+man mpm
+.fi
+.SH EXIT STATUS
+0 on success, cancellation or an unchanged plan; nonzero on failure.
+Shared Ports changes require an administrator in the Mojt account-enabled
+System. Ordinary users may list, inspect status and read history.
+.SH SEE ALSO
+.BR nix-store (1),
+.BR man (1)
+.PP
+Repository documentation: docs/mpm.md, docs/mpm-ports.md and docs/roadmap.md.

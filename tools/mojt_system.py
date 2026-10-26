@@ -509,6 +509,8 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
               (repo / "tests/run-mpm-nix-python.py").read_text(), 0o755)
         write(system / "tests/run-mpm-nix-ports.py",
               (repo / "tests/run-mpm-nix-ports.py").read_text(), 0o755)
+        write(system / "tests/run-mpm-nix-upgrade.py",
+              (repo / "tests/run-mpm-nix-upgrade.py").read_text(), 0o755)
         write(system / "bin/mpm", "#!/bin/sh\n"
               "PATH=/run/mojt-system/bin:/usr/bin:/bin\nexport PATH\nexec " + python +
               ' -I /run/mojt-system/tools/mpm-nix-prototype --root /var/lib/mojt/ports '
@@ -665,7 +667,8 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
     if step >= 9:
         export("man", "man-db", "bin/man")
         export("manpath", "man-db", "bin/manpath")
-        write(system / "manual-path", ":".join(manual_paths(payload, record)) + "\n")
+        write(system / "share/man/man1/mpm.1", (repo / "man/mpm.1").read_text())
+        write(system / "manual-path", ":".join(["/run/mojt-system/share/man"] + manual_paths(payload, record)) + "\n")
         write(system / "zoneinfo-path", record["packages"]["tzdata"]["output"] + "/share/zoneinfo\n")
     if step >= 10:
         wanted += accounts.install(tree, system, account_inputs(payload, record), repo,
@@ -697,7 +700,7 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
     if step >= 9:
         with (system / "environment").open("a") as environment:
             environment.write('export MANPATH="${MANPATH:-' +
-                              ":".join(manual_paths(payload, record)) + ':/usr/share/man}"\n')
+                              ":".join(["/run/mojt-system/share/man"] + manual_paths(payload, record)) + ':/usr/share/man}"\n')
             environment.write('export TZDIR="${TZDIR:-' +
                               record["packages"]["tzdata"]["output"] + '/share/zoneinfo}"\n')
     if step >= 10:

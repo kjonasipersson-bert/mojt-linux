@@ -172,7 +172,7 @@ root ALL=(ALL:ALL) ALL
     wrapper.write_text(wrapper.read_text().replace("#!/bin/sh\n", "#!/bin/sh\n"
         "umask 022\n"
         'if [ "$(/usr/bin/id -u)" != 0 ]; then\n'
-        '    case "$1:$2" in ports:list) ;;\n'
+        '    case "$1:$2" in ports:list|ports:status|ports:history) ;;\n'
         '        *) echo "mpm: shared Ports changes require an administrator" >&2; exit 1 ;;\n'
         '    esac\nfi\n', 1))
     return ["mojt-privileged.service", "systemd-logind.service", "systemd-user-sessions.service",
