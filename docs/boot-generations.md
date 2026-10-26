@@ -268,7 +268,25 @@ synthetic automated guest rather than replacing its failure-injection checks.
 Both System labels used the same kernel and upstream payload. Base B was an
 intentionally compatible image with a different version and an added marker.
 A different-kernel/payload upgrade, networking and Ports behavior across these
-pairs, manual build interruption, and physical hardware generation switching
-were not verified by this run. Existing automated tests cover failure during
-second-pair assembly; updates to an existing boot disk and power-loss recovery
-remain outside this image-composition experiment.
+pairs, and physical hardware generation switching were not verified by this
+run. Existing automated tests cover failure during second-pair assembly;
+updates to an existing boot disk and power-loss recovery remain outside this
+image-composition experiment.
+
+## Owner serial console and interruption acceptance (2026-10-26)
+
+The owner prepared a separate serial-console copy of the completed image and
+authenticated as root through `ttyS0` in the SSH terminal. The full Mojt
+systemd guest reported Base `0.1.3`, System `system-A`, the expected kernel
+and both existing persistent generation markers.
+
+A fresh build was interrupted with Ctrl-C at the new root-password prompt.
+The completed serial VM subsequently booted with the same Base/System
+identities and both markers. A repeated interruption using the corrected
+host probe reported PASS: the builder reported password-entry abort with a
+nonzero exit status, no interrupted output path was published, and the
+completed serial VM disk's SHA256 checksum was unchanged.
+
+This completes the controlled build-interruption check. The commands and
+measured result are in the [SSH/serial console guide](vm-serial-console.md).
+
