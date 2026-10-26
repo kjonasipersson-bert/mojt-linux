@@ -25,7 +25,7 @@ The [architecture](architecture.md) defines the layer boundaries and the
   keeping Base 0.1.3 and System userspace fixed, with persistent markers,
   networking and the same installed Ports hello artifact. B identity/marker/HTTPS
   checks were owner-confirmed; see the evidence distinction in the acceptance log.
-- Authenticated full-Mojt serial console in the SSH terminal, retaining the
+- System step 7 diagnostics passed on both retained kernels, including the\n  corrected udev hardware database, network checks and the same Ports artifact.\n- A clean step 8 VM completed A → B → A with automatic persistent machine-ID\n  commitment, retained journals across all three boots, confirmed NTP, quiet\n  login consoles and an explicit working terminal-size query.\n- Authenticated full-Mojt serial console in the SSH terminal, retaining the
   tested VM's credentials and state.
 - Controlled interruption of a fresh image build at password entry, successful
   return to the completed VM, and a repeated probe confirming no published
@@ -45,7 +45,7 @@ updates to an existing boot disk or power-loss recovery.
 | Priority | Track | Next work |
 | --- | --- | --- |
 | 1 | Base/System generations | VM Base/System and different-kernel return experiments completed. Retain the reference images; production boot-disk updates, compatibility and automatic fallback remain future work. |
-| 2 | More complete System | Next: diagnostics including ping, then console/time improvements and account integration. Review the [System proposal](system-completeness-proposal.md) before implementing its new policies. |
+| 2 | More complete System | Diagnostics and console/time/journal acceptance completed. Next: persistent timezone, locale/UTF-8 checks and man/manual-page integration, then decide and implement the account stage from the [System proposal](system-completeness-proposal.md). |
 | 3 | MPM development | Implement the accepted upgrade policies, explicit request/selection state and readable history; develop project locks, then retention/pruning and physical collection. |
 | 4 | Build System on Mojt | Run the existing build tools inside Mojt with pinned inputs and a controlled build environment, producing a new Mojt image. |
 | 5 | Own-built Linux kernel | Establish a documented kernel build/configuration and package matching modules as a versioned Kernel input; start near the working Debian configuration. |
@@ -62,8 +62,7 @@ The different-kernel experiment is now recorded in
 Keep its two boot choices and the earlier completed VM as reference inputs.
 
 The [System completeness proposal](system-completeness-proposal.md) recommends
-small diagnostic additions first, console/time improvements next, and a
-separate coherent account stage. It covers local Unix users, persistent homes,
+the now-completed diagnostic and console/time additions, small remaining\ntimezone/locale/manual-page improvements, and a separate coherent account stage. It covers local Unix users, persistent homes,
 PAM/session integration, sudo, service identities and initial administrator-managed
 shared Ports. Personal Ports and optional SSH are later steps. These are
 recommendations for discussion, not accepted policy or implemented capabilities.

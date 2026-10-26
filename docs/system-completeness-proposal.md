@@ -12,7 +12,7 @@ The [roadmap](roadmap.md) records the agreed work order; the
 [kernel acceptance](boot-generations.md#owner-different-kernel-acceptance-2026-10-26)
 establishes the starting point.
 
-## Goal and current foundation
+## Measured progress after the original proposal\n\nSystem step 7 diagnostics and the clean step 8 console/time/journal A → B → A\nexperiments have now passed owner VM acceptance. Tty sizing remains explicit;\npersistent timezone selection, locale/UTF-8 checks and man/manual-page integration\nremain next work. The owner confirmed that man is absent in the current System.\nThe account model below remains a proposal requiring decisions before implementation.\nOptional SSH and personal Ports are later work, not prerequisites for the initial\naccount stage. Historical starting-point descriptions below refer to step 6.\n\n## Goal and current foundation
 
 A user should be able to diagnose the machine, maintain it and work from a
 normal account without first building an administrative environment in Ports.
