@@ -142,15 +142,22 @@ EX
         nslookup -version
         ethtool --version
         lspci -nn
-        lsusb -t
+        probe="$(mktemp -d /tmp/mojt-diagnostics.XXXXXX)"
+        cleanup_diagnostics() { rm -f "$probe/trace" "$probe/usb-error"; rmdir "$probe"; }
+        trap cleanup_diagnostics 0
+        trap 'exit 1' HUP INT TERM
+        if ! lsusb -t 2>"$probe/usb-error"; then
+            cat "$probe/usb-error" >&2
+            fail "USB enumeration failed"
+        fi
+        if [ -s "$probe/usb-error" ]; then
+            cat "$probe/usb-error" >&2
+            fail "USB enumeration emitted diagnostics"
+        fi
         ss -lntu
         release="$(uname -r)"
         [ -d "/lib/modules/$release" ] || fail "matching runtime modules missing; use hardware-profile build"
         modinfo -k "$release" ext4
-        probe="$(mktemp -d /tmp/mojt-diagnostics.XXXXXX)"
-        cleanup_diagnostics() { rm -f "$probe/trace"; rmdir "$probe"; }
-        trap cleanup_diagnostics 0
-        trap 'exit 1' HUP INT TERM
         strace -o "$probe/trace" /run/mojt-system/busybox true
         grep -q 'execve(' "$probe/trace" || fail "strace did not record execve"
         grep -Fq '+++ exited with 0 +++' "$probe/trace" || fail "traced command did not exit successfully"

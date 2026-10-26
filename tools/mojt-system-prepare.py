@@ -93,6 +93,8 @@ def prepare(args):
         record = dict(format=1, step=args.step, source=source, packages=packages, objects=objects,
                       registration_sha256=system.file_hash(payload / "registration"),
                       prepared_utc=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+        if args.step >= 7:
+            record["hwdb_sha256"] = system.prepare_hwdb(payload, packages, work)
         system.write(payload / "system.json", json.dumps(record, indent=2) + "\n")
         system.load_payload(payload)
         system.require(not os.path.lexists(output), "System output appeared during preparation")

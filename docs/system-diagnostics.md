@@ -26,6 +26,14 @@ closure and validates dig/nslookup before publication. This does not enable a
 DNS server. All commands are linked from the selected System profile into
 `/run/mojt-system/bin`. Complete runtime dependencies, including any Nix glibc,
 are retained without replacing Base libraries or setting LD_LIBRARY_PATH.
+The exporter also compiles udev's hardware database from the selected systemd
+package's `lib/udev/hwdb.d` using that package's `systemd-hwdb`. Compilation uses
+a private root, not host configuration. Its hash is checked with the payload,
+and its bytes are copied into the immutable System profile. A missing
+persistent `/etc/udev/hwdb.bin` becomes a link to
+`/run/mojt-system/hwdb.bin`, selecting the running generation's database.
+Existing administrator-owned regular database files are preserved; conflicting
+links/directories are refused. No database generation runs at guest boot.
 No new daemon, sysctl setting, setuid wrapper or file capability is installed.
 Initial ping/arping acceptance is root-operated; ordinary-user privilege policy
 is a separate account-integration step.
@@ -190,3 +198,25 @@ preserved Base/account data, exact command links, missing DNS command rejection,
 and executed local-check success/failure cleanup. They do not establish real
 Nix evaluation, signed binary availability or guest behavior of these tools.
 Owner-side payload export and the above full-Mojt boot checks are pending.
+
+## Initial owner run and USB correction
+
+The owner exported 191 objects and booted a fresh two-pair serial VM at
+`/home/jonasp/mojt-diagnostics.BELV3c`. On the initial tools-A run the network
+and admin probes passed. Local ping/tracepath, module metadata and strace also
+ran successfully, and hello was imported and activated. However, lsusb emitted
+`unable to initialize usb spec` while returning zero, causing the initial local
+probe to report a false overall PASS for USB. Full diagnostic acceptance is
+therefore pending the correction, not established by that PASS line.
+
+The owner's strace showed missing compiled hwdb files at all searched paths,
+including `/etc/systemd/hwdb/hwdb.bin` and `/etc/udev/hwdb.bin`. The corrected
+exporter supplies the database, and the checker treats lsusb stderr as failure
+as well as checking its exit status. An empty USB tree is permitted when the
+VM has no USB controller; it is not evidence of physical USB device operation.
+Re-export to a fresh payload directory, for example `system-step7-hwdb`, and
+build toward a new VM output. Retain the initial disk and its test markers.
+
+Synthetic tests cover private compilation, missing compiler output, digest
+changes, unsafe persistent configuration, the generation-specific link and
+zero-exit USB warnings. Real corrected export/boot acceptance remains pending.

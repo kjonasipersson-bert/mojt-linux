@@ -92,6 +92,9 @@ class SystemVmTests(unittest.TestCase):
         system.write(self.payload / "registration", "synthetic registration")
         record = dict(format=1, step=step, packages=packages, source=source, objects=objects,
                       registration_sha256=system.file_hash(self.payload / "registration"))
+        if step >= 7:
+            system.write(self.payload / "hwdb.bin", "synthetic database" * 8)
+            record["hwdb_sha256"] = system.file_hash(self.payload / "hwdb.bin")
         system.write(self.payload / "system.json", json.dumps(record))
         return record
 
@@ -165,6 +168,9 @@ class SystemVmTests(unittest.TestCase):
                 self.assertEqual(str(link.readlink()), record["packages"][role]["output"] + "/bin/" + name)
                 self.assertFalse(system.virtual_file(self.tree, str(link.readlink())).stat().st_mode & 0o6000)
         self.assertFalse((directory / "units/named.service").exists())
+        self.assertEqual((self.tree / "state/etc/udev/hwdb.bin").readlink(),
+                         Path("/run/mojt-system/hwdb.bin"))
+        self.assertEqual((directory / "hwdb.bin").read_bytes(), (self.payload / "hwdb.bin").read_bytes())
         self.assertNotIn("ping_group_range", (directory / "setup").read_text())
         subprocess.run(["sh", "-n", str(directory / "bin/mojt-system-check")], check=True)
 
@@ -173,6 +179,33 @@ class SystemVmTests(unittest.TestCase):
         self.assertFalse((directory / "diagnostic-commands").exists())
         for name in ("ping", "dig", "strace", "ss", "modinfo"):
             self.assertFalse((directory / "bin" / name).is_symlink())
+
+    def test_hwdb_compilation_uses_selected_sources_and_private_root(self):
+        selected = self.root / "selected-systemd"
+        system.write(selected / "lib/udev/hwdb.d/20-usb.hwdb", "usb:v1234*\n ID_VENDOR_FROM_DATABASE=Test\n")
+        compiler = selected / "bin/systemd-hwdb"
+        system.write(compiler, '#!/bin/sh\nroot="${1#--root=}"\n'
+                     'test "$2" = update || exit 1\n'
+                     'test -f "$root/etc/udev/hwdb.d/20-usb.hwdb" || exit 1\n'
+                     'mkdir -p "$root/etc/systemd/hwdb"\n'
+                     'printf "%0100d" 0 >"$root/etc/systemd/hwdb/hwdb.bin"\n', 0o755)
+        work = self.root / "compile-work"
+        digest = system.prepare_hwdb(self.payload, {"systemd": {"output": str(selected)}}, work)
+        self.assertEqual(digest, system.file_hash(self.payload / "hwdb.bin"))
+        self.assertTrue((work / "hwdb-root/etc/udev/hwdb.d/20-usb.hwdb").is_file())
+        system.write(compiler, "#!/bin/sh\nexit 0\n", 0o755)
+        with self.assertRaisesRegex(ValueError, "no valid database"):
+            system.prepare_hwdb(self.payload, {"systemd": {"output": str(selected)}}, self.root / "no-output")
+
+    def test_hwdb_tampering_and_linked_persistent_configuration_are_rejected(self):
+        record = self.fixture(7)
+        (self.payload / "hwdb.bin").write_text("modified" * 15)
+        with self.assertRaisesRegex(ValueError, "System hwdb changed"):
+            system.load_payload(self.payload)
+        (self.tree / "state/etc/udev").symlink_to(self.root)
+        with mock.patch.object(system.os, "chown"):
+            with self.assertRaisesRegex(ValueError, "unsafe persistent udev"):
+                system.install(self.tree, self.payload, record, self.busybox, "password", REPO)
 
     def test_step7_rejects_wrong_dns_output_even_with_valid_transfer_hash(self):
         record = self.fixture(7)
@@ -236,6 +269,12 @@ class SystemVmTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("PASS: DNS tools", result.stdout)
         self.assertIn("ethtool -i eth0", log.read_text())
+        system.write(tools / "lsusb", '#!/bin/sh\nprintf "unable to initialize usb spec" >&2\nexit 0\n', 0o755)
+        result = subprocess.run(["/bin/sh", str(script), "diagnostics"], capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("USB enumeration emitted diagnostics", result.stderr)
+        self.assertNotIn("PASS: System diagnostics", result.stdout)
+        self.assertEqual(list((guest / "tmp").iterdir()), [])
 
     def test_transfer_digest_covers_bytes_mode_and_link_target(self):
         data = self.root / "objects"
