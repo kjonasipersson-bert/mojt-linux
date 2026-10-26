@@ -210,6 +210,52 @@ dependencies (to avoid a sysinit/journald ordering cycle) and is pulled into
 sysinit.target. It commits an existing transient ID rather than generating
 a replacement or overwriting a valid persistent identity. /etc is already
 mounted from writable persistent state before PID 1 starts. The commit helper
-is verified as part of the payload's System output. A stable identity across
-subsequent boots and cross-generation journal visibility still need owner
-acceptance. No historical journal directories are removed or merged by this fix.
+is verified as part of the payload's System output. A stable identity across subsequent boots and cross-generation journal
+visibility were subsequently verified in the clean owner run below. No historical journal directories are removed or merged by this fix.
+
+## Clean owner acceptance: A → B → A (2026-10-26)
+
+The owner exported step 8 with 191 store objects, updated the builder through
+commit `26750e1bf6c97754a79b237b8ad7b7f5bc3e589c`, and built a fresh serial VM:
+`/home/jonasp/mojt-console-time-clean.ThiOJC/serial-image`.
+No manual machine-ID repair was applied to this clean image. Base remained 0.1.3.
+
+| Boot | Kernel | Observed acceptance |
+| --- | --- | --- |
+| system-console-A | 6.12.107+deb13-amd64 | Automatic machine-ID commit to ext4, no failed units, successful quiet/flush units, 72x138 tty geometry and confirmed NTP |
+| system-console-B | 7.2.9+deb13-amd64 | Same persistent machine ID, previous-boot journal, /etc and /var markers, diagnostics, network/DNS/HTTPS, same hello artifact and confirmed NTP |
+| Return to system-console-A | 6.12.107+deb13-amd64 | Same machine ID, three visible boots, retained journal marker/state/hello artifact, diagnostics/network and confirmed NTP |
+
+The persistent machine ID was `d84c7a3cf90446b7ad6e8748d363e224`.
+On initial A the owner left the login prompt idle for about two minutes and
+reported no unsolicited log interference; they explicitly confirmed a quiet
+B console too. Terminal measurement returned 72x138; the owner had also
+confirmed full-size top after measuring and unsetting stale LINES/COLUMNS.
+Terminal queries remain manual after login or window changes.
+
+The clean B journal check found the marker from initial A without directory
+overrides. The final A output listed all three boot IDs:
+`72f6459c31c7422680cfe86901ced052`,
+`6c0a2ff6df334b2fb2f5663a30c69580`,
+`6d5756a3c2854341bbf31f0b9608b48f`.
+Journal disk usage was 8 MiB. This demonstrates cross-boot visibility with a
+stable identity; it is not a stress test of rotation or retention limits.
+
+Timesyncd confirmed initial synchronization at 16:19:19 UTC on initial A,
+16:23:23 UTC on B and 16:25:43 UTC on return A. The immediate clock check
+correctly reported not-yet-synchronized before replies arrived; subsequent
+checks passed. Offline operation and boot do not wait for successful NTP.
+
+The owner installed hello under initial A and saved its resolved executable
+path. B and final A printed Hello, world! and same-artifact PASS without a
+reinstallation request. Local diagnostics and existing network tests passed
+with each selected kernel's modules. Earlier admin-tool acceptance remains
+documented in the step 7 run; no new ordinary-user or logind acceptance is
+claimed here.
+
+This completes the clean VM acceptance for this step. It is owner Debian-host
+evidence, not an agent-run VM test. Automatic terminal resizing, geographic
+timezone configuration, timedated/logind, account management, physical hardware
+coverage and in-place boot-disk updates remain separate work. A timezone such
+as Europe/Stockholm is persistent machine configuration; NTP synchronization
+alone does not select it.
