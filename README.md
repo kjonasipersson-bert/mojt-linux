@@ -154,6 +154,12 @@ export, local timezone, UTF-8 and manual rendering after correcting console
 SIGPIPE handling. A separate step 9 A/B run was explicitly deferred to the
 next System stage.
 
+[System step 10](docs/system-accounts.md) prepares local accounts, PAM console
+login, logind sessions and password-authenticated sudo on the separate home
+state layout. Privileged helpers are selected-generation copies in volatile
+storage; store objects and retained profiles remain without setuid bits.
+Real binary export and guest authentication/privilege acceptance are pending.
+
 For early Mojt versions, Nix remains exposed and supplies System packages as
 well as Ports through a shared store. Mojt controls System activation;
 host-service requirements belong to MPM's separate capability model. See the

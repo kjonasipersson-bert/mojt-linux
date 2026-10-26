@@ -104,6 +104,17 @@ var_policy = "persistent"
             vm.build(args)
         return calls
 
+    def test_mixed_account_and_legacy_profiles_are_refused_before_assembly(self):
+        args = self.prepare()
+        entries = generations.plan(args.additional_generations, boot.generation)
+        support = types.SimpleNamespace(load_payload=lambda _: {"step": 10})
+        output = self.root / "unpublished"
+        with self.assertRaisesRegex(ValueError, "legacy"):
+            vm.additional_pairs(entries, tree=output, work=self.root,
+                target=self.target, first_base="0.1.3", support=support, args=args,
+                root_uuid=UUID, console="serial", assembled_at="test", account_mode=False)
+        self.assertFalse(output.exists())
+
     def test_three_pairs_keep_first_default_and_source_state_unchanged(self):
         args = self.prepare()
         before = system.tree_hash(self.target)

@@ -119,7 +119,7 @@ class Ext4:
         require(self.read(path) == data, f"guest write verification failed: {path}")
 
 
-def configure(image, work):
+def configure(image, work, accounts=False):
     fs = Ext4(image, work)
     fs.directory("/state")
     fs.directory("/state/etc")
@@ -133,7 +133,12 @@ def configure(image, work):
         fs.write(secure, data, replace=True)
     for path in ("/state/etc/systemd", "/state/etc/systemd/system", WANTS):
         fs.directory(path, create=True)
-    fs.write(SERVICE, UNIT.encode("ascii"))
+    text = UNIT
+    if accounts:
+        text = text.replace("After=mojt-setup.service systemd-user-sessions.service",
+            "Requires=mojt-privileged.service systemd-logind.service mojt-account-sysctl.service\n"
+            "After=mojt-setup.service systemd-user-sessions.service mojt-privileged.service systemd-logind.service mojt-account-sysctl.service")
+    fs.write(SERVICE, text.encode("ascii"))
     link = fs.inode(LINK)
     if link is None:
         fs.run(f"symlink {LINK} ../mojt-serial-console.service", write=True)
@@ -204,7 +209,7 @@ def prepare(source, output):
         subprocess.run(["e2fsck", "-f", "-n", str(root)], check=True, capture_output=True)
         fs = Ext4(root, work)
         require(parts["root_uuid"] in fs.run("stats"), "root filesystem UUID differs from build record")
-        configure(root, work)
+        configure(root, work, accounts=record.get("system_step", 0) >= 10)
         subprocess.run(["e2fsck", "-f", "-n", str(root)], check=True, capture_output=True)
         # Clear this extent before sparse insertion, including old nonzero bytes.
         subprocess.run(["fallocate", "--punch-hole", "--keep-size", "--offset", str(offset),

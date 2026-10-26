@@ -2,7 +2,7 @@
 # Mojt Linux
 # Copyright (C) 2026 Jonas Persson
 # SPDX-License-Identifier: GPL-2.0-only
-"""Set tty geometry explicitly, or query a terminal supporting CSI 18 t."""
+"""Read Linux VT geometry, query a serial terminal, or set rows/columns explicitly."""
 
 import argparse
 import fcntl
@@ -15,8 +15,24 @@ import time
 import tty
 
 
+def kernel_console_size(fd):
+    """Linux VTs know their cell grid and do not support CSI 18 t."""
+    try:
+        fcntl.ioctl(fd, 0x4B3B, b"\0" * 4)  # KDGETMODE
+        rows, cols, _, _ = struct.unpack("HHHH", fcntl.ioctl(fd, termios.TIOCGWINSZ, b"\0" * 8))
+        if rows and cols:
+            return rows, cols
+    except OSError:
+        pass
+    return None
+
+
 def resize(fd, rows=None, cols=None, timeout=2.0):
     if rows is None:
+        known = kernel_console_size(fd)
+        if known:
+            return known
+
         original = termios.tcgetattr(fd)
         if select.select([fd], [], [], 0)[0]:
             raise ValueError("terminal input pending; retry at an idle prompt")
