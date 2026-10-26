@@ -174,6 +174,11 @@ terminal, retaining its generations and persistent state.
 python3 -m unittest discover -s tests -p 'test_system_vm.py' -v
 ```
 
+The [persistent state layout](docs/state-layout.md) documents how the runtime
+`/etc`, `/var`, `/home` and `/root` paths attach to shared machine state, and
+how this differs from adding or selecting a boot generation. New home mounting
+is prepared for the account stage; real VM acceptance is pending.
+
 ## Project layout
 
 ```text

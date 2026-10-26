@@ -100,6 +100,8 @@ tools/mojt-base-install
        +--> base/current -> <version>
        +--> state/etc/
        +--> state/var/
+       +--> state/home/
+       +--> state/root/
 ```
 
 The prototype bootstrap currently selects eleven Void packages and uses a pinned static XBPS utility as a host-side construction tool. The assembled runtime image strips XBPS executables and package databases. Base alone has no boot stack; the tested System VM composes it with a kernel, initramfs and services.
@@ -112,6 +114,14 @@ Persistent `state/var` is kept across Base generations. Host-side tests bind
 the state directories over `/etc` and `/var` in a separate mount namespace.
 The System VM implements these mounts before starting services, and the owner
 has verified both state directories across guest boots.
+
+The accepted home extension gives `/home` and `/root` their own persistent
+`state/home` and `state/root` directories, rather than placing homes under `/var`.
+New VM images mount them before starting login or services. The storage method
+is an implementation choice and may later use other filesystems or subvolumes;
+the stable user-facing paths and state-preservation policy remain the same.
+See [state layout and migration limits](state-layout.md). Owner VM acceptance
+of the new home mounts is pending.
 
 Rollback does **not** revert persistent state or database formats. Future compatibility checks and explicit state migrations will be necessary.
 
@@ -326,4 +336,3 @@ hostname at boot, and links a **missing** `/etc/motd` to the generated
 runtime file. An existing local MOTD always takes precedence; runtime
 information remains available explicitly at `/run/mojt/motd`.
 No change is made to existing Base generations or the source installation.
-

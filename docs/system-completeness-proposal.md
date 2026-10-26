@@ -6,13 +6,24 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Proposal: a useful System and ordinary user accounts
 
-Status: proposal for discussion, 2026-10-26. Nothing in this document adds
-packages, changes authentication or approves new architecture decisions.
+Status: account integration proposal, 2026-10-26. The owner accepted the
+separate state/home and state/root storage layout; see [state layout](state-layout.md).
+Other account details remain the proposed next integration. This document
+itself adds no packages or authentication changes.
 The [roadmap](roadmap.md) records the agreed work order; the
 [kernel acceptance](boot-generations.md#owner-different-kernel-acceptance-2026-10-26)
 establishes the starting point.
 
-## Measured progress after the original proposal\n\nSystem step 7 diagnostics and the clean step 8 console/time/journal A → B → A\nexperiments have now passed owner VM acceptance. Tty sizing remains explicit;\npersistent timezone selection, locale/UTF-8 checks and man/manual-page integration\nremain next work. The owner confirmed that man is absent in the current System.\nThe account model below remains a proposal requiring decisions before implementation.\nOptional SSH and personal Ports are later work, not prerequisites for the initial\naccount stage. Historical starting-point descriptions below refer to step 6.\n\n## Goal and current foundation
+## Measured progress after the original proposal
+
+Diagnostics and the clean console/time/journal A → B → A experiment passed.
+The owner also accepted step 9 timezone, UTF-8 and manual checks after correcting
+console SIGPIPE handling, deferring a separate step 9 A/B run to the next stage.
+Homes in that guest still reside in Base; persistent home mounting is now being
+prepared as the foundation for accounts. Optional SSH and personal Ports remain
+later work. Historical starting-point descriptions below refer to step 6.
+
+## Goal and current foundation
 
 A user should be able to diagnose the machine, maintain it and work from a
 normal account without first building an administrative environment in Ports.
@@ -71,21 +82,20 @@ will start using PAM when packages are added.
 | Account authority | Persistent `/etc/passwd`, `/etc/group`, `/etc/shadow`, `/etc/gshadow`; standard locking-aware tools modify them |
 | Human identities | Allocate from 1000 through 60000 by default after checking existing IDs; one primary group per user; never renumber existing owners on upgrade |
 | Service identities | Separate reserved range and local registry; use systemd-sysusers for missing service accounts, preserve existing IDs, reject conflicting assignments |
-| Home directories | Persist beneath the existing `state/var/home`, bind mounted at `/home`; `/home/<name>` is the user-facing path |
+| Home directories | Persist in `state/home`, bind mounted at `/home`; `/home/<name>` is the user-facing path |
 | Home privacy | New homes mode 0700; user-controlled files and history; shared project directories are explicit group-owned exceptions |
-| Root home | Persist at `state/var/lib/mojt/root`, mounted at `/root`; explicitly migrate any existing root files and preserve current history |
+| Root home | Persist at `state/root`, mounted at `/root`; explicitly migrate any existing root files and preserve current history |
 | Login shell | System Bash through a stable System-owned path, listed in `/etc/shells`; preserve explicit local choices |
 | Administrators | Explicit `sudo` group, password-authenticated sudo by default; ordinary accounts get no administrative membership automatically |
 | Root access | Retain current VM root recovery during migration; lock direct root password login only after an administrative account and recovery path have been tested |
 | Account deletion | Explicit administrator action; retain home data by default, handle sessions/ownership separately; no generation-driven deletion |
 
-Using `state/var/home` reuses the persistence boundary already tested and avoids
-introducing another top-level state layout immediately. A separate home volume
-can later replace the mount source. This is a proposed storage choice, not an
-existing mount. Inspect and reject conflicting nonempty mountpoints; never hide
-existing home files silently. Mount homes before logins and make a mount failure
-stop normal login rather than write data into a Base generation. Do not move
-pre-existing homes or `/root` without a reviewed migration and backup.
+The accepted storage choice uses separate state directories on the existing
+filesystem, mounted at conventional paths. A later filesystem/subvolume method
+can preserve this runtime contract. Inspect and reject conflicting nonempty
+mountpoints; never hide existing home files silently. Mount homes before logins
+and stop normal login if mounting fails. Existing images require an explicit
+migration and backup; see [state layout](state-layout.md).
 
 For new installation, explicitly offer creation of a named administrative
 account, set its password interactively, and test sudo. No shared default
@@ -172,7 +182,7 @@ services or grant privileges.
 - Exercise a missing-home-mount failure, invalid account/configuration inputs,
   and a recovery procedure before disabling password login for root.
 
-No implementation or new account acceptance is claimed by this proposal.
+No account integration or new account acceptance is claimed by this proposal.
 
 ## Upstream references
 

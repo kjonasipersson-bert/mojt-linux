@@ -7,8 +7,8 @@
 Host dependencies: Python >= 3.11, GNU tar, zstd; run as root for install.
 
 This manages VERSIONED ROOTFS DIRECTORIES and persistent state; it does NOT
-boot the machine or make bind mounts. Mount state/etc and state/var inside the
-selected rootfs in a private mount namespace before testing it with chroot.
+boot the machine or make bind mounts. Mount the persistent state directories
+inside the selected rootfs in a private mount namespace before testing it with chroot.
 
 Only install local releases built by a trusted mojt-base-pack. SHA256 detects
 corruption but does not authenticate releases; signature verification is TODO.
@@ -212,12 +212,12 @@ def sync_created(created):
         sync_directory(directory)
 
 
-def ensure_directory(path, created):
+def ensure_directory(path, created, mode=0o777):
     """Create only a missing directory; reject links and conflicting files."""
     if path.is_symlink() or (path.exists() and not path.is_dir()):
         fail(f"expected a state directory, not a file or link: {path}")
     if not path.exists():
-        path.mkdir()
+        path.mkdir(mode=mode)
         created.append((path, True))
 
 
@@ -293,7 +293,7 @@ def prepare_state(target, defaults, layout, created):
     if layout_file.exists():
         if layout_file.read_text(encoding="ascii").strip() != str(layout):
             fail("persistent state layout incompatible with this release")
-    for directory in (etc, var):
+    for directory in (etc, var, state / "home", state / "root"):
         if directory.is_symlink() or (directory.exists() and not directory.is_dir()):
             fail(f"persistent state mount point must be a directory: {directory}")
     if os.path.lexists(os_release) and (
@@ -304,6 +304,8 @@ def prepare_state(target, defaults, layout, created):
     ensure_directory(state, created)
     ensure_directory(etc, created)
     ensure_directory(var, created)
+    ensure_directory(state / "home", created, mode=0o755)
+    ensure_directory(state / "root", created, mode=0o700)
     add_defaults(defaults, etc, created)
 
     if not os.path.lexists(os_release):

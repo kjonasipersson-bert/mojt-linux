@@ -106,7 +106,9 @@ root="/sysroot/base/$version"
 [ -d "$root" ] || panic "Base generation missing: $version"
 [ ! -L "$root" ] || panic "Base generation is a symlink"
 [ -f "/sysroot/releases/base-$version.toml" ] || panic "Base metadata missing"
-[ -d /sysroot/state/etc ] && [ -d /sysroot/state/var ] ||
+[ -d /sysroot/state/etc ] && [ -d /sysroot/state/var ] &&
+[ -d /sysroot/state/home ] && [ ! -L /sysroot/state/home ] &&
+[ -d /sysroot/state/root ] && [ ! -L /sysroot/state/root ] ||
     panic "persistent state missing"
 [ -d "$root/etc" ] && [ -d "$root/var" ] ||
     panic "Base mount points missing"
@@ -122,6 +124,8 @@ mount --bind /sysroot/system/prototype-init /newroot/run/mojt-system ||
     panic "cannot attach System init"
 mount --bind /sysroot/state/etc /newroot/etc || panic "cannot mount /etc"
 mount --bind /sysroot/state/var /newroot/var || panic "cannot mount /var"
+mount --bind /sysroot/state/home /newroot/home || panic "cannot mount /home"
+mount --bind /sysroot/state/root /newroot/root || panic "cannot mount /root"
 # System identity is assembled at boot from independently selected releases.
 IFS= read -r mojt_system_version </sysroot/system/prototype-init/version ||
     panic "missing System version"
@@ -615,6 +619,22 @@ def populate_disk_tree(target, version, tree):
         (target / "state/var", tree / "state/var"),
     ):
         subprocess.run(["cp", "-a", "--", str(origin), str(dest)], check=True)
+    # Additive layout-1 extension. Legacy directory targets may lack these
+    # directories; prepare only the private image copy, never the source.
+    for name, mode in (("home", 0o755), ("root", 0o700)):
+        point = tree / "base" / version / name
+        if point.is_symlink() or (point.exists() and
+                (not point.is_dir() or any(point.iterdir()))):
+            fail(f"nonempty or unsafe Base /{name}; migrate its contents explicitly before building")
+        point.mkdir(exist_ok=True)
+        source = target / "state" / name
+        destination = tree / "state" / name
+        if os.path.lexists(source):
+            require_directory(source, f"persistent /{name}")
+            subprocess.run(["cp", "-a", "--", str(source), str(destination)], check=True)
+        else:
+            destination.mkdir(mode=mode)
+            os.chown(destination, 0, 0)
     (tree / "base/current").symlink_to(version)
     shutil.copy2(target / "state/layout-version", tree / "state/layout-version")
     shutil.copy2(target / "releases" / f"base-{version}.toml",

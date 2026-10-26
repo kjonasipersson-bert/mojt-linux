@@ -68,6 +68,44 @@ class VmBuilderTests(unittest.TestCase):
             self.assertEqual((tree / "state/etc/local.conf").read_text(), "preserved")
             self.assertEqual((tree / "state/var/data").read_text(), "persistent")
             self.assertTrue((tree / "base/0.1.3/etc").is_dir())
+            self.assertEqual((tree / "state/root").stat().st_mode & 0o777, 0o700)
+            self.assertTrue((tree / "state/home").is_dir())
+            self.assertFalse((target / "state/root").exists())
+            self.assertFalse((target / "state/home").exists())
+
+    def test_home_state_is_copied_without_mutating_source_or_base(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            base = target / "base/0.1.3"
+            for name in ("etc", "var", "home", "root"):
+                (base / name).mkdir(parents=True)
+            for name in ("etc", "var", "home", "root"):
+                (target / "state" / name).mkdir(parents=True)
+            (target / "state/root").chmod(0o700)
+            user = target / "state/home/example"
+            user.mkdir(mode=0o700)
+            (user / "data").write_text("personal data")
+            (target / "state/root/.lesshst").write_text("retained history")
+            (target / "state/layout-version").write_text("1\n")
+            (target / "releases").mkdir()
+            (target / "releases/base-0.1.3.toml").write_text("format = 1\n")
+            tree = Path(tmp) / "tree"
+            tree.mkdir()
+            with mock.patch.object(vm.os, "chown"):
+                vm.populate_disk_tree(target, "0.1.3", tree)
+            self.assertEqual((tree / "state/home/example/data").read_text(), "personal data")
+            self.assertEqual((tree / "state/root/.lesshst").read_text(), "retained history")
+            self.assertEqual((tree / "state/root").stat().st_mode & 0o777, 0o700)
+            self.assertEqual((tree / "state/home/example").stat().st_mode & 0o777, 0o700)
+            self.assertEqual((target / "state/root/.lesshst").read_text(), "retained history")
+            self.assertEqual(list((base / "root").iterdir()), [])
+            # Never hide files that still live in an older Base generation.
+            (base / "root/.lesshst").write_text("unmigrated history")
+            second = Path(tmp) / "second"
+            second.mkdir()
+            with mock.patch.object(vm.os, "chown"), self.assertRaisesRegex(ValueError, "migrate"):
+                vm.populate_disk_tree(target, "0.1.3", second)
+            self.assertEqual((base / "root/.lesshst").read_text(), "unmigrated history")
 
     def test_busybox_init_is_system_owned_and_preserves_inittab(self):
         with tempfile.TemporaryDirectory() as tmp:
