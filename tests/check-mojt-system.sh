@@ -178,6 +178,32 @@ EX
         [ -n "$device" ] || fail "no interface for driver inspection"
         ethtool -i "$device"
         echo "PASS: DNS tools and network driver inspection" ;;
+    clock)
+        PATH=/run/mojt-system/bin:/usr/bin:/bin
+        export PATH
+        boot_check
+        systemctl is-active --quiet systemd-timesyncd.service || fail "timesyncd is not active"
+        timedatectl timesync-status --no-pager
+        [ -e /run/systemd/timesync/synchronized ] || fail "no confirmed NTP synchronization yet"
+        echo "PASS: timesyncd active and synchronization confirmed" ;;
+    journal-write)
+        boot_check
+        [ ! -e /var/lib/mojt/journal-probe-boot ] || fail "journal probe already exists"
+        [ ! -L /var/lib/mojt/journal-probe-boot ] || fail "journal probe is a symlink"
+        mkdir -p /var/lib/mojt
+        cat /proc/sys/kernel/random/boot_id >/var/lib/mojt/journal-probe-boot
+        printf 'Mojt journal persistence probe\n' | /run/mojt-system/bin/systemd-cat -t mojt-journal-probe
+        journalctl --sync
+        echo "Journal marker written. Power off and boot the same disk, then journal-check." ;;
+    journal-check)
+        boot_check
+        old="$(cat /var/lib/mojt/journal-probe-boot)" || fail "journal probe missing"
+        [ "$old" != "$(cat /proc/sys/kernel/random/boot_id)" ] || fail "another boot is required"
+        text="$(journalctl --boot="$old" --identifier=mojt-journal-probe --no-pager --output=cat)"
+        printf '%s\n' "$text" | grep -Fxq 'Mojt journal persistence probe' || fail "previous boot's journal marker missing"
+        journalctl --list-boots --no-pager
+        journalctl --disk-usage
+        echo "PASS: previous boot journal retained" ;;
     persistence-write)
         [ ! -e /etc/mojt-system-persistence-test ] || fail "test marker already exists"
         [ ! -L /etc/mojt-system-persistence-test ] || fail "test marker is a symlink"
@@ -196,5 +222,5 @@ EX
         current="$(cat /proc/sys/kernel/random/boot_id)" || fail "cannot read current boot ID"
         [ "$old" != "$current" ] || fail "a second boot is required"
         echo "PASS: both /etc and /var markers survived a different boot" ;;
-    *) fail "use boot, network, ports, programs, admin, diagnostics, diagnostics-network, persistence-write or persistence-check" ;;
+    *) fail "use boot, network, ports, programs, admin, diagnostics, diagnostics-network, clock, journal-write, journal-check, persistence-write or persistence-check" ;;
 esac

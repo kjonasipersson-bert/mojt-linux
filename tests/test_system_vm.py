@@ -57,7 +57,8 @@ class SystemVmTests(unittest.TestCase):
             base = self.payload / value.lstrip("/")
             names = {
                 "systemd": ["lib/systemd/systemd", "bin/systemctl", "bin/journalctl",
-                            "bin/udevadm", "bin/systemd-sysusers"],
+                            "bin/udevadm", "bin/systemd-sysusers", "bin/timedatectl", "bin/systemd-cat",
+                            "lib/systemd/systemd-timesyncd"],
                 "dbus": ["bin/dbus-daemon"], "networkmanager": ["bin/NetworkManager", "bin/nmcli"],
                 "curl": ["bin/curl"], "cacert": [], "iproute2": ["bin/ip", "bin/ss"],
                 "nix": ["bin/nix", "bin/nix-store", "bin/nix-instantiate"], "python": ["bin/python3"],
@@ -109,7 +110,7 @@ class SystemVmTests(unittest.TestCase):
         self.assertEqual(set(system.roles(1)), {"systemd"})
         self.assertTrue(set(system.roles(1)) < set(system.roles(2)) < set(system.roles(3))
                         < set(system.roles(4)) < set(system.roles(5)) < set(system.roles(6)) < set(system.roles(7)))
-        for value in (0, 8, True, "1"):
+        for value in (0, 9, True, "1"):
             with self.assertRaises(ValueError):
                 system.roles(value)
 
@@ -196,6 +197,29 @@ class SystemVmTests(unittest.TestCase):
         system.write(compiler, "#!/bin/sh\nexit 0\n", 0o755)
         with self.assertRaisesRegex(ValueError, "no valid database"):
             system.prepare_hwdb(self.payload, {"systemd": {"output": str(selected)}}, self.root / "no-output")
+
+    def test_step8_time_journal_and_console_keep_base_and_admin_configuration(self):
+        system.write(self.tree / "state/etc/systemd/journald.conf", "[Journal]\nStorage=volatile\n")
+        before = system.tree_hash(self.tree / "base")
+        directory, record = self.install(8, "password")
+        self.assertEqual(system.roles(8), system.roles(7))
+        self.assertEqual(system.tree_hash(self.tree / "base"), before)
+        self.assertEqual((self.tree / "state/etc/systemd/journald.conf").read_text(), "[Journal]\nStorage=volatile\n")
+        self.assertEqual((self.tree / "state/etc/systemd/timesyncd.conf").readlink(),
+                         Path("/run/mojt-system/defaults/timesyncd.conf"))
+        defaults = (directory / "defaults/journald.conf").read_text()
+        self.assertIn("Storage=persistent", defaults)
+        self.assertIn("ForwardToConsole=no", defaults)
+        unit = (directory / "units/systemd-timesyncd.service").read_text()
+        self.assertIn(record["packages"]["systemd"]["output"] + "/lib/systemd/systemd-timesyncd", unit)
+        self.assertIn("User=systemd-timesync", unit)
+        self.assertIn("CAP_SYS_TIME", unit)
+        self.assertNotIn("network-online.target", unit)
+        self.assertIn("systemd-timesyncd.service", (directory / "units/mojt.target").read_text())
+        bus = (directory / "dbus.conf").read_text()
+        ET.fromstring(bus)
+        self.assertIn('own="org.freedesktop.timesync1"', bus)
+        subprocess.run(["sh", "-n", str(directory / "bin/mojt-console-size")], check=True)
 
     def test_hwdb_tampering_and_linked_persistent_configuration_are_rejected(self):
         record = self.fixture(7)
