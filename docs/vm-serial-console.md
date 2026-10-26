@@ -121,6 +121,18 @@ and the two existing generation markers. This tests a controlled build
 interruption; it does not establish power-loss recovery or update atomicity
 on an existing boot disk.
 
+## Owner acceptance
+
+On 2026-10-26, the owner logged in as root with the existing VM password
+through the adapted copy's serial console on the Debian host. The real Mojt
+systemd guest reported `/dev/ttyS0`, System `system-A`, Base `0.1.3` and
+kernel `6.12.107+deb13-amd64`. Both `/etc/generation-marker` and
+`/var/generation-marker` still contained `generation-test-9eMyMQ`.
+
+This verifies authenticated console login and guest shell commands with the
+full System payload. Restart after a controlled build interruption remains
+the next manual check.
+
 ## Validation boundaries
 
 The regression suite uses real GPT/ext4 image copies and checks source
@@ -132,5 +144,5 @@ The opt-in firmware probe's `--serial-login --generations` run boots the
 adapted copy, authenticates a synthetic BusyBox guest on `ttyS0`, executes
 shell commands and repeats the generation sequence and disk-only transfer.
 Its fixture dispatches the getty directly after checking the unit/link; it
-does not run systemd or the real Nix payload. The full Mojt systemd console
-service and the owner's manual interruption run still require host acceptance.
+does not run systemd or the real Nix payload. The full Mojt systemd serial-console
+acceptance is recorded above; the owner's manual interruption run is pending.
