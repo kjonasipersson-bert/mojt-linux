@@ -6,8 +6,7 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # System step 10: local accounts and administration
 
-Status: owner A/B/A account, home and Ports evidence recorded below.
-Explicit rejection of the superseded administrator password awaits confirmation.
+Status: owner A/B/A account, home, password and Ports acceptance recorded below.
 The owner accepted local-account preparation and separate persistent
 `state/home` and `state/root` storage. See [state layout](state-layout.md).
 Synthetic tests do not establish working PAM authentication or setuid behavior.
@@ -311,10 +310,12 @@ hello artifact. The exact shared artifact throughout was
 `hello@=2.12.3-nix-pa6rydwgjxxmmvdxap7qk9c85h8jbimy`.
 
 The transcripts prove preserved later account creation, identity, home data and
-working administrator authentication after return. Rejection of the superseded
-administrator password was requested but has not been explicitly confirmed;
-do not describe that negative test as passed. The earlier A run established
-ordinary-user authorization denials and own-password changes. A separate
+working administrator authentication after return. The owner subsequently
+explicitly confirmed the password test: the change made under B survived the
+return to A, the new password worked and the superseded password was rejected.
+This is an owner-confirmed negative test, distinct from the command transcript
+showing successful authentication. The earlier A run established ordinary-user
+authorization denials and own-password changes. A separate
 account-stage network/NTP regression, configured local-timezone persistence,
 local graphical-VT resize behavior and deliberate recovery/mount-failure probes
 are not established by these account transcripts. Root remains unlocked.

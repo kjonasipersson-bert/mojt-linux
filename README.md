@@ -160,7 +160,8 @@ state layout. Privileged helpers are selected-generation copies in volatile
 storage; store objects and retained profiles remain without setuid bits.
 The owner verified binary export, PAM login, password changes, sudo authorization,
 clean logout and account/home/Ports preservation across A/B/A after the documented
-user-manager correction. Superseded-password rejection awaits explicit confirmation.
+user-manager correction. The owner also confirmed that the superseded password
+was rejected after returning to A.
 
 For early Mojt versions, Nix remains exposed and supplies System packages as
 well as Ports through a shared store. Mojt controls System activation;
