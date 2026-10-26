@@ -15,8 +15,9 @@ distinguishes complete Base releases, System userspace generations and exact
 Kernel builds, combined in a boot deployment. The builder below is a
 fresh-image experiment: its System labels also bind kernel inputs, and its
 on-disk layout is not the final independent Kernel/deployment interface.
-The next test uses a genuinely different kernel and matching modules; it is
-not yet part of the measured acceptance below. See the [roadmap](roadmap.md).
+A subsequent owner VM test changed the kernel and matching modules and returned
+to the retained pair; see [the measured result](#owner-different-kernel-acceptance-2026-10-26)
+and the [roadmap](roadmap.md).
 
 The UEFI builder can compose a **new** image containing several explicit
 Base/System pairs. GRUB selects a pair; initramfs checks `root=UUID=...`,
@@ -298,3 +299,58 @@ completed serial VM disk's SHA256 checksum was unchanged.
 This completes the controlled build-interruption check. The commands and
 measured result are in the [SSH/serial console guide](vm-serial-console.md).
 
+
+## Owner different-kernel acceptance (2026-10-26)
+
+The owner completed the sequence **6.12 → 7.2 → 6.12** on the Debian host,
+using merged builder commit `e3debe601427885a092e51220164faa415953c72`
+(PR #16). This was a separate fresh image with two boot pairs, followed by
+an authenticated serial-console copy. The previous generation-test VM was
+retained separately. Base stayed at `0.1.3`; both labels used the same step 6
+System userspace payload and retained firmware input. Only the kernel/module
+inputs differed (with the corresponding generated boot artifacts).
+
+| Boot | System label | Kernel and module release | Evidence |
+| --- | --- | --- | --- |
+| Initial A | `system-A` | `6.12.107+deb13-amd64` | Supplied output: ttyS0, Base/System identity, cmdline, matching module directory and boot.json; DHCP route, NetworkManager, HTTPS and hello |
+| B | `system-B` | `7.2.9+deb13-amd64` | Owner confirmed all requested checks succeeded; supplied excerpt shows route, NetworkManager, hello identity and identical executable path |
+| Return to A | `system-A` | `6.12.107+deb13-amd64` | Supplied output: Base/System identity, kernel/module directory, both markers, HTTPS, hello identity and identical executable path |
+
+Kernel B and its modules were copied from the owner's Debian installation
+into `/home/jonasp/mojt-kernel-test.2csGdx/root`. The owner ran depmod on the
+copy and successfully resolved the requested early/runtime module dependencies.
+The resulting image reported two boot pairs, with A as default. Test launcher:
+`/home/jonasp/mojt-kernel-test.2csGdx/serial-image/run-qemu.sh`.
+The original kernel bytes are hashed in `kernel.sha256`; per-pair boot records
+and the staged hardware records retain kernel/initramfs/module input metadata.
+
+Under A the owner created `/etc/kernel-test-marker` and
+`/var/kernel-test-marker`, both containing `kernel-test-2csGdx`. They initialized
+MPM's existing pinned source, installed and ran hello, and saved its resolved
+executable path in `/var/kernel-test-hello-path`. Exact retained artifact:
+
+```text
+hello@=2.12.3-nix-pa6rydwgjxxmmvdxap7qk9c85h8jbimy
+/nix/store/pa6rydwgjxxmmvdxap7qk9c85h8jbimy-hello-2.12.3/bin/hello
+```
+
+Both B and the return to A printed `Hello, world!`, listed that same active
+identity and reported `PASS: hello uses the same installed artifact`.
+The final A output showed both state markers and successful HTTPS retrieval
+of `https://cache.nixos.org/nix-cache-info`. The initial and B network excerpts
+showed `eth0` with DHCP routing through `10.0.2.2` and a connected NetworkManager
+profile. The System curl command was used for HTTPS; hello was the separate
+Ports application. No reinstallation of hello was requested on B or return A.
+
+The full B identity/marker/HTTPS output was not pasted; those checks are
+owner-reported rather than independently visible in the supplied excerpt.
+This is manual owner-host acceptance, not an agent-run automated test. The
+module directory/boot metadata checks are not a full post-boot module-tree
+hash audit, and executable-path equality is not a fresh byte-integrity audit.
+
+This establishes the intended kernel-switch/return experiment with shared
+persistent state and a retained Ports application in the full Mojt VM.
+It does not establish a System userspace payload upgrade, physical-hardware
+7.2 driver/firmware compatibility, ordinary-user operation, in-place boot-disk
+updates, automatic fallback, power-loss recovery or persistent-data rollback.
+The next proposed work is [System completeness and account integration](system-completeness-proposal.md).
