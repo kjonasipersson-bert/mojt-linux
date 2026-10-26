@@ -18,8 +18,11 @@ gate, filesystem layout, build recipe and acceptance boundaries.
 
 This document records **current decisions and open questions**, not stable promises. For the enduring design goals, see [the manifesto](manifesto.md).
 
-The [roadmap](roadmap.md) distinguishes the completed generation experiment
-from the next kernel-change test and later System/MPM work.
+The [roadmap](roadmap.md) records completed Base/System and different-kernel
+VM experiments and the next System/MPM work. The
+[System completeness and account proposal](system-completeness-proposal.md)
+is a discussion document; its home, authentication and privilege policies
+are not yet architecture decisions or implemented capabilities.
 
 ## Layers
 
@@ -323,3 +326,4 @@ hostname at boot, and links a **missing** `/etc/motd` to the generated
 runtime file. An existing local MOTD always takes precedence; runtime
 information remains available explicitly at `/run/mojt/motd`.
 No change is made to existing Base generations or the source installation.
+
