@@ -244,21 +244,21 @@ class SystemVmTests(unittest.TestCase):
             source = source.replace(path, str(guest / path.lstrip("/")))
         script = guest / "check.sh"
         script.write_text(source)
-        result = subprocess.run(["/bin/sh", str(script), "diagnostics"], capture_output=True, text=True)
+        environment = {**os.environ, "PATH": str(tools), "MOJT_TEST_INTERFACE": "eth0"}
+        result = subprocess.run(["/bin/sh", str(script), "diagnostics"], capture_output=True, text=True, env=environment)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("PASS: System diagnostics", result.stdout)
         self.assertIn("ping -n -c 2 -W 2 127.0.0.1", log.read_text())
         self.assertIn("modinfo -k test-release ext4", log.read_text())
         self.assertEqual(list((guest / "tmp").iterdir()), [])
         system.write(tools / "strace", "#!/bin/sh\nexit 1\n", 0o755)
-        result = subprocess.run(["/bin/sh", str(script), "diagnostics"], capture_output=True, text=True)
+        result = subprocess.run(["/bin/sh", str(script), "diagnostics"], capture_output=True, text=True, env=environment)
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn("PASS: System diagnostics", result.stdout)
         self.assertEqual(list((guest / "tmp").iterdir()), [])
 
         # Network diagnostics must reject an empty successful DNS response.
         system.write(tools / "mojt-system-check", "#!/bin/sh\nexit 0\n", 0o755)
-        environment = {**os.environ, "MOJT_TEST_INTERFACE": "eth0"}
         result = subprocess.run(["/bin/sh", str(script), "diagnostics-network"],
                                 capture_output=True, text=True, env=environment)
         self.assertNotEqual(result.returncode, 0)
@@ -270,7 +270,7 @@ class SystemVmTests(unittest.TestCase):
         self.assertIn("PASS: DNS tools", result.stdout)
         self.assertIn("ethtool -i eth0", log.read_text())
         system.write(tools / "lsusb", '#!/bin/sh\nprintf "unable to initialize usb spec" >&2\nexit 0\n', 0o755)
-        result = subprocess.run(["/bin/sh", str(script), "diagnostics"], capture_output=True, text=True)
+        result = subprocess.run(["/bin/sh", str(script), "diagnostics"], capture_output=True, text=True, env=environment)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("USB enumeration emitted diagnostics", result.stderr)
         self.assertNotIn("PASS: System diagnostics", result.stdout)
