@@ -711,6 +711,28 @@ commands = ["hello"]
         self.assertEqual(state["requests"]["less:less"], prior["requests"]["less:less"])
         self.assertEqual(sentinel.read_text(), '{"selected":"system-A","running":"system-B"}')
 
+    def test_acceptance_runner_allows_empty_mktemp_root_and_reports_no_changed_artifact(self):
+        runner_loader = importlib.machinery.SourceFileLoader("upgrade_acceptance", str(REPO / "tests/run-mpm-nix-upgrade.py"))
+        runner_spec = importlib.util.spec_from_loader(runner_loader.name, runner_loader)
+        runner = importlib.util.module_from_spec(runner_spec)
+        runner_loader.exec_module(runner)
+        self.root.mkdir()  # The documented mktemp -d path already exists.
+
+        def invoke(command, **options):
+            output, errors = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+                code = mpm.main(command[2:])
+            if code:
+                raise subprocess.CalledProcessError(code, command, output.getvalue(), errors.getvalue())
+            return subprocess.CompletedProcess(command, code, output.getvalue(), errors.getvalue())
+
+        with mock.patch.object(runner.subprocess, "run", side_effect=invoke), \
+                mock.patch("sys.argv", ["runner", "--root", str(self.root), "--from-manifest", str(self.manifest)]), \
+                contextlib.redirect_stdout(io.StringIO()) as output:
+            runner.main()
+        self.assertIn("NO changed artifact tested", output.getvalue())
+        self.assertEqual(len(self.state()["installed"]), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

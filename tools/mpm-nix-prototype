@@ -281,6 +281,7 @@ def installed_selection(state, request):
 
 
 def model(state):
+    """Adopt request metadata without guessing legacy installation intent."""
     if state["format"] == 1:
         state["format"] = 2
         state["requests"] = {}
@@ -722,6 +723,11 @@ def main(argv=None):
                     print(f"{row['sequence']} {row['utc']} {row['action']} uid={row['uid']}")
                     print("  Installed: " + (", ".join(row["installed"]) or "none"))
                     print("  Removed: " + (", ".join(row["removed"]) or "none"))
+                    before_source = (row["before"]["catalog"] or {}).get("source")
+                    after_source = (row["after"]["catalog"] or {}).get("source")
+                    if before_source != after_source:
+                        print(f"  Catalog source: {json.dumps(before_source, sort_keys=True)} -> "
+                              f"{json.dumps(after_source, sort_keys=True)}")
                     for key in ("active", "requests", "selection_policy"):
                         if row["before"][key] != row["after"][key]:
                             print(f"  {key}: {json.dumps(row['before'][key], sort_keys=True)} -> "

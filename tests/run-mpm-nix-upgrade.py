@@ -47,7 +47,7 @@ def main():
 
     print(f"Retained upgrade lab: {root}", flush=True)
     mpm("update", "--manifest", str(args.from_manifest), "--dry-run")
-    require(not root.exists(), "preview wrote the test root")
+    require(not root.exists() or not any(root.iterdir()), "preview wrote test state")
     mpm("update", "--manifest", str(args.from_manifest), "-y")
     mpm("install", args.name, "--attribute", args.name, "-y")
     old = state()

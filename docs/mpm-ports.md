@@ -411,7 +411,7 @@ described above rather than overwriting administrator configuration.
 
 ## Upgrade implementation validation (2026-10-26)
 
-Agent-side simulated Nix tests: 46 passed, including following/pinned defaults,
+Agent-side simulated Nix tests: 47 passed, including following/pinned defaults,
 inactive and multiple requests, explicit name filtering, preserved sources and
 old artifacts, numerical downgrade/unknown-version rejection, legacy adoption,
 request removal/fallback, dry-run/cancellation, failure before publication and
