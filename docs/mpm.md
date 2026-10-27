@@ -17,6 +17,9 @@ grammar, version comparison and backend adaptation remain to be specified
 before implementing a parser. Nix is selected for Ports and, for early Mojt
 versions, for System package acquisition and shared dependency storage.
 System release/deployment formats and the full command grammar remain open.
+The [selector/catalog proposal](mpm-selectors.md) and [mixed-libc proposal](mpm-libc-policy.md)
+refine those open details for review; they are not implemented or accepted by
+this document merely by being linked.
 
 The guiding rule is that Mojt can update **Base, System, Kernel, and Ports
 independently**, without silently updating applications or pinned project
@@ -77,6 +80,9 @@ the System backend taking ownership of their files. A generic minimum kernel
 version is the default System constraint; external modules and some drivers
 may require exact-build matches, feature checks, or narrower constraints.
 A declared `provides` is not a substitute for checking the actual ABI.
+For a Nix executable, a libc already supplied by its exact closure is not an
+unresolved dependency on Base's libc version. External module/host boundaries
+still require checks; see the [mixed-libc proposal](mpm-libc-policy.md).
 
 ## 2. Operations
 

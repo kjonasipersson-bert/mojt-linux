@@ -6,7 +6,7 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Mojt development priorities
 
-Updated 2026-10-26. This records the agreed order and measured progress;
+Updated 2026-10-27. This records the agreed order and measured progress;
 future commands and policies are not claims of implemented functionality.
 The [architecture](architecture.md) defines the layer boundaries and the
 [MPM contract](mpm.md) records the accepted update semantics.
@@ -51,7 +51,7 @@ updates to an existing boot disk or power-loss recovery.
 | --- | --- | --- |
 | 1 | Base/System generations | VM Base/System and different-kernel return experiments completed. Retain the reference images; production boot-disk updates, compatibility and automatic fallback remain future work. |
 | 2 | More complete System | Diagnostics and console/time/journal acceptance completed. Timezone/UTF-8/manual checks accepted on System A; separate A/B checks deferred to the next stage. The account A/B/A run now preserves new users, identity and home data, with working PAM/sudo, session cleanup and shared Ports. Superseded-password rejection is owner-confirmed. Account integration merged; retain its reference image. |
-| 3 | MPM development | Review/test the first Ports attribute-upgrade engine, explicit request/selection state, committed history and bundled MPM manual. Then specify full version/series adapters and System deployment compatibility; develop project locks before pruning and physical collection. |
+| 3 | MPM development | PR #23 merged after real two-snapshot Nix upgrade/recovery and Mojt VM A/B/A acceptance. Next: review the selector/catalog and mixed-libc contracts, then implement parser/resolver/alias integration with explicit state conversion. System deployment compatibility follows; project locks precede pruning/GC. |
 | 4 | Build System on Mojt | Run the existing build tools inside Mojt with pinned inputs and a controlled build environment, producing a new Mojt image. |
 | 5 | Own-built Linux kernel | Establish a documented kernel build/configuration and package matching modules as a versioned Kernel input; start near the working Debian configuration. |
 
@@ -60,18 +60,23 @@ working Debian kernel remains the reference while the build/deployment chain
 is developed; an own-built kernel follows the earlier generation and
 self-building milestones.
 
-## Next concrete work: System completeness
+## Next concrete work: MPM selectors and runtime identity
 
-The different-kernel experiment is now recorded in
-[owner acceptance](boot-generations.md#owner-different-kernel-acceptance-2026-10-26).
-Keep its two boot choices and the earlier completed VM as reference inputs.
+The Ports upgrade/history/manual block is merged. The owner verified real Nix
+hello 2.12.1 -> 2.12.3, following and exact selections, recovery and a fresh
+Mojt A/B/A run retaining state/history, users and the same artifact.
+See [the measured acceptance log](mpm-ports.md).
 
-The [System completeness proposal](system-completeness-proposal.md) recommends
-the completed diagnostic, console/time and timezone/UTF-8/manual additions,
-and a separate coherent account stage. It covers local Unix users, persistent homes,
-PAM/session integration, sudo, service identities and initial administrator-managed
-shared Ports. Personal Ports and optional SSH are later steps. These are
-recommendations for discussion, not accepted policy or implemented capabilities.
+The next proposals are [selectors and catalogs](mpm-selectors.md) and
+[mixed Nix libc closures](mpm-libc-policy.md). They specify exact versus series
+requests, version/revision adapters, explicit multi-snapshot resolution and
+same-release build changes. A new libc object is a dependency of a concrete
+consumer build, not a machine-wide activation choice. Known gaps and the
+required real-runtime evidence are explicit. No new selector parser, catalog
+migration, libc replacement or System-upgrade command is implemented by them.
+
+Keep the latest tested reference VM. Optional SSH, personal Ports, running
+the build on Mojt and an own-built kernel remain later tracks.
 
 ## Implementation boundaries
 
@@ -79,7 +84,8 @@ The current MPM CLI implements a subset of Ports commands. It does not yet
 provide Base/System/Kernel operations, release-series selectors, general undo,
 production project locks or GC. The first Ports upgrade/history implementation
 uses saved Nix attributes, numeric version ordering and format-2 request/policy
-metadata; real Distrobox/VM acceptance is pending.
+metadata. Its real Distrobox/VM acceptance passed; full series/version
+adapters and mixed-runtime compatibility checks remain future work.
 System release/deployment schemas, independent Kernel selection, compatibility
 enforcement and production boot publication/fallback remain work to specify
 and implement. Future status/plans must show installed, selected and running
