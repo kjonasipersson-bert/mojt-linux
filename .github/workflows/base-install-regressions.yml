@@ -23,6 +23,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_vm_builder.py' -v
       - name: Check terminal geometry with real PTYs
         run: python3 -m unittest discover -s tests -p 'test_console_size.py' -v
+      - name: Check private build workspace staging and frozen inputs
+        run: python3 -m unittest discover -s tests -p 'test_build_workspace.py' -v
       - name: Check private image-build environment and libc boundaries
         run: python3 -m unittest discover -s tests -p 'test_build_environment.py' -v
       - name: Check pure System manifests and declared compatibility
