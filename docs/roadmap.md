@@ -104,3 +104,16 @@ upgrade. Targeted automated acceptance is sufficient for this declaration layer;
 manual runtime acceptance accompanies the first build-on-Mojt image experiment.
 A complete System updater, project locks and GC are not prerequisites for that
 controlled build experiment. Libc/desktop work remains deferred.
+
+
+## Build-on-Mojt preparation
+
+PR #25's manifest/preflight block passed CI and merged. The next branch prepares
+[a private image-build environment](build-on-mojt.md): pinned binary tools,
+static clean launcher, recorded ELF loader/closure evidence and limited runtime
+probes. It leaves Base/System/Ports activation untouched. Native Mojt package
+preview/import, frozen-input transfer, one image build and result boot remain
+owner-run acceptance. The first build assembles existing inputs; compiling System
+packages and an own-built kernel remain later milestones. Libc failures are
+reported with exact evidence, without replacing Base libraries or broadening
+search paths.
