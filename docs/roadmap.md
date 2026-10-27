@@ -122,3 +122,14 @@ matching versioned modules, retaining the working Debian kernel as reference.
 Compiling all System packages, production existing-disk updates, project locks
 and GC remain separate work. Libc evidence is bounded to the measured tools and
 runtime; no Base libraries were replaced or global library paths added.
+
+
+## Own-built kernel preparation
+
+PR #26 passed CI and merged after owner native image-build/result-boot acceptance.
+The next [kernel build experiment](kernel-build.md) pins upstream stable 6.12.107,
+a frozen Debian configuration and a separate compiler environment. It prepares
+6.12.107-mojt1 plus matching modules as a new versioned input without changing
+Base/System/Ports or the running kernel. Compiler/header/link/runtime probes
+precede one kernel build and one focused VM boot/module test. Native package
+availability and actual compilation remain pending; no new kernel boot is claimed.

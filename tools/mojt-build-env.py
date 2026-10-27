@@ -2,7 +2,7 @@
 # Mojt Linux
 # Copyright (C) 2026 Jonas Persson
 # SPDX-License-Identifier: GPL-2.0-only
-"""Prepare a pinned binary image-build toolset beside System; never activate Ports."""
+"""Prepare a pinned binary image/kernel toolset beside System; never activate Ports."""
 import argparse
 import hashlib
 import importlib.machinery
@@ -38,14 +38,39 @@ ROLES = {
     "busybox": ("pkgsStatic.busybox", []),
     "cacert": ("cacert", []),
 }
+KERNEL_ROLES = {
+    **ROLES,
+    "compiler": ("gcc14", ["gcc", "cc", "g++"]),
+    "make": ("gnumake", ["make"]),
+    "flex": ("flex", ["flex"]),
+    "bison": ("bison", ["bison"]),
+    "bc": ("bc", ["bc"]),
+    "perl": ("perl", ["perl"]),
+    "pkg-config": ("pkg-config", ["pkg-config"]),
+    "gzip": ("gzip", ["gzip"]),
+    "elf-dev": ("elfutils", []),
+    "elf-lib": ("elfutils", []),
+    "crypto-dev": ("openssl", []),
+    "crypto-lib": ("openssl", []),
+}
+KERNEL_ROLES["kmod"] = ("kmod", ["modprobe", "depmod", "modinfo"])
+KERNEL_ROLES["binutils"] = ("binutils", ["readelf", "as", "ld", "ar", "nm", "objcopy", "objdump", "strip", "ranlib", "addr2line", "size", "strings"])
+KERNEL_ROLES["coreutils"] = (ROLES["coreutils"][0], ROLES["coreutils"][1] +
+                            ["wc", "expr", "printf", "uname", "nproc", "date", "comm", "join", "paste", "cksum", "od", "dd", "true", "false"])
+KERNEL_ROLES["diffutils"] = ("diffutils", ["cmp", "diff"])
+OUTPUT_SELECTION = {"elf-dev": "dev", "elf-lib": "lib", "crypto-dev": "dev", "crypto-lib": "lib"}
+
+
 EXPRESSION = r'''
 { requestJSON }:
 let r = builtins.fromJSON requestJSON;
     pkgs = import (builtins.toPath r.source.path) { system = r.source.system; config = {}; overlays = []; };
 in map (item: let p = pkgs.lib.attrByPath (pkgs.lib.splitString "." item.attribute)
-    (throw "missing image-build tool attribute") pkgs;
+    (throw "missing build tool attribute") pkgs;
   in { inherit (item) role attribute; version = p.version or "unknown";
-       output = (pkgs.lib.getBin p).outPath; }) r.items
+       output = (if item.selection == "dev" then pkgs.lib.getDev p
+                 else if item.selection == "lib" then pkgs.lib.getLib p
+                 else pkgs.lib.getBin p).outPath; }) r.items
 '''
 
 
@@ -85,9 +110,9 @@ def member(path, closure):
     return resolved
 
 
-def audit_program(program, readelf, closure, environment, seen=None):
+def audit_program(program, readelf, closure, environment, seen=None, allow_build_output=False):
     """Trusted imported files only. Inspect ELF and ask its own loader for resolution."""
-    path = member(program, closure)
+    path = Path(program).resolve(strict=True) if allow_build_output else member(program, closure)
     seen = set() if seen is None else seen
     require(str(path) not in seen, "interpreter cycle")
     seen.add(str(path))
@@ -135,7 +160,7 @@ def find_command(output, command):
     return matches[0]
 
 
-def launcher(busybox, output, certificate):
+def launcher(busybox, output, certificate, extra=None):
     # The FIRST interpreter is static, so inherited loader settings cannot affect it.
     q = shlex.quote
     return ("#!" + str(busybox) + " sh\nset -eu\n"
@@ -143,11 +168,34 @@ def launcher(busybox, output, certificate):
         "exec " + q(str(busybox)) + " env -i " +
         "PATH=" + q(str(output/"bin")) + ' HOME="${HOME:-/root}" TERM="${TERM:-dumb}" ' +
         "LANG=C LC_ALL=C TZ=UTC TMPDIR=/tmp PYTHONNOUSERSITE=1 " +
-        "SSL_CERT_FILE=" + q(certificate) + " NIX_SSL_CERT_FILE=" + q(certificate) + ' "$@"\n')
+        "SSL_CERT_FILE=" + q(certificate) + " NIX_SSL_CERT_FILE=" + q(certificate) + " " +
+        " ".join(k + "=" + q(v) for k,v in (extra or {}).items()) + ' "$@"\n')
+
+
+def compiler_probe(output, readelf, closure, env):
+    probe = output/"compiler-probe"
+    probe.mkdir()
+    source = probe/"probe.c"
+    source.write_text('#include <stdio.h>\n#include <libelf.h>\n#include <openssl/crypto.h>\n'
+                      'int main(void) { if (elf_version(EV_CURRENT) == EV_NONE) return 1; '
+                      'puts(OpenSSL_version(OPENSSL_VERSION)); return 0; }\n')
+    flags = shlex.split(execute([str(output/"bin/pkg-config"), "--cflags", "--libs", "libelf", "openssl"], env))
+    binary = probe/"probe"
+    execute([str(output/"bin/gcc"), str(source), "-o", str(binary), *flags], env)
+    audit = audit_program(binary, readelf, closure, env, allow_build_output=True)
+    result = execute([str(binary)],env)
+    return dict(gcc=execute([str(output/"bin/gcc"),"--version"],env),
+                make=execute([str(output/"bin/make"),"--version"],env), flags=flags, elf=audit, output=result,
+                source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+                binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest())
 
 
 def prepare(args, nix=None):
     nix = nix or backend()
+    profile = getattr(args, "profile", "image")
+    require(profile in ("image", "kernel"), "unknown build environment profile")
+    roles = ROLES if profile == "image" else KERNEL_ROLES
+    print("Build profile: " + profile, flush=True)
     require(not os.path.lexists(args.output), "build environment output must not exist")
     output = args.output.resolve()
     require(not any(output.is_relative_to(prefix) for prefix in
@@ -158,12 +206,12 @@ def prepare(args, nix=None):
     source = nix.catalog_from_manifest(args.source_manifest)["source"]
     require(source["system"] == "x86_64-linux", "first image build requires x86_64-linux")
     rows = nix.evaluate(EXPRESSION, source=source,
-        items=[dict(role=k, attribute=v[0]) for k,v in ROLES.items()])
-    require(isinstance(rows,list) and len(rows)==len(ROLES), "invalid build-tool evaluation")
+        items=[dict(role=k, attribute=v[0], selection=OUTPUT_SELECTION.get(k,"bin")) for k,v in roles.items()])
+    require(isinstance(rows,list) and len(rows)==len(roles), "invalid build-tool evaluation")
     packages={}
     for row in rows:
-        require(row["role"] in ROLES and row["role"] not in packages and
-                row["attribute"] == ROLES[row["role"]][0], "build-tool mapping differs")
+        require(row["role"] in roles and row["role"] not in packages and
+                row["attribute"] == roles[row["role"]][0], "build-tool mapping differs")
         nix.store_path(row["output"])
         packages[row["role"]]=row
         print(row["role"] + ": " + row["version"] + " -> " + row["output"], flush=True)
@@ -189,7 +237,7 @@ def prepare(args, nix=None):
             nix.run("nix-store","--verify-path",path)
         hashes=nix.run("nix-store","--query","--hash",*closure).splitlines()
         require(len(hashes)==len(closure) and all(hashes),"incomplete tool closure hashes")
-        for role,(_,commands) in ROLES.items():
+        for role,(_,commands) in roles.items():
             for command in commands:
                 path=find_command(packages[role]["output"],command)
                 require(not os.path.lexists(output/"bin"/command),"build-tool alias collision")
@@ -197,7 +245,13 @@ def prepare(args, nix=None):
         busybox=find_command(packages["busybox"]["output"],"busybox")
         cert=packages["cacert"]["output"]+"/etc/ssl/certs/ca-bundle.crt"
         require(Path(cert).is_file(),"missing CA bundle")
+        extra = {}
+        if profile == "kernel":
+            dirs = [Path(packages[k]["output"])/"lib/pkgconfig" for k in ("elf-dev", "crypto-dev")]
+            require((dirs[0]/"libelf.pc").is_file() and (dirs[1]/"openssl.pc").is_file(), "development pkg-config data missing")
+            extra["PKG_CONFIG_LIBDIR"] = ":".join(map(str,dirs))
         env=clean_environment(output/"bin",cert)
+        env.update(extra)
         readelf=output/"bin/readelf"
         audit={p.name:audit_program(p,readelf,closure,env) for p in sorted((output/"bin").iterdir())}
         bb_audit=audit_program(busybox,readelf,closure,env)
@@ -212,14 +266,16 @@ def prepare(args, nix=None):
         runtime_code='import json,os,pwd; print(json.dumps(dict(uid=os.getuid(), user=pwd.getpwuid(os.getuid()).pw_name, maps=open("/proc/self/maps").read())))'
         probes["python-runtime"]=json.loads(execute([str(output/"bin/python3"),"-I","-c",runtime_code],env))
         probes["python-runtime"]["verified_libraries"] = verify_runtime_maps(probes["python-runtime"]["maps"], closure)
-        record=dict(format="mojt-build-env-nix-v1", source=source, packages=packages,
+        if profile == "kernel":
+            probes["compiler"] = compiler_probe(output, readelf, closure, env)
+        record=dict(format="mojt-build-env-v1" if profile == "kernel" else "mojt-build-env-nix-v1", backend="nix", profile=profile, build_variables=extra, source=source, packages=packages,
             preparer_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
             adapter_sha256=hashlib.sha256(Path(__file__).with_name("mpm-nix-prototype").read_bytes()).hexdigest(),
             closure=[dict(path=p,nar_hash=h) for p,h in zip(closure,hashes)],
             busybox=str(busybox), certificate=cert, elf=audit, busybox_audit=bb_audit, probes=probes,
             scope="Tool loader resolution and limited execution evidence, not general libc/ABI certification.")
         (output/"environment.json").write_text(json.dumps(record,indent=2)+"\n")
-        (output/"run").write_text(launcher(busybox,output,cert))
+        (output/"run").write_text(launcher(busybox,output,cert,extra))
         (output/"run").chmod(0o755)
         (output/".preparing").unlink()
         print("Build environment ready: " + str(output))
@@ -231,6 +287,7 @@ def prepare(args, nix=None):
 
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--profile", choices=("image", "kernel"), default="image")
     p.add_argument("--source-manifest",type=Path,required=True)
     p.add_argument("--output",type=Path,required=True)
     p.add_argument("--dry-run",action="store_true")
