@@ -1,0 +1,19 @@
+{
+  "format": "mojt-system-context-v1",
+  "architecture": "x86_64",
+  "base_abi": {
+    "libc": "glibc",
+    "libc_version": "2.41"
+  },
+  "state_layout": 1,
+  "ports": {
+    "format": 3,
+    "capabilities": {
+      "reader": "mpm-ports-selectors-v1",
+      "writer": "mpm-ports-selectors-v1"
+    }
+  },
+  "required_system_paths": [
+    "/run/mojt-system/bin/bash"
+  ]
+}

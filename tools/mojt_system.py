@@ -5,6 +5,8 @@
 
 import hashlib
 import importlib.util
+import ast
+import tomllib
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -505,6 +507,9 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
             export(name, "nix", "bin/" + name)
         python = export("python3", "python", "bin/python3")
         write(system / "tools/mpm-nix-prototype", (repo / "tools/mpm-nix-prototype").read_text(), 0o755)
+        write(system / "tools/mojt_system_manifest.py", (repo / "tools/mojt_system_manifest.py").read_text())
+        write(system / "tools/mojt-system-inspect.py", (repo / "tools/mojt-system-inspect.py").read_text(), 0o755)
+        write(system / "bin/mojt-system-inspect", "#!/bin/sh\nexec " + python + ' -I /run/mojt-system/tools/mojt-system-inspect.py "$@"\n', 0o755)
         write(system / "tools/mpm_selector_ports.py", (repo / "tools/mpm_selector_ports.py").read_text())
         write(system / "tools/mpm_selection.py", (repo / "tools/mpm_selection.py").read_text())
         write(system / "tests/mpm-release-example.json", (repo / "manifests/mpm-release-example.json").read_text())
@@ -727,6 +732,65 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
     return key
 
 
+def finalize_manifest(tree, generation, base, repo):
+    """Describe a completed private System tree; no existing installation writes."""
+    spec = importlib.util.spec_from_file_location("mojt_system_manifest", repo / "tools/mojt_system_manifest.py")
+    model = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(model)
+    system = tree / "system" / generation
+    base_record = tomllib.loads((tree / "releases" / ("base-" + base + ".toml")).read_text())
+    require(type(base_record.get("format")) is int and base_record["format"] == 1 and
+            base_record.get("base", {}).get("version") == base and
+            isinstance(base_record.get("base", {}).get("architecture"), str) and
+            isinstance(base_record.get("abi"), dict) and
+            type(base_record.get("state", {}).get("layout_version")) is int,
+            "System manifest requires complete committed Base metadata")
+    record = json.loads((system / "record.json").read_text())
+    inventory = {}
+    provided = []
+    for path in sorted(system.rglob("*")):
+        name = path.relative_to(system).as_posix()
+        if name == "manifest.json":
+            continue
+        if path.is_symlink():
+            inventory[name] = dict(link=os.readlink(path))
+        elif path.is_file():
+            inventory[name] = dict(sha256=file_hash(path), mode=stat.S_IMODE(path.stat().st_mode))
+        elif path.is_dir():
+            inventory[name] = dict(directory=True, mode=stat.S_IMODE(path.stat().st_mode))
+        else:
+            raise ValueError("unsupported System profile entry: " + name)
+        if path.parent == system / "bin":
+            target = virtual_file(tree, "/system/" + generation + "/" + name)
+            if target.is_file() and target.stat().st_mode & 0o111:
+                provided.append("/run/mojt-system/" + name)
+    formats, capabilities = [], []
+    if record["step"] >= 3:
+        declarations = {}
+        for node in ast.parse((system / "tools/mpm-nix-prototype").read_text()).body:
+            if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                name = node.targets[0].id
+                if name in ("SUPPORTED_STATE_FORMATS", "SUPPORTED_CAPABILITIES"):
+                    declarations[name] = ast.literal_eval(node.value)
+        formats = list(declarations["SUPPORTED_STATE_FORMATS"])
+        capabilities = list(declarations["SUPPORTED_CAPABILITIES"])
+    description = dict(label=generation, architecture=base_record["base"]["architecture"],
+        requirements=dict(base_abi=base_record["abi"], state_layout=base_record["state"]["layout_version"]),
+        support=dict(ports=dict(read=formats, write=formats, capabilities=capabilities)),
+        provides=sorted(provided),
+        artifacts=dict(nix=dict(source=record["source"], packages=record["packages"], objects=record["objects"],
+                                registration_sha256=record["registration_sha256"])),
+        provenance=dict(builder_files={str(p.relative_to(repo)): file_hash(p) for p in sorted((repo / "tools").iterdir())
+            if p.is_file()}, payload_record_sha256=file_hash(system / "record.json")), profile=inventory)
+    manifest = model.create(description)
+    spec = importlib.util.spec_from_file_location("system_inspection", repo / "tools/mojt-system-inspect.py")
+    inspector = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(inspector)
+    report = model.check(manifest, inspector.context_from_target(tree, base))
+    require(report["compatible"], "System metadata compatibility failed: " + "; ".join(report["errors"]))
+    write(system / "manifest.json", json.dumps(manifest, indent=2) + "\n")
+
+
 def init_script(legacy):
     """Keep the proven disk/Base/state boot and add System/store mounts."""
     old = """[ -x /sysroot/system/prototype-init/busybox ] ||
@@ -769,3 +833,4 @@ case "$1" in
     *) exec busybox poweroff -f ;;
 esac
 """
+

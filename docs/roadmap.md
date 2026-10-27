@@ -51,7 +51,7 @@ updates to an existing boot disk or power-loss recovery.
 | --- | --- | --- |
 | 1 | Base/System generations | VM Base/System and different-kernel return experiments completed. Retain the reference images; production boot-disk updates, compatibility and automatic fallback remain future work. |
 | 2 | More complete System | Diagnostics and console/time/journal acceptance completed. Timezone/UTF-8/manual checks accepted on System A; separate A/B checks deferred to the next stage. The account A/B/A run now preserves new users, identity and home data, with working PAM/sudo, session cleanup and shared Ports. Superseded-password rejection is owner-confirmed. Account integration merged; retain its reference image. |
-| 3 | MPM development | PR #23 merged after real two-snapshot Nix upgrade/recovery and Mojt VM A/B/A acceptance. Selector branch now integrates backend-independent resolution with installation/activation, series aliases and explicit metadata adoption; real two-release transaction and compatible-image VM A/B/A acceptance passed; repeated user checks on B were explicitly waived. Libc integration is deferred; preserve opaque dependency identities. System deployment compatibility follows; project locks precede pruning/GC. |
+| 3 | MPM development | PR #23 merged after real two-snapshot Nix upgrade/recovery and Mojt VM A/B/A acceptance. Selector branch now integrates backend-independent resolution with installation/activation, series aliases and explicit metadata adoption; real two-release transaction and compatible-image VM A/B/A acceptance passed; repeated user checks on B were explicitly waived. Libc integration is deferred; preserve opaque dependency identities. A limited System manifest/declared-compatibility increment follows; project locks precede pruning/GC. |
 | 4 | Build System on Mojt | Run the existing build tools inside Mojt with pinned inputs and a controlled build environment, producing a new Mojt image. |
 | 5 | Own-built Linux kernel | Establish a documented kernel build/configuration and package matching modules as a versioned Kernel input; start near the working Debian configuration. |
 
@@ -92,3 +92,15 @@ enforcement and production boot publication/fallback remain work to specify
 and implement. Future status/plans must show installed, selected and running
 content, directly selected components, dependencies and exact changes.
 
+
+
+## Limited System compatibility increment
+
+Following selector merge, [System manifests and preflight](system-manifest.md)
+provide an immutable content description, metadata capability gate and read-only
+candidate/running/explicitly-selected comparison. The next branch implements
+this in the fresh-image builder; it does not implement existing-disk System
+upgrade. Targeted automated acceptance is sufficient for this declaration layer;
+manual runtime acceptance accompanies the first build-on-Mojt image experiment.
+A complete System updater, project locks and GC are not prerequisites for that
+controlled build experiment. Libc/desktop work remains deferred.

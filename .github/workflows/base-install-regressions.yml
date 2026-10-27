@@ -23,6 +23,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_vm_builder.py' -v
       - name: Check terminal geometry with real PTYs
         run: python3 -m unittest discover -s tests -p 'test_console_size.py' -v
+      - name: Check pure System manifests and declared compatibility
+        run: python3 -m unittest discover -s tests -p 'test_system_manifest.py' -v
       - name: Check System payload and VM assembly contracts
         run: python3 -m unittest discover -s tests -p 'test_system_vm.py' -v
       - name: Check privileged helper staging
@@ -113,3 +115,4 @@ jobs:
         with:
           name: hardware-boot-logs
           path: ${{ runner.temp }}/mojt-boot-logs/
+
