@@ -8,6 +8,7 @@ import argparse
 import copy
 from datetime import datetime, timezone
 import fcntl
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -667,6 +668,18 @@ def inspect(state, args):
                 print("Binary output only; host-service/desktop requirements are not audited.")
 
 
+def selection_core():
+    # -I excludes the script directory from sys.path in the installed System.
+    # Load our shipped module explicitly, never a user/PATH-provided module.
+    name = "_mojt_mpm_selection"
+    path = Path(__file__).with_name("mpm_selection.py")
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="mpm", description=__doc__)
     parser.add_argument("--root", type=Path, default=Path("/var/lib/mojt/ports"),
@@ -675,8 +688,12 @@ def main(argv=None):
                         help="initial source pin for ports update; never an implicit channel refresh")
     parser.add_argument("area", choices=["ports"])
     actions = parser.add_subparsers(dest="action", required=True)
-    for action in ("update", "install", "activate", "remove", "upgrade", "status", "list", "search", "info", "history"):
+    for action in ("update", "install", "activate", "remove", "upgrade", "status", "list", "search", "info", "history", "resolve"):
         sub = actions.add_parser(action)
+        if action == "resolve":
+            sub.add_argument("selector", help="latest, @series or @=exact release request")
+            sub.add_argument("--catalog", type=Path, required=True, help="finite MPM release catalog JSON")
+            sub.add_argument("--json", action="store_true")
         if action == "update":
             sub.add_argument("--manifest", type=Path, help="explicit source pin and optional curated entries")
         if action == "install":
@@ -713,6 +730,25 @@ def main(argv=None):
     args = parser.parse_args(argv)
     root = args.root.absolute()
     try:
+        if args.action == "resolve":
+            require(not re.search(r"@=.*-nix-[0-9abcdfghijklmnpqrsvwxyz]{32}$", args.selector),
+                    "installed artifact identity: use ports info/activate, not a release selector")
+            core = selection_core()
+            catalog = core.Catalog.from_dict(json.loads(args.catalog.read_text(encoding="utf-8")))
+            require(catalog.area == "ports", "release catalog belongs to another MPM area")
+            chosen = core.resolve(catalog, args.selector)
+            if args.json:
+                print(json.dumps(chosen.to_dict(), indent=2))
+            else:
+                row = chosen.candidate
+                print(f"Request: {core.render_selector(chosen.selector)}")
+                print(f"Catalog: {chosen.catalog_name} ({chosen.channel}, {chosen.platform})")
+                print(f"View: {chosen.catalog_digest}\nRelease: {row.release_id}")
+                print(f"Artifact: {row.backend}:{row.artifact}")
+                print("Sources: " + ", ".join(p["source"] for p in chosen.provenance))
+                print(f"Compatibility: {row.compatibility} (declared, not runtime verified)")
+                print("Read-only resolution; no package, state or activation changes.")
+            return 0
         if args.action == "history":
             load_state(root)
             rows = transactions(root, args.limit)

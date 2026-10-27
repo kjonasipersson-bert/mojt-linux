@@ -51,7 +51,7 @@ updates to an existing boot disk or power-loss recovery.
 | --- | --- | --- |
 | 1 | Base/System generations | VM Base/System and different-kernel return experiments completed. Retain the reference images; production boot-disk updates, compatibility and automatic fallback remain future work. |
 | 2 | More complete System | Diagnostics and console/time/journal acceptance completed. Timezone/UTF-8/manual checks accepted on System A; separate A/B checks deferred to the next stage. The account A/B/A run now preserves new users, identity and home data, with working PAM/sudo, session cleanup and shared Ports. Superseded-password rejection is owner-confirmed. Account integration merged; retain its reference image. |
-| 3 | MPM development | PR #23 merged after real two-snapshot Nix upgrade/recovery and Mojt VM A/B/A acceptance. Next: review the selector/catalog and mixed-libc contracts, then implement parser/resolver/alias integration with explicit state conversion. System deployment compatibility follows; project locks precede pruning/GC. |
+| 3 | MPM development | PR #23 merged after real two-snapshot Nix upgrade/recovery and Mojt VM A/B/A acceptance. Next increment: backend-independent selector parser/resolver and read-only catalog inspection, followed by installation/alias integration with explicit state conversion. Libc integration is deferred; preserve opaque dependency identities. System deployment compatibility follows; project locks precede pruning/GC. |
 | 4 | Build System on Mojt | Run the existing build tools inside Mojt with pinned inputs and a controlled build environment, producing a new Mojt image. |
 | 5 | Own-built Linux kernel | Establish a documented kernel build/configuration and package matching modules as a versioned Kernel input; start near the working Debian configuration. |
 
@@ -68,12 +68,13 @@ Mojt A/B/A run retaining state/history, users and the same artifact.
 See [the measured acceptance log](mpm-ports.md).
 
 The next proposals are [selectors and catalogs](mpm-selectors.md) and
-[mixed Nix libc closures](mpm-libc-policy.md). They specify exact versus series
-requests, version/revision adapters, explicit multi-snapshot resolution and
-same-release build changes. A new libc object is a dependency of a concrete
-consumer build, not a machine-wide activation choice. Known gaps and the
-required real-runtime evidence are explicit. No new selector parser, catalog
-migration, libc replacement or System-upgrade command is implemented by them.
+[mixed Nix libc closures](mpm-libc-policy.md). The selector branch
+implements a pure parser/resolver and read-only CLI. The remaining proposals
+cover installation/activation integration, explicit state conversion and same-release build changes. Libc work is deferred.
+A new libc object is a dependency of a concrete consumer build, not a
+machine-wide activation choice. Known gaps and the required real-runtime evidence are explicit. No installed-state
+migration, selector installation/activation, libc replacement or System-upgrade
+command is implemented in this resolver increment.
 
 Keep the latest tested reference VM. Optional SSH, personal Ports, running
 the build on Mojt and an own-built kernel remain later tracks.
@@ -81,11 +82,13 @@ the build on Mojt and an own-built kernel remain later tracks.
 ## Implementation boundaries
 
 The current MPM CLI implements a subset of Ports commands. It does not yet
-provide Base/System/Kernel operations, release-series selectors, general undo,
+provide Base/System/Kernel operations, selector-based installation/activation,
+general undo,
 production project locks or GC. The first Ports upgrade/history implementation
 uses saved Nix attributes, numeric version ordering and format-2 request/policy
 metadata. Its real Distrobox/VM acceptance passed; full series/version
-adapters and mixed-runtime compatibility checks remain future work.
+adapters and mixed-runtime compatibility checks remain future work. The current
+selector implementation is read-only resolution plus a pure upgrade plan.
 System release/deployment schemas, independent Kernel selection, compatibility
 enforcement and production boot publication/fallback remain work to specify
 and implement. Future status/plans must show installed, selected and running

@@ -35,6 +35,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_boot_generations.py' -v
       - name: Check serial-console copies and active-image refusal
         run: python3 -m unittest discover -s tests -p 'test_vm_serial.py' -v
+      - name: Check backend-independent MPM selector and catalog resolution
+        run: python3 -m unittest discover -s tests -p 'test_mpm_selection.py' -v
       - name: Check MPM/Nix orchestration with simulated backend
         run: python3 -m unittest discover -s tests -p 'test_mpm_nix_prototype.py' -v
       - name: Check pacman environment orchestration with simulated backend

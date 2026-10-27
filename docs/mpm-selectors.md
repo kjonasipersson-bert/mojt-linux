@@ -7,9 +7,11 @@ SPDX-License-Identifier: GPL-2.0-only
 # Ports selector and catalog contract — proposal 1
 
 Proposed 2026-10-27. This refines the accepted semantics in [mpm.md](mpm.md);
-new details below are proposals for review, not new runnable commands.
-PR #23's attribute requests, format-2 state and manual remain the implemented
-baseline. This change contains no parser, metadata migration or package operation.
+new details below are proposals except the implemented slice documented at
+section 8. The backend-independent parser, resolver and pure upgrade planner
+are implemented, with a read-only CLI and a separate local Nix catalog exporter.
+PR #23's package operations and format-2 state remain unchanged. Selector-aware
+installation/activation, series aliases and state conversion are not implemented.
 
 ## 1. Three identities
 
@@ -52,11 +54,12 @@ extension, not silent punctuation stripping.
 
 An exact installed artifact ID from today's `list --exact` remains a literal
 selection accepted by activate/remove; look it up before parsing a new selector.
-Reserve the existing terminal `-nix-<32-character-store-hash>` form for artifact
-references, so a release selector cannot be confused with one. Do not infer a
+The legacy Nix CLI bridge reserves its terminal `-nix-<32-character-store-hash>`
+form for artifact references, so its release selector cannot be confused with
+one. This compatibility rule belongs to that adapter, not the pure parser. Do not infer a
 request or extract a release by splitting that installed ID.
 
-The initial new grammar applies to install/info and activation. Upgrade still
+The future mutating grammar applies to install/info and activation. Upgrade still
 filters recorded requests by logical name; it does not replace their policy.
 Remove retains exact artifact IDs or unambiguous installed names until series
 removal scope is separately specified. These are not implemented CLI additions.
@@ -246,3 +249,115 @@ Before claiming selector support:
 The next implementation should start with pure parser/version/catalog resolution
 and fixtures, followed by activation/alias integration and a separately visible
 state migration. Project locks and retention/GC follow these semantics.
+
+## 8. Implemented slice: backend-independent resolution
+
+`tools/mpm_selection.py` implements parsing, finite catalog validation, numeric
+series/revision selection, exact matching, explicit build preference and a pure
+upgrade plan. It imports no backend package/command, reads no files and writes
+no state. Source identities, artifact IDs and integrity metadata are opaque JSON;
+there is no Nix path, hash grammar, attribute lookup or version inference from
+backend object names in this module. A future backend maps its records to the
+same model. Unknown version schemes still require explicit adapter support;
+changing backend must not silently change MPM's public selector semantics.
+
+The current CLI supplies file I/O and presentation through the existing launcher.
+Its new policy is in the pure module, not in the Nix command adapter. Legacy
+attribute-upgrade comparison deliberately remains unchanged until explicit state
+conversion; that compatibility path is not the new selector implementation.
+
+Read-only examples:
+
+```sh
+python3 tools/mpm ports resolve paint@3.0 \
+  --catalog manifests/mpm-release-example.json
+python3 tools/mpm ports resolve paint@=3.0.9 \
+  --catalog manifests/mpm-release-example.json --json
+```
+
+The example uses synthetic archive/alternate-backend records and is not an
+installable package catalog. It resolves 3.0.10 for the series while excluding
+3.1; its explicit exact choice resolves 3.0.9. These commands need no Nix,
+network, managed MPM root or elevated privilege. New System builds also include
+the same fixture at /run/mojt-system/tests/mpm-release-example.json. The account-enabled System
+allows ordinary-user resolution; filesystem permissions control catalog reads.
+Resolution does not adopt this catalog for existing package operations.
+
+### Catalog JSON and adapter boundary
+
+`mpm-release-catalog-v1` is a standalone input format, not a new installed-state
+format. Required fields: `format`, `area`, `name`, `channel`, `platform`, `sources`
+and `candidates`. Optional `source_preference` is an ordered list of source IDs.
+Each source has a backend identifier and opaque identity object. Candidates
+require name, release_id, upstream_version, version_scheme, stability, source,
+artifact and a nonempty opaque integrity object. Optional revision_scheme /
+package_revision must be a supported pair; preferred is boolean; compatibility
+is a declared verified/unknown/incompatible status, default unknown.
+
+The supplied example is the complete minimal shape. Validation rejects unknown
+fields, conflicting release/integrity/compatibility metadata and nonfinite JSON.
+Numeric spelling is not a stability audit. The producer classifies stability
+explicitly; exact requests can inspect unknown/preview releases. Declared
+compatibility is not runtime verification or a new libc/host capability checker.
+The area/catalog/channel/platform binding prevents a pure upgrade plan from
+silently changing resolution scope.
+
+Core `plan_upgrade` returns data only. Exact requests preserve their original
+artifact/closure evidence even if the catalog withdraws that release. Following
+requests can propose a preferred replacement build of the same release; changing
+opaque dependency references is sufficient, without any libc-specific solver.
+Numerical downgrades, unknown order and integrity drift of a retained object fail.
+An unchanged artifact/release preserves its original provenance; a new release
+can intentionally reference an unchanged backing object without losing its
+new release identity. This API does not import, activate, audit runtime ABI,
+create project locks or collect objects.
+
+### Nix adapter for an existing isolated lab
+
+After the earlier two-snapshot hello test has explicitly imported both outputs:
+
+```sh
+python3 tools/mpm-nix-catalog.py \
+  --source old=/path/to/from.toml \
+  --source new=/path/to/to.toml \
+  --name hello --stability stable --output /new/path/hello-releases.json
+python3 tools/mpm ports resolve hello@2.12 \
+  --catalog /new/path/hello-releases.json
+```
+
+The producer explicitly declares those known GNU Hello releases stable. Without
+`--stability`, classification is unknown and only exact requests are eligible.
+Nonnumeric upstream versions are opaque/exact-only until another adapter exists.
+Use `--prefer-source ID` only when deliberately preferring one build of an equal
+release; it does not cause an older version to outrank a newer eligible release.
+
+The exporter evaluates each explicitly pinned source with config={} and no
+overlays, using lib.getBin, then reads output closures and NAR hashes from the
+local Nix database. Missing local outputs fail; nothing is realized, rooted,
+built or channel-refreshed. Evaluation can populate Nix evaluation caches.
+The new catalog file is created exclusively; existing files/symlinks are refused.
+The JSON is a snapshot of recorded evidence, not a GC root, signature audit or
+promise that its objects remain available. Preserve the isolated labs/roots.
+
+Libc coexistence/integration work is deferred. Its analysis remains in the
+companion document; neither catalog resolution nor this exporter solves it.
+Actual selector installation/activation and explicit state conversion are the
+next integration stage, with the acceptance gates above still applicable then.
+
+### Agent validation for this increment (2026-10-27)
+
+26 backend-independent tests cover selector syntax/equality, numeric series and
+revision order, opaque exact versions, stability, build ambiguity/preferences,
+source provenance, area/platform binding, integrity drift, downgrade rejection,
+exact pins and same-release dependency replacements. An actual subprocess runs
+the CLI under isolated Python with no backend executable on PATH and proves
+that its supplied catalog is the only filesystem entry afterwards.
+
+52 simulated Nix orchestration tests pass, including no state/history change on
+resolution and no realization/GC roots from catalog export. 59 System assembly
+tests pass (one skipped), including the shipped pure module, exporter and example.
+The broader available suite passed 234 tests with eight environment/tool skips;
+the separate Base archive ownership test is excluded locally because this
+runtime rejects its chown-to-UID-1000 setup. It remains enabled in CI.
+These are agent tests; real local-Nix exporter and new-VM resolution acceptance
+are not yet owner-reported. The earlier hello upgrade test is separate evidence.

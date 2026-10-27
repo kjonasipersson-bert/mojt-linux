@@ -136,7 +136,8 @@ release in the 3.0 line and `gimp@=3.0` as an exact release identifier
 has been **accepted as the design contract**, but is not yet implemented.
 Detailed version ordering and backend adapters remain open. The new
 [selector/catalog proposal](mpm-selectors.md) and [libc integration proposal](mpm-libc-policy.md)
-are review drafts, not implemented parser or compatibility guarantees.
+include an implemented pure parser/read-only resolver slice. Remaining mutation
+and compatibility rules are review proposals, not runtime guarantees.
 
 Nix is now the selected Ports backend after the binary-import and pacman
 comparisons. The full selector/project-lock policies remain design requirements. For early Mojt versions, Nix is

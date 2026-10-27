@@ -81,6 +81,14 @@ No store objects, old profiles or GC roots are physically deleted.
 Show installed versions and active defaults. --exact shows immutable identities
 for activation/removal. --json shows detailed installed records.
 .TP
+.BI "resolve " "SELECTOR --catalog FILE [--json]"
+Read-only latest, @series or @=exact-release resolution from a finite
+mpm-release-catalog-v1 JSON file. Does not install, activate, adopt a catalog,
+refresh sources or migrate state. Source/backend IDs and integrity evidence
+are data; no backend command is run. Unknown/preview candidates require an
+exact request; unknown version order or ambiguous builds fail.
+This parser is not yet connected to install/activate/upgrade operations.
+.TP
 .B status
 Print JSON containing catalog, requests, installed records, active selections,
 selection policies and recency metadata. A null selection policy is an exact pin.
@@ -167,9 +175,11 @@ man mpm
 .SH EXIT STATUS
 0 on success, cancellation or an unchanged plan; nonzero on failure.
 Shared Ports changes require an administrator in the Mojt account-enabled
-System. Ordinary users may list, inspect status and read history.
+System. Ordinary users may list, inspect status, read history and resolve a
+readable catalog.
 .SH SEE ALSO
 .BR nix-store (1),
 .BR man (1)
 .PP
-Repository documentation: docs/mpm.md, docs/mpm-ports.md and docs/roadmap.md.
+Repository documentation: docs/mpm.md, docs/mpm-ports.md, docs/mpm-selectors.md
+and docs/roadmap.md.

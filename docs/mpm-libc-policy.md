@@ -8,6 +8,11 @@ SPDX-License-Identifier: GPL-2.0-only
 
 Proposed 2026-10-27; companion to the [selector/catalog contract](mpm-selectors.md).
 Facts below describe the backend; the numbered rules are proposed Mojt policy.
+**Deferred:** per the owner's 2026-10-27 direction, selector implementation does
+not actively solve libc coexistence or desktop integration. Keep these risks
+visible and preserve exact opaque dependency identities. The runtime tests
+below are future libc/integration work, not evidence claimed by the pure parser
+or a prerequisite for this read-only resolver increment.
 No loader changes, dependency substitutions or new compatibility enforcement
 are implemented by this documentation change.
 

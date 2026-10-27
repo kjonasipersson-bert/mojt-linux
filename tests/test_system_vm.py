@@ -846,6 +846,12 @@ esac""")
                       (directory / "environment").read_text())
         self.assertIn("/run/mojt-system/environment",
                       (self.tree / "state/etc/profile.d/mojt-system.sh").read_text())
+        self.assertEqual((directory / "tests/mpm-release-example.json").read_bytes(),
+                         (REPO / "manifests/mpm-release-example.json").read_bytes())
+        self.assertEqual((directory / "tools/mpm_selection.py").read_bytes(),
+                         (REPO / "tools/mpm_selection.py").read_bytes())
+        self.assertEqual((directory / "tools/mpm-nix-catalog.py").read_bytes(),
+                         (REPO / "tools/mpm-nix-catalog.py").read_bytes())
         self.assertEqual((directory / "tools/mpm-nix-prototype").read_bytes(),
                          (REPO / "tools/mpm-nix-prototype").read_bytes())
         self.assertEqual((directory / "tests/run-mpm-nix-python.py").read_bytes(),

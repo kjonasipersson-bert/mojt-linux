@@ -733,6 +733,86 @@ commands = ["hello"]
         self.assertIn("NO changed artifact tested", output.getvalue())
         self.assertEqual(len(self.state()["installed"]), 1)
 
+    def release_catalog(self):
+        path = self.directory / "releases.json"
+        path.write_text(json.dumps(dict(format="mpm-release-catalog-v1", area="ports", name="apps", channel="stable",
+            platform="test-platform", sources={"local": dict(backend="archive", identity={"snapshot": "v1"})},
+            candidates=[dict(name="hello", release_id="2.12.3", upstream_version="2.12.3",
+                version_scheme="dotted-v1", stability="stable", source="local", artifact="bundle:hello",
+                integrity={"digest": "test-digest"})])))
+        return path
+
+    def test_read_only_resolve_uses_no_nix_and_preserves_live_state_and_history(self):
+        self.update()
+        self.cli("install", "-y")
+        current = os.readlink(self.root / "current")
+        old = copy.deepcopy(self.state())
+        history = self.cli("history", "--json")
+        self.calls.clear()
+        value = json.loads(self.cli("resolve", "hello@2.12", "--catalog", str(self.release_catalog()), "--json"))
+        self.assertEqual(value["candidate"]["backend"], "archive")
+        self.assertEqual(self.calls, [])
+        self.assertEqual(os.readlink(self.root / "current"), current)
+        self.assertEqual(self.state(), old)
+        self.assertEqual(self.cli("history", "--json"), history)
+
+    def test_failed_resolve_does_not_initialize_root_or_treat_artifact_as_release(self):
+        self.cli("resolve", "hello@3", "--catalog", str(self.release_catalog()), success=False)
+        self.assertFalse(self.root.exists())
+        path = self.release_catalog()
+        value = json.loads(path.read_text())
+        value["area"] = "system"
+        path.write_text(json.dumps(value))
+        self.assertIn("another MPM area", self.cli("resolve", "hello", "--catalog", str(path), success=False))
+        self.assertFalse(self.root.exists())
+        legacy = "hello@=2.12.3-nix-" + "a" * 32
+        self.assertIn("installed artifact identity", self.cli("resolve", legacy, "--catalog", str(self.release_catalog()), success=False))
+        self.assertFalse(self.root.exists())
+
+    def catalog_adapter(self):
+        spec = importlib.util.spec_from_file_location("test_nix_catalog_adapter", REPO / "tools/mpm-nix-catalog.py")
+        adapter = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(adapter)
+        return adapter
+
+    def test_nix_catalog_adapter_records_local_evidence_without_realization_or_roots(self):
+        adapter = self.catalog_adapter()
+        result = adapter.prepare_catalog(mpm, [("old", self.manifest), ("new", self.manifest)], "hello", "hello")
+        self.assertFalse(self.root.exists())
+        self.assertEqual(self.registered_roots, set())
+        self.assertFalse(any(c[1] == "--realise" for c in self.calls if len(c) > 1))
+        self.assertEqual(result["sources"]["old"]["backend"], "nix")
+        self.assertEqual(result["candidates"][0]["stability"], "unknown")
+        self.assertEqual({r["path"] for r in result["candidates"][0]["integrity"]["closure"]},
+                         {str(self.output), str(self.dependency)})
+        core = mpm.selection_core()
+        with self.assertRaises(core.ResolutionError):
+            core.resolve(core.Catalog.from_dict(result), "hello")
+        self.assertEqual(core.resolve(core.Catalog.from_dict(result), "hello@=1.0").candidate.artifact, str(self.output))
+        stable = adapter.prepare_catalog(mpm, [("old", self.manifest)], "hello", "hello", stability="stable")
+        self.assertEqual(core.resolve(core.Catalog.from_dict(stable), "hello").candidate.release_id, "1.0")
+
+    def test_nix_catalog_adapter_missing_payload_or_duplicate_source_cannot_trigger_download(self):
+        adapter = self.catalog_adapter()
+        with self.assertRaisesRegex(ValueError, "repeated"):
+            adapter.prepare_catalog(mpm, [("same", self.manifest), ("same", self.manifest)], "hello", "hello")
+        self.attributes["hello"]["output"] = str(self.store / ("4" * 32 + "-missing"))
+        with self.assertRaisesRegex(ValueError, "not local"):
+            adapter.prepare_catalog(mpm, [("local", self.manifest)], "hello", "hello")
+        self.assertFalse(any(c[1] == "--realise" for c in self.calls if len(c) > 1))
+        self.assertEqual(self.registered_roots, set())
+
+    def test_nix_catalog_output_file_is_exclusive_and_does_not_change_existing_file(self):
+        adapter = self.catalog_adapter()
+        path = self.directory / "output.json"
+        with mock.patch.object(adapter, "load_backend", return_value=mpm), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(adapter.main(["--source", "old=" + str(self.manifest), "--output", str(path)]), 0)
+            before = path.read_bytes()
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(adapter.main(["--source", "old=" + str(self.manifest), "--output", str(path)]), 1)
+        self.assertEqual(path.read_bytes(), before)
+        self.assertFalse(self.root.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

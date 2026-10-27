@@ -17,9 +17,10 @@ grammar, version comparison and backend adaptation remain to be specified
 before implementing a parser. Nix is selected for Ports and, for early Mojt
 versions, for System package acquisition and shared dependency storage.
 System release/deployment formats and the full command grammar remain open.
-The [selector/catalog proposal](mpm-selectors.md) and [mixed-libc proposal](mpm-libc-policy.md)
-refine those open details for review; they are not implemented or accepted by
-this document merely by being linked.
+The [selector/catalog contract](mpm-selectors.md) records an implemented pure
+parser/resolver slice plus proposed installation/activation integration details.
+The [mixed-libc analysis](mpm-libc-policy.md) is deferred reference work. Linking
+a proposal here does not make its remaining details accepted or implemented.
 
 The guiding rule is that Mojt can update **Base, System, Kernel, and Ports
 independently**, without silently updating applications or pinned project
@@ -635,7 +636,7 @@ The full System VM uses systemd, NetworkManager/D-Bus, Nix and management
 Python. Its earlier VM acceptance also covered networking and binary Ports
 imports with parallel Python versions. The current `mpm` CLI accepts only
 the `ports` area: `update`, `install`, `activate`, `remove`, `status`, `list`,
-`search`, `info`, `upgrade` and `history`. Recorded Nix attribute requests and
+`search`, `info`, `upgrade`, `history` and read-only `resolve`. Recorded Nix attribute requests and
 exact/following active selection policies are separate. Upgrade uses the saved
 snapshot, retains old versions and changes only following defaults. Readable
 committed history is published with each changed profile; legacy history is
@@ -643,7 +644,8 @@ not reconstructed. This is a limited attribute policy with numeric version
 ordering, not the future release-series selector engine. See the
 [ordinary Ports guide](mpm-ports.md) for runnable commands and limits.
 
-**Not implemented:** MPM Base/System/Kernel commands, release-series selectors and their full parser, user-facing rollback/undo, production project profiles/locks,
+**Not implemented:** MPM Base/System/Kernel commands, selector-based installation/activation and full
+state integration, user-facing rollback/undo, production project profiles/locks,
 pruning/GC, verified external capabilities, signed catalogs, production
 deployment formats, and durable updates to existing boot disks.
 
