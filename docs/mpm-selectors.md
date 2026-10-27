@@ -498,3 +498,37 @@ both A and B before converting shared metadata, then test A/B/A persistence and
 ordinary-user mutation denial. The old format-2 reference VM remains a useful
 unchanged reference. Runtime libc/desktop and System deployment compatibility
 work remains deferred; no mixed-libc safety claim follows from these tests.
+
+
+
+## Owner acceptance completed (2026-10-27)
+
+The owner ran the isolated real-Nix transaction harness with hello 2.12.1 and
+2.12.3. The final checks passed: installed series activation selected the new
+artifact, repeat upgrade changed no state/history/profile, and both executable
+artifacts remained available. Reaching the final checks also establishes the
+preceding preview, later-install, exact-pin and moving-alias assertions in that
+fail-fast harness. No live System/Ports state was changed by the isolated lab.
+
+A fresh step-10 VM then completed system-selectors-A / 6.12.107+deb13-amd64 ->
+system-selectors-B / 7.2.9+deb13-amd64 -> A, with Base 0.1.3 and the new MPM in
+both System profiles. A imported hello 2.12.3 via the native policy, exported a
+real local catalog, explicitly adopted hello@2.12 into format 3, and executed
+both hello and hello-2.12. Ordinary-user install, activate, upgrade and metadata
+mutations were denied on A with the administrator requirement.
+
+B's fail-fast checkpoint script reached its final PASS after verifying A's
+complete state/history/profile/aliases and stable identities, explicitly pinning
+the exact release, retaining the series alias and verifying an upgrade no-op.
+The supplied final A output established complete equality against that B
+checkpoint, including format 3 and exact pin, unchanged upgrade history and both
+executable aliases. Journal output listed all three boots; /etc, /var, /home
+and /root markers survived. The repeated ordinary-user check on B was explicitly
+waived by the owner to avoid redundant testing; it is not claimed as performed.
+The measured changed-release operation is the Distrobox test, not this VM's
+single-release persistence/policy test. Libc/desktop runtime analysis remains
+deferred. Retain the tested serial image as the reference.
+
+Future acceptance should exercise changed behavior and relevant automated
+regressions, with only necessary VM integration checks; repeat a check when a
+new change or unresolved failure justifies it.

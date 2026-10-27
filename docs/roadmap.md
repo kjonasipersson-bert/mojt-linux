@@ -51,7 +51,7 @@ updates to an existing boot disk or power-loss recovery.
 | --- | --- | --- |
 | 1 | Base/System generations | VM Base/System and different-kernel return experiments completed. Retain the reference images; production boot-disk updates, compatibility and automatic fallback remain future work. |
 | 2 | More complete System | Diagnostics and console/time/journal acceptance completed. Timezone/UTF-8/manual checks accepted on System A; separate A/B checks deferred to the next stage. The account A/B/A run now preserves new users, identity and home data, with working PAM/sudo, session cleanup and shared Ports. Superseded-password rejection is owner-confirmed. Account integration merged; retain its reference image. |
-| 3 | MPM development | PR #23 merged after real two-snapshot Nix upgrade/recovery and Mojt VM A/B/A acceptance. Selector branch now integrates backend-independent resolution with installation/activation, series aliases and explicit metadata adoption; real transaction and compatible-image VM acceptance are next. Libc integration is deferred; preserve opaque dependency identities. System deployment compatibility follows; project locks precede pruning/GC. |
+| 3 | MPM development | PR #23 merged after real two-snapshot Nix upgrade/recovery and Mojt VM A/B/A acceptance. Selector branch now integrates backend-independent resolution with installation/activation, series aliases and explicit metadata adoption; real two-release transaction and compatible-image VM A/B/A acceptance passed; repeated user checks on B were explicitly waived. Libc integration is deferred; preserve opaque dependency identities. System deployment compatibility follows; project locks precede pruning/GC. |
 | 4 | Build System on Mojt | Run the existing build tools inside Mojt with pinned inputs and a controlled build environment, producing a new Mojt image. |
 | 5 | Own-built Linux kernel | Establish a documented kernel build/configuration and package matching modules as a versioned Kernel input; start near the working Debian configuration. |
 
@@ -70,9 +70,8 @@ See [the measured acceptance log](mpm-ports.md).
 The [selector branch](mpm-selectors.md) now implements pure parser/resolver,
 request/alias policy, Nix transaction integration and explicit format-3
 metadata adoption. Owner-run read-only tests passed both without a backend and
-with a real two-snapshot hello catalog. New transaction policy has automated
-coverage; real isolated transactions and fresh compatible-image A/B/A VM
-acceptance are next. Older MPM writers must refuse the new shared metadata;
+with a real two-snapshot hello catalog. New transaction policy has automated coverage and owner-reported real isolated
+transaction plus fresh compatible-image A/B/A VM acceptance. Older MPM writers must refuse the new shared metadata;
 System deployment compatibility must check this before scheduling generations.
 Libc work remains deferred: preserve exact opaque dependency identities, without
 adding a loader replacement or compatibility solver to this increment.
@@ -85,10 +84,11 @@ the build on Mojt and an own-built kernel remain later tracks.
 The current MPM CLI implements Ports. Base/System/Kernel operations, general
 undo, production project locks and GC remain unimplemented. Native format-2
 upgrades/history have real Distrobox/VM acceptance; format-3 selector transaction
-integration still needs the new owner-run real and VM acceptance. General
+integration has owner-run real and VM acceptance. General
 version adapters and mixed-runtime compatibility checks remain future work.
 
 System release/deployment schemas, independent Kernel selection, compatibility
 enforcement and production boot publication/fallback remain work to specify
 and implement. Future status/plans must show installed, selected and running
 content, directly selected components, dependencies and exact changes.
+
