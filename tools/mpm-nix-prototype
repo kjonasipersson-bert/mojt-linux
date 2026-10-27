@@ -193,6 +193,7 @@ def command_aliases(state):
     aliases = {}
 
     def add(name, output, command):
+        require(name not in RESERVED, f"reserved System management command: {name}")
         require(name not in aliases, f"command alias conflict: {name}")
         aliases[name] = str(Path(output) / "bin" / command)
 
@@ -206,6 +207,9 @@ def command_aliases(state):
             require(command not in RESERVED,
                     f"reserved System management command: {command}; install with --no-activate")
             add(command, record["output"], command)
+    if state["format"] == 3:
+        for alias, (key, command) in selector_ports().aliases(state).items():
+            add(alias, state["installed"][key]["output"], command)
     return aliases
 
 
@@ -242,7 +246,7 @@ def load_state(root):
     generation = root / selected
     require(not generation.is_symlink(), "unmanaged generation")
     state = json.loads((generation / "state.json").read_text())
-    require(type(state["format"]) is int and state["format"] in (1, 2), "unsupported state format")
+    require(type(state["format"]) is int and state["format"] in (1, 2, 3), "unsupported state format")
     validate_model(state)
     bin_dir = generation / "bin"
     require(bin_dir.is_dir() and not bin_dir.is_symlink(), "unmanaged profile bin")
@@ -301,6 +305,8 @@ def validate_model(state):
             "invalid request/selection state")
     require(set(state["selection_policy"]) == set(state["active"]), "selection policy differs from active names")
     for key, request in state["requests"].items():
+        if state["format"] == 3 and request.get("policy") == "selector":
+            continue
         require(set(request) == {"name", "attribute", "policy", "target"} and
                 request["policy"] == "attribute" and key == request_id(request), "invalid tracked request")
         require(re.fullmatch(ATTRIBUTE, request["attribute"]) and re.fullmatch(ATTRIBUTE, request["name"]),
@@ -312,6 +318,8 @@ def validate_model(state):
         if key is not None:
             require(key in state["requests"] and state["requests"][key]["name"] == name and
                     state["requests"][key]["target"] == state["active"][name], "active request target differs")
+    if state["format"] == 3:
+        selector_ports().validate(state)
 
 
 def version_order(value):
@@ -325,12 +333,14 @@ def version_order(value):
 
 def upgrade_plan(state, names):
     require(state["catalog"] is not None, "run mpm ports update first")
-    require(state["format"] == 2 and state["requests"],
+    require(state["format"] in (2, 3) and state["requests"],
             "no recorded upgrade requests; explicitly install the intended name/attribute first")
     known = {r["name"] for r in state["requests"].values()}
     require(set(names) <= known, "upgrade name has no recorded request")
     proposed = copy.deepcopy(state)
     for rid, request in state["requests"].items():
+        if request["policy"] != "attribute":
+            continue
         if names and request["name"] not in names:
             continue
         old_key = request["target"]
@@ -429,6 +439,9 @@ def plan(state, action, catalog=None, names=(), request=None, records=None, inac
         model(proposed)
         for rid, tracked in list(proposed["requests"].items()):
             if tracked["target"] not in proposed["installed"]:
+                if tracked["policy"] == "selector":
+                    del proposed["requests"][rid]
+                    continue
                 candidates = [k for k, r in proposed["installed"].items()
                               if r["name"] == tracked["name"] and r["attribute"] == tracked["attribute"]]
                 if candidates:
@@ -449,7 +462,7 @@ def describe(old, new):
     if new["catalog"]:
         source = new["catalog"]["source"]
         print(f"Nixpkgs: {source['revision']} ({source['system']}) at {source['path']}")
-    print("Ports only. Binary imports only. Old objects/profiles retained. No migrations or reboot.")
+    print("Ports only. Binary imports only. Old objects/profiles retained. No Base/System/Kernel changes or reboot.")
     if old["installed"] and "history" not in old and "history" in new:
         print("History baseline: old installation order retained; earlier activation order is unknown.")
     for key, record in new["installed"].items():
@@ -472,7 +485,26 @@ def describe(old, new):
     for name in old["active"].keys() - new["active"].keys():
         print(f"Deactivate: {name}; no installed replacement")
     if old["format"] != new["format"]:
-        print("Metadata format 1 -> 2; older MPM writers will refuse this state. Existing program links remain usable.")
+        print(f"Metadata format {old['format']} -> {new['format']}; older MPM readers/writers will refuse this state. Existing program links remain usable.")
+    if old.get("release_catalog") != new.get("release_catalog"):
+        catalog = new.get("release_catalog")
+        if catalog:
+            print("Release catalog: " + selection_core().Catalog.from_dict(catalog).digest)
+    if new.get("metadata_mapping") != old.get("metadata_mapping"):
+        print("Explicit request mapping: " + json.dumps(new.get("metadata_mapping", {}), sort_keys=True))
+    if new["format"] == 3:
+        print("Accepted series aliases: " + json.dumps(selector_ports().aliases(new), sort_keys=True))
+        for rid, request in new["requests"].items():
+            if request["policy"] != "selector" or old.get("requests", {}).get(rid) == request:
+                continue
+            before = old.get("requests", {}).get(rid, {}).get("selection")
+            after = request["selection"]
+            print("Resolution before: " + json.dumps(before, sort_keys=True))
+            print("Resolution after: " + json.dumps(after, sort_keys=True))
+            a = before["candidate"]["integrity"]["closure"] if before else []
+            b = after["candidate"]["integrity"]["closure"]
+            print("Closure removed: " + json.dumps([p for p in a if p not in b], sort_keys=True))
+            print("Closure added: " + json.dumps([p for p in b if p not in a], sort_keys=True))
     if old.get("requests") != new.get("requests"):
         print("Tracked requests: " + json.dumps(new.get("requests", {}), sort_keys=True))
     if old.get("selection_policy") != new.get("selection_policy"):
@@ -496,6 +528,8 @@ def verify_retained(root, state):
     paths = set()
     if state["catalog"]:
         paths.add(state["catalog"]["source"]["store"])
+    if state.get("release_catalog"):
+        paths.update(s["identity"]["store"] for s in state["release_catalog"]["sources"].values())
     for record in state["installed"].values():
         paths.update((record["source"]["store"], record["output"]))
     for output in paths:
@@ -539,8 +573,15 @@ def transactions(root, limit=20):
 
 
 def publish(root, old, state, action="publish"):
-    if state["catalog"]:
+    if state["catalog"] and (old["catalog"] is None or
+                              old["catalog"]["source"] != state["catalog"]["source"]):
         retain(root, state["catalog"]["source"]["store"])
+    if state.get("release_catalog"):
+        validate_nix_catalog(state["release_catalog"])
+        prior = {s["identity"]["store"] for s in old.get("release_catalog", {}).get("sources", {}).values()}
+        for source in state["release_catalog"]["sources"].values():
+            if source["identity"]["store"] not in prior:
+                retain(root, source["identity"]["store"])
     for key, record in state["installed"].items():
         if key in old["installed"]:
             continue
@@ -559,6 +600,10 @@ def publish(root, old, state, action="publish"):
         hashes = run("nix-store", "--query", "--hash", *closure).splitlines()
         require(len(hashes) == len(closure) and all(hashes), "invalid closure hashes")
         record["closure"] = [dict(path=p, nar_hash=h) for p, h in zip(closure, hashes)]
+    for record in state["installed"].values():
+        if "release" in record:
+            verify_selection_evidence(record)
+    validate_model(state)
     aliases = command_aliases(state)  # Validate discovered exports before publishing any link.
     generation = root / "profiles" / uuid.uuid4().hex
     temporary = root / (".current-" + uuid.uuid4().hex)
@@ -573,8 +618,8 @@ def publish(root, old, state, action="publish"):
                            action=action, uid=os.geteuid(), utc=datetime.now(timezone.utc).isoformat(),
                            installed=sorted(state["installed"].keys() - old["installed"].keys()),
                            removed=sorted(old["installed"].keys() - state["installed"].keys()),
-                           before={k: old.get(k) for k in ("catalog", "active", "requests", "selection_policy")},
-                           after={k: state.get(k) for k in ("catalog", "active", "requests", "selection_policy")})
+                           before={k: old.get(k) for k in TRANSACTION_FIELDS},
+                           after={k: state.get(k) for k in TRANSACTION_FIELDS})
         for filename, document in (("state.json", state), ("transaction.json", transaction)):
             with (generation / filename).open("w") as stream:
                 stream.write(json.dumps(document, indent=2) + "\n")
@@ -636,9 +681,9 @@ def inspect(state, args):
             if not rows:
                 print("No Ports installed in current profile.")
     else:
-        require(state["catalog"] is not None, "run mpm ports update first")
-        source = state["catalog"]["source"]
         if args.action == "search":
+            require(state["catalog"] is not None, "native attribute search needs ports update first")
+            source = state["catalog"]["source"]
             require(not args.scope or re.fullmatch(ATTRIBUTE, args.scope), "unsupported search scope")
             require(args.query.strip(), "provide a nonempty package-name fragment")
             require(1 <= args.limit <= 200, "search limit must be between 1 and 200")
@@ -654,6 +699,11 @@ def inspect(state, args):
         else:
             if args.name in state["installed"]:
                 record = dict(state["installed"][args.name], identity=args.name)
+            elif state["format"] == 3:
+                catalog = selection_core().Catalog.from_dict(state["release_catalog"])
+                selected = selection_core().resolve(catalog, args.name)
+                key, record, _ = selector_item(selected, state)
+                record = dict(record, identity=key, resolution=selected.to_dict())
             else:
                 record = install_records(state, [args.name])[args.name]
                 record = dict(record, identity=identity(record))
@@ -671,13 +721,179 @@ def inspect(state, args):
 def selection_core():
     # -I excludes the script directory from sys.path in the installed System.
     # Load our shipped module explicitly, never a user/PATH-provided module.
-    name = "_mojt_mpm_selection"
+    name = "mpm_selection"
+    if name in sys.modules:
+        return sys.modules[name]
     path = Path(__file__).with_name("mpm_selection.py")
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
+
+
+TRANSACTION_FIELDS = ("format", "capabilities", "catalog", "release_catalog", "active", "requests",
+                      "selection_policy", "metadata_mapping")
+
+
+def selector_ports():
+    selection_core()
+    name = "_mojt_selector_ports"
+    if name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name("mpm_selector_ports.py"))
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+    return sys.modules[name]
+
+
+def validate_nix_catalog(value):
+    catalog = selection_core().Catalog.from_dict(value)
+    require(catalog.area == "ports", "release catalog belongs to another MPM area")
+    for source in catalog.sources.values():
+        require(source["backend"] == "nix", "this transaction adapter supports Nix artifacts only")
+        identity = source["identity"]
+        require(set(identity) == {"path", "revision", "system", "store", "nar_hash", "attribute",
+                                 "output_selection", "evaluation"}, "unsupported Nix source evidence")
+        require(identity["system"] == catalog.platform and identity["output_selection"] == "lib.getBin"
+                and identity["evaluation"] == dict(config={}, overlays=[]), "unsupported Nix evaluation policy")
+        require(isinstance(identity["attribute"], str) and re.fullmatch(ATTRIBUTE, identity["attribute"]),
+                "unsupported Nix attribute")
+        actual = source_from_fields({k: identity[k] for k in ("path", "revision", "system")}, Path("/"))
+        require(all(actual[k] == identity[k] for k in actual), "Nix source identity/integrity differs")
+    for candidate in catalog.candidates:
+        require(candidate.revision_scheme is None,
+                "Nix catalog adapter has no packaging-revision mapping")
+        store_path(candidate.artifact)
+        integrity = candidate.integrity
+        require(set(integrity) == {"closure"} and isinstance(integrity["closure"], list)
+                and integrity["closure"], "Nix catalog requires complete closure evidence")
+        paths = []
+        for row in integrity["closure"]:
+            require(isinstance(row, dict) and set(row) == {"path", "nar_hash"}
+                    and isinstance(row["nar_hash"], str) and row["nar_hash"], "invalid Nix closure evidence")
+            store_path(row["path"])
+            paths.append(row["path"])
+        require(paths == sorted(set(paths)) and candidate.artifact in paths, "invalid Nix closure members")
+    return catalog
+
+
+def verify_selection_evidence(record):
+    selection = selection_core().Selection.from_dict(record["release"])
+    require(selection.candidate.backend == "nix" and selection.candidate.artifact == record["output"]
+            and selection.candidate.upstream_version == record["version"], "installed release/artifact differs")
+    closure = sorted(run("nix-store", "--query", "--requisites", record["output"]).splitlines())
+    hashes = run("nix-store", "--query", "--hash", *closure).splitlines()
+    evidence = [dict(path=p, nar_hash=h) for p, h in zip(closure, hashes)]
+    require(len(hashes) == len(closure) and evidence == selection.candidate.integrity["closure"],
+            "local artifact closure differs from accepted catalog evidence")
+    require(record.get("closure") == evidence, "stored closure differs from accepted catalog evidence")
+
+
+def selector_item(selection, state):
+    """Adapt opaque resolved evidence to the current Nix artifact record."""
+    candidate = selection.candidate
+    require(candidate.backend == "nix", "this transaction adapter supports Nix artifacts only")
+    for key, record in state["installed"].items():
+        if record["name"] == candidate.name and record["output"] == candidate.artifact:
+            require(record["version"] == candidate.upstream_version, "retained artifact release differs")
+            result = copy.deepcopy(record)
+            if result.get("closure") is not None:
+                require(result["closure"] == candidate.integrity["closure"], "retained artifact integrity differs")
+            return key, result, selection
+    identity_source = next(p["identity"] for p in selection.provenance if p["source"] == candidate.source)
+    source = {k: identity_source[k] for k in ("path", "revision", "system", "store", "nar_hash")}
+    record = dict(name=candidate.name, version=candidate.upstream_version, output=candidate.artifact,
+                  source=source, attribute=identity_source["attribute"], commands=None, description="")
+    if Path(candidate.artifact).exists():
+        record["commands"] = discover_commands(record)
+    return identity(record), record, selection
+
+
+def selector_plan(state, args):
+    core, policies = selection_core(), selector_ports()
+    if args.action == "metadata":
+        value = json.loads(args.catalog.read_text(encoding="utf-8"))
+        catalog = validate_nix_catalog(value)
+        attachments = []
+        for row in catalog.candidates:
+            # Attach exact release evidence only to already-known artifacts.
+            if not any(r["name"] == row.name and r["output"] == row.artifact
+                       for r in state["installed"].values()):
+                continue
+            single = copy.deepcopy(value)
+            single["candidates"] = [r for r in single["candidates"]
+                if r["name"] == row.name and r["artifact"] == row.artifact and r["release_id"] == row.release_id]
+            selection = core.resolve(core.Catalog.from_dict(single), row.name + "@=" + row.release_id)
+            # Record the adopted full view, not the temporary single-artifact filter.
+            selection = core.Selection(selection.selector, catalog.area, catalog.name, catalog.channel,
+                                       catalog.platform, catalog.digest, selection.candidate, selection.provenance)
+            item = selector_item(selection, state)
+            verify = dict(item[1], release=selection.to_dict())
+            verify_selection_evidence(verify)
+            attachments.append(item)
+        adoptions = [selector_item(core.resolve(catalog, request), state) for request in args.adopt]
+        proposed, mapping = policies.metadata(state, value, adoptions, attachments)
+        if mapping:
+            proposed["metadata_mapping"] = dict(proposed.get("metadata_mapping", {}), **mapping)
+    else:
+        catalog = validate_nix_catalog(state["release_catalog"])
+        if args.action == "install":
+            require(not args.attribute, "selector mode uses catalog mappings, not --attribute")
+            require(args.names, "selector mode requires explicit selectors")
+            items = [selector_item(core.resolve(catalog, request), state) for request in args.names]
+            proposed = policies.install(state, items, args.no_activate)
+        elif args.action == "activate":
+            literal = args.request in state["installed"]
+            matching = [r for r in state["installed"].values() if r["name"] == args.request]
+            if not literal and "@" not in args.request and matching and not any("release" in r for r in matching):
+                return plan(state, "activate", request=args.request, follow=args.follow)
+            if literal:
+                key = args.request
+                record = state["installed"][key]
+                if "release" not in record:
+                    # Native requests remain activatable without invented release metadata.
+                    return plan(state, "activate", request=key, follow=args.follow)
+                selection = core.Selection.from_dict(record["release"])
+                item = key, record, selection
+            else:
+                require(not re.search(r"@=.*-nix-[0-9abcdfghijklmnpqrsvwxyz]{32}$", args.request),
+                        "installed artifact identity not found")
+                selections = [core.Selection.from_dict(r["release"]) for r in state["installed"].values()
+                              if "release" in r]
+                item = selector_item(core.resolve(core.installed_view(catalog, selections), args.request), state)
+            proposed = policies.activate(state, item, literal=literal, follow=args.follow)
+        elif args.action == "upgrade":
+            require(state["requests"], "no recorded upgrade requests")
+            # Keep native attribute requests on their old backend policy until explicit adoption.
+            if any(r["policy"] == "attribute" and (not args.names or r["name"] in args.names)
+                   for r in state["requests"].values()):
+                proposed = upgrade_plan(state, args.names)
+            else:
+                proposed = copy.deepcopy(state)
+            known = {r["name"] for r in state["requests"].values()}
+            require(set(args.names) <= known, "upgrade name has no recorded request")
+            updates = {}
+            for rid, request in state["requests"].items():
+                if request["policy"] != "selector" or (args.names and request["name"] not in args.names):
+                    continue
+                upgrade = core.plan_upgrade(catalog, core.Selection.from_dict(request["selection"]))
+                if upgrade.changed:
+                    print("Upgrade reason: " + upgrade.reason)
+                    updates[rid] = selector_item(upgrade.after, state)
+            proposed = policies.upgrade(proposed, updates)
+        else:
+            return plan(state, args.action, names=getattr(args, "names", ()))
+    if proposed != state:
+        history(proposed)
+        for key in proposed["installed"].keys() - state["installed"].keys():
+            remember(proposed, "installed", key)
+        for name, key in proposed["active"].items():
+            if state["active"].get(name) != key:
+                remember(proposed, "activated", key)
+    validate_model(proposed)
+    command_aliases(proposed)
+    return proposed
 
 
 def main(argv=None):
@@ -688,12 +904,16 @@ def main(argv=None):
                         help="initial source pin for ports update; never an implicit channel refresh")
     parser.add_argument("area", choices=["ports"])
     actions = parser.add_subparsers(dest="action", required=True)
-    for action in ("update", "install", "activate", "remove", "upgrade", "status", "list", "search", "info", "history", "resolve"):
+    for action in ("update", "install", "activate", "remove", "upgrade", "status", "list", "search", "info", "history", "resolve", "metadata"):
         sub = actions.add_parser(action)
         if action == "resolve":
             sub.add_argument("selector", help="latest, @series or @=exact release request")
             sub.add_argument("--catalog", type=Path, required=True, help="finite MPM release catalog JSON")
             sub.add_argument("--json", action="store_true")
+        if action == "metadata":
+            sub.add_argument("--catalog", type=Path, required=True)
+            sub.add_argument("--adopt", action="append", default=[], metavar="SELECTOR",
+                             help="explicitly replace native attribute requests with this selector")
         if action == "update":
             sub.add_argument("--manifest", type=Path, help="explicit source pin and optional curated entries")
         if action == "install":
@@ -724,7 +944,7 @@ def main(argv=None):
             sub.add_argument("--limit", type=int, default=50)
         if action == "info":
             sub.add_argument("name", help="Ports name, Nixpkgs attribute or installed exact identity")
-        if action in ("update", "install", "activate", "remove", "upgrade"):
+        if action in ("update", "install", "activate", "remove", "upgrade", "metadata"):
             sub.add_argument("--dry-run", action="store_true")
             sub.add_argument("-y", "--yes", action="store_true")
     args = parser.parse_args(argv)
@@ -764,10 +984,10 @@ def main(argv=None):
                     if before_source != after_source:
                         print(f"  Catalog source: {json.dumps(before_source, sort_keys=True)} -> "
                               f"{json.dumps(after_source, sort_keys=True)}")
-                    for key in ("active", "requests", "selection_policy"):
-                        if row["before"][key] != row["after"][key]:
-                            print(f"  {key}: {json.dumps(row['before'][key], sort_keys=True)} -> "
-                                  f"{json.dumps(row['after'][key], sort_keys=True)}")
+                    for key in TRANSACTION_FIELDS:
+                        if row["before"].get(key) != row["after"].get(key):
+                            print(f"  {key}: {json.dumps(row['before'].get(key), sort_keys=True)} -> "
+                                  f"{json.dumps(row['after'].get(key), sort_keys=True)}")
                 if not rows:
                     print("No recorded transactions; legacy history is unknown.")
             return 0
@@ -789,11 +1009,17 @@ def main(argv=None):
                     require(args.source_manifest is not None,
                             "initial update needs --manifest FILE (source pin only is sufficient)")
                     catalog = catalog_from_manifest(args.source_manifest)
-            records = (install_records(old, args.names, args.attribute)
-                       if args.action == "install" else None)
-            proposed = plan(old, args.action, catalog, getattr(args, "names", ()),
-                            getattr(args, "request", None), records,
-                            getattr(args, "no_activate", False), getattr(args, "follow", False))
+            if args.action == "metadata" or (old["format"] == 3 and args.action != "update"):
+                proposed = selector_plan(old, args)
+            else:
+                if args.action == "install":
+                    require(not any("@" in name for name in args.names),
+                            "release selectors require explicit ports metadata --catalog FILE first")
+                records = (install_records(old, args.names, args.attribute)
+                           if args.action == "install" else None)
+                proposed = plan(old, args.action, catalog, getattr(args, "names", ()),
+                                getattr(args, "request", None), records,
+                                getattr(args, "no_activate", False), getattr(args, "follow", False))
             describe(old, proposed)
             if args.dry_run:
                 print("Preview only; no MPM state, GC roots or payloads written.")

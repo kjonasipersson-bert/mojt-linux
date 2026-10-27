@@ -226,6 +226,65 @@ class Selection:
                     candidate=self.candidate.to_dict(), provenance=copy.deepcopy(list(self.provenance)),
                     note="Declared catalog evidence; runtime compatibility is not verified by resolution.")
 
+    @classmethod
+    def from_dict(cls, value):
+        require(isinstance(value, dict) and set(value) ==
+                {"selector", "catalog", "candidate", "provenance", "note"}, "invalid saved selection")
+        selector = selector_from_dict(value["selector"])
+        binding, row, provenance = value["catalog"], value["candidate"], value["provenance"]
+        require(isinstance(binding, dict) and set(binding) == {"area", "name", "channel", "platform", "digest"},
+                "invalid saved catalog binding")
+        require(isinstance(binding["digest"], str) and re.fullmatch(r"sha256:[0-9a-f]{64}", binding["digest"]),
+                "invalid saved catalog digest")
+        require(isinstance(provenance, list) and provenance, "missing saved provenance")
+        sources = {}
+        for p in provenance:
+            require(isinstance(p, dict) and set(p) == {"source", "backend", "identity"}
+                    and isinstance(p["source"], str) and p["source"] not in sources, "invalid saved provenance")
+            sources[p["source"]] = dict(backend=p["backend"], identity=p["identity"])
+        require(isinstance(row, dict) and row.get("source") in sources and
+                row.get("backend") == sources[row["source"]]["backend"], "saved artifact backend differs")
+        raw = {k: v for k, v in row.items() if k != "backend"}
+        catalog = Catalog.from_dict(dict(format=FORMAT, **{k: binding[k] for k in
+            ("area", "name", "channel", "platform")}, sources=sources, candidates=[raw]))
+        chosen = resolve(catalog, selector)
+        require(all(p["backend"] == chosen.candidate.backend for p in provenance), "saved provenance backend differs")
+        return cls(selector, catalog.area, catalog.name, catalog.channel, catalog.platform,
+                   binding["digest"], chosen.candidate, tuple(copy.deepcopy(provenance)))
+
+
+def selector_from_dict(value):
+    require(isinstance(value, dict), "invalid saved selector", SelectorError)
+    kind = value.get("kind")
+    fields = {"name", "kind"} | ({"components"} if kind == "series" else
+                                  {"release_id"} if kind == "exact" else set())
+    require(set(value) == fields, "invalid saved selector fields", SelectorError)
+    parts = value.get("components", [])
+    require(isinstance(parts, list), "invalid saved series", SelectorError)
+    selector = Selector(value["name"], kind,
+                        tuple(parts) if kind == "series" else
+                        (value["release_id"],) if kind == "exact" else ())
+    return parse_selector(render_selector(selector))
+
+
+def installed_view(catalog, selections):
+    """Construct an installed-only view. Old build preferences never break ties."""
+    sources, candidates = {}, []
+    for selection in selections:
+        require((selection.area, selection.catalog_name, selection.channel, selection.platform) ==
+                (catalog.area, catalog.name, catalog.channel, catalog.platform), "installed catalog binding differs")
+        for p in selection.provenance:
+            sid = hashlib.sha256(canonical(p).encode()).hexdigest()
+            sources[sid] = dict(backend=p["backend"], identity=copy.deepcopy(p["identity"]))
+            row = selection.candidate.to_dict()
+            row.pop("backend")
+            row.update(source=sid, preferred=False)
+            candidates.append(row)
+    # Empty views still need a source record for the normal catalog validator.
+    return Catalog.from_dict(dict(format=FORMAT, area=catalog.area, name=catalog.name,
+        channel=catalog.channel, platform=catalog.platform, sources=sources or catalog.sources,
+        candidates=candidates))
+
 
 def resolve(catalog, request, *, platform=None):
     require(isinstance(catalog, Catalog), "expected a validated Catalog")

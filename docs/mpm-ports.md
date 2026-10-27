@@ -16,9 +16,20 @@ uses parallel application versions, active selections and readable transaction
 history. This iteration implements a first upgrade engine for recorded
 Nix attribute requests and a committed history interface. Retained internal
 profiles are implementation details; users do not need to manage a whole-Ports
-generation after every update. Release-series selectors and general undo remain
-unimplemented. The command reference lives in [man/mpm.1](../man/mpm.1)
+generation after every update. The selector branch adds release-series operations
+and explicit format-3 adoption, documented below. General undo remains unimplemented. The command reference lives in [man/mpm.1](../man/mpm.1)
 and is included in new System builds with manual support (step 9 or later).
+
+## Selector-mode integration
+
+Native attribute examples below remain valid on unconverted format-1/2 state.
+The selector branch adds `ports metadata --catalog FILE [--adopt SELECTOR]`,
+selector-aware install/info/activate/upgrade and accepted series aliases. This
+explicitly writes format 3; older System MPM readers/writers refuse it. Native
+requests keep their old behavior until explicitly adopted. Review the
+[selector integration and compatibility contract](mpm-selectors.md#9-implemented-transaction-integration-2026-10-27)
+before converting a shared state directory. Real transaction/VM acceptance is
+pending; use a new isolated root with `tests/run-mpm-selectors.py` first.
 
 ## Inside a newly built step 3 Mojt VM
 

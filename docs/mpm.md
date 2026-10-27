@@ -12,13 +12,13 @@ are design examples unless identified as implemented in section 6. This
 document records the update model accepted on 2026-10-26 and the previously
 accepted high-level selector semantics:
 `@3.0` selects the newest eligible stable release in the 3.0 line, while
-`@=3.0` matches an exact package-release identifier. The full identifier
-grammar, version comparison and backend adaptation remain to be specified
-before implementing a parser. Nix is selected for Ports and, for early Mojt
+`@=3.0` matches an exact package-release identifier. The selector branch specifies and implements the initial grammar and
+dotted-numeric adapter; other version schemes remain exact-only. Nix is selected for Ports and, for early Mojt
 versions, for System package acquisition and shared dependency storage.
 System release/deployment formats and the full command grammar remain open.
 The [selector/catalog contract](mpm-selectors.md) records an implemented pure
-parser/resolver slice plus proposed installation/activation integration details.
+parser/resolver plus selector-mode installation, activation, series aliases
+and explicit format-3 metadata adoption. Native requests keep their original policy.
 The [mixed-libc analysis](mpm-libc-policy.md) is deferred reference work. Linking
 a proposal here does not make its remaining details accepted or implemented.
 
@@ -636,16 +636,16 @@ The full System VM uses systemd, NetworkManager/D-Bus, Nix and management
 Python. Its earlier VM acceptance also covered networking and binary Ports
 imports with parallel Python versions. The current `mpm` CLI accepts only
 the `ports` area: `update`, `install`, `activate`, `remove`, `status`, `list`,
-`search`, `info`, `upgrade`, `history` and read-only `resolve`. Recorded Nix attribute requests and
-exact/following active selection policies are separate. Upgrade uses the saved
-snapshot, retains old versions and changes only following defaults. Readable
-committed history is published with each changed profile; legacy history is
-not reconstructed. This is a limited attribute policy with numeric version
-ordering, not the future release-series selector engine. See the
-[ordinary Ports guide](mpm-ports.md) for runnable commands and limits.
+`search`, `info`, `upgrade`, `history`, read-only `resolve`, and explicit
+`metadata` adoption on the selector branch. Formats 1/2 retain native attribute
+semantics. Explicit format-3 adoption adds typed latest/series/exact requests,
+installed-only activation and series aliases using the shared pure resolver.
+Requests and active selections stay separate; exact builds/closures remain
+pinned. Plans/history show resolution, dependencies and compatibility changes.
+See [the selector integration contract](mpm-selectors.md#9-implemented-transaction-integration-2026-10-27)
+for commands, state compatibility, measured evidence and pending real/VM tests.
 
-**Not implemented:** MPM Base/System/Kernel commands, selector-based installation/activation and full
-state integration, user-facing rollback/undo, production project profiles/locks,
+**Not implemented:** MPM Base/System/Kernel commands, general version adapters, user-facing rollback/undo, production project profiles/locks,
 pruning/GC, verified external capabilities, signed catalogs, production
 deployment formats, and durable updates to existing boot disks.
 

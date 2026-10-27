@@ -813,6 +813,310 @@ commands = ["hello"]
         self.assertEqual(path.read_bytes(), before)
         self.assertFalse(self.root.exists())
 
+    def nix_release_catalog(self, versions=None):
+        value = self.catalog_adapter().prepare_catalog(mpm, [("old", self.manifest)], "hello", "hello", stability="stable")
+        first = value["candidates"][0]
+        if versions:
+            value["candidates"] = []
+            for version, output in versions:
+                row = copy.deepcopy(first)
+                row.update(release_id=version, upstream_version=version, artifact=str(output))
+                row["integrity"]["closure"] = sorted(
+                    [dict(path=str(p), nar_hash="sha256:" + mpm.store_hash(str(p)))
+                     for p in (self.dependency, output)], key=lambda p: p["path"])
+                value["candidates"].append(row)
+        path = self.directory / "nix-releases.json"
+        path.write_text(json.dumps(value))
+        return path
+
+    def selector_mode(self, versions=None):
+        path = self.nix_release_catalog(versions)
+        self.cli("metadata", "--catalog", str(path), "-y")
+        return path
+
+    def test_selector_install_requires_explicit_metadata_transition(self):
+        self.update()
+        before = self.state()
+        self.cli("install", "hello@1", "-y", success=False)
+        self.assertEqual(self.state(), before)
+        path = self.nix_release_catalog()
+        link = os.readlink(self.root / "current")
+        roots = set(self.registered_roots)
+        self.cli("metadata", "--catalog", str(path), "--dry-run")
+        self.assertEqual(os.readlink(self.root / "current"), link)
+        self.assertEqual(self.registered_roots, roots)
+        self.cli("metadata", "--catalog", str(path), "-y", answer="n")  # -y is explicit approval
+        self.assertEqual(self.state()["format"], 3)
+        self.cli("install", "hello@1", "-y")
+        self.assertEqual(self.hello(), "1.0")
+        self.assertEqual(subprocess.check_output([str(self.root / "current/bin/hello-1")], text=True).strip(), "1.0")
+
+    def test_selector_install_retains_second_version_until_explicit_series_activation(self):
+        self.selector_mode([("1.0", self.output), ("1.1", self.output2)])
+        self.cli("install", "hello@=1.0", "-y")
+        self.cli("install", "hello@1", "-y")
+        self.assertEqual(self.hello(), "1.0")
+        self.calls.clear()
+        self.cli("activate", "hello@1", "-y")
+        self.assertEqual(self.hello(), "1.0-rebuild")
+        self.assertFalse(any(c[1] == "--realise" and "--dry-run" not in c for c in self.calls))
+        before = self.state()
+        current = os.readlink(self.root / "current")
+        self.cli("activate", "hello@1", "-y")
+        self.assertEqual(self.state(), before)
+        self.assertEqual(os.readlink(self.root / "current"), current)
+
+    def test_selector_two_series_and_exact_pin_survive_upgrade(self):
+        third = self.object("4", "hello-2.0", command="hello", version="2.0")
+        path = self.selector_mode([("1.0", self.output), ("2.0", third)])
+        self.cli("install", "hello@1", "hello@2", "-y")
+        self.assertEqual(self.hello(), "1.0")
+        key = self.state()["active"]["hello"]
+        self.cli("activate", key, "-y")
+        path = self.nix_release_catalog([("1.0", self.output), ("1.1", self.output2), ("2.0", third)])
+        self.cli("metadata", "--catalog", str(path), "-y")
+        preview = self.cli("upgrade", "hello", "--dry-run")
+        self.assertIn("Closure added", preview)
+        self.cli("upgrade", "hello", "-y")
+        self.assertEqual(self.hello(), "1.0")
+        self.assertEqual((self.root / "current/bin/hello-1").resolve(), self.output2 / "bin/hello")
+        self.assertEqual((self.root / "current/bin/hello-2").resolve(), third / "bin/hello")
+        self.assertIn(key, self.state()["installed"])
+        current = os.readlink(self.root / "current")
+        self.cli("upgrade", "-y")
+        self.assertEqual(os.readlink(self.root / "current"), current)
+
+    def test_explicit_adoption_records_mapping_without_reinterpreting_native_request(self):
+        self.update()
+        self.cli("install", "hello", "-y")
+        before = self.state()
+        path = self.selector_mode()
+        state = self.state()
+        self.assertEqual(state["requests"], before["requests"])
+        self.assertEqual(state["active"], before["active"])
+        self.assertEqual(state["selection_policy"], before["selection_policy"])
+        self.cli("metadata", "--catalog", str(path), "--adopt", "hello@1", "-y")
+        state = self.state()
+        self.assertIn("hello:hello", state["metadata_mapping"])
+        self.assertEqual(next(iter(state["requests"].values()))["policy"], "selector")
+        self.assertEqual(state["active"], before["active"])
+        self.assertEqual(self.cli("history", "--json").count('"action": "metadata"'), 2)
+        self.assertEqual(next(iter(json.loads(self.cli("history", "--json"))))["before"]["format"], 3)
+
+    def test_adoption_preserves_existing_exact_default_and_never_downloads_missing_target(self):
+        self.update()
+        self.cli("install", "hello", "-y")
+        key = self.state()["active"]["hello"]
+        self.cli("activate", key, "-y")
+        path = self.nix_release_catalog()
+        self.cli("metadata", "--catalog", str(path), "--adopt", "hello@1", "-y")
+        self.assertIsNone(self.state()["selection_policy"]["hello"])
+        path = self.nix_release_catalog([("1.1", self.output2)])
+        before = self.state()
+        self.cli("metadata", "--catalog", str(path), "--adopt", "hello@1", "-y", success=False)
+        self.assertEqual(self.state(), before)
+
+    def test_installed_only_activation_missing_and_ambiguous_builds_never_import(self):
+        self.selector_mode([("1.0", self.output), ("1.1", self.output2)])
+        self.cli("install", "hello@=1.0", "-y")
+        self.calls.clear()
+        self.cli("activate", "hello@=1.1", "-y", success=False)
+        self.assertFalse(any(c[1] == "--realise" for c in self.calls))
+        self.cli("activate", "hello@=1.0", "--follow", "-y", success=False)
+        path = self.nix_release_catalog([("1.0", self.output), ("1.0", self.output2)])
+        value = json.loads(path.read_text())
+        value["candidates"][1]["preferred"] = True
+        path.write_text(json.dumps(value))
+        self.cli("metadata", "--catalog", str(path), "-y")
+        self.cli("install", "hello@1", "-y")
+        before = self.state()
+        self.cli("activate", "hello@1", "-y", success=False)
+        self.assertEqual(self.state(), before)
+        self.cli("activate", before["active"]["hello"], "-y")
+
+    def test_same_release_dependency_replacement_uses_shared_policy_and_exact_requests_pin(self):
+        path = self.selector_mode()
+        self.cli("install", "hello@1", "hello@=1.0", "-y")
+        old = self.state()
+        path = self.nix_release_catalog([("1.0", self.output2)])
+        self.cli("metadata", "--catalog", str(path), "-y")
+        self.assertIn("same-release build replacement", self.cli("upgrade", "-y"))
+        state = self.state()
+        self.assertEqual(self.hello(), "1.0-rebuild")
+        exact = [r for r in state["requests"].values() if r["selector"]["kind"] == "exact"][0]
+        self.assertEqual(exact["target"], old["active"]["hello"])
+        self.assertIn(old["active"]["hello"], state["installed"])
+
+    def test_catalog_integrity_mismatch_and_publication_failure_preserve_snapshot(self):
+        path = self.selector_mode()
+        self.cli("install", "hello@1", "-y")
+        old = self.state()
+        current = os.readlink(self.root / "current")
+        path = self.nix_release_catalog([("1.1", self.output2)])
+        self.cli("metadata", "--catalog", str(path), "-y")
+        current = os.readlink(self.root / "current")
+        with mock.patch.object(mpm.os, "replace", side_effect=OSError("before commit")):
+            self.cli("upgrade", "-y", success=False)
+        self.assertEqual(os.readlink(self.root / "current"), current)
+        value = json.loads(path.read_text())
+        value["candidates"][0]["integrity"]["closure"][0]["nar_hash"] = "wrong"
+        path.write_text(json.dumps(value))
+        self.cli("metadata", "--catalog", str(path), "-y")
+        before = self.state()
+        self.cli("upgrade", "-y", success=False)
+        self.assertEqual(self.state(), before)
+
+    def test_series_alias_collision_and_remove_do_not_silently_retarget_request(self):
+        self.selector_mode()
+        self.cli("install", "hello@1", "-y")
+        before = self.state()
+        self.cli("install", "hello@1.0", "-y")
+        state = self.state()
+        self.assertTrue((self.root / "current/bin/hello-1.0").is_symlink())
+        self.cli("remove", state["active"]["hello"], "-y")
+        self.assertFalse(self.state()["requests"])
+        self.assertFalse(self.state()["active"])
+
+    def test_read_only_or_cancelled_metadata_cannot_convert_state(self):
+        self.update()
+        before = self.state()
+        path = self.nix_release_catalog()
+        self.cli("metadata", "--catalog", str(path), answer="n")
+        self.assertEqual(self.state(), before)
+        self.cli("status")
+        self.assertEqual(self.state()["format"], 2)
+
+
+    def test_series_alias_collision_aborts_entire_plan(self):
+        path = self.selector_mode()
+        self.cli("install", "hello@1", "-y")
+        value = json.loads(path.read_text())
+        row = copy.deepcopy(value["candidates"][0])
+        row.update(name="other", release_id="1.1", upstream_version="1.1", artifact=str(self.output2))
+        row["integrity"]["closure"] = sorted(
+            [dict(path=str(p), nar_hash="sha256:" + mpm.store_hash(str(p)))
+             for p in (self.dependency, self.output2)], key=lambda p: p["path"])
+        value["candidates"].append(row)
+        path.write_text(json.dumps(value))
+        self.cli("metadata", "--catalog", str(path), "-y")
+        before = self.state()
+        self.assertIn("series alias conflict", self.cli("install", "other@1", "--no-activate", "-y", success=False))
+        self.assertEqual(self.state(), before)
+
+    def test_selector_publication_failure_after_switch_retains_committed_profile(self):
+        self.selector_mode([("1.0", self.output), ("1.1", self.output2)])
+        self.cli("install", "hello@=1.0", "hello@1", "-y")
+        original = mpm.sync_directory
+        def fail_after_switch(path):
+            if path == self.root:
+                raise OSError("after switch")
+            return original(path)
+        with mock.patch.object(mpm, "sync_directory", side_effect=fail_after_switch):
+            self.assertIn("may have committed", self.cli("activate", "hello@1", "-y", success=False))
+        self.assertEqual(self.hello(), "1.0-rebuild")
+        self.assertTrue((self.root / "current/transaction.json").is_file())
+        self.assertEqual(self.state()["format"], 3)
+
+    def test_metadata_new_state_dry_run_does_not_initialize_root(self):
+        path = self.nix_release_catalog()
+        self.calls.clear()
+        self.cli("metadata", "--catalog", str(path), "--dry-run")
+        self.assertFalse(self.root.exists())
+        self.assertFalse(any(c[1] == "--realise" for c in self.calls))
+
+
+
+    def test_real_selector_acceptance_runner_steps_with_simulated_backend(self):
+        path = self.nix_release_catalog([("1.0", self.output), ("1.1", self.output2)])
+        spec = importlib.util.spec_from_file_location("selector_acceptance_runner", REPO / "tests/run-mpm-selectors.py")
+        runner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runner)
+        def invoke(command, *args, json_output=False):
+            result = self.cli(*args)
+            return json.loads(result) if json_output else result
+        with mock.patch.object(runner, "invoke", side_effect=invoke), contextlib.redirect_stdout(io.StringIO()) as output:
+            runner.exercise(self.root, path, "1.0", "1.1", "1", REPO / "tools/mpm-nix-prototype")
+        self.assertIn("repeat upgrade was a complete no-op", output.getvalue())
+        self.assertEqual(len(self.state()["installed"]), 2)
+
+
+    def test_deferred_selector_exports_collision_preserves_old_profile(self):
+        path = self.selector_mode()
+        self.cli("install", "hello@1", "-y")
+        before = self.state()
+        missing = self.store / ("4" * 32 + "-other-1.0")
+        value = json.loads(path.read_text())
+        row = copy.deepcopy(value["candidates"][0])
+        row.update(name="other", artifact=str(missing))
+        row["integrity"]["closure"] = sorted(
+            [dict(path=str(p), nar_hash="sha256:" + mpm.store_hash(str(p)))
+             for p in (self.dependency, missing)], key=lambda p: p["path"])
+        value["candidates"].append(row)
+        path.write_text(json.dumps(value))
+        self.cli("metadata", "--catalog", str(path), "-y")
+        before = self.state()
+        def materialize():
+            (missing / "bin").mkdir(parents=True)
+            command = missing / "bin/hello"
+            command.write_text("#!/bin/sh\nexit 0\n")
+            command.chmod(0o755)
+        self.materialize[str(missing)] = materialize
+        current = os.readlink(self.root / "current")
+        self.assertIn("series alias conflict", self.cli("install", "other@1", "--no-activate", "-y", success=False))
+        self.assertTrue(missing.exists())
+        self.assertEqual(os.readlink(self.root / "current"), current)
+        self.assertEqual(self.state(), before)
+
+    def test_withdrawn_exact_request_and_artifact_can_activate_without_reimport(self):
+        self.selector_mode([("1.0", self.output), ("1.1", self.output2)])
+        self.cli("install", "hello@=1.0", "hello@1", "-y")
+        path = self.nix_release_catalog([("1.1", self.output2)])
+        self.cli("metadata", "--catalog", str(path), "-y")
+        self.cli("upgrade", "-y")
+        self.calls.clear()
+        self.cli("activate", "hello@=1.0", "-y")
+        self.assertEqual(self.hello(), "1.0")
+        self.assertFalse(any(c[1] == "--realise" for c in self.calls))
+        self.assertEqual(json.loads(self.cli("info", "hello@1", "--json"))["resolution"]["candidate"]["release_id"], "1.1")
+
+    def test_unknown_capability_and_downgrade_are_refused_without_new_profile(self):
+        self.selector_mode([("1.0", self.output), ("1.1", self.output2)])
+        self.cli("install", "hello@1", "-y")
+        path = self.nix_release_catalog([("1.0", self.output)])
+        self.cli("metadata", "--catalog", str(path), "-y")
+        before = self.state()
+        self.assertIn("downgrade", self.cli("upgrade", "-y", success=False))
+        self.assertEqual(self.state(), before)
+        statepath = self.root / "current/state.json"
+        value = json.loads(statepath.read_text())
+        value["capabilities"]["writer"] = "future-v2"
+        statepath.write_text(json.dumps(value))
+        self.assertIn("unsupported metadata capabilities", self.cli("status", success=False))
+
+
+    def test_unadopted_native_request_keeps_attribute_upgrade_policy_in_format3(self):
+        self.update()
+        self.cli("install", "hello", "-y")
+        self.selector_mode()
+        old = self.state()
+        self.selected[0].update(version="1.1", output=str(self.output2))
+        self.update()
+        self.cli("upgrade", "hello", "-y")
+        state = self.state()
+        self.assertEqual(state["format"], 3)
+        self.assertEqual(state["requests"]["hello:hello"]["policy"], "attribute")
+        self.assertNotEqual(state["active"], old["active"])
+        self.assertEqual(self.hello(), "1.0-rebuild")
+        self.assertEqual(state["release_catalog"], old["release_catalog"])
+
+    def test_nix_transactions_reject_packaging_revisions_without_an_adapter_mapping(self):
+        path = self.nix_release_catalog()
+        value = json.loads(path.read_text())
+        value["candidates"][0].update(release_id="1.0-r1", revision_scheme="mojt-r-v1", package_revision=1)
+        path.write_text(json.dumps(value))
+        self.assertIn("no packaging-revision mapping", self.cli("metadata", "--catalog", str(path), "--dry-run", success=False))
+        self.assertFalse(self.root.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

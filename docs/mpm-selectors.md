@@ -6,12 +6,11 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Ports selector and catalog contract — proposal 1
 
-Proposed 2026-10-27. This refines the accepted semantics in [mpm.md](mpm.md);
-new details below are proposals except the implemented slice documented at
-section 8. The backend-independent parser, resolver and pure upgrade planner
-are implemented, with a read-only CLI and a separate local Nix catalog exporter.
-PR #23's package operations and format-2 state remain unchanged. Selector-aware
-installation/activation, series aliases and state conversion are not implemented.
+Updated 2026-10-27. Sections 8–9 describe the implemented selector branch:
+pure resolution, Nix-backed transaction integration, series aliases and explicit
+format-3 metadata adoption. Earlier sections retain design context; where a
+future policy is broader than this increment, section 9 states the boundary.
+Libc integration remains deferred; dependency records stay opaque in the core.
 
 ## 1. Three identities
 
@@ -59,10 +58,10 @@ form for artifact references, so its release selector cannot be confused with
 one. This compatibility rule belongs to that adapter, not the pure parser. Do not infer a
 request or extract a release by splitting that installed ID.
 
-The future mutating grammar applies to install/info and activation. Upgrade still
+The selector-mode grammar applies to install/info and activation. Upgrade still
 filters recorded requests by logical name; it does not replace their policy.
 Remove retains exact artifact IDs or unambiguous installed names until series
-removal scope is separately specified. These are not implemented CLI additions.
+removal scope is separately specified. Section 9 describes the implemented selector-mode commands; removal scope remains unchanged.
 
 ## 3. Matching and ordering
 
@@ -178,8 +177,7 @@ another object. Security repairs need replacement consumer closures.
 
 ### Proposed logical record shape
 
-Illustrative JSON field names for implementation review, not input accepted
-by today's MPM. Artifact keys below are placeholders, not real Nix paths.
+Conceptual record shape; use section 9 for the implemented snapshot fields. Artifact keys below are placeholders, not real Nix paths.
 
 ```json
 {
@@ -220,8 +218,7 @@ Read-only inspection and no-op operations do not migrate state.
 
 A future request/catalog schema is a new format, with minimum reader/writer
 capabilities. It must preserve immutable old artifact/closure records and stop
-older writers from dropping unfamiliar policies. This document does not assign
-or write that runtime format yet.
+older writers from dropping unfamiliar policies. Section 9 assigns format 3 and documents its explicit transition.
 
 Reuse typed identities and catalog concepts for future System planning, but
 keep its request set/view separate. Plan from the selected deployment; show
@@ -241,14 +238,14 @@ Before claiming selector support:
 - Transaction tests preserve exact pins and old closures on same-release libc
   rebuilds, leave unrelated areas/project references intact, and retain no-op,
   dry-run and failure-before/after-commit behavior.
-- Real Nix acceptance records old/new ELF interpreter and libc objects, executes
-  both versions after upgrade and recovery, and checks ordinary-user permissions.
+- Real Nix acceptance executes both versions after upgrade and checks ordinary-user
+  permissions. Additional mixed-libc/ELF runtime investigation is deferred by owner direction.
 - Only then extend `mpm(1)` as implemented behavior and run fresh VM A/B/A
   metadata compatibility tests. A documentation proposal is not such evidence.
 
-The next implementation should start with pure parser/version/catalog resolution
-and fixtures, followed by activation/alias integration and a separately visible
-state migration. Project locks and retention/GC follow these semantics.
+The parser/resolver and explicit transaction integration are now present (sections
+8–9). Real mutation and fresh-image acceptance remain required before merging
+this increment. Project locks and retention/GC follow these semantics.
 
 ## 8. Implemented slice: backend-independent resolution
 
@@ -361,3 +358,143 @@ the separate Base archive ownership test is excluded locally because this
 runtime rejects its chown-to-UID-1000 setup. It remains enabled in CI.
 These are agent tests; real local-Nix exporter and new-VM resolution acceptance
 are not yet owner-reported. The earlier hello upgrade test is separate evidence.
+
+
+## 9. Implemented transaction integration (2026-10-27)
+
+The same pure resolver now drives Ports installation, installed-only activation
+and upgrade. `tools/mpm_selector_ports.py` owns request/selection/series-alias
+policy without I/O or package-manager commands. It treats installed IDs and
+backend records as opaque data. `mpm-nix-prototype` adapts these plans to the
+existing Nix import, GC-root, command-export and atomic profile publisher.
+Alternative backends can supply resolved records without changing version or
+request policy. The Nix transaction adapter currently accepts upstream-only
+releases from its exporter; it has no packaging-revision mapping. Declared
+revision ordering remains supported and tested in the pure core. Nix path syntax, source verification and closure acquisition
+remain in the Nix adapter; this is not a generic dependency solver.
+
+### Explicit catalog and metadata adoption
+
+```sh
+mpm ports metadata --catalog hello-releases.json --dry-run
+mpm ports metadata --catalog hello-releases.json -y
+# Optional: explicitly replace native requests whose target is already installed.
+mpm ports metadata --catalog hello-releases.json --adopt hello@2.12 --dry-run
+mpm ports metadata --catalog hello-releases.json --adopt hello@2.12 -y
+```
+
+`metadata` validates the neutral catalog and Nix source/closure evidence. It
+writes format 3 with reader/writer capability `mpm-ports-selectors-v1` only after
+approval. Dry-run, cancellation and inspection do not convert state. Repeating
+an identical plan creates no profile/history transaction. A fresh root can opt
+in directly. The immutable JSON view is copied into `release_catalog`; later
+operations need no original JSON file. `update` continues managing the native
+attribute catalog; only `metadata` replaces the selector release view.
+
+Existing native requests retain `policy=attribute`, their targets and original
+behavior. No stable/latest/series meaning is guessed. `--adopt` explicitly maps
+native request IDs to a digest-derived opaque selector request ID and records
+`metadata_mapping` in the snapshot/history. The resolved adoption target must
+already be installed and equal the old native request target. Adoption never
+imports an artifact or moves defaults. An existing exact default remains exact;
+explicit series activation is needed to make it follow. Multiple explicit
+`--adopt` arguments are allowed. Re-adopting an already installed selector build
+is also an explicit way to accept a changed same-release build lock.
+
+Format 3 adds `capabilities`, `release_catalog` and selector requests to the
+existing snapshot. Selector requests contain `name`, `policy=selector`, `target`,
+the typed `selector`, and complete resolved `selection` evidence. Installed
+records additionally retain their accepted `release` evidence. Exact pins are
+still represented by a null active `selection_policy`; native and selector
+request IDs can coexist in that map. Validation checks request/target evidence,
+binding, alias ownership and capabilities before publication.
+
+Older System generations with format-1/2 MPM cannot read or write format 3;
+they fail explicitly. Published program links remain usable. Do not use an
+older writer against the converted shared state. A future `system upgrade`
+must verify the selected generation's metadata capabilities before scheduling
+it; boot rollback does not roll back persistent Ports metadata. There is no
+automatic reverse conversion or general metadata rollback command.
+
+### Installation, activation, aliases and upgrade
+
+```sh
+mpm ports install hello@2.12 -y
+mpm ports install hello@=2.12.1 -y
+mpm ports info hello@2.12 --json
+mpm ports activate hello@2.12 -y
+mpm ports activate hello@=2.12.1 -y
+mpm ports upgrade hello --dry-run
+```
+
+Selector mode requires explicit install selectors (bare names mean stable
+latest); `--attribute` is a native-mode option. Each distinct typed selector
+and catalog area/name/channel/platform binding identifies a request. Multiple
+series and exact requests may coexist for a logical name. First installation
+claims defaults unless `--no-activate`; series/latest follow that request,
+exact requests pin the concrete artifact. Later installations retain new
+artifacts without moving existing defaults or accepted request targets.
+
+Activation resolves against **installed release evidence only**, not today's
+available builds. It can select a withdrawn installed release, downloads
+nothing and adds no payload/GC roots. Bare/latest and series choose the newest
+eligible installed release; multiple same-release builds require a literal
+artifact ID. Historical producer build preferences do not silently choose one.
+Exact release activation also needs a unique installed build. Literal IDs from
+`list --exact` take precedence over selector parsing and pin defaults. `--follow`
+on a literal ID requires exactly one moving request already targeting it;
+`--follow` never turns an exact-release request into a moving request. Native
+artifacts without release evidence keep their original activation rules.
+
+An explicitly tracked series creates `COMMAND-SERIES` for every exported
+command, e.g. `hello-2.12`, independently of the unqualified command. Fixed
+aliases retain their original version/full-output-hash spelling. All aliases
+share one collision/reserved-name check; publication never overwrites another
+owner or invents a renamed alias. Unknown exports are checked after import,
+before the atomic switch. Removing a selector request's target removes that
+request and its series aliases; it does not invent a new eligible target.
+Other retained requests/artifacts remain. Default fallback retains the existing
+recency rule and is pinned unless it equals a retained followed request target.
+
+Upgrade calls the shared pure planner for selector requests and preserves the
+native policy for unadopted requests. Exact requests retain the original build
+and closure even if withdrawn. Series/latest may advance to a newer eligible
+release or explicitly preferred same-release rebuild, retaining older builds.
+Only following defaults move; series aliases follow their own accepted targets.
+No source refresh is implicit. Downgrades, ambiguous versions/builds and changed
+integrity for a retained object stop the plan. Dependency evidence is opaque:
+there is no libc-specific comparison, loader modification or compatibility fix.
+
+Plans display format/capability changes, request mappings, old/new resolution
+and exact closure additions/removals plus accepted series aliases. Publication
+verifies actual local Nix closures/NAR hashes against accepted catalog evidence;
+mismatches preserve the old current profile. Failed imports can leave retained
+objects, as before. State, aliases and history switch atomically. History now
+includes format/capabilities, both catalog scopes and metadata mappings, without
+rewriting old transactions. Other MPM areas/project references are not modified.
+
+### Measured and pending acceptance
+
+Owner acceptance of the preceding resolver slice passed on Debian without Nix
+and inside the existing Distrobox lab with real hello 2.12.1/2.12.3. It verified
+latest/series/exact choices, whole-component exclusion, pinned source revisions,
+recorded closure/NAR evidence and provenance. Those tests did not mutate Ports.
+
+The new integration is covered by pure non-Nix request-policy tests and mocked
+Nix transactions, including pins, multiple series, installed-only ambiguity,
+explicit adoption, dry-runs, no-ops, collisions, integrity mismatches and failure
+before/after the profile switch. Real transaction acceptance is still pending:
+
+```sh
+python3 tests/run-mpm-selectors.py --root /NEW/LAB/state \
+  --catalog /EXISTING/hello-releases.json
+```
+
+This harness requires the already-exported two-version catalog, retains its new
+isolated lab and tests installation, exact pins, moving aliases, upgrade,
+activation, no-op history and execution of both hello artifacts. It changes no
+live Ports/System state. Fresh VM acceptance must use an MPM-capable image on
+both A and B before converting shared metadata, then test A/B/A persistence and
+ordinary-user mutation denial. The old format-2 reference VM remains a useful
+unchanged reference. Runtime libc/desktop and System deployment compatibility
+work remains deferred; no mixed-libc safety claim follows from these tests.
