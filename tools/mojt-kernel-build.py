@@ -17,6 +17,17 @@ import shutil
 import subprocess
 import sys
 
+# Commands used by the driver and upstream config/Kbuild scripts. Keep this
+# independent of the package backend and reject incomplete private PATHs early.
+REQUIRED_COMMANDS = (
+    'make', 'bash', 'gcc', 'g++', 'ld', 'as', 'ar', 'nm', 'objcopy', 'objdump',
+    'strip', 'depmod', 'modinfo', 'git', 'bc', 'flex', 'bison', 'perl',
+    'pkg-config', 'gzip', 'mv', 'cp', 'rm', 'mkdir', 'sed', 'grep', 'tr',
+    'cat', 'sort', 'uniq', 'expr', 'wc', 'cut', 'head', 'tail', 'ln', 'touch',
+    'readlink', 'basename', 'dirname', 'date', 'uname', 'od', 'dd', 'printf',
+    'test', 'echo',
+)
+
 
 def require(ok, message):
     if not ok: raise ValueError(message)
@@ -84,8 +95,9 @@ def build(args):
     require(not os.path.lexists(args.output),'kernel output must not exist')
     for p in (args.config.resolve(),args.plan.resolve(),environment):
         require(output!=p and output not in p.parents and p not in output.parents,'output and input paths must be separate')
-    required=['make','bash','gcc','g++','ld','as','ar','nm','objcopy','objdump','strip','depmod','modinfo','git','bc','flex','bison','perl','pkg-config','gzip']
-    require(all((environment/'bin'/x).is_file() for x in required),'kernel tools missing')
+    missing=[x for x in REQUIRED_COMMANDS if not
+             ((environment/'bin'/x).is_file() and os.access(environment/'bin'/x, os.X_OK))]
+    require(not missing,'kernel tools missing or not executable: '+', '.join(missing))
     print('Plan: '+plan['source']['tag']+' -> '+plan['version']+plan['localversion'])
     print('Output: '+str(output)+'; jobs: '+str(args.jobs))
     if args.dry_run:

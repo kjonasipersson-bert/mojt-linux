@@ -6,6 +6,8 @@ import copy
 import importlib.util
 import json
 from pathlib import Path
+import shutil
+import subprocess
 import tempfile
 import types
 import unittest
@@ -74,8 +76,8 @@ class KernelTests(unittest.TestCase):
     def test_dry_run_never_fetches_or_creates_outputs_and_refuses_wrong_config_hash(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);environment=root/'env';(environment/'bin').mkdir(parents=True)
-            for name in ['make','bash','gcc','g++','ld','as','ar','nm','objcopy','objdump','strip','depmod','modinfo','git','bc','flex','bison','perl','pkg-config','gzip']:
-                (environment/'bin'/name).write_text('tool')
+            for name in kernel.REQUIRED_COMMANDS:
+                tool=environment/'bin'/name;tool.write_text('tool');tool.chmod(0o755)
             (environment/'environment.json').write_text(json.dumps(dict(format='mojt-build-env-v1',profile='kernel',probes={'compiler':{}})))
             config=root/'debian.config';config.write_text('CONFIG_X86_64=y\n')
             args=types.SimpleNamespace(plan=REPO/'manifests/kernel-first-build.json',config=config,config_sha256=kernel.sha(config),environment=environment,output=root/'new',jobs=2,dry_run=True,yes=False)
@@ -84,6 +86,9 @@ class KernelTests(unittest.TestCase):
                 self.assertFalse(args.output.exists())
                 args.config_sha256='0'*64
                 with self.assertRaisesRegex(ValueError,'hash differs'):kernel.build(args)
+                args.config_sha256=kernel.sha(config)
+                (environment/'bin/mv').unlink()
+                with self.assertRaisesRegex(ValueError,'kernel tools missing.*mv'):kernel.build(args)
             self.assertFalse(args.output.exists())
 
     def test_unknown_or_conflicting_policy_fails_before_build(self):
@@ -98,8 +103,8 @@ class KernelTests(unittest.TestCase):
     def test_full_command_sequence_stages_versioned_pair_and_tag_mismatch_stops_early(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);environment=root/'env';(environment/'bin').mkdir(parents=True)
-            for name in ['make','bash','gcc','g++','ld','as','ar','nm','objcopy','objdump','strip','depmod','modinfo','git','bc','flex','bison','perl','pkg-config','gzip']:
-                (environment/'bin'/name).write_text('tool')
+            for name in kernel.REQUIRED_COMMANDS:
+                tool=environment/'bin'/name;tool.write_text('tool');tool.chmod(0o755)
             (environment/'environment.json').write_text(json.dumps(dict(format='mojt-build-env-v1',profile='kernel',probes={'compiler':{}})))
             config=root/'debian.config';config.write_text('CONFIG_X86_64=y\n')
             args=types.SimpleNamespace(plan=REPO/'manifests/kernel-first-build.json',config=config,config_sha256=kernel.sha(config),environment=environment,output=root/'build',jobs=2,dry_run=False,yes=True)
@@ -141,6 +146,33 @@ class KernelTests(unittest.TestCase):
             self.assertTrue((args.output/'.building').exists())
             self.assertFalse((args.output/'kernel.json').exists())
             self.assertFalse(any(Path(c[1]).name=='make' for c in calls))
+
+    def test_upstream_config_edits_with_only_declared_private_commands(self):
+        # Exact upstream scripts/config from the pinned v6.12.107 source.
+        # Exercise its real sed + mv replacement, without inheriting host PATH.
+        script=REPO/'tests/fixtures/linux-6.12.107-scripts-config'
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);private=root/'bin';private.mkdir()
+            for role in ('coreutils','grep','sed','shell'):
+                for name in env.KERNEL_ROLES[role][1]:
+                    executable=shutil.which(name)
+                    self.assertIsNotNone(executable,name)
+                    (private/name).symlink_to(executable)
+            config=root/'.config'
+            config.write_text('CONFIG_64BIT=y\nCONFIG_MODULES=m\nCONFIG_LOCALVERSION="-debian"\nCONFIG_UNUSED=y\n')
+            process_env=dict(PATH=str(private),HOME=str(root),LANG='C',LC_ALL='C')
+            command=[str(private/'bash'),str(script),'--file',str(config)]
+            subprocess.run(command+['--enable','64BIT','--enable','MODULES',
+                '--set-str','LOCALVERSION','-mojt1','--undefine','UNUSED'],
+                env=process_env,check=True,capture_output=True,text=True)
+            values=kernel.config_values(config)
+            self.assertEqual(values['64BIT'],'y');self.assertEqual(values['MODULES'],'y')
+            self.assertEqual(values['LOCALVERSION'],'"-mojt1"');self.assertNotIn('UNUSED',values)
+            self.assertFalse((root/'.config.swp').exists())
+            (private/'mv').unlink()
+            result=subprocess.run(command+['--disable','64BIT'],env=process_env,capture_output=True,text=True)
+            self.assertNotEqual(result.returncode,0)
+            self.assertIn('mv: command not found',result.stderr)
 
 
 if __name__=='__main__':unittest.main()

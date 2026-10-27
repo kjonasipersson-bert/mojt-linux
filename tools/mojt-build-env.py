@@ -56,7 +56,8 @@ KERNEL_ROLES = {
 KERNEL_ROLES["kmod"] = ("kmod", ["modprobe", "depmod", "modinfo"])
 KERNEL_ROLES["binutils"] = ("binutils", ["readelf", "as", "ld", "ar", "nm", "objcopy", "objdump", "strip", "ranlib", "addr2line", "size", "strings"])
 KERNEL_ROLES["coreutils"] = (ROLES["coreutils"][0], ROLES["coreutils"][1] +
-                            ["wc", "expr", "printf", "uname", "nproc", "date", "comm", "join", "paste", "cksum", "od", "dd", "true", "false"])
+                            ["wc", "expr", "printf", "uname", "nproc", "date", "comm", "join", "paste", "cksum", "od", "dd", "true", "false",
+                             "mv", "rmdir", "seq", "uniq", "tee", "sleep", "yes", "test", "echo"])
 KERNEL_ROLES["diffutils"] = ("diffutils", ["cmp", "diff"])
 OUTPUT_SELECTION = {"elf-dev": "dev", "elf-lib": "lib", "crypto-dev": "dev", "crypto-lib": "lib"}
 

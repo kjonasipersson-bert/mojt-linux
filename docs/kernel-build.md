@@ -52,8 +52,20 @@ pkg-config, gzip, diffutils and assembler/linker/binutils commands. It selects
 explicit dev/lib outputs for elfutils and OpenSSL. PKG_CONFIG_LIBDIR names only
 the pinned development metadata; no global loader path is added. GCC 14 is an
 initial conservative recipe choice, not a claim that every newer GCC fails.
-Real attribute/substitute availability in the owner's pinned source is pending
-preview. No build-from-source fallback is enabled during tool acquisition.
+The owner verified binary availability and a successful native C compile/link/run
+probe with GCC 14.4, libelf and OpenSSL. The measured probe loader and libc were
+inside the pinned glibc 2.44 closure. No build-from-source fallback is enabled
+during tool acquisition.
+
+The first kernel attempt then exposed a missing `mv` command in the private
+PATH, before compilation. The kernel profile now exports it and the surrounding
+core utilities; image-profile commands stay unchanged. A regression test runs
+the exact pinned upstream `scripts/config` with only declared commands, and
+confirms that removing `mv` reproduces the failure. The build driver checks
+required command executability before fetching source, including for dry-run.
+Prepare a new compiler environment and use a fresh build output after this fix;
+retain the incomplete attempt for inspection instead of editing its recorded
+environment or treating it as a completed build.
 
 After import, the preparer compiles, links, executes and inspects a small C probe
 using libelf and OpenSSL. The probe's ELF loader/libraries must resolve inside
@@ -113,9 +125,10 @@ settings reduce incidental variation but do not establish reproducible binaries.
 ## Acceptance boundary
 
 Focused tests cover the locked source/config policy, explicit command paths,
-private module staging, config/commit failures, dry-run isolation and compiler
-probe wiring. Source compilation and substitute availability have not been
-performed in the agent runtime; they need native Mojt acceptance.
+private module staging, config/commit failures, dry-run isolation, compiler
+probe wiring and real upstream config edits in the declared private PATH.
+Compiler import/probe acceptance is recorded above; the corrected profile and
+full kernel compilation still need native Mojt acceptance.
 
 Next measured steps: compiler profile preview/import and C probe, one kernel
 build, then one fresh VM with the new kernel **and complete matching modules**
