@@ -35,9 +35,26 @@ class KernelTests(unittest.TestCase):
             path.write_text(path.read_text().replace('CONFIG_EXT4_FS=y','CONFIG_EXT4_FS=m'))
             with self.assertRaisesRegex(ValueError,'EXT4_FS'):kernel.check_config(path,plan)
 
+    def test_unsigned_vm_policy_disables_upstream_lockdown_selector_and_reports_all_conflicts(self):
+        plan=kernel.read_plan(REPO/'manifests/kernel-first-build.json')
+        upstream=(REPO/'tests/fixtures/linux-6.12.107-lockdown-Kconfig').read_text()
+        block=upstream.split('config SECURITY_LOCKDOWN_LSM\n',1)[1].split('\nconfig ',1)[0]
+        self.assertIn('select MODULE_SIG if MODULES',block)
+        for name in ('SECURITY_LOCKDOWN_LSM','SECURITY_LOCKDOWN_LSM_EARLY','IMA_APPRAISE_MODSIG','MODULE_SIG'):
+            self.assertIn(name,plan['configuration']['disable'])
+        with tempfile.TemporaryDirectory() as tmp:
+            config=Path(tmp)/'.config'
+            lines=['CONFIG_'+x+'=y' for x in plan['configuration']['enable']]
+            lines+=['CONFIG_'+k+'='+json.dumps(v) for k,v in dict(plan['configuration']['strings'],LOCALVERSION=plan['localversion']).items()]
+            config.write_text('\n'.join(lines)+'\nCONFIG_MODULE_SIG=y\nCONFIG_MODULE_SIG_FORCE=y\n')
+            with self.assertRaises(ValueError) as error:kernel.check_config(config,plan)
+            self.assertIn('disabled config re-enabled: MODULE_SIG\n',str(error.exception))
+            self.assertIn('disabled config re-enabled: MODULE_SIG_FORCE',str(error.exception))
+
     def test_make_uses_private_host_compiler_shell_and_out_of_tree_paths(self):
         command=kernel.make_command(Path('/private/source'),Path('/private/objects'),Path('/tools'),2,'INSTALL_MOD_PATH=/private/root','modules_install')
         self.assertIn('O=/private/objects',command)
+        self.assertIn('LOCALVERSION=',command)
         self.assertIn('HOSTCC=/tools/bin/gcc',command)
         self.assertIn('CONFIG_SHELL=/tools/bin/bash',command)
         self.assertIn('LD=/tools/bin/ld',command)
@@ -112,7 +129,9 @@ class KernelTests(unittest.TestCase):
             def run(command,**kwargs):
                 self.assertEqual(command[0],str(environment/'run'));calls.append(command)
                 name=Path(command[1]).name;stdout=''
+                if name=='git' and 'init' in command:(Path(command[3])/'.git').mkdir()
                 if name=='git' and 'rev-parse' in command:stdout=plan['source']['commit']
+                if name=='git' and 'get-url' in command:stdout=plan['source']['url']
                 if name=='make':
                     if 'olddefconfig' in command:
                         text=['CONFIG_'+x+'=y' for x in plan['configuration']['enable']]
@@ -146,6 +165,27 @@ class KernelTests(unittest.TestCase):
             self.assertTrue((args.output/'.building').exists())
             self.assertFalse((args.output/'kernel.json').exists())
             self.assertFalse(any(Path(c[1]).name=='make' for c in calls))
+
+            cached=root/'build/source';args.source=cached;args.output=root/'cached-build';calls.clear()
+            with mock.patch.object(kernel.subprocess,'run',side_effect=run):kernel.build(args)
+            self.assertTrue((args.output/'kernel.json').is_file())
+            self.assertTrue(any('O='+str(args.output/'objects') in c for c in calls))
+            self.assertTrue(all(str(cached) in c for c in calls if Path(c[1]).name=='make'))
+            self.assertFalse(any(x in c for c in calls for x in ('fetch','checkout','init')))
+            for bad in ('origin','dirty','config'):
+                args.output=root/('cached-'+bad);calls.clear()
+                def invalid(command,**kwargs):
+                    if bad=='origin' and 'get-url' in command:return types.SimpleNamespace(stdout='wrong-origin')
+                    if bad=='dirty' and 'status' in command:return types.SimpleNamespace(stdout=' M scripts/config')
+                    result=run(command,**kwargs)
+                    if bad=='config' and 'olddefconfig' in command:
+                        with (args.output/'objects/.config').open('a') as f:f.write('CONFIG_MODULE_SIG=y\n')
+                    return result
+                with mock.patch.object(kernel.subprocess,'run',side_effect=invalid),self.assertRaises(ValueError):kernel.build(args)
+                self.assertTrue((args.output/'.building').is_file())
+                self.assertFalse((args.output/'kernel.json').exists())
+                self.assertFalse(any('bzImage' in c for c in calls))
+                if bad=='config':self.assertTrue((args.output/'config.diff').is_file())
 
     def test_upstream_config_edits_with_only_declared_private_commands(self):
         # Exact upstream scripts/config from the pinned v6.12.107 source.

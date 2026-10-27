@@ -37,6 +37,16 @@ debug/toolchain requirements. The complete before/after config diff is retained;
 olddefconfig must leave all required symbols set as requested or the build stops.
 The policy is for a VM experiment, not a production Secure Boot policy.
 
+In this unsigned experiment the policy also disables the lockdown LSM and its
+early-init option: upstream `SECURITY_LOCKDOWN_LSM` selects `MODULE_SIG` when
+modules are enabled, overriding a direct request to turn verification off.
+It disables IMA's module-style signature appraisal support as well, avoiding a
+second module-signing-key dependency. Other security facilities are retained.
+The owner's second attempt successfully built the Kconfig host programs before
+the strict policy check caught the lockdown/signature conflict. The corrected
+full configuration still needs native acceptance. The Binder `m`-to-bool warning
+from the Debian starting config is separate from this fatal policy mismatch.
+
 ## Separate compiler environment
 
 The accepted image environment remains unchanged. Prepare a **new** directory:
@@ -108,6 +118,21 @@ explicit shell/host compiler/target tool paths. It applies scripts/config and
 olddefconfig, checks the config and release, builds bzImage plus modules, then
 uses INSTALL_MOD_PATH and depmod in a new staging root. It never runs make install
 or writes the running machine's /lib/modules or /boot.
+
+After a preparation failure, `--source /EXISTING/CLEAN/CHECKOUT` reuses the
+already fetched source in place, while keeping objects and staging in a new
+output directory. Before config/build it verifies the exact pinned HEAD,
+expected origin URL and a clean Git tree; it checks source cleanliness again
+after building. It does not fetch, reset or check out anything in this mode.
+Dry-run only validates local paths and inputs, and does not run Git verification.
+Do not delete the reused checkout while the build needs it. This is source
+reuse, not resumption of an incomplete object/staging tree.
+
+Make receives an explicit empty `LOCALVERSION` command-line suffix, retaining
+the plan's `CONFIG_LOCALVERSION`. This prevents an unrecorded `+` from an absent
+local tag ref in a shallow checkout; commit and cleanliness checks remain strict.
+The full config diff is written before policy validation and all mismatches are
+reported together, so a failed check retains useful evidence.
 
 Successful output contains:
 
