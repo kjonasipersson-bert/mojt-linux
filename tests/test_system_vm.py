@@ -154,7 +154,7 @@ class SystemVmTests(unittest.TestCase):
         (self.tree / "base/current").symlink_to("0.1.3")
         system.write(self.tree / ".install-lock", "")
         system.write(self.tree / "state/layout-version", "1\n")
-        system.write(self.tree / "releases/base-0.1.3.toml", "format = 1\n")
+        system.write(self.tree / "releases/base-0.1.3.toml", 'format = 1\n[base]\nversion="0.1.3"\narchitecture="x86_64"\n[abi]\nlibc="glibc"\nlibc_version="2.41"\n[state]\nlayout_version=1\n')
         before = system.tree_hash(self.tree)
         kernel = self.root / "vmlinuz-test"
         kernel.write_bytes(b"synthetic kernel")
@@ -1163,5 +1163,31 @@ esac""")
         self.assertFalse(output.exists())
 
 
+    def test_final_system_manifest_is_stable_and_blocks_an_old_metadata_writer(self):
+        directory, record = self.install(5)
+        system.write(self.tree / "releases/base-0.1.3.toml", 'format=1\n[base]\nversion="0.1.3"\narchitecture="x86_64"\n[abi]\nlibc="glibc"\nlibc_version="2.41"\n[state]\nlayout_version=1\n')
+        system.finalize_manifest(self.tree, directory.name, "0.1.3", REPO)
+        path = directory / "manifest.json"
+        original = path.read_bytes()
+        manifest = json.loads(original)
+        self.assertEqual(manifest["description"]["support"]["ports"]["write"], [1,2,3])
+        self.assertIn("/run/mojt-system/bin/bash", manifest["description"]["provides"])
+        self.assertIn("tools/mpm-nix-prototype", manifest["description"]["profile"])
+        self.assertNotIn("manifest.json", manifest["description"]["profile"])
+        self.assertFalse((directory / "tools/__pycache__").exists())
+        system.finalize_manifest(self.tree, directory.name, "0.1.3", REPO)
+        self.assertEqual(path.read_bytes(), original)
+        current = self.tree / "state/var/lib/mojt/ports/current"
+        current.mkdir(parents=True)
+        system.write(current / "state.json", json.dumps(dict(format=3, capabilities=dict(
+            reader="mpm-ports-selectors-v1", writer="mpm-ports-selectors-v1"))))
+        backend = directory / "tools/mpm-nix-prototype"
+        backend.write_text(backend.read_text().replace("SUPPORTED_STATE_FORMATS = (1, 2, 3)", "SUPPORTED_STATE_FORMATS = (1, 2)"))
+        with self.assertRaisesRegex(ValueError, "Ports format 3 not supported"):
+            system.finalize_manifest(self.tree, directory.name, "0.1.3", REPO)
+        self.assertEqual(path.read_bytes(), original)
+
+
 if __name__ == "__main__":
     unittest.main()
+

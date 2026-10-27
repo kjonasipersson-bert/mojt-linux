@@ -20,6 +20,8 @@ import tomllib
 import uuid
 
 
+SUPPORTED_STATE_FORMATS = (1, 2, 3)
+SUPPORTED_CAPABILITIES = ("mpm-ports-selectors-v1",)
 STORE = Path("/nix/store")
 MARKER = "Mojt MPM Nix experiment 1\n"
 NAME = r"[a-z][a-z0-9-]*"
@@ -246,7 +248,7 @@ def load_state(root):
     generation = root / selected
     require(not generation.is_symlink(), "unmanaged generation")
     state = json.loads((generation / "state.json").read_text())
-    require(type(state["format"]) is int and state["format"] in (1, 2, 3), "unsupported state format")
+    require(type(state["format"]) is int and state["format"] in SUPPORTED_STATE_FORMATS, "unsupported state format")
     validate_model(state)
     bin_dir = generation / "bin"
     require(bin_dir.is_dir() and not bin_dir.is_symlink(), "unmanaged profile bin")
@@ -1050,3 +1052,4 @@ def main(argv=None):
 
 if __name__ == "__main__":
     sys.exit(main())
+

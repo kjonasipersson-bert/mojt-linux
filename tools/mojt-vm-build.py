@@ -709,6 +709,7 @@ def additional_pairs(entries, *, tree, work, target, first_base, support, args,
         script = boot.init_script(script, root_uuid, selected, base)
         initramfs = make_initramfs(work / ("initroot-" + str(number)), args.busybox, modules,
                                   script, support.SHUTDOWN, extra_applets=("findfs",))
+        support.finalize_manifest(candidate, selected, base, Path(__file__).resolve().parents[1])
         generations.merge(tree, candidate, base, selected, support.tree_hash)
         records.append(boot.stage(tree, kernel, initramfs, modules, release=release,
                                   base=base, system=selected, root_uuid=root_uuid, console=console))
@@ -874,6 +875,8 @@ def build(args):
                 boot_record = boot.stage(tree, kernel, initramfs, modules, release=release,
                                          base=version, system=system_version, root_uuid=root_uuid,
                                          console=console)
+            if support:
+                support.finalize_manifest(tree, system_version, version, Path(__file__).resolve().parents[1])
             extra_records, extra_network = additional_pairs(
                 entries, tree=tree, work=temp, target=target, first_base=version,
                 support=support, args=args, root_uuid=root_uuid, console=console,
