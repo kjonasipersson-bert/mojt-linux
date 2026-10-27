@@ -52,7 +52,7 @@ updates to an existing boot disk or power-loss recovery.
 | 1 | Base/System generations | VM Base/System and different-kernel return experiments completed. Retain the reference images; production boot-disk updates, compatibility and automatic fallback remain future work. |
 | 2 | More complete System | Diagnostics and console/time/journal acceptance completed. Timezone/UTF-8/manual checks accepted on System A; separate A/B checks deferred to the next stage. The account A/B/A run now preserves new users, identity and home data, with working PAM/sudo, session cleanup and shared Ports. Superseded-password rejection is owner-confirmed. Account integration merged; retain its reference image. |
 | 3 | MPM development | PR #23 merged after real two-snapshot Nix upgrade/recovery and Mojt VM A/B/A acceptance. Selector branch now integrates backend-independent resolution with installation/activation, series aliases and explicit metadata adoption; real two-release transaction and compatible-image VM A/B/A acceptance passed; repeated user checks on B were explicitly waived. Libc integration is deferred; preserve opaque dependency identities. A limited System manifest/declared-compatibility increment follows; project locks precede pruning/GC. |
-| 4 | Build System on Mojt | Run the existing build tools inside Mojt with pinned inputs and a controlled build environment, producing a new Mojt image. |
+| 4 | Build System on Mojt | Owner-run full image assembly and result boot passed on 2026-10-27: frozen Base 0.1.3, step-10 System payload and Debian 6.12.107 kernel/modules. Inputs unchanged; result system-selfbuild-A boots with root serial login and no failed units. This is image assembly from prebuilt inputs; source compilation remains later work. |
 | 5 | Own-built Linux kernel | Establish a documented kernel build/configuration and package matching modules as a versioned Kernel input; start near the working Debian configuration. |
 
 MPM work continues alongside System integration where needed. The current
@@ -76,8 +76,8 @@ System deployment compatibility must check this before scheduling generations.
 Libc work remains deferred: preserve exact opaque dependency identities, without
 adding a loader replacement or compatibility solver to this increment.
 
-Keep the latest tested reference VM. Optional SSH, personal Ports, running
-the build on Mojt and an own-built kernel remain later tracks.
+Keep the latest tested reference VM. Optional SSH and personal Ports remain later tracks. Image assembly on Mojt
+has now passed; an own-built kernel is the next build milestone.
 
 ## Implementation boundaries
 
@@ -98,7 +98,7 @@ content, directly selected components, dependencies and exact changes.
 
 Following selector merge, [System manifests and preflight](system-manifest.md)
 provide an immutable content description, metadata capability gate and read-only
-candidate/running/explicitly-selected comparison. The next branch implements
+candidate/running/explicitly-selected comparison. PR #25 implemented
 this in the fresh-image builder; it does not implement existing-disk System
 upgrade. Targeted automated acceptance is sufficient for this declaration layer;
 manual runtime acceptance accompanies the first build-on-Mojt image experiment.
@@ -106,14 +106,19 @@ A complete System updater, project locks and GC are not prerequisites for that
 controlled build experiment. Libc/desktop work remains deferred.
 
 
-## Build-on-Mojt preparation
+## Build-on-Mojt acceptance
 
-PR #25's manifest/preflight block passed CI and merged. The next branch prepares
-[a private image-build environment](build-on-mojt.md): pinned binary tools,
-static clean launcher, recorded ELF loader/closure evidence and limited runtime
-probes. It leaves Base/System/Ports activation untouched. Native Mojt package
-preview/import, frozen-input transfer, one image build and result boot remain
-owner-run acceptance. The first build assembles existing inputs; compiling System
-packages and an own-built kernel remain later milestones. Libc failures are
-reported with exact evidence, without replacing Base libraries or broadening
-search paths.
+PR #25's manifest/preflight block passed CI and merged. The owner then accepted
+[the private build environment](build-on-mojt.md) and [full image assembly/boot](build-workspace.md#owner-full-image-build-and-result-boot-2026-10-27).
+The static clean launcher, pinned tools, ELF closure checks, native Python
+DNS/HTTPS runtime and disk/EFI tools passed. A private 64-GiB workspace carried
+frozen Base/System/kernel/source inputs; verification passed before and after
+assembly inside Mojt. The resulting system-selfbuild-A booted on Debian with
+authenticated ttyS0 login and no failed units. Keep the successful result and
+reference VM. No repeated account/network/generation checks are required here.
+
+The next build milestone is a documented own-built kernel/configuration with
+matching versioned modules, retaining the working Debian kernel as reference.
+Compiling all System packages, production existing-disk updates, project locks
+and GC remain separate work. Libc evidence is bounded to the measured tools and
+runtime; no Base libraries were replaced or global library paths added.
