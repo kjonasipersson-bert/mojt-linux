@@ -505,10 +505,16 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
             export(name, "nix", "bin/" + name)
         python = export("python3", "python", "bin/python3")
         write(system / "tools/mpm-nix-prototype", (repo / "tools/mpm-nix-prototype").read_text(), 0o755)
+        write(system / "tools/mpm_selector_ports.py", (repo / "tools/mpm_selector_ports.py").read_text())
+        write(system / "tools/mpm_selection.py", (repo / "tools/mpm_selection.py").read_text())
+        write(system / "tests/mpm-release-example.json", (repo / "manifests/mpm-release-example.json").read_text())
+        write(system / "tools/mpm-nix-catalog.py", (repo / "tools/mpm-nix-catalog.py").read_text(), 0o755)
         write(system / "tests/run-mpm-nix-python.py",
               (repo / "tests/run-mpm-nix-python.py").read_text(), 0o755)
         write(system / "tests/run-mpm-nix-ports.py",
               (repo / "tests/run-mpm-nix-ports.py").read_text(), 0o755)
+        write(system / "tests/run-mpm-selectors.py",
+              (repo / "tests/run-mpm-selectors.py").read_text(), 0o755)
         write(system / "tests/run-mpm-nix-upgrade.py",
               (repo / "tests/run-mpm-nix-upgrade.py").read_text(), 0o755)
         write(system / "bin/mpm", "#!/bin/sh\n"

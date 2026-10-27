@@ -1,9 +1,9 @@
 .\" Mojt Linux
 .\" Copyright (C) 2026 Jonas Persson
 .\" SPDX-License-Identifier: GPL-2.0-only
-.TH MPM 1 "2026-10-26" "Mojt Linux" "User Commands"
+.TH MPM 1 "2026-10-27" "Mojt Linux" "User Commands"
 .SH NAME
-mpm \- manage Mojt Ports from a pinned Nixpkgs source
+mpm \- manage Mojt Ports from explicit pinned catalogs
 .SH SYNOPSIS
 .B mpm
 .RI [ global-options ] " ports " action " " [ arguments ]
@@ -56,8 +56,9 @@ without changing defaults. All selected requests form one atomic profile plan.
 Different versions must be dotted nonnegative integers; numeric downgrades
 are refused. An equal version with a different output hash is an eligible
 rebuild. Nonnumeric version transitions fail pending a backend version adapter.
-Release-series selectors such as @3.0 are not implemented. Legacy state has
-no recorded requests: explicitly install the intended attribute to adopt it.
+These native attribute rules remain in formats 1/2 and for unadopted requests.
+Selector mode uses the shared release planner described below. Legacy state has
+no recorded requests: installation must explicitly establish native intent.
 .RE
 .TP
 .BI "activate " "IDENTITY_OR_NAME [--follow]"
@@ -75,11 +76,33 @@ remaining artifact, or the most recently installed if none was active.
 A removed request target falls back to the most recently active/installed
 remaining artifact of its own name and attribute, or its request is removed
 if none remains. A fallback only follows a request if it matches its target.
+In selector mode, removing a request target removes that request and its series
+aliases; no automatic request fallback is inferred. Default fallback still uses
+recency and is pinned unless it equals a retained followed request target.
 No store objects, old profiles or GC roots are physically deleted.
 .TP
 .BR "list " [ --exact | --json ]
 Show installed versions and active defaults. --exact shows immutable identities
 for activation/removal. --json shows detailed installed records.
+.TP
+.BI "resolve " "SELECTOR --catalog FILE [--json]"
+Read-only latest, @series or @=exact-release resolution from a finite
+mpm-release-catalog-v1 JSON file. Does not install, activate, adopt a catalog,
+refresh sources or migrate state. Source/backend IDs and integrity evidence
+are data; no backend command is run. Unknown/preview candidates require an
+exact request; unknown version order or ambiguous builds fail.
+The same resolver drives selector-mode package operations after explicit metadata adoption.
+.TP
+.BI "metadata " "--catalog FILE [--adopt SELECTOR ...]"
+Explicitly adopt a finite release catalog and format-3 metadata. The catalog is
+copied into state; later operations do not need the original file. Without
+--adopt, native attribute requests keep their original intent and targets.
+With --adopt, record an old-to-new request mapping to a typed selector. The
+resolved target must already be installed and match the native request target.
+Adoption never imports packages or moves defaults; existing exact defaults stay
+pinned. A repeated explicit adoption can accept another installed same-release
+build. Plans display compatibility changes; older MPM readers/writers refuse
+format 3. Dry-run/cancellation never convert metadata.
 .TP
 .B status
 Print JSON containing catalog, requests, installed records, active selections,
@@ -99,8 +122,37 @@ Search attribute names in the saved snapshot. Default limit 50; maximum 200.
 .TP
 .BI "info " "NAME_OR_IDENTITY [--json]"
 Inspect a catalog attribute or exact installed artifact.
+.SH SELECTOR MODE
+Explicit metadata adoption enables selectors in install, info and activate:
+bare NAME selects stable latest; NAME@3.0 selects the newest stable upstream
+component prefix [3,0]; NAME@=3.0 selects that exact canonical release, distinct
+from 3.0.0. Other version schemes require exact choices. No wildcards, hidden
+catalog refresh or source-build fallback. Unsupported/ambiguous ordering fails.
+.PP
+Install requires explicit selectors in this mode; --attribute remains native
+mode only. Distinct latest/series/exact requests coexist. First installation
+claims defaults unless --no-activate; later installation retains new artifacts
+without moving accepted targets or defaults. Exact requests pin their full build
+and dependencies; upgrade advances only eligible series/latest requests.
+.PP
+Activate resolves from installed release evidence only and downloads nothing.
+Historical build preferences do not break installed build ties: use a literal
+artifact ID. Exact activation pins defaults; series/latest record a following
+request. --follow on a literal ID requires one unambiguous moving request target;
+it cannot make an exact-release request follow. Native artifacts without release
+evidence retain native activation behavior.
+.PP
+Each tracked series exports COMMAND-SERIES, e.g. hello-2.12, for every command.
+Series aliases follow accepted request targets independently of an exact pinned
+default. Fixed aliases keep the full backend identity. Any alias collision or
+reserved management name aborts publication. Unknown exports are checked after
+import, before publication. Upgrade displays old/new resolution and exact closure
+additions/removals; the adapter verifies actual Nix evidence before committing.
+Exact requests and older artifacts remain retained, including withdrawn builds.
+Same-release replacements need explicit catalog build preference; object hashes
+never establish version order. Runtime compatibility is not verified by selection.
 .SH MUTATION OPTIONS
-update, install, upgrade, activate and remove accept:
+update, metadata, install, upgrade, activate and remove accept:
 .TP
 .B --dry-run
 Preview without writing MPM state, GC roots or payloads. Nix evaluation may
@@ -122,6 +174,10 @@ active selections become exact pins; missing intent is not guessed. Older MPM
 writers refuse format 2. Returning to an older System can therefore leave
 installed commands usable while its older MPM cannot manage the new state.
 Keep a tested reference disk and review the plan's compatibility warning.
+Explicit metadata adoption is the only transition to format 3. Read-only and
+no-op operations do not convert metadata. There is no reverse conversion.
+System rollback does not roll back shared Ports state; use an MPM-capable
+System generation after adoption.
 .PP
 Fixed aliases include the command, version and full Nix output hash.
 After changing command availability, the current shell may need
@@ -153,6 +209,13 @@ Transaction and ancestry, published with its snapshot. No separate database.
 Retained Nix source and payload roots.
 .SH EXAMPLES
 .nf
+mpm ports resolve hello@2.12 --catalog hello-releases.json
+mpm ports metadata --catalog hello-releases.json --dry-run
+mpm ports metadata --catalog hello-releases.json -y
+mpm ports install hello@2.12 -y
+mpm ports activate hello@2.12 -y
+
+# Native attribute workflow on an unconverted state root:
 mpm ports update --dry-run
 mpm ports update -y
 mpm ports install hello -y
@@ -167,9 +230,11 @@ man mpm
 .SH EXIT STATUS
 0 on success, cancellation or an unchanged plan; nonzero on failure.
 Shared Ports changes require an administrator in the Mojt account-enabled
-System. Ordinary users may list, inspect status and read history.
+System. Ordinary users may list, inspect status, read history and resolve a
+readable catalog.
 .SH SEE ALSO
 .BR nix-store (1),
 .BR man (1)
 .PP
-Repository documentation: docs/mpm.md, docs/mpm-ports.md and docs/roadmap.md.
+Repository documentation: docs/mpm.md, docs/mpm-ports.md, docs/mpm-selectors.md
+and docs/roadmap.md.

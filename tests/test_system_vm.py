@@ -326,6 +326,8 @@ class SystemVmTests(unittest.TestCase):
         self.assertEqual((self.tree / "state/etc/localtime").read_text(), "existing timezone")
         self.assertEqual((self.tree / "state/etc/timezone").read_text(), "Existing/Zone\n")
         self.assertTrue((directory / "bin/man").is_symlink())
+        self.assertEqual((directory / "tests/run-mpm-selectors.py").read_bytes(),
+                         (REPO / "tests/run-mpm-selectors.py").read_bytes())
         self.assertEqual((directory / "tests/run-mpm-nix-upgrade.py").read_bytes(),
                          (REPO / "tests/run-mpm-nix-upgrade.py").read_bytes())
         self.assertIn("IgnoreSIGPIPE=no", (directory / "units/mojt-console.service").read_text())
@@ -846,6 +848,14 @@ esac""")
                       (directory / "environment").read_text())
         self.assertIn("/run/mojt-system/environment",
                       (self.tree / "state/etc/profile.d/mojt-system.sh").read_text())
+        self.assertEqual((directory / "tests/mpm-release-example.json").read_bytes(),
+                         (REPO / "manifests/mpm-release-example.json").read_bytes())
+        self.assertEqual((directory / "tools/mpm_selector_ports.py").read_bytes(),
+                         (REPO / "tools/mpm_selector_ports.py").read_bytes())
+        self.assertEqual((directory / "tools/mpm_selection.py").read_bytes(),
+                         (REPO / "tools/mpm_selection.py").read_bytes())
+        self.assertEqual((directory / "tools/mpm-nix-catalog.py").read_bytes(),
+                         (REPO / "tools/mpm-nix-catalog.py").read_bytes())
         self.assertEqual((directory / "tools/mpm-nix-prototype").read_bytes(),
                          (REPO / "tools/mpm-nix-prototype").read_bytes())
         self.assertEqual((directory / "tests/run-mpm-nix-python.py").read_bytes(),

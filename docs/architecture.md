@@ -133,8 +133,10 @@ metadata-only `update`, explicit installation versus activation,
 independent Base/System/Kernel/Ports transactions, and versioned Ports
 selectors. The CLI meaning of `gimp@3.0` as the latest eligible stable
 release in the 3.0 line and `gimp@=3.0` as an exact release identifier
-has been **accepted as the design contract**, but is not yet implemented.
-Detailed version ordering and backend adapters remain open.
+is implemented on the selector branch with an initial dotted-numeric adapter.
+The [selector/catalog contract](mpm-selectors.md) documents pure policy and
+Nix transaction integration, series aliases and explicit format-3 adoption.
+Other version adapters and [libc integration](mpm-libc-policy.md) remain deferred.
 
 Nix is now the selected Ports backend after the binary-import and pacman
 comparisons. The full selector/project-lock policies remain design requirements. For early Mojt versions, Nix is
@@ -142,7 +144,9 @@ also selected for System package acquisition and dependency storage, using a
 shared store. The current CLI implements Ports installation, activation,
 removal, inspection, recorded attribute upgrades and committed transaction
 history. Exact active selections remain pinned while following selections may
-advance. Format-2 metadata and its compatibility limits are documented in the
+advance. Format-2 native requests remain supported; explicit format-3 adoption
+adds selectors without reinterpreting old policy. Older MPM writers refuse it.
+Metadata compatibility limits are documented in the
 [Ports guide](mpm-ports.md); `mpm(1)` is maintained in the repository and bundled
 with manual-enabled System builds. Base/System/Kernel areas remain unimplemented.
 System release and deployment formats require separate evaluation, including
