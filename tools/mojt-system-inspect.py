@@ -11,7 +11,12 @@ import tomllib
 import importlib.util
 spec = importlib.util.spec_from_file_location("mojt_system_manifest", Path(__file__).with_name("mojt_system_manifest.py"))
 model = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(model)
+previous_bytecode = sys.dont_write_bytecode
+try:
+    sys.dont_write_bytecode = True
+    spec.loader.exec_module(model)
+finally:
+    sys.dont_write_bytecode = previous_bytecode
 
 
 def context_from_target(target, base):

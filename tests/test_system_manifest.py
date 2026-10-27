@@ -7,6 +7,7 @@ import importlib.util
 import json
 from pathlib import Path
 import subprocess
+import shutil
 import sys
 import tempfile
 import unittest
@@ -83,12 +84,16 @@ class ManifestTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp); m=root/"manifest.json"; c=root/"context.json"
             m.write_text(json.dumps(manifest())); c.write_text(json.dumps(context()))
-            before={p.name:p.read_bytes() for p in root.iterdir()}
-            cmd=[sys.executable,"-I",str(REPO/"tools/mojt-system-inspect.py"),"--candidate",str(m),"--context",str(c)]
+            tools=root/"tools"; tools.mkdir()
+            for name in ("mojt-system-inspect.py", "mojt_system_manifest.py"):
+                shutil.copyfile(REPO/"tools"/name, tools/name)
+            files = lambda: {str(p.relative_to(root)):p.read_bytes() for p in root.rglob("*") if p.is_file()}
+            before=files()
+            cmd=[sys.executable,"-I",str(tools/"mojt-system-inspect.py"),"--candidate",str(m),"--context",str(c)]
             result=subprocess.run(cmd,text=True,capture_output=True)
             self.assertEqual(result.returncode,0,result.stderr)
             self.assertIsNone(json.loads(result.stdout)["selected"])
-            self.assertEqual({p.name:p.read_bytes() for p in root.iterdir()},before)
+            self.assertEqual(files(),before)
             value=context(); value["ports"]["format"]=4; c.write_text(json.dumps(value))
             result=subprocess.run(cmd,text=True,capture_output=True)
             self.assertEqual(result.returncode,1)
