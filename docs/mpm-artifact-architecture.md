@@ -7,11 +7,12 @@ SPDX-License-Identifier: GPL-2.0-only
 # Architecture manifesto: Mojt-owned artifacts and catalogs
 
 Started 2026-10-28. **Status: architecture draft with a read-only local catalog
-prototype, not a repository updater or installer.** The user-directed
-requirements below guide the next increments; native descriptor/trust formats,
-storage paths and mutation commands still need review. The [MPM contract](mpm.md)
+and native package-format prototype, not a repository updater or installer.**
+The user-directed requirements below guide the next increments; package/trust
+formats, storage paths and mutation commands still need review. The [MPM contract](mpm.md)
 continues to define area boundaries, selectors and installation/activation
-semantics. The implemented boundary is documented in [the prototype guide](mpm-catalog.md).
+semantics. The implemented boundaries are documented in [the catalog guide](mpm-catalog.md)
+and [native artifact format](native-artifact-format.md).
 
 ## 1. Mojt owns its distribution model
 
@@ -162,11 +163,15 @@ Preserve the selector contract's request/release/artifact distinction:
 
 Mutable mirror locations, download success and channel promotion do not change
 payload identity. Native artifacts need a digest of a versioned immutable content
-descriptor; its payload/archive digests and exact dependency references are part
-of the binding. Exclude self-referential IDs, signatures and mutable locators
+descriptor; its file inventory/content digests and exact dependency references
+are part of the binding. Transport metadata separately binds the archive digest.
+Exclude self-referential IDs, signatures and mutable locators
 from that digest. The serialization/canonicalization rules must be specified
-before a writer is implemented. An archive digest and an extracted-tree digest
-are different evidence and must not be interchanged.
+with the writer. The [native package prototype](native-artifact-format.md)
+specifies an initial canonical descriptor and namespaced tar.zst, including an
+embedded descriptor and identical external metadata copy. Its archive digest
+lives outside the archive to avoid a self-reference. An archive digest and an
+extracted-tree digest are different evidence and must not be interchanged.
 
 Provider identities stay explicit. Existing Nix output identities and NAR/closure
 evidence remain opaque provider records; a Nix store-path hash is not relabeled
@@ -358,9 +363,12 @@ Existing fresh-image tests do not establish existing-disk boot publication.
    wrapping the unchanged strict v1 release catalog. Reuse the resolver for
    Kernel policy plans constrained by an explicit selected-Base context.
    This is the bounded prototype in PR #28; no installed state is adopted.
-2. Specify a native descriptor and exact references.
-   Export the already accepted kernel build into that model, preserving its
-   existing manifest and configuration. No new kernel compilation is needed.
+2. Specify a native descriptor and exact references. PR #28 now prototypes a
+   common container for Base/System/Kernel/Port, category-rooted members and an
+   embedded descriptor, with a matching-build Kernel export adapter. Four-kind
+   fixtures and source/configuration evidence checks pass. Exporting the owner's
+   already accepted real kernel remains the next native acceptance; no new
+   compilation is needed and existing manifests/configuration are preserved.
 3. Implement native verification and install/status planning
    without Nix installed or a network connection. Installing a kernel does not
    change the selected deployment. Preserve the first-install Ports exception
@@ -386,8 +394,9 @@ build rejection, unchanged input files and operation without provider files or
 executables. No repeated VM account/network/generation loop is required.
 
 The immediate deliverable is this architecture plus the local read-only
-prototype. It creates no repository service, package migration, signing system,
-payload acquisition or Kernel install/status/activation implementation. Detailed
-artifact canonicalization, storage paths, publisher key policy and mutation
-command grammar remain open decisions. The discovery envelope is a separately
-versioned experimental format, not a silent extension of the existing v1 resolver.
+catalog and native packer/verifier prototypes. They create no repository service,
+package migration, signing system, acquisition or Kernel install/status/activation
+implementation. The experimental native canonicalization is specified; storage
+paths, publisher key policy and mutation grammar remain open decisions. The
+discovery envelope is a separately versioned experimental format, not a silent
+extension of the existing v1 resolver.

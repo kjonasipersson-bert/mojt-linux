@@ -6,6 +6,13 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Mojt Base Release Format (prototype format 1)
 
+The [native artifact package prototype](native-artifact-format.md) can wrap an
+existing complete Base release under `./base/payload/`, with its own embedded
+`./base/artifact.json`. It preserves the rootfs archive and this manifest
+byte-for-byte, checking the image hash and release version. That transport
+wrapper does not change the Base release unit, existing installer or format-1
+manifest; raw rootfs metadata is not flattened into the new outer archive.
+
 ## Accepted Base release unit (2026-10-26)
 
 Base is distributed, installed, selected and recovered as one complete,

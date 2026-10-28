@@ -34,6 +34,14 @@ the detailed descriptor, trust, storage and migration formats remain proposals.
 Today's Nix-backed System and Ports implementation remains in use while those
 native paths are developed.
 
+The [native artifact format prototype](native-artifact-format.md) uses the same
+versioned descriptor/container for Base, System, Kernel and Port packages. All
+logical tar members stay under their single kind directory, including the
+descriptor; this archive namespace is separate from installation destinations.
+The packer preserves existing Base release images and Kernel build evidence,
+with explicit version/revision/build identities. Acquisition, installation,
+repository trust and boot activation remain separate work.
+
 The [roadmap](roadmap.md) records completed Base/System and different-kernel
 VM experiments and the next System/MPM work. The
 [System completeness and account proposal](system-completeness-proposal.md)

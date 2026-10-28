@@ -171,9 +171,16 @@ intersected with explicit selected-Base bounds. It wraps the unchanged pure
 resolver schema and runs without provider code, Nix or network access. Examples
 are synthetic metadata, not published kernel packages or actual Base limits.
 
-Next, export the already verified kernel output into a specified native package
-descriptor and implement local verification/import/install/status. Reuse that
-contract for Base and System artifacts. Production repository trust/update,
+PR #28 additionally prototypes [the native package format](native-artifact-format.md)
+and packer/verifier. All four kinds use a single category-rooted tar.zst with
+embedded descriptor; an external identical descriptor serves catalog discovery.
+Real tar/zstd fixtures cover Base, System components/compositions, Kernel and
+Port, filesystem metadata boundaries and version/build traceability. Existing
+Base archives and ready Kernel build records are preserved rather than rewritten.
+
+Next, export the already verified real kernel output using that adapter, then
+implement local acquisition/import/install/status. Packaging and verification
+alone do not register installed content. Production repository trust/update,
 boot activation and new kernel builds remain separate increments. Focused
 automated tests cover this read-only work; no repeated unrelated VM acceptance
 is required.
