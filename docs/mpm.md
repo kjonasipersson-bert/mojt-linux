@@ -31,6 +31,14 @@ same backend for every area.
 See [the manifesto](manifesto.md), [architecture](architecture.md), and
 [Base release format](base-format.md) for the established layer boundaries.
 
+The user-directed [artifact architecture manifesto](mpm-artifact-architecture.md)
+(2026-10-28) adds the independent distribution model: Mojt-owned catalogs list
+offered builds before installation; native artifacts and local repositories
+must work without Nix or a live external service. Nix remains the current
+experimental provider. Publication/trust formats and migration details in that
+document are proposals, not implemented commands or an automatic change to
+existing catalog/source bindings.
+
 ## 1. Areas and boundaries
 
 The command shape is:
