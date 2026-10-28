@@ -54,6 +54,7 @@ KERNEL_ROLES = {
     "crypto-lib": ("openssl", []),
 }
 KERNEL_ROLES["kmod"] = ("kmod", ["modprobe", "depmod", "modinfo"])
+KERNEL_ROLES["shell"] = ("bash", ["bash", "sh"])
 KERNEL_ROLES["binutils"] = ("binutils", ["readelf", "as", "ld", "ar", "nm", "objcopy", "objdump", "strip", "ranlib", "addr2line", "size", "strings"])
 KERNEL_ROLES["coreutils"] = (ROLES["coreutils"][0], ROLES["coreutils"][1] +
                             ["wc", "expr", "printf", "uname", "nproc", "date", "comm", "join", "paste", "cksum", "od", "dd", "true", "false",
@@ -268,6 +269,10 @@ def prepare(args, nix=None):
         probes["python-runtime"]=json.loads(execute([str(output/"bin/python3"),"-I","-c",runtime_code],env))
         probes["python-runtime"]["verified_libraries"] = verify_runtime_maps(probes["python-runtime"]["maps"], closure)
         if profile == "kernel":
+            # Kbuild also invokes `sh` by name inside a Bash recipe.
+            probes["sh-command"] = execute([str(output/"bin/bash"), "-c",
+                "sh -c 'printf \"%s\\n\" mojt-private-sh-ok'"], env)
+            require(probes["sh-command"].strip() == "mojt-private-sh-ok", "private sh command probe failed")
             probes["compiler"] = compiler_probe(output, readelf, closure, env)
         record=dict(format="mojt-build-env-v1" if profile == "kernel" else "mojt-build-env-nix-v1", backend="nix", profile=profile, build_variables=extra, source=source, packages=packages,
             preparer_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),

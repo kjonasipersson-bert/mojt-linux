@@ -20,7 +20,7 @@ import sys
 # Commands used by the driver and upstream config/Kbuild scripts. Keep this
 # independent of the package backend and reject incomplete private PATHs early.
 REQUIRED_COMMANDS = (
-    'make', 'bash', 'gcc', 'g++', 'ld', 'as', 'ar', 'nm', 'objcopy', 'objdump',
+    'make', 'bash', 'sh', 'gcc', 'g++', 'ld', 'as', 'ar', 'nm', 'objcopy', 'objdump',
     'strip', 'depmod', 'modinfo', 'git', 'bc', 'flex', 'bison', 'perl',
     'pkg-config', 'gzip', 'mv', 'cp', 'rm', 'mkdir', 'sed', 'grep', 'tr',
     'cat', 'sort', 'uniq', 'expr', 'wc', 'cut', 'head', 'tail', 'ln', 'touch',
@@ -97,7 +97,19 @@ def build(args):
     require(record.get('format')=='mojt-build-env-v1' and record.get('profile')=='kernel'
             and 'compiler' in record.get('probes',{}),'use a successfully probed kernel environment')
     output=args.output.resolve()
-    require(not os.path.lexists(args.output),'kernel output must not exist')
+    resume=getattr(args,'resume',False)
+    if resume:
+        require(not args.output.is_symlink() and output.is_dir(),'resume output must be an existing regular directory')
+        require((output/'.building').is_file() and not (output/'.building').is_symlink()
+                and not os.path.lexists(output/'kernel.json'),'resume requires an incomplete build without a ready manifest')
+        for name in ('objects','root'):
+            require((output/name).is_dir() and not (output/name).is_symlink(),'resume directory missing or linked: '+name)
+        require(not any((output/'root').iterdir()),'resume is limited to attempts before module staging')
+        require((output/'debian.config').is_file() and not (output/'debian.config').is_symlink()
+                and sha(output/'debian.config')==args.config_sha256,'resume base config differs')
+        require(not (output/'objects/.config').is_symlink(),'resume config must not be linked')
+        require(getattr(args,'source',None) is not None,'resume requires an explicit pinned source checkout')
+    else:require(not os.path.lexists(args.output),'kernel output must not exist')
     existing_source=getattr(args,'source',None)
     if existing_source is not None:
         existing_source=existing_source.resolve(strict=True)
@@ -109,16 +121,19 @@ def build(args):
     require(not missing,'kernel tools missing or not executable: '+', '.join(missing))
     print('Plan: '+plan['source']['tag']+' -> '+plan['version']+plan['localversion'])
     print('Output: '+str(output)+'; jobs: '+str(args.jobs))
+    if resume:print('Resume: reapply frozen config and policy; reuse objects through Kbuild dependency checks')
     if existing_source:print('Reuse source (commit and clean tree checked before config/build): '+str(existing_source))
     if args.dry_run:
         print('Preview only; no source fetch, compiler execution or output writes.')
         return
     if not args.yes and input('Build this kernel in a new private directory? [y/N] ').lower()!='y':return
-    output.mkdir(parents=True)
-    (output/'.building').write_text('Incomplete kernel build; never activate\n')
+    if not resume:
+        output.mkdir(parents=True)
+        (output/'.building').write_text('Incomplete kernel build; never activate\n')
     source=existing_source or output/'source'
     if not existing_source:source.mkdir()
-    objects=output/'objects';objects.mkdir();staged=output/'root';staged.mkdir()
+    objects=output/'objects';staged=output/'root'
+    if not resume:objects.mkdir();staged.mkdir()
     # Every external command starts through the static clean launcher.
     def command(parts, capture=False):
         p=subprocess.run([str(environment/'run'),*map(str,parts)],check=True,text=True,
@@ -193,6 +208,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('plan','config','environment','output'):p.add_argument('--'+name,type=Path,required=True)
     p.add_argument('--source',type=Path,help='reuse a clean checkout at the pinned commit; no source fetch')
+    p.add_argument('--resume',action='store_true',help='resume an incomplete pre-staging output with --source; revalidate inputs and regenerate config')
     p.add_argument('--config-sha256',required=True);p.add_argument('--jobs',type=int,default=2)
     p.add_argument('--dry-run',action='store_true');p.add_argument('-y','--yes',action='store_true')
     args=p.parse_args()

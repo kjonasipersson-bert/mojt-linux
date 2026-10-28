@@ -77,6 +77,15 @@ Prepare a new compiler environment and use a fresh build output after this fix;
 retain the incomplete attempt for inspection instead of editing its recorded
 environment or treating it as a completed build.
 
+The next native attempt reached kernel compilation and stopped at the x86 vDSO
+recipe's explicit `sh .../checkundef.sh`: only `bash` had been exported. The
+kernel profile now exports both names from the same pinned Bash output, audits
+both executables and exercises a Bash recipe calling `sh` through the private
+PATH. A regression test runs the actual upstream vDSO checker against a tiny
+compiled shared object and reproduces the missing-command failure without `sh`.
+The image profile remains unchanged. This is a command-export issue, not observed
+evidence of a libc incompatibility.
+
 After import, the preparer compiles, links, executes and inspects a small C probe
 using libelf and OpenSSL. The probe's ELF loader/libraries must resolve inside
 the retained compiler closure. Existing direct-tool/script and Python runtime
@@ -127,6 +136,17 @@ after building. It does not fetch, reset or check out anything in this mode.
 Dry-run only validates local paths and inputs, and does not run Git verification.
 Do not delete the reused checkout while the build needs it. This is source
 reuse, not resumption of an incomplete object/staging tree.
+
+`--resume --source /EXISTING/CLEAN/CHECKOUT` can reuse objects in an existing
+incomplete output **before module staging**. It requires the `.building` marker,
+no ready `kernel.json`, a matching copied Debian config hash, regular object/root
+directories, and an empty staging root. Input separation, tool checks, exact
+source commit/origin and source cleanliness are checked again. The helper
+regenerates config from the frozen Debian input plus current plan, validates it,
+then lets Kbuild decide what must rebuild; a different compiler-environment path
+can invalidate command lines and recompile objects. It neither clears the object
+tree nor adopts partially installed modules. Completed outputs are rejected.
+Dry-run checks resume prerequisites but does not execute Git or regenerate config.
 
 Make receives an explicit empty `LOCALVERSION` command-line suffix, retaining
 the plan's `CONFIG_LOCALVERSION`. This prevents an unrecorded `+` from an absent

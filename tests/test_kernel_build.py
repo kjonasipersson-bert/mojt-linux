@@ -63,6 +63,8 @@ class KernelTests(unittest.TestCase):
 
     def test_kernel_environment_selects_dev_and_lib_outputs_without_changing_image_tools(self):
         self.assertEqual(env.ROLES['binutils'][1],['readelf'])
+        self.assertEqual(env.ROLES['shell'][1],['bash'])
+        self.assertEqual(env.KERNEL_ROLES['shell'][1],['bash','sh'])
         self.assertNotIn('compiler',env.ROLES)
         self.assertIn('gcc',env.KERNEL_ROLES['compiler'][1])
         self.assertIn('ld',env.KERNEL_ROLES['binutils'][1])
@@ -106,6 +108,9 @@ class KernelTests(unittest.TestCase):
                 args.config_sha256=kernel.sha(config)
                 (environment/'bin/mv').unlink()
                 with self.assertRaisesRegex(ValueError,'kernel tools missing.*mv'):kernel.build(args)
+                tool=environment/'bin/mv';tool.write_text('tool');tool.chmod(0o755)
+                (environment/'bin/sh').unlink()
+                with self.assertRaisesRegex(ValueError,'kernel tools missing.*sh'):kernel.build(args)
             self.assertFalse(args.output.exists())
 
     def test_unknown_or_conflicting_policy_fails_before_build(self):
@@ -186,6 +191,48 @@ class KernelTests(unittest.TestCase):
                 self.assertFalse((args.output/'kernel.json').exists())
                 self.assertFalse(any('bzImage' in c for c in calls))
                 if bad=='config':self.assertTrue((args.output/'config.diff').is_file())
+
+            # Resume the pre-staging config failure without discarding cached objects.
+            args.resume=True;args.output=root/'cached-config'
+            sentinel=args.output/'objects/cached.o';sentinel.write_bytes(b'reusable object')
+            args.dry_run=True
+            with mock.patch.object(kernel.subprocess,'run',side_effect=AssertionError('preview executed command')):kernel.build(args)
+            args.dry_run=False
+            blocker=args.output/'root/partial-module';blocker.write_bytes(b'not safe to resume staging')
+            with mock.patch.object(kernel.subprocess,'run',side_effect=AssertionError('executed command')):
+                with self.assertRaisesRegex(ValueError,'before module staging'):kernel.build(args)
+            blocker.unlink()
+            copied=args.output/'debian.config';original=copied.read_bytes();copied.write_text('wrong base')
+            with mock.patch.object(kernel.subprocess,'run',side_effect=AssertionError('executed command')):
+                with self.assertRaisesRegex(ValueError,'resume base config differs'):kernel.build(args)
+            copied.write_bytes(original)
+            calls.clear()
+            with mock.patch.object(kernel.subprocess,'run',side_effect=run):kernel.build(args)
+            self.assertEqual(sentinel.read_bytes(),b'reusable object')
+            self.assertTrue((args.output/'kernel.json').is_file())
+            self.assertFalse((args.output/'.building').exists())
+            self.assertFalse(any(x in c for c in calls for x in ('fetch','checkout','init')))
+            self.assertTrue(any('olddefconfig' in c for c in calls))
+            with self.assertRaisesRegex(ValueError,'incomplete build'):kernel.build(args)
+
+    def test_upstream_vdso_check_runs_sh_by_name_with_only_private_path(self):
+        script=REPO/'tests/fixtures/linux-6.12.107-vdso-checkundef.sh'
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);private=root/'bin';private.mkdir()
+            for name in (*env.KERNEL_ROLES['shell'][1],*env.KERNEL_ROLES['grep'][1],'nm'):
+                executable=shutil.which(name);self.assertIsNotNone(executable,name)
+                (private/name).symlink_to(executable)
+            source=root/'probe.c';source.write_text('int mojt_vdso_probe(void) { return 7; }\n')
+            binary=root/'probe.so'
+            compiler=shutil.which('gcc');self.assertIsNotNone(compiler)
+            subprocess.run([compiler,'-shared','-nostdlib','-fPIC',str(source),'-o',str(binary)],check=True,capture_output=True)
+            process_env=dict(PATH=str(private),HOME=str(root),LANG='C',LC_ALL='C')
+            command=[str(private/'bash'),'-c','sh "$1" "$2" "$3"','vdso-check',str(script),str(private/'nm'),str(binary)]
+            subprocess.run(command,env=process_env,check=True,capture_output=True,text=True)
+            (private/'sh').unlink()
+            failed=subprocess.run(command,env=process_env,capture_output=True,text=True)
+            self.assertEqual(failed.returncode,127)
+            self.assertIn('sh: command not found',failed.stderr)
 
     def test_upstream_config_edits_with_only_declared_private_commands(self):
         # Exact upstream scripts/config from the pinned v6.12.107 source.
