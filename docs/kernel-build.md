@@ -172,11 +172,15 @@ settings reduce incidental variation but do not establish reproducible binaries.
 Focused tests cover the locked source/config policy, explicit command paths,
 private module staging, config/commit failures, dry-run isolation, compiler
 probe wiring and real upstream config edits in the declared private PATH.
-Compiler import/probe acceptance is recorded above; the corrected profile and
-full kernel compilation still need native Mojt acceptance.
+The owner completed a native Mojt build of Linux `6.12.107-mojt1` from the
+locked upstream commit, using the corrected private compiler profile and the
+frozen Debian config. The helper reached `READY`, staged the versioned kernel,
+config, System.map and matching modules, and wrote `kernel.json` after its
+module/dependency/vermagic and source-cleanliness checks. The running kernel,
+Base and System were not activated or replaced. This accepts compilation and
+staging; boot and runtime module loading remain pending.
 
-Next measured steps: compiler profile preview/import and C probe, one kernel
-build, then one fresh VM with the new kernel **and complete matching modules**
+Next measured step: one fresh VM with the new kernel **and complete matching modules**
 while keeping Base/System payload fixed. Existing hardware-profile staging can
 retain full modules plus the separately retained firmware input. A serial build
 that merely embeds early modules is not full runtime module acceptance. Do not
