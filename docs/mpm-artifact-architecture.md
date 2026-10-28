@@ -6,11 +6,12 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Architecture manifesto: Mojt-owned artifacts and catalogs
 
-Started 2026-10-28. **Status: architecture draft, not an implemented repository
-or installer.** The user-directed requirements below guide the next increment;
-descriptor schemas, trust formats, storage paths and command additions still
-need review before implementation. The [MPM contract](mpm.md) continues to define
-area boundaries, selectors and installation/activation semantics.
+Started 2026-10-28. **Status: architecture draft with a read-only local catalog
+prototype, not a repository updater or installer.** The user-directed
+requirements below guide the next increments; native descriptor/trust formats,
+storage paths and mutation commands still need review. The [MPM contract](mpm.md)
+continues to define area boundaries, selectors and installation/activation
+semantics. The implemented boundary is documented in [the prototype guide](mpm-catalog.md).
 
 ## 1. Mojt owns its distribution model
 
@@ -85,6 +86,43 @@ publisher actually advertises. It does not promise every upstream version or
 permanent remote retention. A known descriptor can remain useful even when its
 payload is temporarily unreachable; report advertised availability separately
 from observed reachability and locally verified possession.
+
+### Search is a user-facing catalog contract
+
+Default search treats every query term as **literal text**, with Unicode
+normalization and case-insensitive comparison. A dot, plus sign, bracket or
+asterisk has no pattern meaning. Search canonical names and explicitly declared
+alternative names by default; include summaries/descriptions only with an
+explicit option. Multiple terms are ANDed. Exact-name matching is available.
+Do not automatically broaden to fuzzy matches, descriptions, other catalogs or
+network-backed provider discovery when the local query has no matches.
+
+Rank canonical exact names, exact aliases, prefixes, then other substrings;
+description-only matches follow when requested. Use deterministic lexical
+tie-breaking for display, never to choose an installation source or artifact.
+One package row groups its releases/builds, and lists its named sources.
+Different CLI areas remain distinguishable. An alternative search name is not
+an installation alias and must not change the resolver's request grammar.
+Inspecting the package and enumerating its releases are separate actions.
+
+Package records need canonical name, aliases, summary, description, category and
+area, with explicit channel/platform/source bindings in their release view.
+Show source evidence and explain the match. Installed state is an independent
+overlay: until it is integrated, say it was not inspected rather than marking
+everything uninstalled. A catalog-known artifact need not exist on the machine.
+Do not claim a live availability check merely because a locator is advertised.
+
+Search reads the explicitly chosen local snapshot and reports its identity.
+Metadata acquisition/update is separate. An incomplete view is an error, not a
+negative package result. Show freshness information when an authenticated
+publication/update model supplies it; a revision or content digest alone proves
+neither currency nor publisher authenticity.
+
+Keep searchable package metadata separate from release/build records so adding
+a version does not multiply ordinary search hits. Search indexes are derived,
+rebuildable data. Start with versioned files and linear local search; neither a
+database nor a remote search service is a prerequisite. Explicit pattern search
+can be added later; the prototype has no regexp or glob mode.
 
 ## 4. Keep the state dimensions separate
 
@@ -181,6 +219,46 @@ package solver is not a prerequisite. "Locally available" for installation
 means all required runtime references are verified and retained, not just the
 top-level archive. Content verification does not establish runtime ABI compatibility.
 
+### Kernel tracking policy and selected Base compatibility
+
+Kernel is a System-owned component with its own CLI/update scope. Support three
+standard request policies, independently of the artifact's acquisition backend:
+
+| Policy | Eligible releases before compatibility filtering |
+| --- | --- |
+| Pinned | A chosen major.minor series, following its stable patches; alternatively an exact release/build pin that does not advance |
+| Latest LTS | Stable releases in catalog-declared currently maintained upstream LTS series |
+| Latest upstream | The newest catalog-offered upstream stable release, including non-LTS series |
+
+Pinning the series `6.12` means accepting newer `6.12.x` patch releases, not
+moving to a newer series. Exact release/build pinning remains available within
+the pinned policy. These are two explicit forms of a pin, not a silent
+interpretation change. Moving an exact build is always explicit. RC/development
+versions are outside these three standard policies; they need an explicit future
+preview workflow. An explicitly pinned, no-longer-maintained series may remain
+usable, with its maintenance status visible; it is not a latest-LTS candidate.
+
+All policies intersect with the **selected Base's declared kernel bounds** and
+platform requirements before choosing a release. A Base maximum is a hard limit,
+including for a newer LTS. Select the highest eligible compatible version from
+the pinned snapshot, and explain excluded versions. An exact incompatible pin
+fails; it does not float down to an older release. If no LTS is eligible, do not
+switch to non-LTS or upgrade Base automatically. Additional declared System,
+hardware, firmware and module constraints may further restrict the complete
+deployment. Bounds are declarations, not a claim that every in-range combination
+has passed runtime acceptance; missing required compatibility evidence must be
+reported rather than guessed from Base or kernel version numbers.
+
+"Latest" means latest in the explicitly selected complete catalog, not a live
+kernel.org query. LTS/stable classifications come from maintained publisher
+metadata, not a heuristic based on version numbers or the builder's host. Keep
+the policy, resolved exact identity and snapshot evidence separately. Refreshing
+metadata changes none of the installed, selected or running kernel content.
+A Kernel upgrade preserves selected Base/System userspace; activation is a
+separate complete deployment decision. The read-only prototype requires an
+explicit Base-context document; automatic selected-deployment lookup and
+persistent Kernel policies are future installer work.
+
 ## 7. MPM core and optional adapters
 
 The core owns catalog bindings, selectors, policy, exact references, plans,
@@ -246,7 +324,8 @@ self-hosted or self-contained.
 
 ## 10. Current implementation and migration
 
-Today's [entry point](../tools/mpm) dispatches to the experimental
+The [entry point](../tools/mpm) now supports explicit local discovery commands;
+existing Ports commands still dispatch to the experimental
 [Nix prototype](../tools/mpm-nix-prototype). In native-attribute Ports mode,
 `install neovim` uses the locally recorded pinned nixpkgs source: it resolves
 the requested name/attribute there when not already in its local package map.
@@ -275,17 +354,21 @@ Existing fresh-image tests do not establish existing-disk boot publication.
 
 ## 11. First implementation slices and acceptance
 
-1. Specify a native descriptor, local catalog snapshot and exact references.
+1. Implement a read-only local discovery envelope with search/show/versions,
+   wrapping the unchanged strict v1 release catalog. Reuse the resolver for
+   Kernel policy plans constrained by an explicit selected-Base context.
+   This is the bounded prototype in PR #28; no installed state is adopted.
+2. Specify a native descriptor and exact references.
    Export the already accepted kernel build into that model, preserving its
    existing manifest and configuration. No new kernel compilation is needed.
-2. Implement native local discovery, verification and install/status planning
+3. Implement native verification and install/status planning
    without Nix installed or a network connection. Installing a kernel does not
    change the selected deployment. Preserve the first-install Ports exception
    and all other [MPM operation semantics](mpm.md).
-3. Add repository publication/update and interchangeable local/HTTPS transports
+4. Add repository publication/update and interchangeable local/HTTPS transports
    with an explicitly specified trust mechanism. Metadata refresh does not fetch
    payloads, compile anything or change installed/selected content.
-4. Reuse the descriptor/acquisition contract for complete Base releases and
+5. Reuse the descriptor/acquisition contract for complete Base releases and
    Mojt-owned System components. Introduce existing-disk boot activation as a
    separate increment with complete deployment validation and recovery behavior.
 
@@ -296,9 +379,15 @@ install; a failed refresh preserving the previous snapshot; installed content
 surviving catalog withdrawal; and unchanged Base/System/Kernel/Ports selections
 outside the requested action. Verify native operations with Nix unavailable.
 Exercise exact opaque references with a fake external adapter before reusing
-the real Nix bridge. These are future acceptance criteria, not tests added here.
+the real Nix bridge. Installation/update criteria remain future acceptance work.
+The prototype's focused tests cover literal search/ranking, opt-in descriptions,
+snapshot/schema failures, the three Kernel policies and Base limits, ambiguous
+build rejection, unchanged input files and operation without provider files or
+executables. No repeated VM account/network/generation loop is required.
 
-The immediate deliverable is this architecture and its reviewed boundaries.
-It creates no repository service, package migration, signing system or new MPM
-command. Detailed schema/identity canonicalization, storage paths, publisher key
-policy, command grammar and the size of the first catalog remain open decisions.
+The immediate deliverable is this architecture plus the local read-only
+prototype. It creates no repository service, package migration, signing system,
+payload acquisition or Kernel install/status/activation implementation. Detailed
+artifact canonicalization, storage paths, publisher key policy and mutation
+command grammar remain open decisions. The discovery envelope is a separately
+versioned experimental format, not a silent extension of the existing v1 resolver.

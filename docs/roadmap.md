@@ -160,11 +160,20 @@ The [artifact architecture manifesto](mpm-artifact-architecture.md) begins that
 design, building on the existing pure selector/catalog contract. It distinguishes
 catalog-known, cached/verified, installed, selected and running content; starts
 from local repositories and retained snapshots; and proposes static publication
-without a mandatory external service or remote database. Detailed schema,
-identity/trust formats and migration rules remain to review before coding.
+without a mandatory external service or remote database. Native descriptor,
+identity/trust formats and migration rules remain to review before acquisition
+or installation is implemented.
 
-The first proposed implementation slice uses the already verified kernel output
-for native catalog/import/install/status behavior with Nix and networking
-unavailable. Reuse that contract for Base and System artifacts. Boot activation,
-new kernel builds and repeated unrelated VM acceptance are not part of this
-documentation increment.
+PR #28 also contains a [read-only local catalog prototype](mpm-catalog.md):
+literal name/alias search, explicit descriptions, grouped package inspection and
+versions, plus Kernel resolution using pinned/latest-LTS/latest-upstream policy
+intersected with explicit selected-Base bounds. It wraps the unchanged pure
+resolver schema and runs without provider code, Nix or network access. Examples
+are synthetic metadata, not published kernel packages or actual Base limits.
+
+Next, export the already verified kernel output into a specified native package
+descriptor and implement local verification/import/install/status. Reuse that
+contract for Base and System artifacts. Production repository trust/update,
+boot activation and new kernel builds remain separate increments. Focused
+automated tests cover this read-only work; no repeated unrelated VM acceptance
+is required.
