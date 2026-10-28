@@ -4,12 +4,13 @@ Copyright (C) 2026 Jonas Persson
 SPDX-License-Identifier: GPL-2.0-only
 -->
 
-# First own-built kernel: prepared experiment
+# First own-built kernel: native build and VM acceptance
 
-The image-build milestone is accepted. This next increment prepares source
-compilation of a kernel on Mojt, retaining the working Debian kernel and the
-accepted image toolset. It does not change the running kernel, activate a new
-System or implement `mpm kernel` commands.
+The owner accepted native kernel compilation, image assembly and a focused VM
+boot/module/network test on 2026-10-28. Mojt built and ran Linux
+`6.12.107-mojt1`, retaining the working Debian reference kernel and the accepted
+image toolset. The build helper stages a separate Kernel input; it does not
+activate it on the build VM or implement `mpm kernel` commands.
 
 ## Locked first target
 
@@ -19,7 +20,7 @@ System or implement `mpm kernel` commands.
 repository. The tag-to-commit mapping was checked against the stable maintainer's
 mirror; the helper independently refuses a fetched commit mismatch. It does not
 perform local OpenPGP key/trust management or claim signature verification.
-Expected first release: `6.12.107-mojt1`.
+Accepted first release: `6.12.107-mojt1`.
 
 Start with the configuration from the retained Debian 6.12.107 package, supplied
 as a separate frozen file and SHA256. Upstream source is not Debian's patched
@@ -44,8 +45,9 @@ It disables IMA's module-style signature appraisal support as well, avoiding a
 second module-signing-key dependency. Other security facilities are retained.
 The owner's second attempt successfully built the Kconfig host programs before
 the strict policy check caught the lockdown/signature conflict. The corrected
-full configuration still needs native acceptance. The Binder `m`-to-bool warning
-from the Debian starting config is separate from this fatal policy mismatch.
+policy subsequently passed the native build and focused boot acceptance below.
+The Binder `m`-to-bool warning from the Debian starting config was separate from
+that fatal policy mismatch.
 
 ## Separate compiler environment
 
@@ -167,26 +169,51 @@ A kernel content ID covers that manifest. `.building` remains on failure; no
 ready manifest/activation is claimed. Deterministic KBUILD user/host/timestamp
 settings reduce incidental variation but do not establish reproducible binaries.
 
-## Acceptance boundary
+## Native acceptance: 2026-10-28
 
-Focused tests cover the locked source/config policy, explicit command paths,
-private module staging, config/commit failures, dry-run isolation, compiler
-probe wiring and real upstream config edits in the declared private PATH.
-The owner completed a native Mojt build of Linux `6.12.107-mojt1` from the
-locked upstream commit, using the corrected private compiler profile and the
-frozen Debian config. The helper reached `READY`, staged the versioned kernel,
-config, System.map and matching modules, and wrote `kernel.json` after its
-module/dependency/vermagic and source-cleanliness checks. The running kernel,
-Base and System were not activated or replaced. This accepts compilation and
-staging; boot and runtime module loading remain pending.
+The owner completed the chain from the private compiler environment through
+a bootable image assembled on Mojt, then ran the new image under QEMU on the
+Debian host. The tested functional source revision was
+`61eb034819d481b2254d7096bc24b2f63a53c37c`.
 
-Next measured step: one fresh VM with the new kernel **and complete matching modules**
-while keeping Base/System payload fixed. Existing hardware-profile staging can
-retain full modules plus the separately retained firmware input. A serial build
-that merely embeds early modules is not full runtime module acceptance. Do not
-invent new builder flags or replace the old known-good disk. Confirm the running
-release and load a representative module after boot. Further A/B/A/account loops
-are unnecessary unless a failure or relevant changed behavior requires them.
+| Stage | Observed result |
+| --- | --- |
+| Compiler/runtime | GCC 14.4 compiled, linked and ran the libelf/OpenSSL probe; its ELF loader and libc resolved inside the pinned glibc 2.44 closure. |
+| Kernel build | The helper reached `READY` for `6.12.107-mojt1`, with matching staged modules, dependency indexes, sampled vermagic, config diff and `kernel.json`. |
+| Image assembly | Mojt built a new UEFI image from frozen Base 0.1.3 and the existing step-10 System payload. Frozen input verification passed across assembly. |
+| Runtime module staging | The existing hardware profile copied the complete matching module tree and retained firmware/licenses. The image builder's reported 17 modules refer to early initramfs inputs. |
+| Boot/login | The new image booted as `system-kernel-A`, with authenticated root serial login and `uname -r` reporting `6.12.107-mojt1`. |
+| Matching runtime driver | `/lib/modules` listed only the new release. `e1000e.ko` came from that tree, had vermagic `6.12.107-mojt1 SMP preempt mod_unload modversions`, and was loaded in `/proc/modules`. |
+| Network integration | `ethtool -i eth0` reported e1000e with version `6.12.107-mojt1`; certificate-verified HTTPS returned the expected Nix cache information. |
+| Service health | `systemctl --failed` reported zero failed units. |
+
+The original frozen input inventory still names the retained Debian kernel:
+that inventory was preserved, while the separately staged own-built kernel was
+explicitly selected for the new image. The build VM's running kernel and the
+known-good reference disks were not replaced. The fixed 1970 build timestamp in
+`uname` is intentional build metadata, not a runtime clock reading or proof of
+bit-for-bit reproducibility.
+
+Focused automated coverage includes 18 kernel/environment tests, including the
+real upstream config and vDSO shell scripts, missing-command rejection, config
+policy checks, source mismatch rejection, private staging and pre-staging resume
+guards. The complete source build and boot evidence above is owner-run native
+acceptance, separate from the mocked driver tests.
+
+Two operational details from image preparation matter when reproducing it:
+
+- Password-mode image assembly requires terminal stdin. If its command is
+  inside a heredoc, append `</dev/tty` to the builder invocation.
+- On the Debian host, expose administrative tool directories before serial
+  conversion: `export PATH="/usr/sbin:/sbin:$PATH"`. A successful image export
+  can be retained if conversion stops at this prerequisite check.
+
+This accepts the first native kernel build, matching runtime module use and
+basic VM integration. It does not establish a self-hosted source build of all
+System packages, own-kernel physical-hardware acceptance, production Secure Boot,
+general libc/ABI compatibility, reproducible binaries or existing-disk Kernel
+publication/rollback. Retain the working reference and the successful result.
+Further A/B/A/account loops are unnecessary without a relevant behavior change.
 
 ## Primary references
 
