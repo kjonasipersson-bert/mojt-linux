@@ -386,6 +386,10 @@ Existing fresh-image tests do not establish existing-disk boot publication.
    verifies Kernel bytes but not Base/System payloads or actual initramfs logic;
    successful output explicitly does not establish boot readiness.
    Base/System/Port native installation remains separate work.
+   The next [fresh native image builder](native-image-build.md) exercises complete
+   native Base and installed Kernel inputs with the current optional System
+   payload adapter, independent module mounts and generated/inspected initramfs.
+   It bootstraps only a new image; it is not an existing-disk mutation command.
 4. Add repository publication/update and interchangeable local/HTTPS transports
    with an explicitly specified trust mechanism. Metadata refresh does not fetch
    payloads, compile anything or change installed/selected content.

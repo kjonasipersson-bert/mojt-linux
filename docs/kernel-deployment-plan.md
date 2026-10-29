@@ -130,6 +130,13 @@ It must preserve the selected System userspace while composing the independent
 Kernel choice, without reusing an old System-name boot directory for new bytes.
 Only a separate transactional publication/selection operation may activate it.
 
+The [fresh native image builder](native-image-build.md) now connects this plan
+to one new serial UEFI disk: verified native Base input, copied installed Kernel,
+independent module mounts, generated/inspected initramfs and complete sidecars.
+Its explicit bootstrap selection is for that new image, not an existing-disk
+upgrade or automatic adoption of running state. Owner result-boot acceptance is
+pending; the standalone planner's limited readiness result remains unchanged.
+
 The focused tests use real installed tar/zstd fixture packages and deliberately
 synthetic, nonbootable initramfs bytes. They cover complete identity and selected
 scope, every declaration gate, same-release builds, damaged/missing content,

@@ -223,6 +223,23 @@ old boot descriptors cannot be silently reused for the independent native
 Kernel choice. A focused result boot belongs with that builder change. Durable
 existing-disk publication, selection and recovery remain separate work.
 
+PR #30 merged after final-head green CI. The next
+[fresh native image builder](native-image-build.md) now verifies a native Base
+package, privately reimports an exact installed Kernel, snapshots the existing
+System payload and creates one new serial UEFI image. The generated initramfs
+mounts the native module tree independently of System; actual gzip/newc content
+is inspected against the generated script, device metadata and early modules.
+Complete deployment/binding/planner evidence is emitted for that new image.
+Original Base files/metadata/xattrs/hardlink topology must be preserved; only
+additive mountpoint scaffolding is allowed and recorded. Base libc is unchanged.
+
+The next focused owner acceptance wraps the unchanged Base release, reuses the
+already installed Kernel and exported System payload, previews/builds one new
+disk and boots it once. Verify the native artifact/module mount, running release,
+failed-unit count and existing HTTPS path. No repeated account/A/B/A run is
+required. Unit integration uses real package/installer/cpio operations with a
+synthetic disk and guest; it is not measured runtime acceptance of this new path.
+
 Console usability follow-up: automate geometry setup/refresh for direct
 Debian-host QEMU serial sessions. A manual terminal reset/size adjustment resolved
 the owner's display/paste problem during this test. No automatic terminal fix

@@ -433,6 +433,34 @@ def verify(path, expected_id=None):
                 process.wait()
 
 
+def base_input(release, revision):
+    """Wrap an existing Base release without rebuilding or rewriting its records."""
+    release = Path(release)
+    require(release.is_dir() and not release.is_symlink(), "Base release must be a regular directory")
+    manifest = release / "manifest.toml"
+    require(manifest.is_file() and not manifest.is_symlink(), "Base release requires regular manifest.toml")
+    with manifest.open("rb") as stream:
+        raw = stream.read(MAX_METADATA + 1)
+    require(len(raw) <= MAX_METADATA, "Base manifest exceeds size limit")
+    original = tomllib.loads(raw.decode("utf-8"))
+    require(type(original.get("format")) is int and original["format"] == 1, "unsupported Base release")
+    base, image = original.get("base"), original.get("image")
+    require(isinstance(base, dict) and base.get("name") == "mojt" and isinstance(image, dict), "invalid Base release metadata")
+    require(token(base.get("version")) and token(base.get("architecture")), "invalid Base release identity")
+    require(image.get("file") == "rootfs.tar.zst", "Base adapter requires rootfs.tar.zst")
+    archive = release / "rootfs.tar.zst"
+    require(archive.is_file() and not archive.is_symlink() and file_sha(archive) == image.get("sha256"),
+            "Base archive differs from release manifest")
+    upstream = base["version"]
+    # Preserve nonnumeric legacy labels verbatim, with exact-only ordering.
+    scheme = "dotted-v1" if isinstance(upstream, str) and re.fullmatch(r"[0-9]+(?:\.[0-9]+)*", upstream) else "opaque-v1"
+    spec = dict(format=SPEC_FORMAT, kind="base", name="mojt", platform=base["architecture"] + "-linux",
+        version=dict(upstream=upstream, scheme=scheme, revision=revision), dependencies=[], requirements={}, provides={},
+        provenance=dict(adapter="existing-base-release-v1", manifest_sha256=hashlib.sha256(raw).hexdigest(),
+                        rootfs_sha256=image["sha256"]), metadata=dict(base_release=upstream))
+    return validate_spec(spec), {}
+
+
 def kernel_input(build, revision):
     build = Path(build)
     require(not os.path.lexists(build / ".building"), "incomplete Kernel build")

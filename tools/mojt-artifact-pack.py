@@ -23,7 +23,11 @@ def main(argv=None):
     kernel.add_argument("--build", type=Path, required=True)
     kernel.add_argument("--revision", type=int, required=True)
     kernel.add_argument("--attachment", action="append", default=[], metavar="NAME=FILE")
-    for command in (generic, kernel):
+    base = commands.add_parser("base")
+    base.add_argument("--release", type=Path, required=True)
+    base.add_argument("--revision", type=int, required=True)
+    base.add_argument("--attachment", action="append", default=[], metavar="NAME=FILE")
+    for command in (generic, kernel, base):
         command.add_argument("--output", type=Path, required=True)
     verify = commands.add_parser("verify")
     verify.add_argument("archive", type=Path)
@@ -36,6 +40,9 @@ def main(argv=None):
             if args.action == "kernel":
                 spec, attachments = artifact.kernel_input(args.build, args.revision)
                 source = args.build / "root"
+            elif args.action == "base":
+                spec, attachments = artifact.base_input(args.release, args.revision)
+                source = args.release
             else:
                 spec, attachments = artifact.read_json(args.spec), {}
                 source = args.source
