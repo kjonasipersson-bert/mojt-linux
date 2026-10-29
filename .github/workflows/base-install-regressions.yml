@@ -51,6 +51,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_mojt_artifact.py' -v
       - name: Check local Kernel installation status integrity and interrupted publication
         run: python3 -m unittest discover -s tests -p 'test_mpm_kernel.py' -v
+      - name: Check complete read-only Kernel deployment plans and selected-state gates
+        run: python3 -m unittest discover -s tests -p 'test_mpm_deployment.py' -v
       - name: Check backend-independent Ports selector request policy
         run: python3 -m unittest discover -s tests -p 'test_mpm_selector_ports.py' -v
       - name: Check MPM/Nix orchestration with simulated backend
@@ -127,4 +129,3 @@ jobs:
         with:
           name: hardware-boot-logs
           path: ${{ runner.temp }}/mojt-boot-logs/
-

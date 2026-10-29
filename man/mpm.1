@@ -1,19 +1,26 @@
 .\" Mojt Linux
 .\" Copyright (C) 2026 Jonas Persson
 .\" SPDX-License-Identifier: GPL-2.0-only
-.TH MPM 1 "2026-10-28" "Mojt Linux" "User Commands"
+.TH MPM 1 "2026-10-29" "Mojt Linux" "User Commands"
 .SH NAME
-mpm \- manage Mojt Ports from explicit pinned catalogs
+mpm \- manage Mojt Ports and inspect local native Kernel content
 .SH SYNOPSIS
 .B mpm
 .RI [ global-options ] " ports " action " " [ arguments ]
+.br
+.B mpm
+.RI [ --root " DIRECTORY" ] " kernel " install|status|plan " " [ arguments ]
 .SH DESCRIPTION
-MPM is Mojt's experimental package manager. The implemented area is
-.BR ports :
-shared command-line applications, retained side by side in the Nix store.
+MPM is Mojt's experimental package manager. The Nix-backed
+.B ports
+area manages shared command-line applications retained side by side in the Nix store.
 Imports use binary substitutes only; unavailable substitutes fail instead
 of starting source builds. System services and desktop integration are not
 automatically configured for installed applications.
+.PP
+The repository frontend also installs exact local native Kernel packages,
+inspects their retained registry and checks explicit read-only deployment plans.
+These operations require no optional provider backend and never activate a Kernel.
 .PP
 Catalog selection, recorded requests, installed artifacts and active command
 selections are separate. An artifact identity from
@@ -228,6 +235,23 @@ Status distinguishes installed content from unknown selected deployment and
 the actual running release; uname alone does not establish artifact identity.
 No boot selection or running module tree changes. Deployment compatibility is
 unevaluated. See docs/mpm-kernel.md for the supported local subset and limits.
+.SH READ-ONLY KERNEL DEPLOYMENT PLAN
+kernel plan --request FILE [--json] checks a complete explicit local plan.
+Use --root DIRECTORY before kernel or after plan, once only, to name the Kernel
+registry. No registry, lock, selection, cache or boot files are created.
+.PP
+The exact candidate must be installed and pass a fresh integrity scrub.
+The request binds selected Base and System identities, Base Kernel limits,
+System ABI/state/Ports/shell facts and an initramfs checksum/binding to the exact
+Kernel image/module inventory, filesystem UUID and console. Base/System userspace
+must remain selected unchanged; missing or incompatible evidence fails.
+No running release, current link, provider or alternate Base is used as fallback.
+.PP
+Successful plans still report boot_ready false. Explicit metadata is not an
+authenticated disk selection; Base/System payloads, actual initramfs contents,
+hardware/firmware, Secure Boot and runtime ABI remain unaudited. The planner
+does not generate initramfs, write GRUB or modify selected/running state.
+See docs/kernel-deployment-plan.md for strict experimental schemas and limits.
 .SH FILES
 .TP
 .B /var/lib/mojt/ports/current

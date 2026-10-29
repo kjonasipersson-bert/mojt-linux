@@ -678,7 +678,14 @@ selection, catalog acquisition or automatic Kernel upgrade policy. Existing
 installed System launchers still use the Nix prototype; these commands run from
 the repository frontend.
 
-**Not implemented:** MPM Base/System mutations and Kernel deployment/upgrade commands, general version adapters, user-facing rollback/undo, production project profiles/locks,
+The [read-only Kernel deployment planner](kernel-deployment-plan.md) now binds
+the exact installed Kernel/image/module inventory to explicit selected Base,
+System, root/console and initramfs declarations. It reuses selected-Base limits
+and System ABI/state/Ports/shell checks, preserving Base and System userspace.
+It makes no selection or boot writes; Base/System payloads, actual initramfs
+mount behavior and runtime/hardware compatibility are not verified by this plan.
+
+**Not implemented:** MPM Base/System mutations and Kernel deployment activation/upgrade commands, general version adapters, user-facing rollback/undo, production project profiles/locks,
 pruning/GC, verified external capabilities, signed catalogs, production
 deployment formats, and durable updates to existing boot disks.
 
