@@ -83,8 +83,9 @@ existing-disk activation remains separate implementation work.
 
 ## Implementation boundaries
 
-The repository frontend implements Ports and local native Kernel install/status.
-Base/System mutations, Kernel deployment/upgrade operations, general
+The repository frontend implements Ports, local native Kernel install/status
+and read-only complete deployment planning.
+Base/System mutations, Kernel deployment activation/upgrade operations, general
 undo, production project locks and GC remain unimplemented. Native format-2
 upgrades/history have real Distrobox/VM acceptance; format-3 selector transaction
 integration has owner-run real and VM acceptance. General
@@ -205,6 +206,22 @@ Production repository trust/update, catalog acquisition, policy persistence and
 boot activation remain separate increments. The next deployment work must bind
 exact Base/System/Kernel/module/initramfs content and enforce compatibility
 before selecting a boot entry. No repeated unrelated VM acceptance is required.
+
+PR #29 merged after final-head green CI and the owner acceptance above. The
+next [read-only complete Kernel deployment planner](kernel-deployment-plan.md)
+checks installed bytes and explicit selected Base bounds, System identity and
+ABI/state/Ports/shell declarations, plus initramfs file/identity bindings.
+It preserves Base/System userspace and does not write or adopt a selection.
+All plans explicitly leave boot readiness unestablished: Base/System payload
+verification, authoritative state lookup, actual initramfs contents/mounts,
+hardware/firmware and runtime ABI checks remain outside this metadata increment.
+
+The next build integration must consume the chosen native Kernel/module tree,
+generate and bind a deployment-specific initramfs, and verify the exact Base and
+System inputs. Current initramfs logic mounts modules from the System profile;
+old boot descriptors cannot be silently reused for the independent native
+Kernel choice. A focused result boot belongs with that builder change. Durable
+existing-disk publication, selection and recovery remain separate work.
 
 Console usability follow-up: automate geometry setup/refresh for direct
 Debian-host QEMU serial sessions. A manual terminal reset/size adjustment resolved

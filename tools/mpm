@@ -19,7 +19,10 @@ elif len(sys.argv) >= 2 and sys.argv[1].startswith("--root="):
     kernel_offset = 2
     kernel_options = sys.argv[1:2]
 
-if (len(sys.argv) > kernel_offset + 1 and sys.argv[kernel_offset] == "kernel"
+if (len(sys.argv) > kernel_offset + 1 and sys.argv[kernel_offset:kernel_offset + 2] == ["kernel", "plan"]):
+    from mpm_deployment import main
+    raise SystemExit(main([*kernel_options, *sys.argv[kernel_offset + 2:]]))
+elif (len(sys.argv) > kernel_offset + 1 and sys.argv[kernel_offset] == "kernel"
         and sys.argv[kernel_offset + 1] in ("install", "status")):
     from mpm_kernel import main
     raise SystemExit(main([*kernel_options, *sys.argv[kernel_offset + 1:]]))

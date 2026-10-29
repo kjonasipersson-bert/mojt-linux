@@ -13,6 +13,9 @@ Nix/provider code. The installed System launcher still invokes the older Nix
 prototype directly; bundling/adopting this frontend in System is separate work.
 No `activate`, upgrade, automatic tracking policy, catalog acquisition, boot
 publication, GRUB/initramfs generation or existing-disk updater is implemented.
+The next [read-only deployment planner](kernel-deployment-plan.md) checks an
+installed Kernel against an explicit complete selection and initramfs binding;
+it does not adopt that selection or establish boot readiness.
 
 ## Commands
 

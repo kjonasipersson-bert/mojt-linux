@@ -379,7 +379,13 @@ Existing fresh-image tests do not establish existing-disk boot publication.
    [local Kernel install/status prototype](mpm-kernel.md) now retains an exact
    archive and private read-only tree with an atomic installation record. It
    rejects unsupported requirements/dependencies and does not select a boot
-   deployment. Base/System/Port native installation remains separate work.
+   deployment. PR #29 passed owner real import/status/no-op acceptance and merged.
+   The next [read-only complete deployment planner](kernel-deployment-plan.md)
+   ties the installed Kernel/image/modules to explicit selected Base/System and
+   initramfs declarations, with compatibility gates and no boot writes. It
+   verifies Kernel bytes but not Base/System payloads or actual initramfs logic;
+   successful output explicitly does not establish boot readiness.
+   Base/System/Port native installation remains separate work.
 4. Add repository publication/update and interchangeable local/HTTPS transports
    with an explicitly specified trust mechanism. Metadata refresh does not fetch
    payloads, compile anything or change installed/selected content.
@@ -401,8 +407,9 @@ build rejection, unchanged input files and operation without provider files or
 executables. No repeated VM account/network/generation loop is required.
 
 The immediate deliverable is this architecture plus the local read-only
-catalog, native packer/verifier and local Kernel install/status prototypes. They
-create no repository service, package migration, signing system, automatic
+catalog, native packer/verifier, local Kernel install/status and read-only complete
+deployment planning prototypes. They create no repository service, package
+migration, signing system, automatic
 catalog acquisition or Kernel deployment activation. The experimental native canonicalization is specified; storage
 paths, publisher key policy and mutation grammar remain open decisions. The
 discovery envelope is a separately versioned experimental format, not a silent
