@@ -7,7 +7,8 @@ SPDX-License-Identifier: GPL-2.0-only
 # Architecture manifesto: Mojt-owned artifacts and catalogs
 
 Started 2026-10-28. **Status: architecture draft with a read-only local catalog
-and native package-format prototype, not a repository updater or installer.**
+and native package-format prototype plus local Kernel installation, not a
+production repository/deployment updater.**
 The user-directed requirements below guide the next increments; package/trust
 formats, storage paths and mutation commands still need review. The [MPM contract](mpm.md)
 continues to define area boundaries, selectors and installation/activation
@@ -374,7 +375,11 @@ Existing fresh-image tests do not establish existing-disk boot publication.
 3. Implement native verification and install/status planning
    without Nix installed or a network connection. Installing a kernel does not
    change the selected deployment. Preserve the first-install Ports exception
-   and all other [MPM operation semantics](mpm.md).
+   and all other [MPM operation semantics](mpm.md). The first
+   [local Kernel install/status prototype](mpm-kernel.md) now retains an exact
+   archive and private read-only tree with an atomic installation record. It
+   rejects unsupported requirements/dependencies and does not select a boot
+   deployment. Base/System/Port native installation remains separate work.
 4. Add repository publication/update and interchangeable local/HTTPS transports
    with an explicitly specified trust mechanism. Metadata refresh does not fetch
    payloads, compile anything or change installed/selected content.
@@ -396,9 +401,9 @@ build rejection, unchanged input files and operation without provider files or
 executables. No repeated VM account/network/generation loop is required.
 
 The immediate deliverable is this architecture plus the local read-only
-catalog and native packer/verifier prototypes. They create no repository service,
-package migration, signing system, acquisition or Kernel install/status/activation
-implementation. The experimental native canonicalization is specified; storage
+catalog, native packer/verifier and local Kernel install/status prototypes. They
+create no repository service, package migration, signing system, automatic
+catalog acquisition or Kernel deployment activation. The experimental native canonicalization is specified; storage
 paths, publisher key policy and mutation grammar remain open decisions. The
 discovery envelope is a separately versioned experimental format, not a silent
 extension of the existing v1 resolver.
