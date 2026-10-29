@@ -1,0 +1,10 @@
+{
+  "format": "mpm-kernel-base-context-v1",
+  "base": {
+    "release": "example-1",
+    "artifact": "example:base-1"
+  },
+  "platform": "x86_64-linux",
+  "kernel_min": "6.1",
+  "kernel_max": "6.12.999"
+}

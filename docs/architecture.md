@@ -18,6 +18,30 @@ gate, filesystem layout, build recipe and acceptance boundaries.
 
 This document records **current decisions and open questions**, not stable promises. For the enduring design goals, see [the manifesto](manifesto.md).
 
+## Mojt-owned catalogs and optional providers (2026-10-28 direction)
+
+Mojt must own the catalog and artifact model for its complete Base releases,
+Kernel builds and System components, including content not supplied by Nix or
+another distribution. Building, publication, acquisition/installation and
+activation are separate responsibilities. MPM's core must support local native
+catalogs and artifacts without Nix or a live external service.
+
+The [artifact architecture manifesto](mpm-artifact-architecture.md) starts this
+design: a versioned catalog describes offered artifacts before they are on the
+machine; retained/installed, selected and running state remain distinct. External
+providers become explicit optional adapters. This is the user-directed model;
+the detailed descriptor, trust, storage and migration formats remain proposals.
+Today's Nix-backed System and Ports implementation remains in use while those
+native paths are developed.
+
+The [native artifact format prototype](native-artifact-format.md) uses the same
+versioned descriptor/container for Base, System, Kernel and Port packages. All
+logical tar members stay under their single kind directory, including the
+descriptor; this archive namespace is separate from installation destinations.
+The packer preserves existing Base release images and Kernel build evidence,
+with explicit version/revision/build identities. Acquisition, installation,
+repository trust and boot activation remain separate work.
+
 The [roadmap](roadmap.md) records completed Base/System and different-kernel
 VM experiments and the next System/MPM work. The
 [System completeness and account proposal](system-completeness-proposal.md)
@@ -138,8 +162,8 @@ The [selector/catalog contract](mpm-selectors.md) documents pure policy and
 Nix transaction integration, series aliases and explicit format-3 adoption.
 Other version adapters and [libc integration](mpm-libc-policy.md) remain deferred.
 
-Nix is now the selected Ports backend after the binary-import and pacman
-comparisons. The full selector/project-lock policies remain design requirements. For early Mojt versions, Nix is
+Nix is the current experimental Ports provider after the binary-import and pacman
+comparisons; it is not a required dependency of the future MPM core. The full selector/project-lock policies remain design requirements. For early Mojt versions, Nix is
 also selected for System package acquisition and dependency storage, using a
 shared store. The current CLI implements Ports installation, activation,
 removal, inspection, recorded attribute upgrades and committed transaction
@@ -153,6 +177,11 @@ System release and deployment formats require separate evaluation, including
 compatibility between the selected System's MPM and persistent metadata.
 
 ## Accepted early Nix/System policy (2026-10-23)
+
+This records the early provider choice. The later Mojt-owned artifact/catalog
+direction above keeps that integration while making external providers optional
+to the future core; it does not rebind existing requests or replace installed
+runtime dependencies automatically.
 
 The owner approved the following policy after the three-step System VM run:
 

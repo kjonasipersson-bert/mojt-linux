@@ -45,6 +45,10 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_vm_serial.py' -v
       - name: Check backend-independent MPM selector and catalog resolution
         run: python3 -m unittest discover -s tests -p 'test_mpm_selection.py' -v
+      - name: Check offline discovery and Base-constrained Kernel policies without providers
+        run: python3 -m unittest discover -s tests -p 'test_mpm_catalog.py' -v
+      - name: Check four-kind native package namespaces and real tar zstd round trips
+        run: python3 -m unittest discover -s tests -p 'test_mojt_artifact.py' -v
       - name: Check backend-independent Ports selector request policy
         run: python3 -m unittest discover -s tests -p 'test_mpm_selector_ports.py' -v
       - name: Check MPM/Nix orchestration with simulated backend

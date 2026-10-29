@@ -53,7 +53,7 @@ updates to an existing boot disk or power-loss recovery.
 | 2 | More complete System | Diagnostics and console/time/journal acceptance completed. Timezone/UTF-8/manual checks accepted on System A; separate A/B checks deferred to the next stage. The account A/B/A run now preserves new users, identity and home data, with working PAM/sudo, session cleanup and shared Ports. Superseded-password rejection is owner-confirmed. Account integration merged; retain its reference image. |
 | 3 | MPM development | Ports upgrade/history and backend-independent selector integration passed real Nix and compatible-image VM acceptance and merged. PR #25's limited System manifest/preflight increment also merged. Existing-disk Base/System/Kernel publication remains future work; project locks precede pruning/GC. Libc integration stays deferred, with opaque dependency identities retained. |
 | 4 | Build System on Mojt | Owner-run full image assembly and result boot passed on 2026-10-27: frozen Base 0.1.3, step-10 System payload and Debian 6.12.107 kernel/modules. Inputs unchanged; result system-selfbuild-A boots with root serial login and no failed units. This is image assembly from prebuilt inputs; source compilation of all System packages remains separate work. |
-| 5 | Own-built Linux kernel | Native compilation, image assembly and focused VM acceptance passed on 2026-10-28 for 6.12.107-mojt1, based on the frozen Debian configuration. Matching e1000e module/driver, zero failed services and HTTPS confirmed. Retain the Debian reference; close PR #27 after review and CI. |
+| 5 | Own-built Linux kernel | Native compilation, image assembly and focused VM acceptance passed on 2026-10-28 for 6.12.107-mojt1, based on the frozen Debian configuration. Matching e1000e module/driver, zero failed services and HTTPS confirmed. PR #27 merged after green CI; retain the Debian reference and accepted result. |
 
 MPM work continues alongside System integration where needed. The current
 working Debian kernel remains the reference while the build/deployment chain
@@ -77,8 +77,9 @@ Libc work remains deferred: preserve exact opaque dependency identities, without
 adding a loader replacement or compatibility solver to this increment.
 
 Keep the latest tested reference VM. Optional SSH and personal Ports remain later tracks. Image assembly on Mojt
-and the first own-built kernel build/boot have now passed. The immediate closeout
-is review and CI for PR #27; choose the next deployment increment separately.
+and the first own-built kernel build/boot have now passed. PR #27 is merged.
+The next architecture increment is the Mojt-owned artifact/catalog model below;
+existing-disk activation remains separate implementation work.
 
 ## Implementation boundaries
 
@@ -142,7 +143,56 @@ failed. Compiler/host-helper evidence remained within the pinned tool closure;
 Base libc was not replaced. This is the complete first kernel-build/VM milestone,
 not a general libc compatibility proof or compilation of all System packages.
 
-Retain the known-good reference disks and the accepted result. PR #27 is ready
-for final review/CI closeout. Production Kernel publication/rollback, source
+Retain the known-good reference disks and the accepted result. PR #27 merged
+after green CI. Production Kernel publication/rollback, source
 builds of the complete System, project locks and GC remain separate increments;
 this acceptance does not implement new MPM layer commands.
+
+## Next architecture increment: Mojt-owned artifacts and catalogs
+
+The owner requires a standalone MPM/Mojt distribution model. Building and
+installing are separate: complete Base releases, own-built kernels and
+Mojt-owned System components need native distribution sources and a catalog of
+offered artifacts that are not yet installed. Nix and other providers remain
+optional integrations rather than the authority for MPM's catalog or policy.
+
+The [artifact architecture manifesto](mpm-artifact-architecture.md) begins that
+design, building on the existing pure selector/catalog contract. It distinguishes
+catalog-known, cached/verified, installed, selected and running content; starts
+from local repositories and retained snapshots; and proposes static publication
+without a mandatory external service or remote database. Native descriptor,
+identity/trust formats and migration rules remain to review before acquisition
+or installation is implemented.
+
+PR #28 also contains a [read-only local catalog prototype](mpm-catalog.md):
+literal name/alias search, explicit descriptions, grouped package inspection and
+versions, plus Kernel resolution using pinned/latest-LTS/latest-upstream policy
+intersected with explicit selected-Base bounds. It wraps the unchanged pure
+resolver schema and runs without provider code, Nix or network access. Examples
+are synthetic metadata, not published kernel packages or actual Base limits.
+
+PR #28 additionally prototypes [the native package format](native-artifact-format.md)
+and packer/verifier. All four kinds use a single category-rooted tar.zst with
+embedded descriptor; an external identical descriptor serves catalog discovery.
+Real tar/zstd fixtures cover Base, System components/compositions, Kernel and
+Port, filesystem metadata boundaries and version/build traceability. Existing
+Base archives and ready Kernel build records are preserved rather than rewritten.
+
+The owner completed [real Kernel package acceptance](native-artifact-format.md#owner-native-package-acceptance-2026-10-29)
+on 2026-10-29: Mojt packaged the existing build without recompilation, retained
+the original input records and actual kernel release, and Debian independently
+verified the transferred package, descriptor copies and original build evidence.
+The accepted artifact is recorded by its full content ID in the format guide.
+Functional-head CI is green; the acceptance follow-up changes documentation only.
+
+Next, implement local acquisition/import/install/status against this accepted
+package format and real artifact. Packaging and verification alone do not
+register installed content. Production repository trust/update,
+boot activation and new kernel builds remain separate increments. Focused
+automated tests cover this read-only work; no repeated unrelated VM acceptance
+is required.
+
+Console usability follow-up: automate geometry setup/refresh for direct
+Debian-host QEMU serial sessions. A manual terminal reset/size adjustment resolved
+the owner's display/paste problem during this test. No automatic terminal fix
+is implemented by the package-format work.

@@ -1,7 +1,7 @@
 .\" Mojt Linux
 .\" Copyright (C) 2026 Jonas Persson
 .\" SPDX-License-Identifier: GPL-2.0-only
-.TH MPM 1 "2026-10-27" "Mojt Linux" "User Commands"
+.TH MPM 1 "2026-10-28" "Mojt Linux" "User Commands"
 .SH NAME
 mpm \- manage Mojt Ports from explicit pinned catalogs
 .SH SYNOPSIS
@@ -194,6 +194,26 @@ activation, nor Base or Kernel selections. Sharing immutable Nix objects
 does not merge those policies. A future System updater must check whether
 its bundled MPM can read/write the selected persistent metadata format;
 mutable account, home and application state is not automatically rolled back.
+.SH LOCAL DISCOVERY PROTOTYPE
+The repository frontend supports catalog search, show and versions with an
+explicit local --catalog discovery envelope. Area-scoped forms include
+ports search, ports show and ports versions with that option. Ordinary Ports
+search without a discovery catalog retains its existing Nix source semantics.
+The current installed System launcher still invokes the Nix prototype;
+run local discovery through python3 -B tools/mpm in a checkout.
+.PP
+Discovery search matches literal names and declared aliases, case-insensitively.
+Use --exact for a whole name/alias, --description to additionally search
+descriptions, and --json for structured search output. There is no implicit
+regexp, network access or installed-state adoption. One row groups a package's
+builds; source evidence remains visible.
+.PP
+The read-only kernel resolve command requires --catalog, --base-context and
+--policy pinned, latest-lts or latest-upstream. Pinned takes --series major.minor
+or --release exact-release. All policies apply declared selected-Base limits;
+an impossible request fails without a policy or Base fallback. This does not
+install a kernel, persist its policy or change boot selection. See
+docs/mpm-catalog.md for synthetic examples and the experimental schema.
 .SH FILES
 .TP
 .B /var/lib/mojt/ports/current
@@ -236,5 +256,5 @@ readable catalog.
 .BR nix-store (1),
 .BR man (1)
 .PP
-Repository documentation: docs/mpm.md, docs/mpm-ports.md, docs/mpm-selectors.md
-and docs/roadmap.md.
+Repository documentation: docs/mpm.md, docs/mpm-ports.md, docs/mpm-selectors.md,
+docs/mpm-catalog.md, docs/mpm-artifact-architecture.md and docs/roadmap.md.

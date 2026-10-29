@@ -31,6 +31,16 @@ same backend for every area.
 See [the manifesto](manifesto.md), [architecture](architecture.md), and
 [Base release format](base-format.md) for the established layer boundaries.
 
+The user-directed [artifact architecture manifesto](mpm-artifact-architecture.md)
+(2026-10-28) adds the independent distribution model: Mojt-owned catalogs list
+offered builds before installation; native artifacts and local repositories
+must work without Nix or a live external service. Nix remains the current
+experimental provider. Publication/trust formats and migration details in that
+document are proposals, not implemented commands or an automatic change to
+existing catalog/source bindings. The [local discovery prototype](mpm-catalog.md)
+adds explicit read-only search/inspection and Base-constrained Kernel policy
+plans; it does not implement Kernel installation or adopt Ports metadata.
+
 ## 1. Areas and boundaries
 
 The command shape is:
@@ -200,6 +210,21 @@ This is the accepted user model, not the current builder's on-disk format.
 The [generation experiment](boot-generations.md) composes fresh images and
 uses System labels that also bind kernel inputs. It has not implemented
 independent Kernel selection or an updater for an existing boot disk.
+
+### Kernel request policies (accepted 2026-10-28)
+
+Kernel requests have three standard policies: a pinned major.minor series
+(following its stable patches) or an exact release/build pin; latest maintained
+LTS; and latest upstream stable. The latter two mean the highest eligible
+version in the chosen catalog, constrained by the selected Base's declared
+kernel bounds and all other required deployment compatibility gates. RC and
+development releases require a separate explicit preview workflow.
+
+An incompatible exact pin fails. If no eligible LTS exists, do not silently
+switch policy or change Base. Preserve policy separately from the resolved
+exact build. The [artifact architecture](mpm-artifact-architecture.md) specifies
+these boundaries; [the read-only prototype](mpm-catalog.md) exercises explicit
+Base bounds without persistent Kernel policy or boot activation.
 
 ### Installed, selected and running state (accepted 2026-10-26)
 
