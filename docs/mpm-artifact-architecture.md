@@ -366,9 +366,11 @@ Existing fresh-image tests do not establish existing-disk boot publication.
 2. Specify a native descriptor and exact references. PR #28 now prototypes a
    common container for Base/System/Kernel/Port, category-rooted members and an
    embedded descriptor, with a matching-build Kernel export adapter. Four-kind
-   fixtures and source/configuration evidence checks pass. Exporting the owner's
-   already accepted real kernel remains the next native acceptance; no new
-   compilation is needed and existing manifests/configuration are preserved.
+   fixtures and source/configuration evidence checks pass. The owner's
+   [real Kernel package acceptance](native-artifact-format.md#owner-native-package-acceptance-2026-10-29)
+   also passed on 2026-10-29: Mojt export and independent Debian verification of
+   the same exact artifact preserved existing build/configuration evidence,
+   without recompilation. This does not implement installation or activation.
 3. Implement native verification and install/status planning
    without Nix installed or a network connection. Installing a kernel does not
    change the selected deployment. Preserve the first-install Ports exception

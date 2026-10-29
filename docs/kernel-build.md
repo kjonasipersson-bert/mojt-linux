@@ -215,6 +215,18 @@ general libc/ABI compatibility, reproducible binaries or existing-disk Kernel
 publication/rollback. Retain the working reference and the successful result.
 Further A/B/A/account loops are unnecessary without a relevant behavior change.
 
+## Native distribution package acceptance: 2026-10-29
+
+The already accepted kernel output was subsequently packaged inside Mojt with
+the [native artifact prototype](native-artifact-format.md#owner-native-package-acceptance-2026-10-29),
+without rebuilding. The new package release `6.12.107-r1` explicitly retains
+the actual kernel/module release `6.12.107-mojt1`, original build record and
+configuration evidence. Input-record checksums remained unchanged. After export
+from the powered-off workspace, independent Debian verification passed against
+the full artifact ID, archive hash/size, embedded/detached descriptors and
+original build provenance. This is packaging/content verification, separate from
+the boot acceptance above; Kernel installation and boot selection remain future work.
+
 ## Primary references
 
 - [Linux 6.12 build requirements](https://www.kernel.org/doc/html/v6.12/process/changes.html).

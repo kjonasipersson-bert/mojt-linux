@@ -178,9 +178,21 @@ Real tar/zstd fixtures cover Base, System components/compositions, Kernel and
 Port, filesystem metadata boundaries and version/build traceability. Existing
 Base archives and ready Kernel build records are preserved rather than rewritten.
 
-Next, export the already verified real kernel output using that adapter, then
-implement local acquisition/import/install/status. Packaging and verification
-alone do not register installed content. Production repository trust/update,
+The owner completed [real Kernel package acceptance](native-artifact-format.md#owner-native-package-acceptance-2026-10-29)
+on 2026-10-29: Mojt packaged the existing build without recompilation, retained
+the original input records and actual kernel release, and Debian independently
+verified the transferred package, descriptor copies and original build evidence.
+The accepted artifact is recorded by its full content ID in the format guide.
+Functional-head CI is green; the acceptance follow-up changes documentation only.
+
+Next, implement local acquisition/import/install/status against this accepted
+package format and real artifact. Packaging and verification alone do not
+register installed content. Production repository trust/update,
 boot activation and new kernel builds remain separate increments. Focused
 automated tests cover this read-only work; no repeated unrelated VM acceptance
 is required.
+
+Console usability follow-up: automate geometry setup/refresh for direct
+Debian-host QEMU serial sessions. A manual terminal reset/size adjustment resolved
+the owner's display/paste problem during this test. No automatic terminal fix
+is implemented by the package-format work.
