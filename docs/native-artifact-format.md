@@ -244,5 +244,7 @@ This accepts real native Kernel packaging and portable content verification.
 It does not register an installed kernel, publish a catalog entry, validate a
 new deployment or change boot selection. Real Base/System/Port exports remain
 separate from their successful synthetic format fixtures. Repository trust,
-safe import/extraction and `mpm kernel install/status` are the next work; another
+production import/extraction and boot deployment remain separate work. The
+first [local Kernel install/status prototype](mpm-kernel.md) now consumes this
+accepted format with a conservative regular-file/directory subset. Another
 kernel build or unrelated VM account/generation cycle is not required.

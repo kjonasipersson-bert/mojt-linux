@@ -7,7 +7,8 @@ SPDX-License-Identifier: GPL-2.0-only
 # Mojt Package Management Contract (draft 0.2)
 
 **Status:** accepted design contract with a partial experimental implementation.
-The current CLI implements a subset of Ports operations; the commands below
+The repository frontend implements a subset of Ports operations plus local
+Kernel install/status and read-only catalog discovery; the commands below
 are design examples unless identified as implemented in section 6. This
 document records the update model accepted on 2026-10-26 and the previously
 accepted high-level selector semantics:
@@ -659,7 +660,7 @@ not evidence of a different-kernel upgrade or an existing-disk updater.
 
 The full System VM uses systemd, NetworkManager/D-Bus, Nix and management
 Python. Its earlier VM acceptance also covered networking and binary Ports
-imports with parallel Python versions. The current `mpm` CLI accepts only
+imports with parallel Python versions. The current Nix-backed area accepts only
 the `ports` area: `update`, `install`, `activate`, `remove`, `status`, `list`,
 `search`, `info`, `upgrade`, `history`, read-only `resolve`, and explicit
 `metadata` adoption on the selector branch. Formats 1/2 retain native attribute
@@ -670,7 +671,14 @@ pinned. Plans/history show resolution, dependencies and compatibility changes.
 See [the selector integration contract](mpm-selectors.md#9-implemented-transaction-integration-2026-10-27)
 for commands, state compatibility, measured evidence and pending real/VM tests.
 
-**Not implemented:** MPM Base/System/Kernel commands, general version adapters, user-facing rollback/undo, production project profiles/locks,
+The [local Kernel install/status prototype](mpm-kernel.md) now supports explicit
+exact native-file installation into a separate registry, private retained trees,
+read-only status and an integrity scrub. It does not implement deployment
+selection, catalog acquisition or automatic Kernel upgrade policy. Existing
+installed System launchers still use the Nix prototype; these commands run from
+the repository frontend.
+
+**Not implemented:** MPM Base/System mutations and Kernel deployment/upgrade commands, general version adapters, user-facing rollback/undo, production project profiles/locks,
 pruning/GC, verified external capabilities, signed catalogs, production
 deployment formats, and durable updates to existing boot disks.
 

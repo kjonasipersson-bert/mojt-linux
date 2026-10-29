@@ -214,6 +214,20 @@ or --release exact-release. All policies apply declared selected-Base limits;
 an impossible request fails without a policy or Base fallback. This does not
 install a kernel, persist its policy or change boot selection. See
 docs/mpm-catalog.md for synthetic examples and the experimental schema.
+.SH LOCAL KERNEL INSTALL AND STATUS
+The repository frontend supports kernel install --from-file ARCHIVE
+--expected-id sha256:FULL_HEX_ID, with optional --dry-run or -y, and kernel
+status with optional --verify and --json. Use --root DIRECTORY before kernel
+or after the action, once only. Default registry: /var/lib/mojt/kernel;
+shared mutations require an administrator. A private user-owned root is supported.
+.PP
+Installation retains a verified archive, private read-only Kernel tree and
+installation record by exact artifact ID. Repeating it checks retained content
+and makes no change. Unsupported dependencies and requirements are rejected.
+Status distinguishes installed content from unknown selected deployment and
+the actual running release; uname alone does not establish artifact identity.
+No boot selection or running module tree changes. Deployment compatibility is
+unevaluated. See docs/mpm-kernel.md for the supported local subset and limits.
 .SH FILES
 .TP
 .B /var/lib/mojt/ports/current

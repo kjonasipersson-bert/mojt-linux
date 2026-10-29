@@ -83,7 +83,8 @@ existing-disk activation remains separate implementation work.
 
 ## Implementation boundaries
 
-The current MPM CLI implements Ports. Base/System/Kernel operations, general
+The repository frontend implements Ports and local native Kernel install/status.
+Base/System mutations, Kernel deployment/upgrade operations, general
 undo, production project locks and GC remain unimplemented. Native format-2
 upgrades/history have real Distrobox/VM acceptance; format-3 selector transaction
 integration has owner-run real and VM acceptance. General
@@ -185,11 +186,18 @@ verified the transferred package, descriptor copies and original build evidence.
 The accepted artifact is recorded by its full content ID in the format guide.
 Functional-head CI is green; the acceptance follow-up changes documentation only.
 
-Next, implement local acquisition/import/install/status against this accepted
-package format and real artifact. Packaging and verification alone do not
-register installed content. Production repository trust/update,
-boot activation and new kernel builds remain separate increments. Focused
-automated tests cover this read-only work; no repeated unrelated VM acceptance
+PR #28 passed review, final-head CI and native package acceptance and merged on
+2026-10-29. The next [local Kernel install/status prototype](mpm-kernel.md) now
+registers an explicitly identified local artifact with retained archive, private
+read-only tree and installation record, preserving selected/running deployments.
+It adds read-only inspection/scrubbing and reports unknown deployment bindings
+instead of identifying builds from `uname`. Unsupported dependencies/requirements
+are rejected, and existing Ports state/dispatch remain unchanged.
+
+The next native acceptance imports the already verified package into a dedicated
+registry, repeats the no-op and checks status/integrity. Production repository
+trust/update, catalog acquisition, policy persistence, boot activation and new
+kernel builds remain separate increments. No repeated unrelated VM acceptance
 is required.
 
 Console usability follow-up: automate geometry setup/refresh for direct
