@@ -6,7 +6,7 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Mojt development priorities
 
-Updated 2026-10-28. This records the agreed order and measured progress;
+Updated 2026-10-29. This records the agreed order and measured progress;
 future commands and policies are not claims of implemented functionality.
 The [architecture](architecture.md) defines the layer boundaries and the
 [MPM contract](mpm.md) records the accepted update semantics.
@@ -194,11 +194,17 @@ It adds read-only inspection/scrubbing and reports unknown deployment bindings
 instead of identifying builds from `uname`. Unsupported dependencies/requirements
 are rejected, and existing Ports state/dispatch remain unchanged.
 
-The next native acceptance imports the already verified package into a dedicated
-registry, repeats the no-op and checks status/integrity. Production repository
-trust/update, catalog acquisition, policy persistence, boot activation and new
-kernel builds remain separate increments. No repeated unrelated VM acceptance
-is required.
+The owner completed [real local Kernel install/status acceptance](mpm-kernel.md#owner-local-kernel-installation-acceptance-2026-10-29)
+on 2026-10-29 as an ordinary Debian user with a dedicated private registry.
+Empty status/preview created no registry; installation and full retained-content
+verification passed; repeating installation preserved status and the installation
+record. The source package checksum was unchanged. Selected deployment remained
+unknown and the running Debian kernel was distinguished from installed content.
+
+Production repository trust/update, catalog acquisition, policy persistence and
+boot activation remain separate increments. The next deployment work must bind
+exact Base/System/Kernel/module/initramfs content and enforce compatibility
+before selecting a boot entry. No repeated unrelated VM acceptance is required.
 
 Console usability follow-up: automate geometry setup/refresh for direct
 Debian-host QEMU serial sessions. A manual terminal reset/size adjustment resolved
