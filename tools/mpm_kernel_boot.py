@@ -419,7 +419,8 @@ def select(root, identifier, *, expected_selected, baseline=None, dry_run=False,
             # The menu is unchanged, but the candidate and the selected recovery
             # entry must still be intact immediately before publication.
             fresh_selected = inspect_entry(root, selected["relative"])
-            fresh_candidate = inspect_entry(root, candidate["relative"])
+            fresh_candidate = (fresh_selected if candidate["relative"] == selected["relative"]
+                               else inspect_entry(root, candidate["relative"]))
             require(fresh_selected["record"] == selected["record"] and
                     fresh_candidate["record"] == candidate["record"],
                     "boot deployment changed; repeat preview")
