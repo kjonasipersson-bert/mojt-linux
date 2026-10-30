@@ -255,9 +255,17 @@ now stages exact installed artifacts, generates and inspects a private initramfs
 and selects/rolls back next boot through one authoritative atomic menu replacement.
 It rechecks real Base/System content and current compatibility facts, keeps old
 deployments, and distinguishes selected from explicitly reported running content.
-Automated failure/identity/no-op tests pass; focused boot/rollback acceptance on
-one separate VM copy is pending. The same-release test artifact needs no Kernel
-recompilation or new System export. This does not implement general power-cut
+Automated failure/identity/no-op tests and the owner's functional boot/rollback
+sequence on one separate VM copy passed on 2026-10-30. The same-release test
+artifact needed no Kernel recompilation or new System export. Shutdown EBUSY
+failures remain open: udev maps the System hwdb/module indexes and journald maps
+the persistent journal. Clean-shutdown acceptance is not established.
+Slow verification also remains open; fixture instrumentation counted 26 full
+Kernel checks and seven Base/System scans across the stage/select test sequence.
+See the [measured acceptance and follow-ups](kernel-boot-selection.md#owner-functional-acceptance-2026-10-30).
+The next bounded work is shutdown lifetime/release ordering and measured removal
+of redundant verification, preserving fresh publication gates.
+This does not implement general power-cut
 recovery, automatic failed-boot fallback, policy acquisition or pruning.
 
 Console usability follow-up: automate geometry setup/refresh for direct

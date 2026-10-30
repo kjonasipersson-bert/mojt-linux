@@ -9,7 +9,9 @@ SPDX-License-Identifier: GPL-2.0-only
 This experimental checkout frontend follows the accepted fresh native image
 builder. It targets that builder's x86_64 serial UEFI/VirtIO layout, initially
 with one explicit native boot pair. It rejects customized/unknown boot menus.
-Owner boot/rollback acceptance of this increment is pending.
+The owner accepted the functional boot/rollback sequence on 2026-10-30.
+Shutdown unmount failures and excessive repeated verification remain open;
+see the measured result and follow-ups below. This is not clean-shutdown acceptance.
 
 Building, packaging, installing, staging and selecting remain separate actions.
 `kernel install` retains an artifact in the disk's independent Kernel registry.
@@ -134,3 +136,83 @@ This deliberately tests two artifacts with the same compiled Linux release.
 new boot and rollback. It does not claim compilation or testing of another
 upstream version, general firmware/hardware/libc compatibility or publisher trust.
 No repeated System account/A/B/A test or new System export is requested.
+
+## Owner functional acceptance: 2026-10-30
+
+Functional revision `0bf01411963c89cfa5a702d2dfc74c8c7c4bc5af` passed both CI
+jobs. On a separate copy of the accepted native VM disk, the owner then confirmed:
+
+- A distinct test-only Kernel package was installed without changing next boot.
+  The actual compiled Linux release and original build provenance were retained.
+- Staging generated a complete deployment, repeating it was a no-op, and the
+  original next-boot selection remained unchanged.
+- Selection changed next boot while the old exact artifact was still running.
+  Both entries were visible in GRUB despite sharing the same Linux release.
+- The newly selected deployment booted. Its exact runtime identity and read-only
+  module source matched, Base/System and machine identity were retained, and no
+  systemd units failed during the running-system check.
+- Rollback selected the original deployment without deleting either deployment.
+  After another boot, `check-old` confirmed the original exact deployment/module
+  source, unchanged Base/System and machine identity, and no failed running units.
+
+The original native package was `6.12.107-r1`, artifact
+`sha256:eed451b5497d078b8de4c098539cf63a4551aa0a46864fe7550b59066fe26250`.
+The test-only package was `6.12.107-r2`, artifact
+`sha256:4b8d94c4396784fa8914e244d1da2bc4ee46a925770e403aef3a6584ae51c92d`.
+Both run as `6.12.107-mojt1`; the test specifically demonstrates why full artifact
+and deployment identities must not be inferred from `uname -r`.
+
+No new Kernel compilation, System export, provider acquisition or account test
+loop was performed. Keep the accepted reference disk and this test copy.
+
+### Open shutdown finding
+
+The owner reported real shutdown failures for `/run/mojt-system`,
+`/usr/lib/modules` and `/var`: each unmount helper returned status 32 with
+`target is busy`. Their loaded mount units have default dependencies and are
+ordered before `umount.target`. These are failures during shutdown even though
+the following running-system `systemctl --failed` check is empty.
+
+A read-only process-map inspection during runtime identified udev mappings of
+`/run/mojt-system/hwdb.bin` and the selected Kernel's binary module indexes, plus
+journald's shared writable mapping of the persistent journal under `/var`.
+These are concrete retained references to investigate in the shutdown lifetime
+ordering; runtime maps alone do not establish exactly when each is released
+during the failing shutdown transaction.
+
+The shared System shutdown script still performs sync, `umount -a -r`, then
+another sync. Its late output reported busy devtmpfs/backing-disk mounts being
+remounted read-only. Clean unmounting has not been established; the log neither
+proves data corruption nor justifies treating the failures as cosmetic.
+
+Before closing this block, coordinate the lifetime of udev/journald and their
+retained references with early mount teardown and the final static shutdown
+phase. Verify reference release and final disk cleanup; do not merely hide
+the failed units or add forced/lazy unmounts. The fix must respect immutable
+System profiles and already retained initramfs/deployments. A focused shutdown
+acceptance belongs with that fix, not another full account/generation loop.
+
+### Open verification performance finding
+
+The owner reported slow stage/select scripts. The test runner deliberately
+invokes preview, mutation and repeat/status checks. Instrumenting the tested
+revision against the existing synthetic native-disk fixture found:
+
+| Invocation | Full Kernel object checks | Base inventory passes | System closure passes |
+| --- | ---: | ---: | ---: |
+| Stage preview | 3 | 1 | 1 |
+| Stage actual | 7 | 2 | 2 |
+| Stage repeat/no-op | 4 | 1 | 1 |
+| Select preview | 3 | 1 | 1 |
+| Select actual | 4 | 2 | 2 |
+| Status after selection | 5 | 0 | 0 |
+
+Those calls total 26 full Kernel checks and seven complete Base/System passes
+for the stage/select test sequence alone. Fixture call counts are evidence of
+redundant work, not timings or an I/O measurement of the owner's real VM.
+
+Next, add phase timings on a real retained input and remove duplicate scans
+within one operation. Keep fresh integrity and compatibility checks at actual
+publication boundaries, explicit full verification, corruption refusal and
+selected-versus-running semantics. Do not replace them with an unvalidated
+persistent cache or change the accepted test checkout midway through a boot run.
