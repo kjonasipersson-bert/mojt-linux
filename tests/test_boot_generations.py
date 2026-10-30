@@ -62,7 +62,7 @@ var_policy = "persistent"
         kernel.write_bytes(b"kernel A")
         modules = self.root / "modules"
         modules.mkdir()
-        self.fixture.busybox.write_text("#!/bin/sh\nprintf '%s\\n' cp ln umount halt\n")
+        self.fixture.busybox.write_text("#!/bin/sh\nprintf '%s\\n' cp ln umount halt sort printf\n")
         self.fixture.busybox.chmod(0o755)
         plan = self.root / "plan.toml"
         plan.write_text('format = 1\n[[boot]]\nbase = "0.1.3"\nsystem = "B"\n'
@@ -254,3 +254,4 @@ var_policy = "persistent"
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -797,7 +797,7 @@ def build(args):
             fail("hardware profile requires a System step 6 payload")
         applets = set(subprocess.run([str(busybox), "--list"], check=True,
                                     text=True, capture_output=True).stdout.splitlines())
-        missing = {"cp", "ln", "umount", "halt"} - applets
+        missing = support.SHUTDOWN_APPLETS - applets
         if missing:
             fail(f"System boot needs BusyBox applets: {', '.join(sorted(missing))}")
     network = record is not None and record["step"] >= 2

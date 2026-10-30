@@ -241,7 +241,7 @@ def write_initramfs(root):
 def build_initramfs(root, body, selected, slot, busybox, work):
     vm = vm_module()
     require(vm.static_x86_64_elf(busybox), "requires a trusted static x86_64 BusyBox")
-    vm.validate_busybox_applets(busybox, "password", extra=("findfs",))
+    vm.validate_busybox_applets(busybox, "password", extra=("findfs", *system.SHUTDOWN_APPLETS))
     d = selected["record"]["description"]
     release, base, label = body["metadata"]["kernel_release"], d["base"]["release"], d["system"]["generation"]
     payload = root / "kernel/installed" / kernel.identifier(body["id"]) / "payload"

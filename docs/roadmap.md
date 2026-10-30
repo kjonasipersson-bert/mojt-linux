@@ -265,6 +265,10 @@ Kernel checks and seven Base/System scans across the stage/select test sequence.
 See the [measured acceptance and follow-ups](kernel-boot-selection.md#owner-functional-acceptance-2026-10-30).
 The next bounded work is shutdown lifetime/release ordering and measured removal
 of redundant verification, preserving fresh publication gates.
+The [shutdown-order fix](shutdown-order.md) is implemented with runtime mount
+policy and static final cleanup. Its real-systemd QEMU fixture reproduces the
+three legacy EBUSY failures and passes corrected unmount/offline ext4 checks;
+one focused owner shutdown acceptance remains. Verification costs are unchanged.
 This does not implement general power-cut
 recovery, automatic failed-boot fallback, policy acquisition or pruning.
 

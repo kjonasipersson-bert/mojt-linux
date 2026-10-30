@@ -192,6 +192,12 @@ the failed units or add forced/lazy unmounts. The fix must respect immutable
 System profiles and already retained initramfs/deployments. A focused shutdown
 acceptance belongs with that fix, not another full account/generation loop.
 
+The [shutdown-order correction](shutdown-order.md) now supplies a runtime mount
+lifetime policy and explicit final old-root/device cleanup. The real systemd/QEMU
+fixture reproduces the legacy failures and passes the corrected shutdown plus an
+offline filesystem check. Focused owner acceptance with Mojt's Nix-based systemd
+is still pending; performance work remains separate.
+
 ### Open verification performance finding
 
 The owner reported slow stage/select scripts. The test runner deliberately
