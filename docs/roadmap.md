@@ -250,7 +250,18 @@ userspace. Preserve old deployments and distinguish installed, selected and
 running identities. Catalog acquisition/trust and policy persistence remain
 separate boundaries; project locks still precede pruning/GC.
 
+The experimental [existing native-disk Kernel boot frontend](kernel-boot-selection.md)
+now stages exact installed artifacts, generates and inspects a private initramfs,
+and selects/rolls back next boot through one authoritative atomic menu replacement.
+It rechecks real Base/System content and current compatibility facts, keeps old
+deployments, and distinguishes selected from explicitly reported running content.
+Automated failure/identity/no-op tests pass; focused boot/rollback acceptance on
+one separate VM copy is pending. The same-release test artifact needs no Kernel
+recompilation or new System export. This does not implement general power-cut
+recovery, automatic failed-boot fallback, policy acquisition or pruning.
+
 Console usability follow-up: automate geometry setup/refresh for direct
 Debian-host QEMU serial sessions. A manual terminal reset/size adjustment resolved
 the owner's display/paste problem during this test. No automatic terminal fix
 is implemented by the package-format work.
+

@@ -1,0 +1,136 @@
+<!--
+Mojt Linux
+Copyright (C) 2026 Jonas Persson
+SPDX-License-Identifier: GPL-2.0-only
+-->
+
+# Existing native-disk Kernel staging and next-boot selection
+
+This experimental checkout frontend follows the accepted fresh native image
+builder. It targets that builder's x86_64 serial UEFI/VirtIO layout, initially
+with one explicit native boot pair. It rejects customized/unknown boot menus.
+Owner boot/rollback acceptance of this increment is pending.
+
+Building, packaging, installing, staging and selecting remain separate actions.
+`kernel install` retains an artifact in the disk's independent Kernel registry.
+`kernel stage` generates a deployment-specific initramfs and publishes a complete
+new boot slot, without changing the running or next-boot selection. `select`
+changes only next boot; `rollback` selects the previously selected deployment.
+No command invokes Nix, downloads content, compiles a Kernel, changes Base libc,
+updates the selected System userspace or changes Ports wishes.
+
+## Explicit commands
+
+Use the new source checkout's `tools/mpm`; the existing installed step-10 System
+frontend is not silently replaced. These commands use `--disk-root`, not the
+standalone install/status registry option `--root`. Shared mutations require root.
+The registry is `DISK/kernel`. `--baseline` identifies the original native boot
+pair directory relative to DISK. Its complete menu and all content bindings must
+match before it can be the baseline; `uname` does not adopt a selection.
+After the first managed selection, the menu itself identifies the selected entry.
+
+```sh
+python3 -I -B tools/mpm kernel status --disk-root /DISK \
+  --baseline boot/mojt/SYSTEM/BASE --json
+
+python3 -I -B tools/mpm kernel stage --disk-root /DISK \
+  --baseline boot/mojt/SYSTEM/BASE --artifact sha256:FULL_KERNEL_ID --dry-run
+
+python3 -I -B tools/mpm kernel stage --disk-root /DISK \
+  --baseline boot/mojt/SYSTEM/BASE --artifact sha256:FULL_KERNEL_ID -y
+
+python3 -I -B tools/mpm kernel select --disk-root /DISK \
+  --baseline boot/mojt/SYSTEM/BASE --deployment sha256:STAGED_DEPLOYMENT_ID \
+  --expected-selected sha256:CURRENT_DEPLOYMENT_ID --dry-run
+
+python3 -I -B tools/mpm kernel select --disk-root /DISK \
+  --baseline boot/mojt/SYSTEM/BASE --deployment sha256:STAGED_DEPLOYMENT_ID \
+  --expected-selected sha256:CURRENT_DEPLOYMENT_ID -y
+
+python3 -I -B tools/mpm kernel status --disk-root /DISK --json
+python3 -I -B tools/mpm kernel rollback --disk-root /DISK \
+  --expected-selected sha256:CURRENT_DEPLOYMENT_ID -y
+```
+
+To report actual running identity in the guest, explicitly add
+`--running-record /run/mojt/deployment.json` to status. The record must describe
+the actual running release. The reported evidence is an explicit runtime record,
+not hardware attestation; a release string alone never identifies an artifact.
+Installed, staged, selected, previous and running identities remain distinct.
+
+Staging uses the verified selected System's static BusyBox by default, plus the
+existing `modprobe` and `zstd` executables. `--busybox` may explicitly supply a
+trusted alternative. No new `cpio` installation is required: a bounded Python
+newc/gzip writer serializes the private init tree, which the independent existing
+archive inspector verifies. GNU cpio independently reads/extracts it in tests.
+The acceptance runner privately exposes the zstd executable already retained in
+the selected System's verified provider closure; it imports no new package.
+
+## Verification and publication
+
+- Reverify the installed exact Kernel object/archive, selected boot binaries and
+  initramfs binding. Check the real immutable Base inventory against its assembly
+  receipt and the real System profile/provider objects against its manifest.
+  Additional store objects from Ports are allowed and are not System inputs.
+- Reuse the deployment resolver's Base bounds, exact System userspace and current
+  ABI/state/Ports/shell gates. Recheck them at selection, including rollback;
+  older software is not automatically allowed to read newer persistent data.
+  `--base-context FILE` can supply an explicit alternative staging declaration
+  for the same Base identity. No bounds or fallback are inferred.
+- Generate the existing reviewed root/state/System boot template with the
+  candidate's exact native module mount. Pin UUID, Base, System and actual Kernel
+  release. The initramfs reads its runtime record from its new immutable slot.
+- Verify decoded early modules and the complete actual archive inventory,
+  contents, modes, owners and character device numbers. Copy the selected Kernel
+  image and complete sidecars to `boot/mpm/slots/LOCAL_NONCE`, then publish that
+  directory. The local slot name avoids an initramfs/deployment digest cycle.
+- Staging does not rewrite `boot/mojt/grub.cfg`. Repeating a stage with identical
+  exact inputs and the same builder/BusyBox fingerprint reuses its complete slot.
+- Selection keeps the original and previously selected entries in the menu.
+  One atomic replacement of `boot/mojt/grub.cfg` publishes its exact generated
+  menu and selected/previous identity comments together. There is no second
+  authoritative selected-pointer file to disagree with it. The EFI loader already
+  loads this path; neither EFI binaries nor the ESP are rewritten.
+- Hold a boot registry lock and require the expected current selection. Write and
+  fsync complete content before publication; reject altered/custom menus, linked
+  paths, missing/damaged content and unsupported scope. Incomplete stage names
+  are reported, never silently selected, adopted or collected.
+
+Failed pre-publication selection leaves the old menu intact. The directory and
+menu publication boundaries have injected-failure tests. This is not a general
+power-cut recovery protocol: an interrupted initial registry setup can require
+explicit inspection. No automatic boot-success/failure counter, unattended
+fallback, pruning or recovery of arbitrary existing installations is provided.
+The previous menu entry remains a manual GRUB recovery option.
+The boot lock serializes these boot commands. Other Ports/account/System writers
+must remain idle during this experiment; a shared cross-layer transaction lock
+is future work. Selection rechecks compatibility facts immediately before menu
+publication, but does not claim atomic coordination with unrelated writers.
+
+## Focused owner acceptance
+
+Stop the accepted reference VM first. As the ordinary Debian VM owner, prepare
+one separate copy with `tests/prepare-kernel-boot-vm.py --image /ACCEPTED/IMAGE
+--output /NEW/VM`. The helper refuses an open source disk, checks its metadata
+remains unchanged while copying and attaches only the copy plus a read-only source disk.
+Keep the original VM stopped during this test; both disk copies retain its UUID.
+
+Boot the copy. Mount `LABEL=MOJT-KERNEL-LAB` read-only, verify `inventory.json`
+against its files, then invoke its `source/tests/run-kernel-boot-acceptance.py`:
+
+1. `prepare`: package the already installed payload with a distinct test-only
+   native revision, retaining the actual Kernel release and original build
+   provenance; install it without changing next boot.
+2. `stage`, then `select`: preview, stage and prove repeat/no-selection changes;
+   select next boot and prove the old exact Kernel is still running.
+3. Power off/start the SAME VM copy; run `check` to verify the new exact identity,
+   runtime record, read-only module source, preserved Base/System/machine ID and
+   absence of failed units.
+4. Run `rollback`, power off/start the same copy, then run `check-old` to verify
+   the original deployment is running and both deployments remain retained.
+
+This deliberately tests two artifacts with the same compiled Linux release.
+`uname -r` remains unchanged; full artifact/deployment IDs must distinguish the
+new boot and rollback. It does not claim compilation or testing of another
+upstream version, general firmware/hardware/libc compatibility or publisher trust.
+No repeated System account/A/B/A test or new System export is requested.

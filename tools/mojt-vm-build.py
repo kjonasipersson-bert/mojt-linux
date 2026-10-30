@@ -570,7 +570,7 @@ def module_bytes(path):
     fail(f"unsupported module compression: {path}")
 
 
-def make_initramfs(root, busybox, modules, init_script=None, shutdown_script=None, extra_applets=()):
+def make_initramfs(root, busybox, modules, init_script=None, shutdown_script=None, extra_applets=(), archive_writer=None):
     root.mkdir()
     for name in ("bin", "dev", "proc", "sys", "sysroot", "newroot", "modules"):
         (root / name).mkdir()
@@ -597,6 +597,8 @@ def make_initramfs(root, busybox, modules, init_script=None, shutdown_script=Non
     (root / "modules.list").write_text(
         "\n".join(module_list) + ("\n" if module_list else ""), encoding="ascii"
     )
+    if archive_writer is not None:
+        return archive_writer(root)
     entries = ["."] + [
         "./" + path.relative_to(root).as_posix()
         for path in sorted(root.rglob("*"))
@@ -1003,3 +1005,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
