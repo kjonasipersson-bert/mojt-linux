@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install archive tool
-        run: sudo apt-get update && sudo apt-get install -y dbus zstd cpio grub-common grub-efi-amd64-bin fdisk dosfstools mtools qemu-utils qemu-system-x86
+        run: sudo apt-get update && sudo apt-get install -y dbus zstd cpio busybox-static grub-common grub-efi-amd64-bin fdisk dosfstools mtools qemu-utils qemu-system-x86
       - name: Run synthetic installer regression tests
         run: python3 -m unittest discover -s tests -p 'test_base_install_failures.py' -v
       - name: Verify packed Base root ownership
@@ -131,3 +131,4 @@ jobs:
         with:
           name: hardware-boot-logs
           path: ${{ runner.temp }}/mojt-boot-logs/
+

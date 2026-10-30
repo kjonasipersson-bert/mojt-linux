@@ -10,6 +10,7 @@ import io
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import sys
@@ -35,6 +36,67 @@ def cpio(root):
     packed = subprocess.run(["cpio", "--create", "--format=newc", "--null", "--quiet"], cwd=root,
         input=b"\0".join(os.fsencode(n) for n in names) + b"\0", capture_output=True, check=True).stdout
     return gzip.compress(packed, mtime=0)
+
+
+class NativeModuleMountTests(unittest.TestCase):
+    """Exercise generated remount arguments independently of image fixtures."""
+    def remount(self, source, target):
+        script = native.init_script(fixtures.system.init_script(fixtures.vm.INIT),
+                                    "sha256:" + "1" * 64, "6.12.107-mojt1", "0.1.3", "native-fixture")
+        lines = [line for line in script.splitlines() if line.startswith("mount -o remount,bind,ro ")]
+        # System's separate profile remount has no native Kernel failure message.
+        line, = [line for line in lines if "cannot protect native Kernel modules" in line]
+        argv = shlex.split(line.split(" || ", 1)[0])
+        expected = "/sysroot/kernel/installed/" + "1" * 64 + "/payload/lib/modules"
+        self.assertEqual(argv, ["mount", "-o", "remount,bind,ro", expected, "/newroot/lib/modules"])
+        return argv[:3] + [str(source), str(target)]
+
+    def test_native_remount_has_explicit_source_and_target(self):
+        self.remount("/source", "/target")
+
+    @unittest.skipUnless(os.geteuid() == 0 and shutil.which("busybox"), "requires root and real BusyBox")
+    def test_busybox_fake_remount_bypasses_missing_mount_table_entry(self):
+        # -f skips mount(2), but still exercises BusyBox's real argument/table
+        # handling. No host mount namespace or actual mounts are changed.
+        with tempfile.TemporaryDirectory(prefix="mojt-remount-") as temporary:
+            root = Path(temporary)
+            (root / "source").mkdir()
+            (root / "usr/lib/modules").mkdir(parents=True)
+            (root / "lib").symlink_to("usr/lib")
+            command = self.remount(root / "source", root / "lib/modules")
+            busybox = shutil.which("busybox")
+            old = subprocess.run([busybox, "mount", "-f", *command[1:3], command[-1]],
+                                 capture_output=True, text=True, timeout=10)
+            self.assertNotEqual(old.returncode, 0)
+            self.assertIn("can't find", old.stderr)
+            result = subprocess.run([busybox, "mount", "-f", *command[1:]],
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    @unittest.skipUnless(os.geteuid() == 0 and shutil.which("busybox") and shutil.which("unshare"),
+                         "requires root, real BusyBox and mount namespaces")
+    def test_busybox_remount_protects_merged_usr_target_in_private_namespace(self):
+        probe = subprocess.run(["unshare", "--mount", "--propagation", "private", "true"],
+                               capture_output=True, text=True, timeout=10)
+        if probe.returncode:
+            self.skipTest("mount namespaces unavailable: " + probe.stderr.strip())
+        with tempfile.TemporaryDirectory(prefix="mojt-remount-") as temporary:
+            root = Path(temporary)
+            source, target = root / "source", root / "lib/modules"
+            source.mkdir()
+            (root / "usr/lib/modules").mkdir(parents=True)
+            (root / "lib").symlink_to("usr/lib")
+            busybox = shutil.which("busybox")
+            remount = [busybox, *self.remount(source, target)]
+            script = "set -eu\n" + shlex.join([busybox, "mount", "--bind", str(source), str(target)])
+            script += "\n" + shlex.join(remount) + "\n"
+            script += "if " + shlex.join([busybox, "touch", str(target / "forbidden")]) + "; then exit 91; fi\n"
+            script += shlex.join([busybox, "touch", str(source / "source-still-writable")]) + "\n"
+            script += shlex.join([busybox, "test", "-f", str(target / "source-still-writable")]) + "\n"
+            result = subprocess.run(["unshare", "--mount", "--propagation", "private", busybox, "sh", "-c", script],
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse((source / "forbidden").exists())
 
 
 @unittest.skipUnless(shutil.which("zstd") and shutil.which("cpio"), "requires real zstd and cpio")
@@ -222,7 +284,8 @@ packages="packages.txt"
                                     "0.1.3", "native-fixture")
         script = native.boot.init_script(script, "11111111-1111-4111-8111-111111111111", "native-fixture", "0.1.3")
         self.assertIn("/sysroot/kernel/installed/" + self.kernel["id"].split(":")[1] + "/payload/lib/modules", script)
-        self.assertIn('mount -o remount,bind,ro /newroot/lib/modules', script)
+        self.assertIn('mount -o remount,bind,ro /sysroot/kernel/installed/' +
+                      self.kernel['id'].split(':')[1] + '/payload/lib/modules /newroot/lib/modules', script)
         self.assertIn("/newroot/run/mojt/native-kernel-artifact", script)
         self.assertIn("/sysroot/boot/mojt/native-fixture/0.1.3/deployment.json", script)
         self.assertNotIn("/system/current", script)
@@ -360,3 +423,4 @@ packages="packages.txt"
 
 if __name__ == "__main__":
     unittest.main()
+

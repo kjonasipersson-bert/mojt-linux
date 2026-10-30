@@ -204,7 +204,9 @@ IFS= read -r mojt_native_release </proc/sys/kernel/osrelease || panic "cannot id
 [ "$mojt_native_release" = "{release}" ] || panic "running Kernel differs from native selection"
 [ ! -L /sysroot/kernel ] && [ -d {mount}/{release} ] || panic "native Kernel modules missing"
 mount --bind {mount} /newroot/lib/modules || panic "cannot attach native Kernel modules"
-mount -o remount,bind,ro /newroot/lib/modules || panic "cannot protect native Kernel modules"''')
+# Supply both paths: BusyBox's one-path remount searches /proc/mounts by
+# spelling, while a merged-/usr Base records /newroot/usr/lib/modules.
+mount -o remount,bind,ro {mount} /newroot/lib/modules || panic "cannot protect native Kernel modules"''')
     record = "/sysroot/boot/mojt/" + selected_system + "/" + base + "/deployment.json"
     return script.replace(identity, identity + f'''
 cp {record} /newroot/run/mojt/deployment.json || panic "missing native deployment record"
@@ -403,3 +405,4 @@ def main(argv=None):
         print("mojt-native-image: " + str(error), file=sys.stderr)
         return 1
     return 0
+

@@ -148,6 +148,12 @@ new disk, boot it once, and check:
   units failed, and the existing network/HTTPS path works.
 
 No repeated account or A/B/A test is needed for this fresh-image integration.
+The first owner boot found a BusyBox remount lookup failure with Base's
+`/lib -> usr/lib` layout. The native module remount now supplies both source and
+target explicitly, bypassing a literal-path lookup in `/proc/mounts` while
+retaining read-only protection. Focused BusyBox tests cover argument handling
+and, where mount namespaces are available, read-only behavior through that link.
+Acceptance remains pending a boot of the corrected image.
 The automated tests use real native tar/zstd packages, audited Base installation,
 System fixture assembly and actual cpio serialization/independent inspection,
 but synthetic guest programs/disk output and simulated initramfs device creation.
@@ -160,3 +166,4 @@ or publisher authentication evidence. Keep the accepted reference images until
 the focused native result boot passes. Production acquisition, policy tracking,
 transactional activation/rollback and durable existing-disk updates remain future
 work. The new image does not modify the running Kernel/Base/System/Ports state.
+
