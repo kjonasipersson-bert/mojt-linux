@@ -285,7 +285,7 @@ def stage(root, identifier, *, baseline=None, base_context=None, busybox=None,
     producer = artifact.digest(dict(busybox=artifact.file_sha(busybox), code={name: artifact.file_sha(
         Path(__file__).with_name(name)) for name in ("mpm_kernel_boot.py", "mojt-vm-build.py", "mojt_native_image.py",
                                                     "mojt_system.py", "mojt_boot.py")}))
-    retained_entries, unused = available(root, state)
+    retained_entries, unused = available(root, state, entries)
     for existing in retained_entries.values():
         old = existing["record"]["description"]
         evidence = read(existing["path"] / "native-build-inputs.json")
@@ -299,7 +299,7 @@ def stage(root, identifier, *, baseline=None, base_context=None, busybox=None,
     if not yes:
         require(input("Stage this exact Kernel without changing next boot? [y/N] ").lower() == "y", "staging cancelled")
     with locked(root):
-        require(current(root, baseline)[2] == old_menu, "selection changed; repeat preview")
+        require(checked_file(root / "boot/mojt/grub.cfg") == old_menu, "selection changed; repeat preview")
         slot = uuid.uuid4().hex
         slots = root / "boot/mpm/slots"
         with tempfile.TemporaryDirectory(prefix="mojt-kernel-init-") as temporary:
@@ -331,8 +331,14 @@ def stage(root, identifier, *, baseline=None, base_context=None, busybox=None,
             require(artifact.file_sha(stage_path / "vmlinuz") == record["description"]["kernel"]["image_sha256"] and
                     artifact.file_sha(stage_path / "initramfs.cpio.gz") == archive["sha256"],
                     "copied boot content differs before publication")
-            live_context(root, selected)
-            require(current(root, baseline)[2] == old_menu, "selection changed during staging")
+            # Reverify once at publication, not on every intermediate helper call.
+            fresh_selected = inspect_entry(root, selected["relative"])
+            fresh_manifest, fresh_facts, fresh_receipt = live_context(root, fresh_selected)
+            require(fresh_selected["record"] == selected["record"] and
+                    (fresh_manifest, fresh_facts, fresh_receipt) == (manifest, facts, receipt),
+                    "selected installation changed during staging")
+            require(checked_file(root / "boot/mojt/grub.cfg") == old_menu,
+                    "selection changed during staging")
             kernel.sync_directory(stage_path)
             stage_path.chmod(0o555)
             stage_path.rename(slots / slot)
@@ -345,8 +351,16 @@ def stage(root, identifier, *, baseline=None, base_context=None, busybox=None,
                 selected=state["selected"], running="unchanged")
 
 
-def available(root, state):
-    entries = {i: inspect_entry(root, p) for i, p in state["entries"].items()}
+def available(root, state, verified_entries=None):
+    """Inspect each distinct slot once; reuse entries verified by current() in this operation."""
+    if verified_entries is None:
+        entries = {i: inspect_entry(root, p) for i, p in state["entries"].items()}
+    else:
+        require(set(verified_entries) == set(state["entries"]) and all(
+            verified_entries[i]["relative"] == p and verified_entries[i]["record"]["id"] == i
+            for i, p in state["entries"].items()), "boot entry snapshot differs")
+        entries = dict(verified_entries)
+    by_path = {entry["relative"]: entry for entry in entries.values()}
     slots = root / "boot/mpm/slots"
     incomplete = []
     if slots.exists():
@@ -356,7 +370,11 @@ def available(root, state):
                 incomplete.append(path.name)
                 continue
             require(re.fullmatch(r"[0-9a-f]{32}", path.name), "unknown boot slot")
-            entry = inspect_entry(root, "boot/mpm/slots/" + path.name)
+            relative = "boot/mpm/slots/" + path.name
+            entry = by_path.get(relative)
+            if entry is None:
+                entry = inspect_entry(root, relative)
+                by_path[relative] = entry
             require(entry["record"]["id"] not in entries or entries[entry["record"]["id"]]["relative"] == entry["relative"],
                     "duplicate deployment identity")
             entries[entry["record"]["id"]] = entry
@@ -371,7 +389,7 @@ def select(root, identifier, *, expected_selected, baseline=None, dry_run=False,
         identifier = state["previous"]
         require(identifier is not None, "no previous selected deployment")
     kernel.identifier(identifier)
-    entries, unused = available(root, state)
+    entries, unused = available(root, state, old_entries)
     require(identifier in entries, "deployment is not completely staged")
     selected, candidate = old_entries[state["selected"]], entries[identifier]
     manifest, facts, unused = live_context(root, selected)
@@ -386,7 +404,7 @@ def select(root, identifier, *, expected_selected, baseline=None, dry_run=False,
     if not yes:
         require(input("Select this deployment for next boot? [y/N] ").lower() == "y", "selection cancelled")
     with locked(root):
-        require(current(root, baseline)[2] == old_menu, "boot selection changed; repeat preview")
+        require(checked_file(root / "boot/mojt/grub.cfg") == old_menu, "boot selection changed; repeat preview")
         new = dict(state, selected=identifier, previous=state["selected"], entries=dict(state["entries"]))
         new["entries"][identifier] = candidate["relative"]
         raw = menu(new, {i: entries[i] for i in new["entries"]})
@@ -398,9 +416,24 @@ def select(root, identifier, *, expected_selected, baseline=None, dry_run=False,
                 os.fchmod(stream.fileno(), 0o644)
                 os.fsync(stream.fileno())
             require(checked_file(path) == old_menu, "boot menu changed before publication")
-            fresh_manifest, fresh_facts, unused = live_context(root, selected)
+            # The menu is unchanged, but the candidate and the selected recovery
+            # entry must still be intact immediately before publication.
+            fresh_selected = inspect_entry(root, selected["relative"])
+            fresh_candidate = inspect_entry(root, candidate["relative"])
+            require(fresh_selected["record"] == selected["record"] and
+                    fresh_candidate["record"] == candidate["record"],
+                    "boot deployment changed; repeat preview")
+            fresh_manifest, fresh_facts, unused = live_context(root, fresh_selected)
             require(fresh_manifest == manifest and fresh_facts == facts,
                     "installation compatibility facts changed; repeat preview")
+            fresh_result = deployment.compose(
+                fresh_selected["record"], fresh_candidate["body"],
+                read(fresh_candidate["path"] / "base-context.json"),
+                fresh_manifest, fresh_facts,
+                read(fresh_candidate["path"] / "initramfs-binding.json"),
+                fresh_candidate["record"]["description"]["initramfs"]["archive"])
+            require(fresh_result["candidate"] == fresh_candidate["record"],
+                    "deployment compatibility changed; repeat preview")
             os.replace(temporary, path)
             kernel.sync_directory(path.parent)
         finally:
@@ -411,7 +444,7 @@ def select(root, identifier, *, expected_selected, baseline=None, dry_run=False,
 def status(root, *, baseline=None, running_record=None):
     root = disk_root(root)
     state, entries, unused = current(root, baseline)
-    all_entries, incomplete = available(root, state)
+    all_entries, incomplete = available(root, state, entries)
     running = dict(release=os.uname().release, artifact=None, deployment=None, evidence="unknown")
     if running_record is not None:
         record = read(running_record)
