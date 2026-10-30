@@ -102,6 +102,36 @@ class KernelBootTests(unittest.TestCase):
         self.assertEqual(before, self.snapshot())
         self.assertFalse((self.root / "boot/mpm").exists())
 
+    def test_preview_and_status_inspect_each_boot_entry_once(self):
+        # A previously checked menu entry must not be rehashed by available().
+        with mock.patch.object(manager, "inspect_entry", wraps=manager.inspect_entry) as check:
+            preview = self.stage(dry_run=True)
+            self.assertFalse(preview["changed"])
+            self.assertEqual(check.call_count, 1)
+        with mock.patch.object(manager, "inspect_entry", wraps=manager.inspect_entry) as check:
+            status = manager.status(self.root, baseline=self.baseline)
+            self.assertEqual(status["selected"], self.old_id)
+            self.assertEqual(check.call_count, 1)
+
+    def test_selection_rechecks_candidate_at_publication(self):
+        staged = self.stage()
+        path = self.root / staged["slot"] / "initramfs.cpio.gz"
+        original = manager.checked_file
+        def alter_after_preview(source, *args, **kwargs):
+            data = original(source, *args, **kwargs)
+            if source == self.root / "boot/mojt/grub.cfg" and not altered[0]:
+                altered[0] = True
+                path.chmod(0o644)
+                path.write_bytes(b"tampered before publication")
+            return data
+        altered = [False]
+        with mock.patch.object(manager, "checked_file", side_effect=alter_after_preview):
+            with self.assertRaisesRegex(ValueError, "initramfs differs"):
+                manager.select(self.root, staged["deployment"], expected_selected=self.old_id,
+                               baseline=self.baseline, yes=True)
+        self.assertTrue(altered[0])
+        self.assertEqual((self.root / "boot/mojt/grub.cfg").read_bytes(), self.menu)
+
     def test_stage_select_noop_and_rollback_preserve_old_files_and_system(self):
         protected = {p.relative_to(self.root).as_posix(): artifact.file_sha(p) for top in
                      (self.root / self.baseline, self.root / "base", self.root / "system", self.root / "state")
