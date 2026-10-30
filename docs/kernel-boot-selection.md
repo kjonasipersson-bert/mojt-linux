@@ -225,3 +225,40 @@ within one operation. Keep fresh integrity and compatibility checks at actual
 publication boundaries, explicit full verification, corruption refusal and
 selected-versus-running semantics. Do not replace them with an unvalidated
 persistent cache or change the accepted test checkout midway through a boot run.
+
+## Verification cost and regression scope
+
+Boot publication is a production integrity boundary, not a development test.
+Normal commands must keep these checks regardless of CI configuration:
+
+- **Stage**: validate the installed Kernel and the selected Base/System before
+  building; recheck the candidate archive and selected deployment/installation
+  immediately before publishing the complete immutable boot slot.
+- **Select/rollback**: validate the selected and candidate deployments and
+  compatibility on preview; recheck both boot entries, selected Base/System,
+  compatibility and the unchanged menu immediately before atomic replacement.
+- **Status**: report metadata and current exact identities, not a claim that
+  every immutable Base/System file was freshly audited. Use explicit full
+  verification when that stronger guarantee is required.
+
+Within a single invocation, already inspected menu entries are reused when
+enumerating staged slots. This is an in-memory operation-local reuse, **not** a
+persistent integrity cache. Each publication still has an independent late
+integrity gate; corruption detected there must stop publication.
+
+The regression workflow distinguishes three occasions:
+
+1. **Draft / intermediate commits**: syntax, focused Kernel integrity/
+   publication tests and shutdown contracts; no repeated full hardware boot
+   matrix.
+2. **Ready-for-review PRs and pushes to main**: existing full regression
+   suites, real image/boot tests and the hardware shutdown fixture.
+3. **Manual workflow dispatch**: run the same full regression jobs when needed
+   before a high-risk change or release.
+
+Keep tests for distinct failure modes, but avoid adding an end-to-end VM boot
+for each internal helper. When a bug becomes a regression, first extend the
+smallest applicable test; retain real boot tests for cross-component behavior
+that cannot be demonstrated by a unit/integration fixture. Test-count and
+call-count observations are not measured wall-clock performance of the owner's
+machine. Do not weaken release or installation verification to make CI faster.
