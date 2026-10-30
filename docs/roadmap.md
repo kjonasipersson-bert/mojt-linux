@@ -223,6 +223,33 @@ old boot descriptors cannot be silently reused for the independent native
 Kernel choice. A focused result boot belongs with that builder change. Durable
 existing-disk publication, selection and recovery remain separate work.
 
+PR #30 merged after final-head green CI. The next
+[fresh native image builder](native-image-build.md) now verifies a native Base
+package, privately reimports an exact installed Kernel, snapshots the existing
+System payload and creates one new serial UEFI image. The generated initramfs
+mounts the native module tree independently of System; actual gzip/newc content
+is inspected against the generated script, device metadata and early modules.
+Complete deployment/binding/planner evidence is emitted for that new image.
+Original Base files/metadata/xattrs/hardlink topology must be preserved; only
+additive mountpoint scaffolding is allowed and recorded. Base libc is unchanged.
+
+The owner completed [fresh native image acceptance](native-image-build.md#owner-native-image-acceptance-2026-10-30)
+on 2026-10-30 at functional revision `fa1289d56009aac0a00ef00e17d45a57a5661f85`.
+The first boot exposed a BusyBox remount lookup through Base's merged-/usr
+layout; an explicit source/target remount fixed it. The corrected image booted
+as `system-native-A` with the exact native Kernel artifact, read-only registry
+module tree, matching e1000e metadata, working VirtIO networking/HTTPS and zero
+failed units. The runtime deployment named the expected exact Base/System/Kernel
+and initramfs bindings. Both functional-head CI jobs passed.
+No recompilation, new System export or repeated account/A/B/A test was needed.
+Automated fixture assembly remains distinct from this owner-measured VM result.
+
+The next deployment increment is existing-disk staging/publication, explicit
+selection/status and recovery without changing the selected Base/System
+userspace. Preserve old deployments and distinguish installed, selected and
+running identities. Catalog acquisition/trust and policy persistence remain
+separate boundaries; project locks still precede pruning/GC.
+
 Console usability follow-up: automate geometry setup/refresh for direct
 Debian-host QEMU serial sessions. A manual terminal reset/size adjustment resolved
 the owner's display/paste problem during this test. No automatic terminal fix

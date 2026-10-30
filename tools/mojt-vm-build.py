@@ -738,6 +738,13 @@ def build(args):
     if (plan_path or explicit_system or explicit_base) and not uefi:
         fail("explicit boot generations require --boot-mode uefi")
     entries = generations.plan(plan_path, boot.generation)
+    native = getattr(args, "native_context", None)
+    native_support = None
+    if native is not None:
+        if not uefi or physical or entries or not explicit_system or not explicit_base:
+            fail("native image mode requires one explicit serial UEFI Base/System pair")
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import mojt_native_image as native_support
     if entries and not explicit_system:
         fail("--additional-generations requires an explicit --system-generation for the default pair")
     if explicit_system:
@@ -841,6 +848,10 @@ def build(args):
                 assembled_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 (tree / "system" / system_version / "assembled-at-utc").write_text(assembled_at + "\n")
                 init_script = support.init_script(INIT)
+                if native is not None:
+                    native_support.stage(tree, native, version)
+                    init_script = native_support.init_script(init_script, native["kernel"]["id"], release,
+                                                              version, system_version)
                 shutdown_script = support.SHUTDOWN
                 hardware_record = None
                 if physical:
@@ -877,6 +888,10 @@ def build(args):
                                          console=console)
             if support:
                 support.finalize_manifest(tree, system_version, version, Path(__file__).resolve().parents[1])
+            if native is not None:
+                native_support.complete(tree, result, native, base=version, selected_system=system_version,
+                    root_uuid=root_uuid, console=console, initramfs=initramfs, initroot=temp / "initroot",
+                    modules=modules, script=init_script, decode_module=module_bytes)
             extra_records, extra_network = additional_pairs(
                 entries, tree=tree, work=temp, target=target, first_base=version,
                 support=support, args=args, root_uuid=root_uuid, console=console,

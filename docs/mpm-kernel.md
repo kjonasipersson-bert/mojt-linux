@@ -16,6 +16,9 @@ publication, GRUB/initramfs generation or existing-disk updater is implemented.
 The next [read-only deployment planner](kernel-deployment-plan.md) checks an
 installed Kernel against an explicit complete selection and initramfs binding;
 it does not adopt that selection or establish boot readiness.
+The following [native image builder](native-image-build.md) consumes a verified
+local Base package and installed Kernel to assemble one new disk; it does not
+change these install/status semantics or activate a running installation.
 
 ## Commands
 

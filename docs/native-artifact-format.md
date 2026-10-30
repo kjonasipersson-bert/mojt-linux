@@ -190,6 +190,9 @@ python3 -I -B tools/mojt-artifact-pack.py pack \
   --source /FROZEN/PORT-TREE --spec manifests/artifact-port-example.json \
   --output /NEW/PACKAGE
 
+python3 -I -B tools/mojt-artifact-pack.py base \
+  --release /EXISTING/BASE-RELEASE --revision 1 --output /NEW/BASE-PACKAGE
+
 python3 -I -B tools/mojt-artifact-pack.py kernel \
   --build /COMPLETED/KERNEL-BUILD --revision 1 --output /NEW/KERNEL-PACKAGE
 
@@ -199,7 +202,14 @@ python3 -I -B tools/mojt-artifact-pack.py verify /PACKAGE/EXACT-NAME.tar.zst \
 python3 -B -m unittest discover -s tests -p 'test_mojt_artifact.py' -v
 ```
 
-The generic command accepts optional `--attachment NAME=FILE`. The Kernel
+The Base adapter derives its spec from the unchanged release manifest, verifies
+the existing rootfs hash and records both hashes as provenance. It preserves the
+original Base label inside the archive; native packaging revision is separate.
+Numeric labels use dotted ordering; other legacy labels remain opaque exact-only.
+The [fresh native image builder](native-image-build.md) consumes this wrapper
+with an independently installed Kernel and the existing System payload adapter.
+
+The generic and Base commands accept optional `--attachment NAME=FILE`. The Kernel
 command also accepts attachments but cannot replace its mandatory build evidence.
 All outputs must be new, outside the source tree. Packaging does not install,
 select or activate anything, touch the running `/boot`/module tree, modify the
