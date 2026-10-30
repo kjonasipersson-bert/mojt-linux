@@ -95,14 +95,28 @@ both modes using its matching installed test kernel and retains serial, unmount
 journal and filesystem-check logs. This is synthetic layout/holder evidence,
 not full Mojt/Nix-systemd-262 acceptance or a new libc compatibility test.
 
-## Remaining focused owner acceptance
+## Owner shutdown acceptance: 2026-10-30
 
-Reuse the pinned Base, existing native Kernel artifact and exported step-10
-System payload to generate one new image with this source revision. No new Kernel
-compilation, package acquisition or System export is required. Boot once, check
-the runtime drop-ins and power off while retaining serial output. Require no
-failed unmounts, the explicit old-root/backing-filesystem release message and
-normal power down. Keep the accepted original images.
+At functional revision `d0aa861d7280d22409c658421d8ac59977277c95`,
+both CI jobs passed. The owner then supplied the complete poweroff console
+output from the focused Mojt image test. Ordinary sessions, user manager,
+network services, login sessions and D-Bus stopped before final shutdown.
+The transient privileged and temporary mounts unmounted normally.
 
-The full install/stage/select/rollback and account loops need not be repeated.
-Verification-performance work is deliberately separate from this shutdown fix.
+The console contained no failed unmount, busy/read-only fallback or cleanup
+error. After reaching the system poweroff target, it reported:
+
+```text
+Mojt shutdown: entered static exitrd
+Mojt shutdown: old root and backing filesystem fully unmounted
+reboot: Power down
+```
+
+This closes the observed shutdown-order finding for the tested Mojt image.
+The result establishes the script's mount-table verification and normal poweroff;
+it is not an owner-run offline filesystem check, power-cut test or general
+hardware/libc compatibility proof. The separate automated fixture includes its
+own successful offline ext4 check.
+
+No full install/stage/select/rollback or account loop was repeated.
+Verification-performance work remains separate and unchanged.

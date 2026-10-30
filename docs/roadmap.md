@@ -6,7 +6,7 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Mojt development priorities
 
-Updated 2026-10-29. This records the agreed order and measured progress;
+Updated 2026-10-30. This records the agreed order and measured progress;
 future commands and policies are not claims of implemented functionality.
 The [architecture](architecture.md) defines the layer boundaries and the
 [MPM contract](mpm.md) records the accepted update semantics.
@@ -257,18 +257,21 @@ It rechecks real Base/System content and current compatibility facts, keeps old
 deployments, and distinguishes selected from explicitly reported running content.
 Automated failure/identity/no-op tests and the owner's functional boot/rollback
 sequence on one separate VM copy passed on 2026-10-30. The same-release test
-artifact needed no Kernel recompilation or new System export. Shutdown EBUSY
-failures remain open: udev maps the System hwdb/module indexes and journald maps
-the persistent journal. Clean-shutdown acceptance is not established.
+artifact needed no Kernel recompilation or new System export. The shutdown EBUSY
+finding was subsequently corrected and passed focused owner poweroff acceptance:
+the static exitrd verified the old root and backing filesystem fully unmounted,
+with no failed unmount or busy/read-only fallback before normal power down.
 Slow verification also remains open; fixture instrumentation counted 26 full
 Kernel checks and seven Base/System scans across the stage/select test sequence.
 See the [measured acceptance and follow-ups](kernel-boot-selection.md#owner-functional-acceptance-2026-10-30).
-The next bounded work is shutdown lifetime/release ordering and measured removal
-of redundant verification, preserving fresh publication gates.
+The next bounded work is measured removal of redundant verification,
+preserving fresh publication gates.
 The [shutdown-order fix](shutdown-order.md) is implemented with runtime mount
 policy and static final cleanup. Its real-systemd QEMU fixture reproduces the
 three legacy EBUSY failures and passes corrected unmount/offline ext4 checks;
-one focused owner shutdown acceptance remains. Verification costs are unchanged.
+both CI jobs passed at functional revision
+`d0aa861d7280d22409c658421d8ac59977277c95`, and the owner supplied a successful
+complete Mojt shutdown console log on 2026-10-30. Verification costs are unchanged.
 This does not implement general power-cut
 recovery, automatic failed-boot fallback, policy acquisition or pruning.
 

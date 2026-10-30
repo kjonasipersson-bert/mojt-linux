@@ -10,8 +10,8 @@ This experimental checkout frontend follows the accepted fresh native image
 builder. It targets that builder's x86_64 serial UEFI/VirtIO layout, initially
 with one explicit native boot pair. It rejects customized/unknown boot menus.
 The owner accepted the functional boot/rollback sequence on 2026-10-30.
-Shutdown unmount failures and excessive repeated verification remain open;
-see the measured result and follow-ups below. This is not clean-shutdown acceptance.
+A focused corrected-image shutdown test also passed on 2026-10-30;
+excessive repeated verification remains open. See the measured results below.
 
 Building, packaging, installing, staging and selecting remain separate actions.
 `kernel install` retains an artifact in the disk's independent Kernel registry.
@@ -165,7 +165,7 @@ and deployment identities must not be inferred from `uname -r`.
 No new Kernel compilation, System export, provider acquisition or account test
 loop was performed. Keep the accepted reference disk and this test copy.
 
-### Open shutdown finding
+### Shutdown finding and accepted correction
 
 The owner reported real shutdown failures for `/run/mojt-system`,
 `/usr/lib/modules` and `/var`: each unmount helper returned status 32 with
@@ -180,23 +180,26 @@ These are concrete retained references to investigate in the shutdown lifetime
 ordering; runtime maps alone do not establish exactly when each is released
 during the failing shutdown transaction.
 
-The shared System shutdown script still performs sync, `umount -a -r`, then
+The legacy shared System shutdown script performed sync, `umount -a -r`, then
 another sync. Its late output reported busy devtmpfs/backing-disk mounts being
-remounted read-only. Clean unmounting has not been established; the log neither
-proves data corruption nor justifies treating the failures as cosmetic.
+remounted read-only. That original log did not establish clean unmounting or
+prove data corruption.
 
-Before closing this block, coordinate the lifetime of udev/journald and their
-retained references with early mount teardown and the final static shutdown
-phase. Verify reference release and final disk cleanup; do not merely hide
-the failed units or add forced/lazy unmounts. The fix must respect immutable
-System profiles and already retained initramfs/deployments. A focused shutdown
-acceptance belongs with that fix, not another full account/generation loop.
+The correction coordinates the lifetime of udev/journald and their retained
+references with early mount teardown and the final static shutdown phase.
+It preserves immutable System profiles and retained initramfs/deployments,
+and uses neither forced nor lazy unmounts.
 
 The [shutdown-order correction](shutdown-order.md) now supplies a runtime mount
 lifetime policy and explicit final old-root/device cleanup. The real systemd/QEMU
 fixture reproduces the legacy failures and passes the corrected shutdown plus an
-offline filesystem check. Focused owner acceptance with Mojt's Nix-based systemd
-is still pending; performance work remains separate.
+offline filesystem check. At functional revision
+`d0aa861d7280d22409c658421d8ac59977277c95`, both CI jobs passed, followed by
+the owner's focused Mojt poweroff test on 2026-10-30. The complete console output
+had no failed unmount or busy/read-only fallback, reported entry into the static
+exitrd and verified the old root/backing filesystem fully unmounted before
+normal power down. No unrelated acceptance loops were repeated. This closes
+the observed shutdown finding for the tested image; performance work remains open.
 
 ### Open verification performance finding
 
