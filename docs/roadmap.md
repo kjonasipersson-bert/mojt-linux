@@ -233,12 +233,22 @@ Complete deployment/binding/planner evidence is emitted for that new image.
 Original Base files/metadata/xattrs/hardlink topology must be preserved; only
 additive mountpoint scaffolding is allowed and recorded. Base libc is unchanged.
 
-The next focused owner acceptance wraps the unchanged Base release, reuses the
-already installed Kernel and exported System payload, previews/builds one new
-disk and boots it once. Verify the native artifact/module mount, running release,
-failed-unit count and existing HTTPS path. No repeated account/A/B/A run is
-required. Unit integration uses real package/installer/cpio operations with a
-synthetic disk and guest; it is not measured runtime acceptance of this new path.
+The owner completed [fresh native image acceptance](native-image-build.md#owner-native-image-acceptance-2026-10-30)
+on 2026-10-30 at functional revision `fa1289d56009aac0a00ef00e17d45a57a5661f85`.
+The first boot exposed a BusyBox remount lookup through Base's merged-/usr
+layout; an explicit source/target remount fixed it. The corrected image booted
+as `system-native-A` with the exact native Kernel artifact, read-only registry
+module tree, matching e1000e metadata, working VirtIO networking/HTTPS and zero
+failed units. The runtime deployment named the expected exact Base/System/Kernel
+and initramfs bindings. Both functional-head CI jobs passed.
+No recompilation, new System export or repeated account/A/B/A test was needed.
+Automated fixture assembly remains distinct from this owner-measured VM result.
+
+The next deployment increment is existing-disk staging/publication, explicit
+selection/status and recovery without changing the selected Base/System
+userspace. Preserve old deployments and distinguish installed, selected and
+running identities. Catalog acquisition/trust and policy persistence remain
+separate boundaries; project locks still precede pruning/GC.
 
 Console usability follow-up: automate geometry setup/refresh for direct
 Debian-host QEMU serial sessions. A manual terminal reset/size adjustment resolved

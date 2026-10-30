@@ -120,7 +120,7 @@ These limits are included in successful output, not hidden behind a ready flag.
 Hardware/firmware, external modules, Secure Boot and runtime libc compatibility
 are not evaluated. There is no Base libc replacement or global library-path edit.
 
-Current image builders emit format-1 `boot.json` and mount modules/firmware from
+The legacy image builder emits format-1 `boot.json` and mounts modules/firmware from
 the System profile. Those records lack these exact references and are not
 automatically adopted. The new deployment record is not written over an old
 boot record or converted into a GRUB entry. A future builder must explicitly
@@ -134,13 +134,14 @@ The [fresh native image builder](native-image-build.md) now connects this plan
 to one new serial UEFI disk: verified native Base input, copied installed Kernel,
 independent module mounts, generated/inspected initramfs and complete sidecars.
 Its explicit bootstrap selection is for that new image, not an existing-disk
-upgrade or automatic adoption of running state. Owner result-boot acceptance is
-pending; the standalone planner's limited readiness result remains unchanged.
+upgrade or automatic adoption of running state. The owner accepted the corrected
+[fresh-image result boot on 2026-10-30](native-image-build.md#owner-native-image-acceptance-2026-10-30);
+the standalone planner's limited readiness result remains unchanged.
 
 The focused tests use real installed tar/zstd fixture packages and deliberately
 synthetic, nonbootable initramfs bytes. They cover complete identity and selected
 scope, every declaration gate, same-release builds, damaged/missing content,
 binding/byte mismatches, malformed input, provider-free CLI and unchanged inputs.
-CI is sufficient for this read-only increment. One focused build/boot acceptance
-belongs with the first actual native-Kernel deployment builder, rather than
-repeating the earlier account/network/generation loops here.
+CI is sufficient for this read-only increment. The first actual native-Kernel
+image builder has its separate focused build/boot acceptance above; no repeated
+account/generation loop was required for this read-only planner.
