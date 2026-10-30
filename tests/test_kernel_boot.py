@@ -119,17 +119,18 @@ class KernelBootTests(unittest.TestCase):
         original = manager.checked_file
         def alter_after_preview(source, *args, **kwargs):
             data = original(source, *args, **kwargs)
-            if source == self.root / "boot/mojt/grub.cfg" and not altered[0]:
-                altered[0] = True
-                path.chmod(0o644)
-                path.write_bytes(b"tampered before publication")
+            if source == self.root / "boot/mojt/grub.cfg":
+                menu_reads[0] += 1
+                if menu_reads[0] == 3:
+                    path.chmod(0o644)
+                    path.write_bytes(b"tampered before publication")
             return data
-        altered = [False]
+        menu_reads = [0]
         with mock.patch.object(manager, "checked_file", side_effect=alter_after_preview):
             with self.assertRaisesRegex(ValueError, "initramfs differs"):
                 manager.select(self.root, staged["deployment"], expected_selected=self.old_id,
                                baseline=self.baseline, yes=True)
-        self.assertTrue(altered[0])
+        self.assertGreaterEqual(menu_reads[0], 3)
         self.assertEqual((self.root / "boot/mojt/grub.cfg").read_bytes(), self.menu)
 
     def test_stage_select_noop_and_rollback_preserve_old_files_and_system(self):
