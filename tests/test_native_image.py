@@ -107,7 +107,7 @@ class NativeImageTests(unittest.TestCase):
         self.addCleanup(self.fixture.doCleanups)
         self.work = self.fixture.root
         self.fixture.fixture(6)
-        self.fixture.busybox.write_text("#!/bin/sh\nprintf '%s\\n' cp ln umount halt\n")
+        self.fixture.busybox.write_text("#!/bin/sh\nprintf '%s\\n' cp ln umount halt sort printf\n")
         self.fixture.busybox.chmod(0o755)
         root = self.work / "base-root"
         for name in ("usr/bin", "usr/lib", "usr/etc", "etc", "var", "dev", "proc", "sys", "home", "root"):
@@ -423,4 +423,5 @@ packages="packages.txt"
 
 if __name__ == "__main__":
     unittest.main()
+
 

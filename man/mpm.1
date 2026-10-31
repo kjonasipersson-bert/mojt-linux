@@ -1,7 +1,7 @@
 .\" Mojt Linux
 .\" Copyright (C) 2026 Jonas Persson
 .\" SPDX-License-Identifier: GPL-2.0-only
-.TH MPM 1 "2026-10-29" "Mojt Linux" "User Commands"
+.TH MPM 1 "2026-10-30" "Mojt Linux" "User Commands"
 .SH NAME
 mpm \- manage Mojt Ports and inspect local native Kernel content
 .SH SYNOPSIS
@@ -10,6 +10,9 @@ mpm \- manage Mojt Ports and inspect local native Kernel content
 .br
 .B mpm
 .RI [ --root " DIRECTORY" ] " kernel " install|status|plan " " [ arguments ]
+.br
+.B mpm
+.RI "kernel " stage|select|rollback|status " --disk-root DIRECTORY " [ arguments ]
 .SH DESCRIPTION
 MPM is Mojt's experimental package manager. The Nix-backed
 .B ports
@@ -252,6 +255,25 @@ authenticated disk selection; Base/System payloads, actual initramfs contents,
 hardware/firmware, Secure Boot and runtime ABI remain unaudited. The planner
 does not generate initramfs, write GRUB or modify selected/running state.
 See docs/kernel-deployment-plan.md for strict experimental schemas and limits.
+.SH EXPERIMENTAL NATIVE-DISK KERNEL BOOT
+The checkout frontend supports kernel stage, select, rollback and status with
+--disk-root DIRECTORY. Do not combine this with the standalone registry --root.
+This first subset supports an accepted native serial UEFI/VirtIO disk, not an
+arbitrary installation. Use --baseline boot/mojt/SYSTEM/BASE for its original
+explicit boot pair; customized or mismatched menus are rejected.
+.PP
+stage requires --artifact sha256:FULL_KERNEL_ID naming an installed exact Kernel.
+It generates a new immutable boot slot without changing next boot or running
+content. select requires --deployment sha256:FULL_DEPLOYMENT_ID and
+--expected-selected sha256:CURRENT_DEPLOYMENT_ID. rollback requires the same
+expected-selection guard and selects the previously selected entry. Mutations
+require an administrator; use --dry-run for preview and -y to confirm.
+.PP
+status --disk-root reports selected, previous, staged and installed identities.
+Add --running-record /run/mojt/deployment.json in the guest for explicit runtime
+identity; uname alone is insufficient. Selection changes next boot only. The old
+deployment remains available; no reboot, collection or provider acquisition is
+implicit. See docs/kernel-boot-selection.md for verification and recovery limits.
 .SH FILES
 .TP
 .B /var/lib/mojt/ports/current
@@ -296,3 +318,4 @@ readable catalog.
 .PP
 Repository documentation: docs/mpm.md, docs/mpm-ports.md, docs/mpm-selectors.md,
 docs/mpm-catalog.md, docs/mpm-artifact-architecture.md and docs/roadmap.md.
+

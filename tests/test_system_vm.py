@@ -160,7 +160,7 @@ class SystemVmTests(unittest.TestCase):
         kernel.write_bytes(b"synthetic kernel")
         modules = self.root / "modules"
         modules.mkdir()
-        self.busybox.write_text("#!/bin/sh\nprintf '%s\\n' cp ln umount halt\n")
+        self.busybox.write_text("#!/bin/sh\nprintf '%s\\n' cp ln umount halt sort printf\n")
         self.busybox.chmod(0o755)
         output = self.root / "output-vm"
         args = types.SimpleNamespace(boot_mode="uefi", system_payload=self.payload,
@@ -1190,4 +1190,5 @@ esac""")
 
 if __name__ == "__main__":
     unittest.main()
+
 

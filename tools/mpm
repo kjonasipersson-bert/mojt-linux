@@ -19,7 +19,15 @@ elif len(sys.argv) >= 2 and sys.argv[1].startswith("--root="):
     kernel_offset = 2
     kernel_options = sys.argv[1:2]
 
-if (len(sys.argv) > kernel_offset + 1 and sys.argv[kernel_offset:kernel_offset + 2] == ["kernel", "plan"]):
+if (len(sys.argv) > kernel_offset + 1 and sys.argv[kernel_offset] == "kernel" and
+        (sys.argv[kernel_offset + 1] in ("stage", "select", "rollback") or
+         sys.argv[kernel_offset + 1] == "status" and any(a == "--disk-root" or a.startswith("--disk-root=")
+                                                       for a in sys.argv[kernel_offset + 2:]))):
+    if kernel_options:
+        raise SystemExit("mpm kernel boot: use --disk-root, not --root")
+    from mpm_kernel_boot import main
+    raise SystemExit(main(sys.argv[kernel_offset + 1:]))
+elif (len(sys.argv) > kernel_offset + 1 and sys.argv[kernel_offset:kernel_offset + 2] == ["kernel", "plan"]):
     from mpm_deployment import main
     raise SystemExit(main([*kernel_options, *sys.argv[kernel_offset + 2:]]))
 elif (len(sys.argv) > kernel_offset + 1 and sys.argv[kernel_offset] == "kernel"
@@ -41,3 +49,4 @@ elif (len(sys.argv) >= 3 and sys.argv[1] in ("base", "system", "kernel", "ports"
     raise SystemExit(main([action, *sys.argv[3:], "--area", sys.argv[1]]))
 else:
     runpy.run_path(str(Path(__file__).with_name("mpm-nix-prototype")), run_name="__main__")
+

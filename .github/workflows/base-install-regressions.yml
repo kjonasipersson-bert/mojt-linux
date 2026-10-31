@@ -7,9 +7,30 @@ on:
   push:
     branches: [main, fix/base-install-rollback-tests]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
 
 jobs:
+  kernel-development:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install focused test dependencies
+        run: sudo apt-get update && sudo apt-get install -y zstd cpio busybox-static
+      - name: Check Python syntax
+        run: python3 -m py_compile tools/mpm_kernel_boot.py tests/test_kernel_boot.py
+      - name: Check Kernel verification reuse and publication gates
+        run: |
+          sudo env PYTHONPATH=tests python3 -m unittest -v \
+            test_kernel_boot.KernelBootTests.test_preview_and_status_inspect_each_boot_entry_once \
+            test_kernel_boot.KernelBootTests.test_selection_rechecks_candidate_at_publication \
+            test_kernel_boot.KernelBootTests.test_corrupt_staged_initramfs_blocks_selection
+      - name: Check shutdown ordering contracts
+        run: python3 -m unittest discover -s tests -p 'test_shutdown_order.py' -v
+
   install-failures:
+    # Draft pushes run focused checks; ready PRs, main and manual runs get full regression.
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -55,6 +76,10 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_mpm_deployment.py' -v
       - name: Check native Base Kernel image inputs module mounts and generated initramfs
         run: sudo python3 -m unittest discover -s tests -p 'test_native_image.py' -v
+      - name: Check existing native-disk Kernel staging selection and rollback
+        run: sudo python3 -m unittest discover -s tests -p 'test_kernel_boot.py' -v
+      - name: Check final shutdown ordering escaping and explicit failure reporting
+        run: python3 -m unittest discover -s tests -p 'test_shutdown_order.py' -v
       - name: Check backend-independent Ports selector request policy
         run: python3 -m unittest discover -s tests -p 'test_mpm_selector_ports.py' -v
       - name: Check MPM/Nix orchestration with simulated backend
@@ -63,13 +88,15 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_mpm_pacman_prototype.py' -v
 
   hardware-disk-boot:
+    # Several QEMU boots are acceptance tests, not a per-edit development loop.
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Install firmware boot probe tools and a matching kernel/module set
         run: |
           sudo apt-get update
-          sudo apt-get install -y linux-image-generic \
+          sudo apt-get install -y linux-image-generic build-essential systemd e2fsprogs \
             busybox-static cpio kmod zstd grub-common grub-efi-amd64-bin \
             fdisk dosfstools mtools ovmf qemu-system-x86 qemu-utils
       - name: Boot the hardware profile with SATA and USB disks
@@ -103,6 +130,21 @@ jobs:
             --kernel "$kernel" --modules-dir "/lib/modules/$release" \
             --hardware-profile thinkpad-x1-carbon-3 --disk-bus usb --generations --serial-login \
             --output "$RUNNER_TEMP/mojt-hardware-serial"
+      - name: Reproduce mapped-file shutdown failure and verify corrected final unmount
+        run: |
+          kernel_package="$(dpkg-query -W -f='${Depends}\n' linux-image-generic |
+            tr ',' '\n' |
+            sed -n 's/^[[:space:]]*\(linux-image-[^[:space:](]*-generic\).*/\1/p')"
+          kernel="$(dpkg-query -L "$kernel_package" |
+            sed -n '\|^/boot/vmlinuz-[^/]*-generic$|p')"
+          test -f "$kernel"
+          release="${kernel##*/vmlinuz-}"
+          sudo python3 tests/run-shutdown-smoke.py --legacy \
+            --kernel "$kernel" --modules-dir "/lib/modules/$release" \
+            --output "$RUNNER_TEMP/mojt-hardware-shutdown-legacy"
+          sudo python3 tests/run-shutdown-smoke.py \
+            --kernel "$kernel" --modules-dir "/lib/modules/$release" \
+            --output "$RUNNER_TEMP/mojt-hardware-shutdown-corrected"
       - name: Collect boot probe logs
         if: always()
         run: |
@@ -115,7 +157,7 @@ jobs:
 
           os.umask(0o022)
           temporary = Path(sys.argv[1])
-          for scenario in ("sata", "usb", "sata-to-usb", "generations", "serial"):
+          for scenario in ("sata", "usb", "sata-to-usb", "generations", "serial", "shutdown-legacy", "shutdown-corrected"):
               source = temporary / ("mojt-hardware-" + scenario)
               if not source.is_dir():
                   continue
@@ -131,4 +173,5 @@ jobs:
         with:
           name: hardware-boot-logs
           path: ${{ runner.temp }}/mojt-boot-logs/
+
 

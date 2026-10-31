@@ -19,6 +19,9 @@ it does not adopt that selection or establish boot readiness.
 The following [native image builder](native-image-build.md) consumes a verified
 local Base package and installed Kernel to assemble one new disk; it does not
 change these install/status semantics or activate a running installation.
+The experimental [existing native-disk boot frontend](kernel-boot-selection.md)
+adds explicit staging, next-boot selection/rollback and disk-aware status through
+`--disk-root`. It is separate from this standalone registry's `--root` semantics.
 
 ## Commands
 
@@ -172,3 +175,4 @@ did not create a deployment selection or claim compatibility/boot readiness.
 This accepts local import/status/idempotence for the real package; it does not
 test boot activation, repository trust, shared privileged installation or
 power-loss recovery. No new kernel build or VM boot cycle was required.
+

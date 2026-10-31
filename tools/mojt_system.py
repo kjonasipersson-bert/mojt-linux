@@ -791,6 +791,25 @@ def finalize_manifest(tree, generation, base, repo):
     write(system / "manifest.json", json.dumps(manifest, indent=2) + "\n")
 
 
+def shutdown_mount_policy():
+    """Keep early-boot image mounts until the static final shutdown phase.
+
+    These are already mounted before PID 1 starts. They are not ordinary local
+    filesystems: udev/journald and the shutdown executable can still use them
+    after umount.target. The static exitrd owns their final teardown.
+    """
+    paths = ("/etc", "/var", "/home", "/root", "/nix", "/run/mojt-system", "/run/mojt-disk",
+             "/lib/modules", "/usr/lib/modules", "/lib/firmware", "/usr/lib/firmware")
+    units = [path.lstrip("/").replace("-", "\\x2d").replace("/", "-") + ".mount" for path in paths]
+    return ("\n# Early-boot image mounts are released after PID 1 enters the static exitrd.\n"
+            "mkdir -p /newroot/run/systemd/system || panic \"cannot create shutdown mount policy\"\n"
+            "for mojt_mount_unit in " + " ".join("'" + name + "'" for name in units) + "; do\n"
+            '    mkdir -p "/newroot/run/systemd/system/$mojt_mount_unit.d" || panic "cannot create mount policy directory"\n'
+            '    printf "%s\\n" "[Unit]" "DefaultDependencies=no" >'
+            '"/newroot/run/systemd/system/$mojt_mount_unit.d/10-mojt-exitrd.conf" || panic "cannot write shutdown mount policy"\n'
+            "done\n")
+
+
 def init_script(legacy):
     """Keep the proven disk/Base/state boot and add System/store mounts."""
     old = """[ -x /sysroot/system/prototype-init/busybox ] ||
@@ -806,7 +825,7 @@ mount -t tmpfs -o mode=1777,nodev,nosuid tmpfs /newroot/tmp || panic "cannot mou
 mkdir -p /newroot/run/initramfs/bin || panic "cannot create shutdown runtime"
 cp /bin/busybox /newroot/run/initramfs/bin/busybox || panic "cannot stage shutdown BusyBox"
 ln -s busybox /newroot/run/initramfs/bin/sh || panic "cannot stage shutdown shell"
-cp /shutdown /newroot/run/initramfs/shutdown || panic "cannot stage shutdown script\""""
+cp /shutdown /newroot/run/initramfs/shutdown || panic "cannot stage shutdown script\"""" + shutdown_mount_policy()
     require(old in legacy, "VM init template changed; System mount hook needs review")
     result = legacy.replace(old, new).replace("system/prototype-init/version", "system/current/version")
     result = result.replace("system/prototype-init/assembled-at-utc", "system/current/assembled-at-utc")
@@ -819,18 +838,65 @@ cp /shutdown /newroot/run/initramfs/shutdown || panic "cannot stage shutdown scr
     return result.replace("mode=0755 tmpfs", "mode=0755,nodev,nosuid,strictatime tmpfs")
 
 
+SHUTDOWN_APPLETS = frozenset({"cp", "ln", "umount", "halt", "sort", "printf"})
+
 SHUTDOWN = """#!/bin/sh
 PATH=/bin
-export PATH
+LC_ALL=C
+export PATH LC_ALL
+# systemd-shutdown has killed the remaining services and switched to this
+# RAM-backed root. Keep /dev and /proc available; only dismantle the old root.
+cd / || exit 1
+echo "Mojt shutdown: entered static exitrd"
+mojt_device=
+while read -r mojt_id mojt_parent mojt_dev mojt_subroot mojt_where mojt_rest; do
+    [ "$mojt_where" != /oldroot ] || mojt_device=$mojt_dev
+done </proc/self/mountinfo
 busybox sync
-if ! busybox umount -a -r; then
-    echo "Mojt shutdown: some mounts could only be left read-only" >/dev/console
+# A bounded, deepest-first pass also handles stacked mounts. Taking a snapshot
+# avoids modifying the mount table while parsing it. Never use forced/lazy
+# unmounts or unmount /proc (which is needed to verify the result).
+mojt_pass=0
+while [ "$mojt_pass" -lt 3 ]; do
+    : >/mojt-oldroot-mounts
+    while read -r mojt_id mojt_parent mojt_dev mojt_subroot mojt_where mojt_rest; do
+        case "$mojt_where" in
+            /oldroot|/oldroot/*) printf '%s\\n' "$mojt_where" >>/mojt-oldroot-mounts ;;
+        esac
+    done </proc/self/mountinfo
+    [ -s /mojt-oldroot-mounts ] || break
+    busybox sort -r /mojt-oldroot-mounts >/mojt-oldroot-sorted
+    while IFS= read -r mojt_encoded; do
+        # mountinfo escapes whitespace/backslashes. The final dot preserves
+        # trailing newlines through command substitution; no eval is used.
+        mojt_target=$(busybox printf '%b.' "$mojt_encoded")
+        mojt_target=${mojt_target%.}
+        busybox umount "$mojt_target" || :
+    done </mojt-oldroot-sorted
+    mojt_pass=$((mojt_pass + 1))
+done
+mojt_remaining=0
+while read -r mojt_id mojt_parent mojt_dev mojt_subroot mojt_where mojt_rest; do
+    case "$mojt_where" in /oldroot|/oldroot/*) mojt_remaining=1 ;; esac
+    if [ -n "$mojt_device" ] && [ "$mojt_device" = "$mojt_dev" ]; then
+        mojt_remaining=1
+        mojt_target=$(busybox printf '%b.' "$mojt_where")
+        mojt_target=${mojt_target%.}
+        # Failure fallback only, explicitly not clean-unmount acceptance.
+        busybox mount -o remount,ro "$mojt_target" "$mojt_target" || :
+    fi
+done </proc/self/mountinfo
+busybox sync
+if [ "$mojt_remaining" -eq 0 ] && [ -n "$mojt_device" ]; then
+    echo "Mojt shutdown: old root and backing filesystem fully unmounted"
+else
+    echo "Mojt shutdown: ERROR: old root/backing filesystem remains; read-only fallback attempted"
 fi
-busybox sync
 case "$1" in
     reboot) exec busybox reboot -f ;;
     halt) exec busybox halt -f ;;
     *) exec busybox poweroff -f ;;
 esac
 """
+
 
