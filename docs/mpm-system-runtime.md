@@ -103,5 +103,6 @@ No repeated owner VM/account loop is required before this integration. A future
 single complete bootstrap/build/install/boot acceptance tests the installed
 commands on the real Mojt runtime. Base/System mutation commands, trusted native
 repository acquisition and the unified build/bootstrap interface remain separate
-work. User-facing syntax decisions are collected in
-[the command discussion](mpm-cli-discussion.md), not silently implemented here.
+work. Existing MPM syntax is retained. The separate new-tool interface discussion
+concerns [MBT](mbt-cli-discussion.md). The [gap matrix](mpm-gap-matrix.md) records
+the remaining joins to the complete installed-machine workflow.

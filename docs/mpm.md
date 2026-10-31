@@ -102,8 +102,9 @@ The [installation and transaction rules](mpm-transactions.md) define shared
 verification, lock, staging, publication and failure boundaries. They preserve
 each area's authoritative records and installation/activation semantics.
 The [System runtime integration](mpm-system-runtime.md) delivers the same
-frontend with installed target defaults. Future spelling/verbs remain subject
-to the [explicit command syntax discussion](mpm-cli-discussion.md).
+frontend with installed target defaults. Existing MPM syntax is retained;
+the new-tool syntax discussion concerns [MBT](mbt-cli-discussion.md). See the
+[gap matrix](mpm-gap-matrix.md) for the remaining implementation work.
 
 | Action | Intended behavior |
 | --- | --- |

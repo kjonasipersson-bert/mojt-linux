@@ -47,19 +47,22 @@ updates to an existing boot disk or power-loss recovery.
 
 ## Work order
 
-The next consolidation increment is [shared installation and transaction
+The merged consolidation includes [shared installation and transaction
 rules](mpm-transactions.md): use common lock/publication primitives for existing
 Base, Kernel and Ports writers, and hold all cooperating resources through
 Kernel boot publication. Preserve exact verification gates, area records and
 installed/selected/running semantics. Report post-rename flush failures explicitly
-and retain possibly committed content. This branch adds that coordination;
-it does not implement existing-disk System/Base boot upgrades. The next
+and retain possibly committed content. It does not implement existing-disk
+System/Base boot upgrades. The merged
 [System runtime integration](mpm-system-runtime.md) now delivers the common
 frontend and its complete management modules, pinned interpreter, retained tools
-and explicit target defaults. Existing images are not rewritten. Command naming
-and future verbs remain a [separate syntax discussion](mpm-cli-discussion.md).
-Base/System upgrades follow before the unified bootstrap/build-environment
-journey and a focused physical Kernel switch test.
+and explicit target defaults. Existing images are not rewritten. Existing MPM
+syntax is satisfactory and retained; the new-tool syntax discussion concerns
+[MBT, Mojt Build/Bootstrap Tool](mbt-cli-discussion.md).
+The [gap matrix](mpm-gap-matrix.md) distinguishes implemented content management
+from the missing catalog/acquisition joins, existing-disk Base/System workflows,
+complete activation and final acceptance. Those precede the unified MBT journey
+and a focused physical Kernel switch test.
 
 | Priority | Track | Next work |
 | --- | --- | --- |
