@@ -15,7 +15,6 @@ corruption but does not authenticate releases; signature verification is TODO.
 """
 
 import argparse
-import fcntl
 import hashlib
 import os
 from pathlib import Path, PurePosixPath
@@ -28,6 +27,9 @@ import sys
 import tarfile
 import tempfile
 import tomllib
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import mpm_transaction as transaction
 
 LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]*\Z")
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
@@ -361,8 +363,7 @@ def activate(target, version):
     temp_link = target / "base" / f".current-{os.getpid()}"
     os.symlink(version, temp_link)
     try:
-        os.replace(temp_link, link)  # Atomic on the same filesystem.
-        sync_directory(link.parent)  # Persist the new symlink directory entry.
+        transaction.publish(temp_link, link, sync=sync_directory)
     finally:
         temp_link.unlink(missing_ok=True)
 
@@ -536,12 +537,8 @@ def main():
     if args.command != "status":
         target.mkdir(parents=True, exist_ok=True)
     lock_path = target / ".install-lock"
-    if args.command == "status":
-        lock = lock_path.open("rb")  # Status works without root privileges.
-    else:
-        lock = lock_path.open("a+b")
-    with lock:
-        fcntl.flock(lock, fcntl.LOCK_SH if args.command == "status" else fcntl.LOCK_EX)
+    with transaction.file_lock(lock_path, shared=args.command == "status",
+                               create=args.command != "status", mode=0o644):
         if args.command == "install":
             install(args, target)
         elif args.command == "activate":
@@ -566,3 +563,4 @@ if __name__ == "__main__":
     except (InstallError, OSError, subprocess.CalledProcessError, tomllib.TOMLDecodeError) as e:
         print(f"mojt-base-install: {e}", file=sys.stderr)
         raise SystemExit(1)
+

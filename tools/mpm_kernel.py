@@ -5,7 +5,6 @@
 import argparse
 from contextlib import contextmanager
 from datetime import datetime, timezone
-import fcntl
 import hashlib
 import json
 import os
@@ -19,6 +18,7 @@ import tarfile
 import tempfile
 
 import mojt_artifact as artifact
+import mpm_transaction as transaction
 
 DEFAULT_ROOT = Path("/var/lib/mojt/kernel")
 REGISTRY = "mpm-kernel-registry-v1\n"
@@ -108,11 +108,7 @@ def registry_lock(root):
     root_path(root, write=True)  # Also inspect ancestors newly created under the caller's umask.
     require(not directory(root).st_mode & 0o022, "unsafe registry permissions")
     require(os.geteuid() == root.stat().st_uid, "registry mutations require its owner")
-    fd = os.open(root / ".lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
-    try:
-        info = os.fstat(fd)
-        require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and info.st_uid == os.geteuid(), "unsafe registry lock")
-        fcntl.flock(fd, fcntl.LOCK_EX)
+    with transaction.file_lock(root / ".lock"):
         if not os.path.lexists(root / MARKER):
             require({p.name for p in root.iterdir()} == {".lock"}, "refuse to adopt an unmanaged directory")
             (root / "installed").mkdir(mode=0o755)
@@ -124,8 +120,6 @@ def registry_lock(root):
             sync_directory(root)
         inspect_root(root)
         yield
-    finally:
-        os.close(fd)
 
 
 def acceptable(body):
@@ -368,3 +362,4 @@ def main(argv=None):
         print("mpm kernel: " + str(error), file=sys.stderr)
         return 1
     return 0
+

@@ -507,6 +507,7 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
             export(name, "nix", "bin/" + name)
         python = export("python3", "python", "bin/python3")
         write(system / "tools/mpm-nix-prototype", (repo / "tools/mpm-nix-prototype").read_text(), 0o755)
+        write(system / "tools/mpm_transaction.py", (repo / "tools/mpm_transaction.py").read_text())
         write(system / "tools/mojt_system_manifest.py", (repo / "tools/mojt_system_manifest.py").read_text())
         write(system / "tools/mojt-system-inspect.py", (repo / "tools/mojt-system-inspect.py").read_text(), 0o755)
         write(system / "bin/mojt-system-inspect", "#!/bin/sh\nexec " + python + ' -I /run/mojt-system/tools/mojt-system-inspect.py "$@"\n', 0o755)
@@ -898,5 +899,6 @@ case "$1" in
     *) exec busybox poweroff -f ;;
 esac
 """
+
 
 

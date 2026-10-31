@@ -98,6 +98,10 @@ still require checks; see the [mixed-libc proposal](mpm-libc-policy.md).
 
 ## 2. Operations
 
+The [installation and transaction rules](mpm-transactions.md) define shared
+verification, lock, staging, publication and failure boundaries. They preserve
+each area's authoritative records and installation/activation semantics.
+
 | Action | Intended behavior |
 | --- | --- |
 | `update` | Refresh local repository/release catalog metadata, like `apt update`. No packages installed, removed, or activated. |
@@ -691,3 +695,4 @@ deployment formats, and durable updates to existing boot disks.
 
 These accepted policies guide future implementation; this document is not
 a complete command reference. See the [roadmap](roadmap.md) for the next work.
+

@@ -6,7 +6,7 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Mojt development priorities
 
-Updated 2026-10-30. This records the agreed order and measured progress;
+Updated 2026-10-31. This records the agreed order and measured progress;
 future commands and policies are not claims of implemented functionality.
 The [architecture](architecture.md) defines the layer boundaries and the
 [MPM contract](mpm.md) records the accepted update semantics.
@@ -46,6 +46,16 @@ Fresh-image assembly and controlled abort checks do not establish durable
 updates to an existing boot disk or power-loss recovery.
 
 ## Work order
+
+The next consolidation increment is [shared installation and transaction
+rules](mpm-transactions.md): use common lock/publication primitives for existing
+Base, Kernel and Ports writers, and hold all cooperating resources through
+Kernel boot publication. Preserve exact verification gates, area records and
+installed/selected/running semantics. Report post-rename flush failures explicitly
+and retain possibly committed content. This branch adds that coordination;
+it does not yet integrate the complete MPM frontend into System or implement
+existing-disk System/Base boot upgrades. Those follow before the unified
+bootstrap/build-environment journey and a focused physical Kernel switch test.
 
 | Priority | Track | Next work |
 | --- | --- | --- |
@@ -279,4 +289,5 @@ Console usability follow-up: automate geometry setup/refresh for direct
 Debian-host QEMU serial sessions. A manual terminal reset/size adjustment resolved
 the owner's display/paste problem during this test. No automatic terminal fix
 is implemented by the package-format work.
+
 
