@@ -26,6 +26,15 @@ loader.exec_module(mpm)
 
 
 class MpmNixTests(unittest.TestCase):
+    def test_coordinator_lock_alone_is_empty_state_and_initializes_without_adoption(self):
+        self.root.mkdir()
+        with mpm.transaction_core.file_lock(self.root / ".lock"):
+            before = {p.name for p in self.root.iterdir()}
+            self.assertEqual(mpm.load_state(self.root), mpm.empty_state())
+            self.assertEqual({p.name for p in self.root.iterdir()}, before)
+        self.update()
+        mpm.check_root(self.root)
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="mojt-nix-probe-")
         self.addCleanup(self.tmp.cleanup)
@@ -1120,3 +1129,4 @@ commands = ["hello"]
 
 if __name__ == "__main__":
     unittest.main()
+

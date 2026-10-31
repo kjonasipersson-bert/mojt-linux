@@ -104,10 +104,11 @@ power-cut recovery protocol: an interrupted initial registry setup can require
 explicit inspection. No automatic boot-success/failure counter, unattended
 fallback, pruning or recovery of arbitrary existing installations is provided.
 The previous menu entry remains a manual GRUB recovery option.
-The boot lock serializes these boot commands. Other Ports/account/System writers
-must remain idle during this experiment; a shared cross-layer transaction lock
-is future work. Selection rechecks compatibility facts immediately before menu
-publication, but does not claim atomic coordination with unrelated writers.
+The [shared transaction rules](mpm-transactions.md) coordinate boot commands with
+the existing Base, Kernel registry and Ports locks. All four resources stay locked
+through final checks and publication. External account/System writers, manual
+root edits and older boot publishers must still remain idle. This is not atomic
+coordination with arbitrary machine-state changes.
 
 ## Focused owner acceptance
 
@@ -249,8 +250,8 @@ integrity gate; corruption detected there must stop publication.
 The regression workflow distinguishes three occasions:
 
 1. **Draft / intermediate commits**: syntax, focused Kernel integrity/
-   publication tests and shutdown contracts; no repeated full hardware boot
-   matrix.
+   publication tests, shared locks, Base/Ports publication regressions and
+   shutdown contracts; no repeated full hardware boot matrix.
 2. **Ready-for-review PRs and pushes to main**: existing full regression
    suites, real image/boot tests and the hardware shutdown fixture.
 3. **Manual workflow dispatch**: run the same full regression jobs when needed
@@ -262,3 +263,4 @@ smallest applicable test; retain real boot tests for cross-component behavior
 that cannot be demonstrated by a unit/integration fixture. Test-count and
 call-count observations are not measured wall-clock performance of the owner's
 machine. Do not weaken release or installation verification to make CI faster.
+

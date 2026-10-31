@@ -24,9 +24,17 @@ jobs:
           sudo env PYTHONPATH=tests python3 -m unittest -v \
             test_kernel_boot.KernelBootTests.test_preview_and_status_inspect_each_boot_entry_once \
             test_kernel_boot.KernelBootTests.test_selection_rechecks_candidate_at_publication \
-            test_kernel_boot.KernelBootTests.test_corrupt_staged_initramfs_blocks_selection
+            test_kernel_boot.KernelBootTests.test_corrupt_staged_initramfs_blocks_selection \
+            test_kernel_boot.KernelBootTests.test_boot_publication_holds_the_existing_base_kernel_ports_and_boot_locks \
+            test_kernel_boot.KernelBootTests.test_post_publication_flush_failure_preserves_new_menu_and_old_deployment
       - name: Check shutdown ordering contracts
         run: python3 -m unittest discover -s tests -p 'test_shutdown_order.py' -v
+      - name: Check shared transaction locks and publication failure boundaries
+        run: python3 -m unittest discover -s tests -p 'test_mpm_transaction.py' -v
+      - name: Check Base and Ports publication regressions
+        run: |
+          python3 -m unittest discover -s tests -p 'test_base_install_failures.py' -v
+          python3 -m unittest discover -s tests -p 'test_mpm_nix_prototype.py' -v
 
   install-failures:
     # Draft pushes run focused checks; ready PRs, main and manual runs get full regression.
@@ -38,6 +46,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y dbus zstd cpio busybox-static grub-common grub-efi-amd64-bin fdisk dosfstools mtools qemu-utils qemu-system-x86
       - name: Run synthetic installer regression tests
         run: python3 -m unittest discover -s tests -p 'test_base_install_failures.py' -v
+      - name: Check shared transaction locks and publication failure boundaries
+        run: python3 -m unittest discover -s tests -p 'test_mpm_transaction.py' -v
       - name: Verify packed Base root ownership
         run: sudo python3 -m unittest discover -s tests -p 'test_base_pack_root.py' -v
       - name: Check VM builder contracts
@@ -173,5 +183,6 @@ jobs:
         with:
           name: hardware-boot-logs
           path: ${{ runner.temp }}/mojt-boot-logs/
+
 
 

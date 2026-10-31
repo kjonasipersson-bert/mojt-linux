@@ -4,7 +4,6 @@
 """Experimental native-disk Kernel staging and explicit next-boot selection."""
 import argparse
 from contextlib import contextmanager
-import fcntl
 import gzip
 import hashlib
 import importlib.util
@@ -27,6 +26,7 @@ import mojt_system as system
 import mojt_system_manifest as manifests
 import mpm_deployment as deployment
 import mpm_kernel as kernel
+import mpm_transaction as transaction
 
 FORMAT = "mpm-kernel-boot-v1"
 HEADER = "# " + FORMAT + "\n"
@@ -179,11 +179,24 @@ def locked(root):
     directory = root / "boot/mpm"
     directory.mkdir(mode=0o755, exist_ok=True)
     kernel.root_path(directory, write=True)
+    # Use the same inodes as the individual writers, including older writers.
+    # Kernel content must already be installed; never initialize it here.
+    require(kernel.inspect_root(root / "kernel"), "installed Kernel registry required")
+    ports = root / "state/var/lib/mojt/ports"
+    kernel.root_path(ports, write=True)
+    ports.mkdir(parents=True, exist_ok=True, mode=0o755)
+    kernel.root_path(ports, write=True)
+    with transaction.resource_locks(transaction.boot_lock_paths(root), modes={root / ".install-lock": 0o644}):
+        initialize_boot_registry(directory)
+        yield
+
+
+def initialize_boot_registry(directory):
     marker = directory / "format"
     if marker.exists() or marker.is_symlink():
         require(checked_file(marker) == (FORMAT + "\n").encode(), "unsupported boot registry")
     else:
-        require(not any(directory.iterdir()), "refuse unmanaged boot registry")
+        require({p.name for p in directory.iterdir()} == {".lock"}, "refuse unmanaged boot registry")
         with marker.open("xb") as stream:
             stream.write((FORMAT + "\n").encode())
             stream.flush()
@@ -191,14 +204,6 @@ def locked(root):
         (directory / "slots").mkdir(mode=0o755)
     require((directory / "slots").is_dir() and not (directory / "slots").is_symlink(), "unsafe boot slots")
     kernel.root_path(directory / "slots", write=True)
-    fd = os.open(directory / ".lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
-    try:
-        info = os.fstat(fd)
-        require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and info.st_uid == os.geteuid(), "unsafe boot lock")
-        fcntl.flock(fd, fcntl.LOCK_EX)
-        yield
-    finally:
-        os.close(fd)
 
 
 def vm_module():
@@ -284,7 +289,7 @@ def stage(root, identifier, *, baseline=None, base_context=None, busybox=None,
                 selection_changes=False, running_changes=False)
     producer = artifact.digest(dict(busybox=artifact.file_sha(busybox), code={name: artifact.file_sha(
         Path(__file__).with_name(name)) for name in ("mpm_kernel_boot.py", "mojt-vm-build.py", "mojt_native_image.py",
-                                                    "mojt_system.py", "mojt_boot.py")}))
+                                                    "mojt_system.py", "mojt_boot.py", "mpm_transaction.py")}))
     retained_entries, unused = available(root, state, entries)
     for existing in retained_entries.values():
         old = existing["record"]["description"]
@@ -435,8 +440,7 @@ def select(root, identifier, *, expected_selected, baseline=None, dry_run=False,
                 fresh_candidate["record"]["description"]["initramfs"]["archive"])
             require(fresh_result["candidate"] == fresh_candidate["record"],
                     "deployment compatibility changed; repeat preview")
-            os.replace(temporary, path)
-            kernel.sync_directory(path.parent)
+            transaction.publish(temporary, path, sync=kernel.sync_directory)
         finally:
             Path(temporary).unlink(missing_ok=True)
     return dict(plan=plan, changed=True, selected=identifier, previous=state["selected"])
@@ -491,3 +495,4 @@ def main(argv=None):
         print("mpm kernel boot: " + str(error), file=sys.stderr)
         return 1
     return 0
+

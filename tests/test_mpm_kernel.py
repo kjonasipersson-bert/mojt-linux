@@ -261,7 +261,7 @@ class KernelTests(unittest.TestCase):
         tools, binaries = self.work / "tools", self.work / "bin"
         tools.mkdir()
         binaries.mkdir()
-        for name in ("mpm", "mpm_kernel.py", "mojt_artifact.py", "mpm_selection.py"):
+        for name in ("mpm", "mpm_kernel.py", "mojt_artifact.py", "mpm_selection.py", "mpm_transaction.py"):
             shutil.copyfile(REPO / "tools" / name, tools / name)
         (binaries / "zstd").symlink_to(shutil.which("zstd"))
         return tools, dict(os.environ, PATH=str(binaries))
@@ -305,3 +305,4 @@ class KernelTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

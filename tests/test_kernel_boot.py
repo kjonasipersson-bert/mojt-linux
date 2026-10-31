@@ -102,6 +102,37 @@ class KernelBootTests(unittest.TestCase):
         self.assertEqual(before, self.snapshot())
         self.assertFalse((self.root / "boot/mpm").exists())
 
+    def test_boot_publication_holds_the_existing_base_kernel_ports_and_boot_locks(self):
+        contender = """import fcntl,os,sys
+fd=os.open(sys.argv[1],os.O_RDWR)
+try: fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+except BlockingIOError: sys.exit(75)
+"""
+        locks = manager.transaction.boot_lock_paths(self.root)
+        with manager.locked(self.root):
+            for path in locks:
+                result = subprocess.run([sys.executable, "-c", contender, str(path)])
+                self.assertEqual(result.returncode, 75, str(path))
+        for path in locks:
+            self.assertEqual(subprocess.run([sys.executable, "-c", contender, str(path)]).returncode, 0)
+        self.assertEqual((self.root / ".install-lock").stat().st_mode & 0o777, 0o644)
+
+    def test_post_publication_flush_failure_preserves_new_menu_and_old_deployment(self):
+        staged = self.stage()
+        original = kernel.sync_directory
+        def fail(path):
+            if path == self.root / "boot/mojt":
+                raise OSError("post-rename flush failed")
+            original(path)
+        with mock.patch.object(kernel, "sync_directory", side_effect=fail):
+            with self.assertRaisesRegex(manager.transaction.PublicationUncertain, "may have committed"):
+                manager.select(self.root, staged["deployment"], expected_selected=self.old_id,
+                               baseline=self.baseline, yes=True)
+        state = manager.status(self.root)
+        self.assertEqual(state["selected"], staged["deployment"])
+        self.assertEqual(state["previous"], self.old_id)
+        self.assertTrue((self.root / self.baseline).is_dir())
+
     def test_preview_and_status_inspect_each_boot_entry_once(self):
         # A previously checked menu entry must not be rehashed by available().
         with mock.patch.object(manager, "inspect_entry", wraps=manager.inspect_entry) as check:
@@ -304,3 +335,4 @@ class KernelBootTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

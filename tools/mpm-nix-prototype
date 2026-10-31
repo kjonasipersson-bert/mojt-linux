@@ -7,7 +7,6 @@
 import argparse
 import copy
 from datetime import datetime, timezone
-import fcntl
 import importlib.util
 import json
 import os
@@ -18,6 +17,9 @@ import subprocess
 import sys
 import tomllib
 import uuid
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import mpm_transaction as transaction_core
 
 
 SUPPORTED_STATE_FORMATS = (1, 2, 3)
@@ -228,7 +230,10 @@ def initialize(root):
     root.mkdir(parents=True, exist_ok=True)
     marker = root / ".mpm-nix-experiment"
     if not os.path.lexists(marker):
-        require(not any(root.iterdir()), "root is not empty; refusing to adopt local files")
+        entries = {p.name for p in root.iterdir()}
+        require(entries <= {".lock"}, "root is not empty; refusing to adopt local files")
+        if ".lock" in entries:
+            transaction_core.check_lock_file(root / ".lock")
         marker.write_text(MARKER)
         (root / "profiles").mkdir()
         (root / "gcroots").mkdir()
@@ -238,6 +243,9 @@ def initialize(root):
 def load_state(root):
     if not root.exists() or (root.is_dir() and not root.is_symlink() and not any(root.iterdir())):
         return empty_state()
+    if root.is_dir() and not root.is_symlink() and {p.name for p in root.iterdir()} == {".lock"}:
+        transaction_core.check_lock_file(root / ".lock", shared=True)
+        return empty_state()  # Boot coordination may precede the first Ports import.
     check_root(root)
     current = root / "current"
     if not os.path.lexists(current):
@@ -633,9 +641,12 @@ def publish(root, old, state, action="publish"):
         sync_directory(generation)
         sync_directory(root / "profiles")
         temporary.symlink_to("profiles/" + generation.name)
-        os.replace(temporary, root / "current")
+        try:
+            transaction_core.publish(temporary, root / "current", sync=sync_directory)
+        except transaction_core.PublicationUncertain:
+            published = True
+            raise
         published = True
-        sync_directory(root)
         require(os.readlink(root / "current") == "profiles/" + generation.name,
                 "profile selection changed unexpectedly after publication; retained for inspection")
     except BaseException:
@@ -1038,11 +1049,10 @@ def main(argv=None):
         if args.dry_run:
             perform()
         else:
-            initialize(root)
-            lock = root / ".lock"
-            require(not lock.is_symlink(), "unmanaged lock path")
-            with lock.open("a") as stream:
-                fcntl.flock(stream, fcntl.LOCK_EX)
+            require(not root.is_symlink(), "experiment root must not be a symlink")
+            root.mkdir(parents=True, exist_ok=True)
+            with transaction_core.file_lock(root / ".lock"):
+                initialize(root)
                 perform()
         return 0
     except (ValueError, OSError, KeyError, TypeError, EOFError, AttributeError) as error:
@@ -1052,4 +1062,5 @@ def main(argv=None):
 
 if __name__ == "__main__":
     sys.exit(main())
+
 

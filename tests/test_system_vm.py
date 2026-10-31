@@ -858,6 +858,8 @@ esac""")
                          (REPO / "tools/mpm-nix-catalog.py").read_bytes())
         self.assertEqual((directory / "tools/mpm-nix-prototype").read_bytes(),
                          (REPO / "tools/mpm-nix-prototype").read_bytes())
+        self.assertEqual((directory / "tools/mpm_transaction.py").read_bytes(),
+                         (REPO / "tools/mpm_transaction.py").read_bytes())
         self.assertEqual((directory / "tests/run-mpm-nix-python.py").read_bytes(),
                          (REPO / "tests/run-mpm-nix-python.py").read_bytes())
         self.assertEqual((directory / "tests/run-mpm-nix-ports.py").read_bytes(),
@@ -1190,5 +1192,6 @@ esac""")
 
 if __name__ == "__main__":
     unittest.main()
+
 
 
