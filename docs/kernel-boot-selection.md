@@ -6,7 +6,7 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Existing native-disk Kernel staging and next-boot selection
 
-This experimental checkout frontend follows the accepted fresh native image
+This experimental frontend follows the accepted fresh native image
 builder. It targets that builder's x86_64 serial UEFI/VirtIO layout, initially
 with one explicit native boot pair. It rejects customized/unknown boot menus.
 The owner accepted the functional boot/rollback sequence on 2026-10-30.
@@ -23,8 +23,10 @@ updates the selected System userspace or changes Ports wishes.
 
 ## Explicit commands
 
-Use the new source checkout's `tools/mpm`; the existing installed step-10 System
-frontend is not silently replaced. These commands use `--disk-root`, not the
+Use the source checkout's `tools/mpm` or the [common frontend delivered in new
+System assemblies](mpm-system-runtime.md). Retained step-10 images are not
+modified in place. Installed commands default to the mounted installation;
+the source examples below use explicit targets. Boot commands use `--disk-root`, not the
 standalone install/status registry option `--root`. Shared mutations require root.
 The registry is `DISK/kernel`. `--baseline` identifies the original native boot
 pair directory relative to DISK. Its complete menu and all content bindings must
@@ -263,4 +265,5 @@ smallest applicable test; retain real boot tests for cross-component behavior
 that cannot be demonstrated by a unit/integration fixture. Test-count and
 call-count observations are not measured wall-clock performance of the owner's
 machine. Do not weaken release or installation verification to make CI faster.
+
 

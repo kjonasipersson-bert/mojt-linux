@@ -1,9 +1,9 @@
 .\" Mojt Linux
 .\" Copyright (C) 2026 Jonas Persson
 .\" SPDX-License-Identifier: GPL-2.0-only
-.TH MPM 1 "2026-10-30" "Mojt Linux" "User Commands"
+.TH MPM 1 "2026-10-31" "Mojt Linux" "User Commands"
 .SH NAME
-mpm \- manage Mojt Ports and inspect local native Kernel content
+mpm \- manage Mojt Ports, catalogs and native Kernel deployments
 .SH SYNOPSIS
 .B mpm
 .RI [ global-options ] " ports " action " " [ arguments ]
@@ -12,7 +12,7 @@ mpm \- manage Mojt Ports and inspect local native Kernel content
 .RI [ --root " DIRECTORY" ] " kernel " install|status|plan " " [ arguments ]
 .br
 .B mpm
-.RI "kernel " stage|select|rollback|status " --disk-root DIRECTORY " [ arguments ]
+.RI "kernel " stage|select|rollback|status " [--disk-root DIRECTORY] " [ arguments ]
 .SH DESCRIPTION
 MPM is Mojt's experimental package manager. The Nix-backed
 .B ports
@@ -21,9 +21,25 @@ Imports use binary substitutes only; unavailable substitutes fail instead
 of starting source builds. System services and desktop integration are not
 automatically configured for installed applications.
 .PP
-The repository frontend also installs exact local native Kernel packages,
+The shared repository/System frontend also installs exact local native Kernel packages,
 inspects their retained registry and checks explicit read-only deployment plans.
 These operations require no optional provider backend and never activate a Kernel.
+.PP
+New System profiles deliver the complete frontend and its Python modules.
+Installed commands use the selected System's pinned Python, an isolated import
+path and management command path, independently of Ports programs.
+Ports defaults remain /var/lib/mojt/ports and the selected System source pin.
+Native Kernel install/plan defaults to /run/mojt-disk/kernel; boot commands
+default to /run/mojt-disk. Explicit --root/--disk-root inspection keeps its
+explicit target and does not attach the current machine's runtime record.
+Installed Kernel status includes selected/running identities when a native
+deployment record is available; legacy Systems retain unknown deployment status.
+The source-checkout frontend keeps its existing explicit-target behavior.
+.PP
+Native verification needs the selected System's retained zstd helper; staging
+also needs modprobe. Missing tools are prerequisite errors, never implicit
+package acquisition or a fallback to a Ports executable. A fresh native
+baseline is bound by its runtime record and complete generated menu, not uname.
 .PP
 Catalog selection, recorded requests, installed artifacts and active command
 selections are separate. An artifact identity from
@@ -32,7 +48,9 @@ identifies an installed build; it is not itself an upgrade request.
 .SH GLOBAL OPTIONS
 .TP
 .BI --root " DIRECTORY"
-Dedicated state directory; default /var/lib/mojt/ports.
+Dedicated registry/profile directory; Ports defaults to /var/lib/mojt/ports.
+The source frontend's standalone Kernel default is /var/lib/mojt/kernel;
+the installed frontend defaults to the mounted disk's Kernel registry.
 Use a new empty directory for experiments. Never move an initialized root:
 Nix indirect garbage-collection roots refer to its original location.
 .TP
@@ -309,13 +327,14 @@ man mpm
 .fi
 .SH EXIT STATUS
 0 on success, cancellation or an unchanged plan; nonzero on failure.
-Shared Ports changes require an administrator in the Mojt account-enabled
-System. Ordinary users may list, inspect status, read history and resolve a
-readable catalog.
+Shared installation changes require an administrator in the installed System.
+Ordinary users may inspect catalogs, Ports status/history/search and Kernel
+status/plans. Area-specific ownership and compatibility checks still apply.
 .SH SEE ALSO
 .BR nix-store (1),
 .BR man (1)
 .PP
 Repository documentation: docs/mpm.md, docs/mpm-ports.md, docs/mpm-selectors.md,
 docs/mpm-catalog.md, docs/mpm-artifact-architecture.md and docs/roadmap.md.
+
 

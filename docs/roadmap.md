@@ -53,9 +53,13 @@ Base, Kernel and Ports writers, and hold all cooperating resources through
 Kernel boot publication. Preserve exact verification gates, area records and
 installed/selected/running semantics. Report post-rename flush failures explicitly
 and retain possibly committed content. This branch adds that coordination;
-it does not yet integrate the complete MPM frontend into System or implement
-existing-disk System/Base boot upgrades. Those follow before the unified
-bootstrap/build-environment journey and a focused physical Kernel switch test.
+it does not implement existing-disk System/Base boot upgrades. The next
+[System runtime integration](mpm-system-runtime.md) now delivers the common
+frontend and its complete management modules, pinned interpreter, retained tools
+and explicit target defaults. Existing images are not rewritten. Command naming
+and future verbs remain a [separate syntax discussion](mpm-cli-discussion.md).
+Base/System upgrades follow before the unified bootstrap/build-environment
+journey and a focused physical Kernel switch test.
 
 | Priority | Track | Next work |
 | --- | --- | --- |
@@ -289,5 +293,6 @@ Console usability follow-up: automate geometry setup/refresh for direct
 Debian-host QEMU serial sessions. A manual terminal reset/size adjustment resolved
 the owner's display/paste problem during this test. No automatic terminal fix
 is implemented by the package-format work.
+
 
 

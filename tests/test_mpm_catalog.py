@@ -202,7 +202,7 @@ class CliTests(unittest.TestCase):
         self.directory = Path(self.tmp.name)
         self.tools = self.directory / "tools"
         self.tools.mkdir()
-        for name in ("mpm", "mpm_catalog.py", "mpm_selection.py"):
+        for name in ("mpm", "mpm_cli.py", "mpm_catalog.py", "mpm_selection.py"):
             shutil.copyfile(REPO / "tools" / name, self.tools / name)
         self.catalog = self.directory / "catalog.json"
         self.catalog.write_text(json.dumps(fixture()))
@@ -249,7 +249,7 @@ class CliTests(unittest.TestCase):
 
     def test_legacy_search_and_mutation_still_delegate_without_catalog_adoption(self):
         backend = self.tools / "mpm-nix-prototype"
-        backend.write_text("import sys; print('backend:', repr(sys.argv[1:]))\n")
+        backend.write_text("def main(args):\n    print('backend:', repr(args))\n    return 0\n")
         for args in [("ports", "search", "neovim"), ("ports", "install", "hello", "-y"),
                      ("--root", "old-state", "ports", "status")]:
             run = self.cli(*args)
@@ -258,3 +258,4 @@ class CliTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

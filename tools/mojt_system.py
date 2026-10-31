@@ -72,6 +72,16 @@ in map (item:
 ) r.ports
 '''
 VERSION = "0.2"
+# Closed management runtime, including the boot builder's imported libraries.
+# This does not ship a source checkout or expose image/build commands.
+MPM_FILES = (
+    "mpm", "mpm-system", "mpm_cli.py", "mpm_catalog.py", "mpm_selection.py",
+    "mpm_selector_ports.py", "mpm_kernel.py", "mpm_deployment.py", "mpm_kernel_boot.py",
+    "mpm_transaction.py", "mojt_artifact.py", "mojt_boot.py", "mojt_system.py",
+    "mojt_system_manifest.py", "mojt_native_image.py", "mojt-vm-build.py",
+    "mojt_hardware.py", "mojt_generations.py", "mojt_accounts.py", "mojt-system-inspect.py",
+    "mpm-nix-prototype", "mpm-nix-catalog.py",
+)
 BASH_RC = r'''# Mojt System interactive Bash defaults; user startup files may override these.
 case $- in *i*) ;; *) return 0 ;; esac
 [ -n "${BASH_VERSION-}" ] || return 0
@@ -206,6 +216,20 @@ def executable(payload, record, role, *candidates):
         if path.is_file() and path.stat().st_mode & 0o111:
             return value
     raise ValueError(f"missing {role} executable: {candidates}")
+
+
+def retained_command(payload, record, name):
+    """Select an unambiguous executable from this verified closure, never host PATH."""
+    candidates = set()
+    allowed = {item["path"] for item in record["objects"]}
+    for output in sorted(allowed):
+        path = virtual_file(payload, output + "/bin/" + name)
+        if path.is_file() and path.stat().st_mode & 0o111:
+            value = "/" + path.relative_to(payload).as_posix()
+            require(any(value.startswith(p + "/") for p in allowed), "MPM helper outside retained closure")
+            candidates.add(value)
+    require(len(candidates) <= 1, "ambiguous retained MPM helper: " + name)
+    return next(iter(candidates), None)
 
 
 def account_inputs(payload, record):
@@ -506,15 +530,10 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
         for name in ("nix", "nix-store", "nix-instantiate"):
             export(name, "nix", "bin/" + name)
         python = export("python3", "python", "bin/python3")
-        write(system / "tools/mpm-nix-prototype", (repo / "tools/mpm-nix-prototype").read_text(), 0o755)
-        write(system / "tools/mpm_transaction.py", (repo / "tools/mpm_transaction.py").read_text())
-        write(system / "tools/mojt_system_manifest.py", (repo / "tools/mojt_system_manifest.py").read_text())
-        write(system / "tools/mojt-system-inspect.py", (repo / "tools/mojt-system-inspect.py").read_text(), 0o755)
+        for name in MPM_FILES:
+            write(system / "tools" / name, (repo / "tools" / name).read_text(), 0o644)
         write(system / "bin/mojt-system-inspect", "#!/bin/sh\nexec " + python + ' -I /run/mojt-system/tools/mojt-system-inspect.py "$@"\n', 0o755)
-        write(system / "tools/mpm_selector_ports.py", (repo / "tools/mpm_selector_ports.py").read_text())
-        write(system / "tools/mpm_selection.py", (repo / "tools/mpm_selection.py").read_text())
         write(system / "tests/mpm-release-example.json", (repo / "manifests/mpm-release-example.json").read_text())
-        write(system / "tools/mpm-nix-catalog.py", (repo / "tools/mpm-nix-catalog.py").read_text(), 0o755)
         write(system / "tests/run-mpm-nix-python.py",
               (repo / "tests/run-mpm-nix-python.py").read_text(), 0o755)
         write(system / "tests/run-mpm-nix-ports.py",
@@ -525,8 +544,15 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
               (repo / "tests/run-mpm-nix-upgrade.py").read_text(), 0o755)
         write(system / "bin/mpm", "#!/bin/sh\n"
               "PATH=/run/mojt-system/bin:/usr/bin:/bin\nexport PATH\nexec " + python +
-              ' -I /run/mojt-system/tools/mpm-nix-prototype --root /var/lib/mojt/ports '
-              '--source-manifest /run/mojt-system/ports.toml "$@"\n', 0o755)
+              ' -I -B /run/mojt-system/tools/mpm-system "$@"\n', 0o755)
+        helper = retained_command(payload, record, "zstd")
+        (system / "libexec/mpm/bin").mkdir(parents=True)
+        if helper is not None:
+            (system / "libexec/mpm/bin/zstd").symlink_to(helper)
+        write(system / "mpm-runtime.json", json.dumps(dict(
+            format="mojt-mpm-runtime-v1", python=python, files=list(MPM_FILES),
+            helpers={"zstd": helper}, ports_root="/var/lib/mojt/ports",
+            kernel_root="/run/mojt-disk/kernel", disk_root="/run/mojt-disk"), indent=2) + "\n")
         source = record["source"]
         write(system / "ports.toml", 'format = 1\n[nixpkgs]\n' +
               "".join(f'{k} = "{source[k]}"\n' for k in ("path", "revision", "system")) +
@@ -899,6 +925,7 @@ case "$1" in
     *) exec busybox poweroff -f ;;
 esac
 """
+
 
 
 

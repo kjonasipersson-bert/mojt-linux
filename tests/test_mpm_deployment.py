@@ -285,7 +285,7 @@ class DeploymentTests(unittest.TestCase):
     def test_cli_runs_without_provider_files_or_executables_from_another_directory(self):
         tools = self.work / "isolated-tools"
         tools.mkdir()
-        names = ("mpm", "mpm_deployment.py", "mpm_kernel.py", "mojt_artifact.py", "mpm_selection.py",
+        names = ("mpm", "mpm_cli.py", "mpm_deployment.py", "mpm_kernel.py", "mojt_artifact.py", "mpm_selection.py",
                  "mojt_boot.py", "mojt_system_manifest.py", "mpm_catalog.py", "mpm_transaction.py")
         for name in names:
             shutil.copyfile(REPO / "tools" / name, tools / name)
@@ -315,4 +315,5 @@ class DeploymentTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 

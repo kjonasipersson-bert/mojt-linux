@@ -169,11 +169,9 @@ root ALL=(ALL:ALL) ALL
         '    <allow send_destination="org.freedesktop.DBus"/>\n'
         '    <allow send_destination="org.freedesktop.login1"/>', 1))
     wrapper = profile / "bin/mpm"
-    wrapper.write_text(wrapper.read_text().replace("#!/bin/sh\n", "#!/bin/sh\n"
-        "umask 022\n"
-        'if [ "$(/usr/bin/id -u)" != 0 ]; then\n'
-        '    case "$1:$2" in ports:list|ports:status|ports:history|ports:resolve) ;;\n'
-        '        *) echo "mpm: shared Ports changes require an administrator" >&2; exit 1 ;;\n'
-        '    esac\nfi\n', 1))
+    # The shared frontend classifies read-only/native/provider operations.
+    # A Ports-only shell whitelist would block catalog and Kernel inspection.
+    wrapper.write_text(wrapper.read_text().replace("#!/bin/sh\n", "#!/bin/sh\numask 022\n", 1))
     return ["mojt-privileged.service", "systemd-logind.service", "systemd-user-sessions.service",
             "mojt-account-sysctl.service"]
+

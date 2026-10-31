@@ -104,9 +104,8 @@ boot publishers that held only the boot lock. Those writers must remain idle.
 There is no general global snapshot of all machine state or filesystem freeze.
 This is a local-filesystem flock/rename contract, not distributed locking.
 
-The shared helper is bundled with newly built System profiles because their
-installed Ports frontend imports it. The complete native MPM frontend remains
-a separate consolidation step; no retained System profile is edited in place.
+The helper and [complete MPM frontend](mpm-system-runtime.md) are bundled with
+newly built System profiles. No retained System profile is edited in place.
 
 ## Failure and recovery boundaries
 
@@ -136,3 +135,4 @@ failure semantics; System tests check that the helper is actually delivered.
 Existing Kernel, Base, preview, no-op and late-integrity-gate tests remain in
 place. These are focused regressions; no repeated manual account/boot loop is
 required for this consolidation.
+
