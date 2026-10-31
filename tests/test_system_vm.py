@@ -840,10 +840,17 @@ esac""")
         self.assertIn("require-sigs = true", config)
         self.assertIn("max-jobs = 0", config)
         wrapper = (directory / "bin/mpm").read_text()
-        self.assertIn("--root /var/lib/mojt/ports", wrapper)
-        self.assertIn('--source-manifest /run/mojt-system/ports.toml "$@"', wrapper)
+        self.assertIn('/run/mojt-system/tools/mpm-system "$@"', wrapper)
+        self.assertNotIn('exec /usr/bin/env', wrapper)
+        self.assertNotIn('tools/mpm-nix-prototype', wrapper)
         self.assertNotIn('ports "$@"', wrapper)
         self.assertIn(" -I ", wrapper)
+        self.assertIn(" -B ", wrapper)
+        for name in system.MPM_FILES:
+            self.assertEqual((directory / "tools" / name).read_bytes(), (REPO / "tools" / name).read_bytes())
+        runtime = json.loads((directory / "mpm-runtime.json").read_text())
+        self.assertEqual(runtime["files"], list(system.MPM_FILES))
+        self.assertEqual(runtime["kernel_root"], "/run/mojt-disk/kernel")
         self.assertIn("/var/lib/mojt/ports/current/bin:/run/mojt-system/bin",
                       (directory / "environment").read_text())
         self.assertIn("/run/mojt-system/environment",
@@ -865,6 +872,38 @@ esac""")
         self.assertEqual((directory / "tests/run-mpm-nix-ports.py").read_bytes(),
                          (REPO / "tests/run-mpm-nix-ports.py").read_bytes())
         self.assertIn(record["source"]["revision"], (directory / "ports.toml").read_text())
+
+    def test_mpm_codec_is_selected_from_the_retained_closure_not_host_path(self):
+        record = self.fixture(3)
+        output = record["packages"]["python"]["output"]
+        codec = self.payload / output.lstrip("/") / "bin/zstd"
+        system.write(codec, "#!/bin/sh\nexit 0\n", 0o755)
+        with mock.patch.object(system.os, "chown"):
+            key = system.install(self.tree, self.payload, record, self.busybox, "development", REPO)
+        profile = self.tree / "system" / key
+        self.assertEqual(os.readlink(profile / "libexec/mpm/bin/zstd"), output + "/bin/zstd")
+        self.assertEqual(json.loads((profile / "mpm-runtime.json").read_text())["helpers"]["zstd"],
+                         output + "/bin/zstd")
+
+    def test_mpm_codec_is_explicitly_unavailable_without_retained_binary(self):
+        profile, unused = self.install(3)
+        self.assertIsNone(json.loads((profile / "mpm-runtime.json").read_text())["helpers"]["zstd"])
+        self.assertFalse((profile / "libexec/mpm/bin/zstd").is_symlink())
+
+    def test_mpm_codec_refuses_ambiguous_closure_or_external_symlink(self):
+        record = self.fixture(3)
+        for role in ("python", "nix"):
+            path = record["packages"][role]["output"] + "/bin/zstd"
+            system.write(self.payload / path.lstrip("/"), "codec", 0o755)
+        with self.assertRaisesRegex(ValueError, "ambiguous"):
+            system.retained_command(self.payload, record, "zstd")
+        for role in ("python", "nix"):
+            (self.payload / (record["packages"][role]["output"] + "/bin/zstd").lstrip("/")).unlink()
+        path = self.payload / (record["packages"]["python"]["output"] + "/bin/zstd").lstrip("/")
+        system.write(self.payload / "usr/bin/zstd", "outside closure", 0o755)
+        path.symlink_to("/usr/bin/zstd")
+        with self.assertRaisesRegex(ValueError, "outside retained closure"):
+            system.retained_command(self.payload, record, "zstd")
 
     def test_early_boot_mounts_store_before_systemd_and_moves_backing_disk_last(self):
         script = system.init_script(vm.INIT)
@@ -1192,6 +1231,7 @@ esac""")
 
 if __name__ == "__main__":
     unittest.main()
+
 
 
 
