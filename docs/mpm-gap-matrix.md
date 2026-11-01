@@ -17,6 +17,11 @@ migration boundaries; the [decision register](distribution-decisions.md) lists
 unsettled interfaces and implementation gates. New requirements are proposals
 for review, not claims of accepted schemas or implemented hooks.
 
+The [first consistency review](distribution-review.md) clarifies live-data
+changes, unmanaged Ports data and recovery compatibility. A
+[concrete MBT interface](mbt-interface-proposal.md) is now proposed; D1 remains
+open for discussion, with no new runtime commands implemented.
+
 The owner is satisfied with the existing MPM command language. Preserve it.
 The requested new-tool syntax discussion concerns **MBT: Mojt Build/Bootstrap
 Tool**, not an MPM rename or a replacement command language. MPM manages content

@@ -12,6 +12,12 @@ in place. The earlier spelling `mpt` was not a request to rename MPM or create
 an alias. Existing `mojt-*.py` tools are implementation inputs, not a settled
 public MBT interface.
 
+The [concrete MBT interface proposal](mbt-interface-proposal.md) now supplies a
+four-object command family and worked journey for discussion: `env`, `build`,
+`package` and `bootstrap`. MPM syntax and build/package/install/select separation
+remain intact. These are not implemented or approved verbs; see
+[the first consistency review](distribution-review.md).
+
 The proposed [behavior contract](distribution-contract.md) now specifies MBT's
 target/bootstrap, build/environment, packaging, resume and self-hosting behavior
 without selecting verb spellings. [D1 and D5](distribution-decisions.md) remain

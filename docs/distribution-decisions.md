@@ -33,6 +33,13 @@ milestones as behavior requirements. Their documents use normative words for
 the target; that does not silently adopt new schemas or authorize implementation
 of an arbitrary script runner. Documentation CI cannot approve policy choices.
 
+The [first consistency review](distribution-review.md) resolves six ambiguities
+and separates review completion from owner adoption and implementation. The
+[concrete MBT interface](mbt-interface-proposal.md) is ready for discussion;
+the lifecycle document now includes a closed first-version handler recommendation.
+D1/D3/D4/D5 have concrete proposals, but are not fully closed: command and
+format decisions below remain explicit gates.
+
 ## Open decisions and gates
 
 | ID | Decision / required deliverable | Gate |
@@ -55,7 +62,9 @@ be settled before that mechanism accepts real state or user input.
 
 ## Completion checklist
 
-- [ ] Review new lifecycle/state requirements and M1-M4 milestone definitions.
+- [x] Perform a first consistency review of lifecycle/state and milestone behavior.
+- [ ] Settle/adopt the remaining lifecycle/interface proposals; review completion
+  is not an implementation claim or approval of every schema/command detail.
 - [ ] Decide D1 before the MBT CLI is implemented; do not delay independent MPM work.
 - [ ] Close the relevant D2-D6 gates with versioned formats and compatibility rules.
 - [ ] Complete M1 gaps, then AC1-AC5 from the behavior contract on installed Mojt.

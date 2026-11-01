@@ -6,7 +6,7 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # MPM and MBT: complete distribution behavior contract
 
-Draft 1, 2026-11-01. This is the target behavior specification for review,
+Draft 2, 2026-11-01. This is the target behavior specification for review,
 not an implementation or an assertion that every decision is settled. MUST,
 SHOULD and MAY describe the proposed target. Previously accepted area semantics
 remain binding; new lifecycle mechanisms and MBT interfaces remain proposals
@@ -159,6 +159,13 @@ Known-incompatible state or management formats block ordinary selection.
 Unknown required compatibility also blocks it; warn-only handling is insufficient
 for a prerequisite the operation cannot establish. Separate offline data restore
 requires a reviewed procedure. Automatic failed-boot fallback remains deferred.
+
+Check declared managed-state prerequisites, not a universal schema for every
+user file. Unmanaged application data remains outside automatic migration and
+data-rollback guarantees; show that boundary rather than refusing every Ports
+operation. A previous deployment's compatibility is rechecked against current
+state at selection/start; retaining its files is not permanent proof it is safe
+to run. See [the specification review](distribution-review.md).
 
 Ports activation affects new starts, not existing processes. Aliases/conflicts,
 following/exact policy, history and fallback after removal follow the existing

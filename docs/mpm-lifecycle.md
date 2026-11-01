@@ -104,6 +104,14 @@ target schema, exact migration implementation, prerequisites, affected services,
 required quiescence, backup/restore policy and backward-compatibility consequence.
 The same checks cover MPM/MBT registries and other management metadata.
 
+This applies to state participating in a Mojt-managed lifecycle: management
+registries, configured System services and explicitly integrated applications.
+It is not a claim that Mojt understands every home-directory file. A normal
+Port with unmanaged user data declares no automatic data migration; installation
+may proceed with that limitation visible. Do not execute the application to
+inspect its data. A declared required managed-state transition must satisfy its
+gates like a System service.
+
 The first integrated release may support only non-destructive initialization and
 schema-compatible upgrades. Reject an unsupported migration before selecting a
 new deployment. Metadata promising a migration is not an implemented mechanism.
@@ -119,9 +127,13 @@ not label them retry-safe merely because an execution marker exists.
 Before starting a state writer or changing format, coordinate that service and
 other possible writers. MPM's package locks alone cannot quiesce a database.
 For next-boot updates, show migration/rollback consequences before approval and
-bind approval to the exact deployment/action inputs. Recheck on boot. If state
-changed since approval or prerequisites cannot be established, stop before the
-mutation, report blocked initialization and keep the dependent service stopped.
+bind approval to the exact deployment/action inputs. Recheck on boot. Normal
+records written by the old compatible service do not by themselves invalidate
+the plan. Check schema identity, ownership, capabilities and declared action
+preconditions, not an implicit hash of all live data. If a relevant prerequisite
+changed or cannot be established, stop before mutation, report blocked
+initialization and keep the dependent service stopped. A migration requiring
+an exact snapshot must declare that snapshot and its quiescence/backup procedure.
 
 Known-incompatible rollback MUST be blocked before next-boot selection; unknown
 required compatibility is not permission. In a recovery boot, keep incompatible
@@ -129,6 +141,12 @@ writers stopped as well. Report whether a backup exists and whether restoration
 is supported/tested; never call a backup created/verified when it is only planned.
 Data restoration is separate from code rollback and may lose newer data. It
 requires an explicit target/restore point and offline/quiesced validation.
+
+Recheck recovery choices after supported state transitions. "Previous" records
+content history, not perpetual data compatibility. For M1, reject transitions
+that break compatibility with the retained recovery choice. Enabling such
+transitions later requires a supported separate restore/recovery procedure and
+explicit revised recovery expectations.
 
 ## 5. Failure, retry and action evidence
 
@@ -161,3 +179,46 @@ Do not introduce arbitrary package scripts or destructive migrations to complete
 M1. Their absence is an explicit supported-capability limit, enforced in plans.
 The [decision register](distribution-decisions.md) records the remaining design
 choices and their implementation gates.
+
+## 7. Concrete first-version policy for review (D3/D4)
+
+Recommended initial scope, not an adopted wire schema:
+
+- Support generation-owned Kernel/profile derived output and minimal
+  ensure-account, ensure-directory and missing-default initialization only.
+- Each supported action type has a versioned System-owned handler, fixed phase,
+  permitted owner/path scope, validated parameters, prerequisites and a
+  postcondition. Accept no shell text, arbitrary executable/interpreter path,
+  network callback or generic "run" action.
+- Action identity binds declaration inputs, handler identity, target installation
+  and owning generation/profile. Changed inputs mean a new action. Reuse derived
+  output only on exact matching inputs; order prerequisites deterministically
+  and reject dependency cycles/conflicting owners.
+- Preserve persistent account name-to-UID/GID bindings, validate collisions and
+  permitted allocation policy, and record first allocation. An older generation's
+  numeric guess cannot override existing account data.
+- Ensure only the declared directory, without unsafe symlink following or
+  recursive rewriting. Existing owner/mode conflicts block unless the approved
+  policy explicitly resolves them.
+- Create only a missing declared default; preserve existing divergent content.
+  A required configuration change beyond this handler remains unresolved.
+- M1 supports schema-compatible transitions and minimal initialization only.
+  Unknown required schema/handler/managed-state capability blocks selection.
+  Unmanaged data is outside that schema gate; no arbitrary migrator/delete/reset
+  action is accepted.
+- Specify action/state record formats and durable reconciliation before coding.
+  Record completion after validated postconditions. Reconcile interrupted or
+  uncertain effects instead of blindly marking them complete.
+
+Boot ordering is: persistent mounts/identity available; validate selected
+runtime/managed-state requirements; perform supported account/directory/default
+initialization; check postconditions; release dependent services. Required
+failure keeps dependents stopped and exposes blocked/degraded readiness.
+Independent services and authenticated diagnostics/recovery remain available.
+This is a dependency graph, not a requirement to stop the entire OS because one
+optional service cannot initialize.
+
+Before selection, both the current manager preparing the deployment and its
+selected runtime must understand the required plan/registry/action capabilities.
+Writing a new format marker cannot make an older reader support it. A refusal
+must identify the missing capability and affected runtime.
