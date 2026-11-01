@@ -247,13 +247,21 @@ class CliTests(unittest.TestCase):
     def test_scoped_area_cannot_be_overridden(self):
         self.cli("ports", "search", "linux", "--area", "kernel", "--catalog", str(self.catalog), success=False)
 
-    def test_legacy_search_and_mutation_still_delegate_without_catalog_adoption(self):
-        backend = self.tools / "mpm-nix-prototype"
-        backend.write_text("def main(args):\n    print('backend:', repr(args))\n    return 0\n")
-        for args in [("ports", "search", "neovim"), ("ports", "install", "hello", "-y"),
-                     ("--root", "old-state", "ports", "status")]:
-            run = self.cli(*args)
-            self.assertIn("backend: " + repr(list(args)), run.stdout)
+    def test_fresh_ports_dispatch_never_falls_back_to_the_prototype(self):
+        for name in ('mpm_ports_cli.py', 'mpm_ports_profile.py', 'mpm_request_plan.py',
+                     'mpm_requests.py', 'mpm_transaction.py'):
+            shutil.copyfile(REPO / 'tools' / name, self.tools / name)
+        (self.tools / 'mpm-nix-prototype').write_text("raise AssertionError('prototype loaded')\n")
+        root = self.directory / 'fresh-registry'
+        before = self.snapshot()
+        found = self.cli('--root', str(root), 'ports', 'search', 'neovim', '--json')
+        self.assertEqual(json.loads(found.stdout)['matches'], [])
+        error = self.cli('--root', str(root), 'ports', 'install', 'hello', '-y', success=False)
+        self.assertIn('initial operation needs --sources', error.stderr)
+        status = self.cli('--root', str(root), 'ports', 'status')
+        self.assertEqual(json.loads(status.stdout)['installed'], [])
+        self.assertFalse(root.exists())
+        self.assertEqual(before, self.snapshot())
 
 
 if __name__ == "__main__":
