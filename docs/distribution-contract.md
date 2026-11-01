@@ -27,6 +27,12 @@ and per-action result chains with schemas and linked examples. These are D2-D4
 review proposals, not activated layouts or accepted wire migrations. MBT syntax
 is parked for later discussion and does not block review of these data formats.
 
+The [request-to-boot formats](formats/draft-v1/workflows.md) add the approved
+declarative-plus-interactive direction: named configurations own their wishes,
+interactive wishes coexist, and explicit active overrides persist. Independent
+claims and graph/retention references replace a single package-origin flag.
+Exact wire fields are review proposals; existing MPM metadata is not rewritten.
+
 ## 1. Responsibilities and invariants (OWN)
 
 | Owner | Responsibility | Boundary |
@@ -56,6 +62,13 @@ System generations retain immutable compositions; historical generations are
 not additional upgrade requests. Build environments retain their dependencies
 without installing global compiler defaults. Area-owned authoritative records
 remain authoritative; a new database or global event log is not required.
+
+A readable configuration expresses wishes, an exact resolution lock records
+builds/snapshots, and per-area state records independent origins plus effective
+choices. Removing one configuration releases only its claims and owned choices;
+interactive overrides and other origins remain. Installing additional versions
+still preserves the active default. Dependency/running/recovery/build references
+remain retention roots; withdrawal of a wish is not physical deletion.
 
 Status MUST show selected and running identities separately, the baseline a
 pending plan will change, any incomplete action and the available recovery
@@ -265,3 +278,4 @@ components; run one bounded combined real-Mojt journey per milestone instead of
 repeating account/kernel/version cross-products. Documentation alone establishes
 none of these execution results. See [decision gates](distribution-decisions.md)
 before calling this draft implementation-ready.
+

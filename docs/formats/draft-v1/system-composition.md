@@ -95,7 +95,12 @@ explicit new version and compatible reader; do not add fields to today's
 closed `mojt-boot-deployment-v1`. This format increment does not implement that
 generalization or substitute a composition ID for an old manifest ID.
 
+The proposed [generalized boot v2](boot-deployment-v2.md) now gives those binding
+fields and single-menu publication rules. It remains a draft; native-v2 readers,
+layout realization and transition/failure/boot acceptance must be implemented.
+
 Changing content creates a new composition/artifact; updating a label or request
 pointer does not mutate a retained generation. Selecting a System changes next
 boot, after complete deployment and lifecycle compatibility checks, not the
 currently running services. Read/compare is side-effect free.
+

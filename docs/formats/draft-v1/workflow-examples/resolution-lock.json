@@ -1,0 +1,36 @@
+{
+  "format": "mojt-resolution-lock-v1",
+  "description": {
+    "installation": "0123456789abcdef0123456789abcdef",
+    "area": "ports",
+    "requests": "sha256:4054c98ea00e98f19e5d948ad8ea5c3cd2402641fed9c70b159d349e0ffac51c",
+    "snapshots": [
+      "sha256:1dea7e18b9562da6d365497a0bd0af4ed7d56d116fd24acbd4d9b88cc80a4be0"
+    ],
+    "resolutions": [
+      {
+        "claim": "sha256:838cfff088e81a9e2ddb02588e00cdb0dbff0b4aed232420a3abe28c3ef35597",
+        "basis": "catalog",
+        "snapshot": "sha256:1dea7e18b9562da6d365497a0bd0af4ed7d56d116fd24acbd4d9b88cc80a4be0",
+        "evidence": "sha256:1dea7e18b9562da6d365497a0bd0af4ed7d56d116fd24acbd4d9b88cc80a4be0",
+        "reference": {
+          "provider": "native",
+          "artifact": "sha256:5949f14f2c6907758f7978a6746363f39eb7990b030365dc6493db3aaac97137"
+        },
+        "dependencies": []
+      },
+      {
+        "claim": "sha256:83e56177ab7f0c09f35051cbea48956129c076493f8b19cb1313506b179246fe",
+        "basis": "catalog",
+        "snapshot": "sha256:1dea7e18b9562da6d365497a0bd0af4ed7d56d116fd24acbd4d9b88cc80a4be0",
+        "evidence": "sha256:1dea7e18b9562da6d365497a0bd0af4ed7d56d116fd24acbd4d9b88cc80a4be0",
+        "reference": {
+          "provider": "native",
+          "artifact": "sha256:5949f14f2c6907758f7978a6746363f39eb7990b030365dc6493db3aaac97137"
+        },
+        "dependencies": []
+      }
+    ]
+  },
+  "id": "sha256:46c3291d7441b333cc3ff089ae012dd80502458c60ee1d378ce749fd622987c0"
+}

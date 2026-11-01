@@ -11,6 +11,11 @@ SPDX-License-Identifier: GPL-2.0-only
 MBT syntax is deliberately unchanged by this increment. No existing archive,
 Kernel registry, boot menu or Ports database is silently converted.
 
+The [request-to-boot workflow slice](workflows.md) adds declarative/interactively
+owned wishes, exact locks, sources/snapshots/acquisition/cache, saved plans and
+approval, and generalized boot inputs/deployment/selection v2. MBT syntax remains
+deferred. Its thirteen record definitions share [one schema](workflow-formats.schema.json).
+
 | Contract | Format / schema | Detailed rules |
 | --- | --- | --- |
 | System composition | `mojt-system-composition-v1` / [schema](system-composition.schema.json) | [Composition](system-composition.md) |
@@ -30,9 +35,9 @@ that JSON Schema alone cannot establish. The runtime MUST enforce both.
 Every new top-level record has exactly `format`, `id`, `description`. Unknown
 fields/formats are rejected. Required fields are never omitted; use explicit
 empty lists or permitted nulls. No generic extension bag or executable metadata.
-Provider `identity` is the intentional opaque exception: the provider's explicit
-versioned identity validator must accept it before use; the core cannot infer
-its semantics or change provider.
+Provider-owned identity/configuration/source-binding objects are intentional
+opaque exceptions: the named provider's explicit versioned validator must accept
+them before use; the core cannot infer their semantics or change provider.
 
 Use the existing native artifact canonical encoding: sorted string keys,
 `ensure_ascii=True`, separators `,`/`:`, ASCII bytes, no whitespace or floats.
@@ -93,6 +98,8 @@ here with 4.26.0):
 
 ```sh
 python3 docs/formats/draft-v1/check_examples.py
+# Both the first slice and request-to-boot workflows:
+python3 -B docs/formats/draft-v1/check_workflows.py
 ```
 
 This is a documentation consistency check, not an installer/runtime validator or
@@ -100,3 +107,4 @@ an implementation of D2-D4. It checks schemas, example identities/references,
 ordering, result transitions and selected negative cases. Real archive, root
 ownership, adapter, concurrent-writer, interruption and boot tests remain
 implementation acceptance. No extra manual VM cycle is needed for this text.
+

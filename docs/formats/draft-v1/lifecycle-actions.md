@@ -25,7 +25,7 @@ An empty set means no declared action, not proof of global compatibility.
 | `kernel-derived`, 1 | `stage` | Boolean `module_index` and `initramfs`, at least one true; engine supplies exact Kernel/modules, Base/System and construction inputs; private generation-owned output only |
 | `manual-index`, 1 | `stage` | Unique sorted profile-relative `profile_paths`; aggregate only those verified profile inputs into private generation-owned manual index |
 | `ensure-account`, 1 | `initialize` | `name`, `group`, `allocation: system`, canonical absolute `home` and `shell`; preserve/create stable named UID/GID under approved local system-account range policy; no login/password reset or implicit home creation |
-| `ensure-directory`, 1 | `initialize` | `namespace: etc|var`, relative `path`, `owner`, `group`, permission `mode` 0..511; ensure only that directory, without following unsafe links or recursive repair |
+| `ensure-directory`, 1 | `initialize` | `namespace` is `etc` or `var`, relative `path`, `owner`, `group`, permission `mode` 0..511; ensure only that directory, without following unsafe links or recursive repair |
 | `missing-default`, 1 | `initialize` | `namespace: etc`, relative `path`, exact `source` reference/path/SHA256, root owner/group and mode; exclusive create if missing, preserve existing entries, report unresolved required configuration separately |
 
 An actor is `root` or `account:NAME`. Account references must bind stable existing
@@ -93,3 +93,4 @@ Future migration/optional action types require reviewed format/capability
 extensions and explicit runtime support. An unrecognized action must never be
 interpreted as a shell command, ignored because content verified, or run by an
 older manager. See the broader [lifecycle policy](../../mpm-lifecycle.md).
+

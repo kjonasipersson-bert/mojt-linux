@@ -115,6 +115,18 @@ frontend with installed target defaults. Existing MPM syntax is retained;
 the new-tool syntax discussion concerns [MBT](mbt-cli-discussion.md). See the
 [gap matrix](mpm-gap-matrix.md) for the remaining implementation work.
 
+The owner's declarative-plus-interactive direction is specified in
+[configuration/wish formats](formats/draft-v1/configuration-wishes.md): named
+configurations own their claims, interactivity adds independent claims, and an
+explicit active override survives configuration reapplication/removal. Reasons
+are references, not one overwritten origin flag. Removing a source's wish never
+means deleting another source's package, a protected dependency or user data.
+Installing further versions still preserves the active default. An explicit
+interactive request for already available content can change origin state/history
+without new bytes; repeating the same existing claim remains a no-op. Proposed
+new metadata requires adoption/old-writer refusal, not extra fields in format 3.
+No new CLI spelling or MBT syntax is approved by the data-format draft.
+
 | Action | Intended behavior |
 | --- | --- |
 | `update` | Refresh local repository/release catalog metadata, like `apt update`. No packages installed, removed, or activated. |
@@ -722,6 +734,7 @@ production boot-disk update/recovery. See the [gap matrix](mpm-gap-matrix.md).
 
 These accepted policies guide future implementation; this document is not
 a complete command reference. See the [roadmap](roadmap.md) for the next work.
+
 
 
 

@@ -39,7 +39,9 @@ attempt number or a live-data digest. Changed owner/subject/set/handler changes
 invocation identity. `approval` identifies retained authorized execution-plan
 evidence bound to those inputs and scope. A hash supplied by an untrusted caller
 does not itself authorize root execution; use the manager's protected approval
-boundary. Detailed saved-plan wire is still D5, not inferred from this reference.
+boundary. The proposed [saved plan/approval wire](saved-plans.md) now defines
+those records. Its scope/target/plan/context validation must actually be
+implemented; a matching reference alone is still not authorization.
 
 ## Storage and order
 
@@ -87,7 +89,7 @@ Initial handler facts are closed per handler:
 | --- | --- |
 | `ensure-account` / `account-binding` | `name`, `group`, `uid`, `gid`; numeric values match recorded bindings |
 | `ensure-directory` / `directory-state` | `namespace`, `path`, `uid`, `gid`, `mode`, `type: directory` |
-| `missing-default` / `default-state` | `namespace: etc`, `path`, `outcome: created|preserved`, `sha256`, `uid`, `gid`, `mode` |
+| `missing-default` / `default-state` | `namespace: etc`, `path`, `outcome` is `created` or `preserved`, `sha256`, `uid`, `gid`, `mode` |
 | `kernel-derived` / `kernel-derived` | `inventory`, `binding` full content IDs |
 | `manual-index` / `manual-index` | `input_profile`, `output_index` full content IDs |
 
@@ -144,3 +146,4 @@ recovery content, and validate live managed-state compatibility before reselect.
 No password/secret material, raw shadow data or unbounded command output may be
 written into facts/errors. Hash chains detect corruption, not malicious root
 tampering or publisher authority. No across-filesystem atomicity is promised.
+

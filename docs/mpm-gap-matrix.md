@@ -27,6 +27,11 @@ composition, storage/receipts, action sets and result records, with schemas and
 linked examples. This narrows the design gaps in G3/G4/G8/G9/G14-G16; it does
 not close their runtime implementation or acceptance gaps. MBT syntax is deferred.
 
+The [request-to-boot workflow formats](formats/draft-v1/workflows.md) now add
+configuration/interactive claims, exact locks, source/acquisition/cache records,
+saved plans/approval and native boot v2. These are concrete review proposals;
+G1/G5/G6/G7 and new G19 still require implementation and acceptance.
+
 The owner is satisfied with the existing MPM command language. Preserve it.
 The requested new-tool syntax discussion concerns **MBT: Mojt Build/Bootstrap
 Tool**, not an MPM rename or a replacement command language. MPM manages content
@@ -83,6 +88,7 @@ or generation test matrix after every helper change.
 | G16: Lifecycle failure and recovery | Pointer publication rules distinguish pre-commit failure and publication uncertainty. | Persistent effect evidence, postconditions, required-service gating, state-aware retry and recovery runtime retention. | AC4-AC5 distinguish selected/running from ready; an interrupted effect is not blindly retried or called undone by code rollback. No claim of atomic state plus selection. | P1 for supported effects; advanced restore later |
 | G17: Native self-hosting coverage | Kernel compilation and full image assembly from prebuilt Base/System inputs passed on Mojt. | Source recipes, exact build locks/seed policy and coverage for Base and owned System code; imported dependencies remain visible. | AC6/M2 builds, packages, installs and boots native outputs; M3 requires an explicit complete source inventory, not relabelled binary imports. See BUILD, SELF and D5. | M2; not a prerequisite for M1 |
 | G18: MBT behavior and interface decisions | Separate build/bootstrap tools and workspaces provide implementation inputs. | Public MBT object/command model, locked-plan schemas, inspect/run/resume/reporting interfaces and adapters reusing MPM. | Close D1/D5; implementation maps each supported operation to TARGET/BUILD requirements without a second installer or changing MPM syntax. | P1 design gate before public MBT CLI |
+| G19: Declarative plus interactive wishes | Existing pure selectors and imperative transactions are implemented; the owner approved independent configuration/interactive reasons and persistent explicit overrides. | Proposed TOML input, per-area claim/selection snapshots and resolution locks now specify origin reconciliation; safe metadata adoption and actual execution are absent. | Reapply/edit a named configuration without erasing interactive wishes/overrides; release configuration-only roots while retaining dependencies/recovery/data; publish complete per-area state atomically and reject old writers. | P1; request-to-boot integration |
 
 ## Recommended implementation order
 
@@ -117,4 +123,5 @@ physical GC is required for the controlled first workflow. They remain real
 separate work. Until GC is implemented, retain protected content; do not equate
 catalog withdrawal, profile removal or package absence with permission to delete
 dependencies, running content, build environments or recovery references.
+
 

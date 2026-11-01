@@ -43,20 +43,44 @@ format decisions below remain explicit gates.
 ## Concrete format proposals, 2026-11-01
 
 The owner deferred exact MBT syntax and requested the next data-format slice.
-[D2-D4 format drafts](formats/draft-v1/README.md) now include six closed JSON
-schemas, linked synthetic examples and a documentation validator. This progress
+[D2-D4 format drafts](formats/draft-v1/README.md) introduced six closed JSON
+schemas; the workflow slice below adds a seventh with further definitions,
+linked synthetic examples and a documentation validator. This progress
 does not mark the decisions adopted or the runtime implemented.
 
 | Gate | Newly specified | Still required before the broader gate is closed |
 | --- | --- | --- |
-| [D2](#open-decisions-and-gates) | Immutable System composition and archive binding; dedicated exact-ID store; local install receipt and representation policy | Owner review; acquisition source/request/cache formats; legacy layout transition; generalized deployment format/realization implementation |
+| [D2](#open-decisions-and-gates) | Immutable composition/store/receipts; workflow wishes, sources/acquisition/cache, locks and boot v2 records | Owner review; new Ports origin-state embedding; legacy/native-v2 reader/layout transition and realization implementation; large-catalog indexing |
 | [D3](#open-decisions-and-gates) | Fixed action types/versions/phases/parameters; dependency validation; handler/owner binding and first-version limits | Owner review; actual advertised handler implementations and integration/failure tests |
-| [D4](#open-decisions-and-gates) | Action invocation IDs, immutable per-run result chain, factual checks, state observation declarations and durable intent/effect/result ordering | Owner review; family-specific state readers/coordination; actual recovery/failure tests; saved approval-plan wire remains D5 |
+| [D4](#open-decisions-and-gates) | Invocation/result chain, factual checks, state observations, saved plan/approval binding and publication ordering | Owner review; family-specific state readers/coordination; actual authorization/recovery/failure integration tests |
+| [D5](#open-decisions-and-gates) | Exact resolution locks and target/executor/scope-bound execution plans/local approvals | Build recipe/workspace/environment wire, provenance and M2 source coverage; MBT interface discussion remains separate |
 
 The first acquisition trust kind is explicit local-file trust. D7 remote trust
 is not implied by these receipts. D6 destructive migrations remain unsupported.
 D1 syntax is intentionally deferred; do not implement new MBT verbs while
 reviewing data formats.
+
+## Request-to-boot format proposals
+
+The owner approved continuing the independent-reasons model: configuration and
+interactive wishes coexist; a configuration releases only its own roots;
+explicit interactive choices persist. MBT syntax remains deferred. The
+[workflow format slice](formats/draft-v1/workflows.md) specifies thirteen new
+record shapes, one strict parsed TOML shape and linked fixtures:
+
+- D2: sources/snapshots, acquisition maps, native cache observations, named
+  configuration origins, per-area claims/selections and exact resolution locks.
+- D4/D5: immutable target/executor/scope/baseline-bound execution plans and
+  protected local approvals, with per-area commit and uncertainty semantics.
+- D2/D4: generalized boot inputs/binding/deployment/selection v2, including
+  request roots and explicit compatibility/transition gates.
+
+These replace the formerly unspecified wire proposals in those portions of the
+backlog, not implementation or review gates. Remaining work includes new Ports
+origin-state embedding/refusal by old writers; native-v2 realization/reader/layout
+transition; build recipe/workspace/provenance wire; supported handler/family-reader
+implementation; remote trust/large-catalog indexing and physical acceptance.
+Do not call D2/D5 wholly closed or silently add fields to existing formats 1/2/3.
 
 ## Open decisions and gates
 
@@ -93,3 +117,4 @@ be settled before that mechanism accepts real state or user input.
 The [gap matrix](mpm-gap-matrix.md) is the implementation backlog, this register
 is the design backlog, and the AC requirements are the acceptance backlog.
 Keeping those separate makes the meaning of "complete" inspectable.
+
