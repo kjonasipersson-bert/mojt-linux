@@ -90,10 +90,11 @@ Validation runs the request suites, `test_mpm_ports_profile.py`,
 real files and execute the resulting default/series/exact aliases. They cover
 upgrade retention, reason removal, explicit overrides, first-install ambiguity,
 corruption, stale plans, history tampering and both publication failure phases.
-Nix adapter tests simulate its subprocess protocol; **a live Nix import with this
-new adapter remains acceptance work**, as do native Port archives, reason/version removal and reset, joined bootstrap/
-build flows and hardware acceptance. Frontend/System delivery is now connected. These limits do
-not mark steps 1–2 complete or change the order of the six-step plan.
+Nix adapter unit tests cover its subprocess protocol and real helper invocation
+name. The [owner-run real Nix adapter/frontend acceptance](ports-profile-acceptance.md)
+passed on 2026-11-01. Native Port archives, reason/version removal and reset,
+joined bootstrap/build flows and hardware acceptance remain work. These limits
+do not mark steps 1–2 complete or change the order of the six-step plan.
 
 
 Path validation walks from the filesystem root. Before a private boundary it

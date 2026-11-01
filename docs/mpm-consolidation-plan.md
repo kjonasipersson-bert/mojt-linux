@@ -14,7 +14,7 @@ versions, not backward migration of experimental installations.
 
 | Step | Goal | Current evidence and remaining completion gate |
 | --- | --- | --- |
-| 1 | Establish the baseline and deliver complete MPM in System | Common frontend/runtime is merged. Configuration ownership, exact resolution and a complete Ports publisher/acquisition API are implemented in #36. The installed Ports frontend now joins configuration, accepted finite sources, imports and profiles without a checkout. Completion still needs live provider acceptance, source acquisition/removal/reset and supported Base/System operations. |
+| 1 | Establish the baseline and deliver complete MPM in System | Common frontend/runtime is merged. Configuration ownership, exact resolution and a complete Ports publisher/acquisition API are implemented in #36. The installed Ports frontend now joins configuration, accepted finite sources, imports and profiles without a checkout. A bounded real Nix adapter/frontend acceptance passed. Completion still needs source acquisition/removal/reset and supported Base/System operations. |
 | 2 | Consolidate installation and transaction rules | Shared locks/publication primitives are merged; late baseline guards and the fresh Ports profile publisher are added here. Complete other area publishers, lifecycle effects and failure recovery; planning alone is not a transaction commit. |
 | 3 | Make Base and System actual MPM installation units | Package/composition/storage/deployment contracts exist; implement verified import, complete realizations, scope-preserving publication and next-boot selection on the same disk. |
 | 4 | Build bootstrap on those functions | Reuse the same MPM acquisition/install/deploy libraries for explicit new targets; no second installer or experimental-script-only path. MBT syntax remains a separate discussion. |
@@ -37,9 +37,11 @@ configuration apply, installed-evidence activation and linked history use the sa
 publisher. Source inputs are explicit content-identified finite bundles; no implicit
 remote refresh or experimental-store migration is provided.
 
-Filesystem and installed-copy tests exercise this join; Nix subprocess protocols
-have simulated tests, not live import acceptance yet. Next gate: one live provider
-acceptance, then complete source acquisition/removal/reset and native Port support.
+Filesystem and installed-copy tests exercise this join. The
+[owner-run real Nix adapter/frontend acceptance](ports-profile-acceptance.md) passed
+on 2026-11-01 at code revision `40ee0f2`, including registered roots and unchanged
+repeat installation/history. Next gate: complete source acquisition/removal/reset
+and native Port support.
 Non-Ports reconciliation and lifecycle/recovery remain explicit work. Preserve the
 same provider-independent transaction boundary for Base/System.
 

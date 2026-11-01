@@ -63,7 +63,8 @@ snapshot input. There is no fallback to a channel, attribute evaluation or sourc
 build. The optional `mpm-nix-catalog.py --bundle` exporter produces this envelope
 from already-local Nix outputs and explicit pinned sources, including closure
 hashes and executable names; exporting does not fetch or retain payloads.
-A live import acceptance with the new adapter remains required.
+The [owner-run real adapter acceptance](ports-profile-acceptance.md) passed on
+2026-11-01 using the retained finite-catalog lab.
 
 Without `-y`, the command displays the target, exact package references, effective
 choices, request revisions and source snapshots before asking to apply. `--dry-run`
@@ -128,7 +129,8 @@ harness, not a production provider or native archive support. Separate tests cov
 Nix protocol and bundle shape; neither is live Nix cache acceptance. Native Kernel
 frontend regressions and System payload/capability tests remain in CI.
 
-Remaining gates: live Nix import acceptance, remote authenticated source acquisition,
+The real adapter/frontend acceptance is [recorded separately](ports-profile-acceptance.md).
+Remaining gates: remote authenticated source acquisition,
 imperative reason/version removal and reset, native Port archives, lifecycle effects
 and complete recovery, then the remaining Base/System/bootstrap/build milestones.
 No global compiler/libc selection changes or runtime ABI proof follow from this work.
