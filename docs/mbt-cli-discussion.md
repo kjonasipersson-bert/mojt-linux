@@ -12,6 +12,12 @@ in place. The earlier spelling `mpt` was not a request to rename MPM or create
 an alias. Existing `mojt-*.py` tools are implementation inputs, not a settled
 public MBT interface.
 
+The proposed [behavior contract](distribution-contract.md) now specifies MBT's
+target/bootstrap, build/environment, packaging, resume and self-hosting behavior
+without selecting verb spellings. [D1 and D5](distribution-decisions.md) remain
+explicit design gates. MPM acquires/installs content; MBT executes recipes in an
+owned workspace and submits results through that same installation path.
+
 | Question | Boundary to decide |
 | --- | --- |
 | Responsibilities | MPM acquires/verifies/installs/retains content and selects deployments. MBT prepares targets/workspaces and builds/packages using those same libraries |
@@ -26,3 +32,4 @@ Do not implement new verbs from these examples without the discussion. MBT
 must not grow a competing installer, catalog authority, dependency solver or
 selection database. See the [MPM gap matrix](mpm-gap-matrix.md) for implementation
 dependencies and acceptance criteria.
+

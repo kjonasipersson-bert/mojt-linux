@@ -6,9 +6,16 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # MPM: gaps to a complete user workflow
 
-Updated 2026-10-31. Baseline: the functionality through PRs #32, #33 and #34.
+Updated 2026-11-01. Baseline: the functionality through PRs #32, #33 and #34.
 This matrix distinguishes working implementation, acceptance evidence and the
 remaining user-facing joins. It is not a claim that all roadmap commands exist.
+
+The [complete distribution behavior draft](distribution-contract.md) defines
+the target journeys and requirement/acceptance IDs. The
+[lifecycle/state proposal](mpm-lifecycle.md) adds installation effects and
+migration boundaries; the [decision register](distribution-decisions.md) lists
+unsettled interfaces and implementation gates. New requirements are proposals
+for review, not claims of accepted schemas or implemented hooks.
 
 The owner is satisfied with the existing MPM command language. Preserve it.
 The requested new-tool syntax discussion concerns **MBT: Mojt Build/Bootstrap
@@ -30,6 +37,13 @@ the installed MPM, boot it and return to the retained deployment if necessary.
 - **P2:** required before general remote native distribution or physical Kernel
   rollout, or to extend supported backends/hardware beyond the first workflow.
 - **P3:** later functionality; do not make it a prerequisite for the milestone.
+
+This first workflow is **M1** in the behavior contract. The full distribution
+goal also includes **M2** source builds of Base and Mojt-owned System code,
+**M3** any explicitly claimed full external source coverage, and **M4** remote
+publication plus supported physical rollout. Later priority does not remove a
+requirement from that larger goal. State/handler contracts and refusal of
+unsupported migrations are P1; enabling destructive migrations is not.
 
 Code delivery in a new System is not evidence that the owner's retained running
 VM has been upgraded. PR #34 has automated delivered-runtime acceptance; one
@@ -53,19 +67,27 @@ or generation test matrix after every helper change.
 | G10: Toolchain/environment | Pinned image/Kernel environments, runtime library probes, retained closures, compilation and package provenance are accepted through separate tools. | Join acquisition/retention of exact tools to an MBT-managed named environment/workspace. Make inputs and retention inspectable without manual path files. | Fetch binaries explicitly, preserve exact dependencies, build as an ordinary user in a private environment, produce a native package and pass it through the normal MPM install path. | P1; shared MPM/MBT boundary |
 | G11: Initial machine creation | Directory, VM/native image and older hardware image builders exist; an image was assembled inside Mojt and booted. | One MBT bootstrap plan/locked inventory and consistent target adapters reusing MPM installation/deployment libraries. | Produce a usable installation from declared Base/System/Kernel/Ports inputs without experiment-specific staging scripts. Disk formatting belongs to an explicit bootstrap target, not ordinary package installation. | P1; MBT responsibility |
 | G12: Physical Kernel change | Earlier physical boot exists; the new native Kernel updater is accepted on serial UEFI/VirtIO VMs. | Wire native deployment to the physical hardware profile, local console, storage/input/network modules and exact firmware requirements. | Install/select/boot/return on a separate supported physical Mojt disk with a known-good boot choice, without external boot payloads or unrelated disk changes. | P2 before physical rollout |
-| G13: End-to-end acceptance | The constituent generation, package, build and Kernel boot experiments have passed; new integration has automated coverage. | One bounded real-Mojt run through installed commands and MBT interfaces, including existing-disk Base/System changes. | Reach the milestone above with retained identities/state/Ports and the actual newly compiled Kernel running, then demonstrate the recovery choice. Reuse prior component acceptance rather than a full cross-product. | P1 final acceptance |
+| G13: End-to-end acceptance | The constituent generation, package, build and Kernel boot experiments have passed; new integration has automated coverage. | One bounded real-Mojt run through installed commands and MBT interfaces, including existing-disk Base/System changes and lifecycle failures. | AC1-AC5: retain identities/state/Ports, run the actual newly compiled Kernel and demonstrate compatible recovery; reuse prior component acceptance rather than a full cross-product. AC6/AC7 cover later milestones separately. | P1 final acceptance |
+| G14: Lifecycle actions | Kernel derived-output preparation and ad hoc System/default/account setup exist; package hooks are not authorized. | Common declared actions, versioned handler capabilities, explicit phases/targets/privileges, ordering and profile cache aggregation. | Unknown required actions fail before selection; import/preview executes no package code; supported initialization completes before dependent services. See STATE and D3. | P1 contract/minimal handlers |
+| G15: Configuration and state compatibility | Persistent state and accounts survive tested compatible generation changes; legacy Base fills missing defaults. | State ownership, stable service identities, configuration conflict rules, schema read/write capabilities and explicit migration/restore prerequisites. | Preserve local changes; block unsupported/known-incompatible transitions, including older MPM; declare effects in the plan. See STATE, D4 and D6. | P1 gates; migration families later |
+| G16: Lifecycle failure and recovery | Pointer publication rules distinguish pre-commit failure and publication uncertainty. | Persistent effect evidence, postconditions, required-service gating, state-aware retry and recovery runtime retention. | AC4-AC5 distinguish selected/running from ready; an interrupted effect is not blindly retried or called undone by code rollback. No claim of atomic state plus selection. | P1 for supported effects; advanced restore later |
+| G17: Native self-hosting coverage | Kernel compilation and full image assembly from prebuilt Base/System inputs passed on Mojt. | Source recipes, exact build locks/seed policy and coverage for Base and owned System code; imported dependencies remain visible. | AC6/M2 builds, packages, installs and boots native outputs; M3 requires an explicit complete source inventory, not relabelled binary imports. See BUILD, SELF and D5. | M2; not a prerequisite for M1 |
+| G18: MBT behavior and interface decisions | Separate build/bootstrap tools and workspaces provide implementation inputs. | Public MBT object/command model, locked-plan schemas, inspect/run/resume/reporting interfaces and adapters reusing MPM. | Close D1/D5; implementation maps each supported operation to TARGET/BUILD requirements without a second installer or changing MPM syntax. | P1 design gate before public MBT CLI |
 
 ## Recommended implementation order
 
-1. Land the tested transaction/runtime consolidation; retain current MPM syntax.
+1. Transaction/runtime consolidation is merged. Review the behavior/lifecycle
+   proposals and close the relevant decision gates; retain current MPM syntax.
 2. Join common source/catalog resolution and exact local acquisition to native
    installation. Add Base identity/registry/status and System composition/import
    using existing installers/assemblers, without a new universal solver.
-3. Extend deployment staging/selection to Base/System; add management-format
-   compatibility and failure diagnostics at the same publication boundary.
+3. Extend deployment staging/selection to Base/System; add management-format,
+   state/handler compatibility, minimal declared lifecycle actions and failure
+   diagnostics. Refuse unsupported migrations before selecting a deployment.
 4. Define the MBT interface, named build environment and bootstrap plan. Reuse
    MPM acquisition, dependency retention and deployment engines.
-5. Run one complete Mojt workflow, then extend and accept the physical profile.
+5. Run AC1-AC5 for M1. Develop Base/owned-System source coverage for M2/AC6;
+   extend trust and the physical profile for M4/AC7. Do not claim M3 from M1/M2.
 
 Authenticated remote native channels can be developed alongside this order but
 must be in place before ordinary untrusted-network native installation is
@@ -74,6 +96,10 @@ decision and full artifact/dependency evidence.
 
 ## Deliberately outside the first milestone
 
+These exclusions apply to M1, not to the larger source-self-hosting and rollout
+requirements above. Minimal lifecycle/state compatibility and refusal rules are
+inside M1; arbitrary package hooks and destructive migrations are not required.
+
 No MPM language rewrite, global libc replacement, arbitrary desktop/PAM/NSS
 compatibility solver, complete source rebuild of every System package, generic
 native Port backend, automatic failed-boot fallback, data-format rollback or
@@ -81,3 +107,4 @@ physical GC is required for the controlled first workflow. They remain real
 separate work. Until GC is implemented, retain protected content; do not equate
 catalog withdrawal, profile removal or package absence with permission to delete
 dependencies, running content, build environments or recovery references.
+
