@@ -11,6 +11,9 @@ and [lifecycle proposal](mpm-lifecycle.md) fills the installation-effects gap.
 This register prevents a comprehensive behavior draft from being mistaken for
 a completely settled API, wire format or implemented distribution.
 
+
+The [initial-format policy](./format-policy.md) supersedes earlier transition requirements: fresh installations only, no legacy migration/support obligation. Keep explicit format versions and refuse unknown required versions before mutation. Current-state integrity and safe recovery remain required.
+
 ## Established constraints to preserve
 
 - Existing MPM syntax and area boundaries; no MPM rename or command redesign.
@@ -50,7 +53,7 @@ does not mark the decisions adopted or the runtime implemented.
 
 | Gate | Newly specified | Still required before the broader gate is closed |
 | --- | --- | --- |
-| [D2](#open-decisions-and-gates) | Immutable composition/store/receipts; workflow wishes, sources/acquisition/cache, locks and boot v2 records | Owner review; new Ports origin-state embedding; legacy/native-v2 reader/layout transition and realization implementation; large-catalog indexing |
+| [D2](#open-decisions-and-gates) | Immutable composition/store/receipts; workflow wishes, sources/acquisition/cache, locks and boot v2 records | Owner review; new Ports origin-state embedding; fresh native-v2 runtime/layout and realization implementation; large-catalog indexing |
 | [D3](#open-decisions-and-gates) | Fixed action types/versions/phases/parameters; dependency validation; handler/owner binding and first-version limits | Owner review; actual advertised handler implementations and integration/failure tests |
 | [D4](#open-decisions-and-gates) | Invocation/result chain, factual checks, state observations, saved plan/approval binding and publication ordering | Owner review; family-specific state readers/coordination; actual authorization/recovery/failure integration tests |
 | [D5](#open-decisions-and-gates) | Exact resolution locks and target/executor/scope-bound execution plans/local approvals | Build recipe/workspace/environment wire, provenance and M2 source coverage; MBT interface discussion remains separate |
@@ -87,7 +90,7 @@ Do not call D2/D5 wholly closed or silently add fields to existing formats 1/2/3
 | ID | Decision / required deliverable | Gate |
 | --- | --- | --- |
 | D1 | MBT public command grammar, delivery in a builder profile and object model: target, composition, locked plan, environment, workspace, build, package and bootstrap; errors/exit classes and versioned machine interfaces for MPM/MBT | Discuss before implementing public MBT verbs; keep existing MPM verbs |
-| D2 | Versioned native source/request/cache and immutable System composition schemas; same-release Base storage identity; descriptor extensions and older-reader refusal | Before catalog-to-install and existing-disk Base/System implementation |
+| D2 | Versioned native source/request/cache and immutable System composition schemas; same-release Base storage identity; descriptor extensions and unsupported-format refusal | Before catalog-to-install and existing-disk Base/System implementation |
 | D3 | Versioned lifecycle action capability registry, supported initial handlers, path/account ownership conflict rules and dependency ordering; expose supported handlers in inspection | Before accepting package action declarations |
 | D4 | State-schema declarations and management compatibility, read/write capabilities, state-preparation/action evidence durability and retry protocol | Before System changes shared metadata or executes persistent effects |
 | D5 | Source recipe/lock/provenance formats and environment pin/retention interfaces, bootstrap toolchain policy and M2 source coverage list | Before MBT integration/M2 self-hosting claims |
@@ -117,4 +120,5 @@ be settled before that mechanism accepts real state or user input.
 The [gap matrix](mpm-gap-matrix.md) is the implementation backlog, this register
 is the design backlog, and the AC requirements are the acceptance backlog.
 Keeping those separate makes the meaning of "complete" inspectable.
+
 

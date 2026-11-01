@@ -143,12 +143,8 @@ requires a new lock, with before/after visible. Locks are data, not shell code.
 Publishing requests follows area authority: Ports profile/state/history share
 one commit; selected boot metadata carries the relevant Base/System/Kernel
 request-state roots. Do not add a global independently updated intent database.
-New metadata needs explicit capability adoption; adding origin fields to closed
-existing Ports format 3 is not compatible. Old writers must refuse before write.
-
-The concrete embedding in a new Ports profile/state format is still an
-implementation gate: choose an explicitly unsupported-by-old-writers new version,
-bind request/lock/provider state and history in its single commit, and test late
-failure/refusal. A loose sidecar beside an unchanged format-3 state is insufficient
-because old writers could discard its claims. This proposal does not silently
-reinterpret the accepted formats 1/2/3.
+Use an explicitly versioned initial Ports profile/state format binding
+request/lock/provider state and history in one commit. Support or migration of
+experiment formats 1/2/3 is not required. Refuse unknown versions before writing;
+do not add an independently updated loose origin sidecar. See the
+[initial-format policy](../../format-policy.md).

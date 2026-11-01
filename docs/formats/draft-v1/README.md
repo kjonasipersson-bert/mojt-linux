@@ -30,6 +30,9 @@ observations. JSON Schema draft 2020-12 checks structure. The linked documents
 also impose semantic, filesystem, provenance, dependency and recovery rules
 that JSON Schema alone cannot establish. The runtime MUST enforce both.
 
+
+The [initial-format policy](../../format-policy.md) supersedes earlier transition requirements: fresh installations only, no legacy migration/support obligation. Keep explicit format versions and refuse unknown required versions before mutation. Current-state integrity and safe recovery remain required.
+
 ## Encoding, identities and limits
 
 Every new top-level record has exactly `format`, `id`, `description`. Unknown
@@ -107,4 +110,5 @@ an implementation of D2-D4. It checks schemas, example identities/references,
 ordering, result transitions and selected negative cases. Real archive, root
 ownership, adapter, concurrent-writer, interruption and boot tests remain
 implementation acceptance. No extra manual VM cycle is needed for this text.
+
 

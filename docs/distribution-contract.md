@@ -33,6 +33,9 @@ interactive wishes coexist, and explicit active overrides persist. Independent
 claims and graph/retention references replace a single package-origin flag.
 Exact wire fields are review proposals; existing MPM metadata is not rewritten.
 
+
+The [initial-format policy](./format-policy.md) supersedes earlier transition requirements: fresh installations only, no legacy migration/support obligation. Keep explicit format versions and refuse unknown required versions before mutation. Current-state integrity and safe recovery remain required.
+
 ## 1. Responsibilities and invariants (OWN)
 
 | Owner | Responsibility | Boundary |
@@ -278,4 +281,5 @@ components; run one bounded combined real-Mojt journey per milestone instead of
 repeating account/kernel/version cross-products. Documentation alone establishes
 none of these execution results. See [decision gates](distribution-decisions.md)
 before calling this draft implementation-ready.
+
 

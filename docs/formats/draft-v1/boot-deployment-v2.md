@@ -107,12 +107,11 @@ System can read/write current formats and current state. M1 refuses state change
 that break its retained recovery choice; later data restore needs explicit support.
 Keep running/selected/build/recovery references protected from future collection.
 
-## Transition and acceptance gate
+## Fresh-install acceptance gate
 
-No automatic conversion of legacy layouts or menu records. A transition must
-retain bootable v1 content, explicitly install a v2-capable management/early-boot
-runtime, and validate before selecting a v2 entry. An old System unable to read
-new shared state cannot be offered as an ordinary compatible rollback. Migration
-tooling and first real v2 boot/return, Base/System updates and failure injection
-are required before claiming implementation. This specification/its synthetic
-fixtures exercise none of those boots and do not invalidate prior v1 acceptance.
+Implement native-v2 for a new target with its matching management and early-boot
+runtime. No v1 conversion, dual-reader support or legacy installation migration
+is required. Preserve format markers and reject unsupported records. Real v2
+boot/return, Base/System changes and publication failure tests remain required;
+synthetic fixtures do not establish those results. See the
+[initial-format policy](../../format-policy.md).

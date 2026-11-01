@@ -39,6 +39,9 @@ and selections; MBT creates installation targets, build environments, builds and
 packages using the shared libraries. Kernel remains a System component with a
 separate update scope; environments and persistent state are not new layers.
 
+
+The [initial-format policy](./format-policy.md) supersedes earlier transition requirements: fresh installations only, no legacy migration/support obligation. Keep explicit format versions and refuse unknown required versions before mutation. Current-state integrity and safe recovery remain required.
+
 ## Milestone and priority
 
 The controlled complete workflow is: bootstrap an installation, install/inspect
@@ -123,5 +126,6 @@ physical GC is required for the controlled first workflow. They remain real
 separate work. Until GC is implemented, retain protected content; do not equate
 catalog withdrawal, profile removal or package absence with permission to delete
 dependencies, running content, build environments or recovery references.
+
 
 

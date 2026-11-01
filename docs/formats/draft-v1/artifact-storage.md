@@ -33,12 +33,11 @@ namespace is stripped only into this private object representation, never `/`.
 status. New-target clones get their own installation identity; updates retain
 it. It is not the Linux machine-id or a filesystem UUID.
 
-This is a new layout, not today's `DISK/kernel/installed` registry or legacy
-`base/VERSION`/`system/LABEL` tree. Existing readers keep those records; this PR
-does not move them or create a second competing record for an existing object.
-An explicit future layout adapter/transition must choose the authoritative
-location, preserve legacy references/locks and check old runtime support.
-No automatic discovery/adoption of arbitrary nonempty directories.
+Implement this layout on a fresh installation. Do not build an adapter or
+migration from experiment Kernel/Base/System stores. Unknown markers and unsafe
+nonempty roots fail rather than being adopted. Prototype paths are historical
+inputs, not a backward-compatibility obligation. See the
+[initial-format policy](../../format-policy.md).
 
 ## Installed object versus usable runtime
 
@@ -101,3 +100,4 @@ it does not delete/adopt them. A complete installed receipt claims verification
 at installation, not a fresh integrity scrub. Explicit verification checks the
 archive, descriptor, materialized inventory and still-retained dependency closure.
 Installation never implies readiness, a selected deployment, or a running build.
+
