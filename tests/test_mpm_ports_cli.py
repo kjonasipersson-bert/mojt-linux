@@ -121,6 +121,19 @@ class PortsCliTests(unittest.TestCase):
         self.call('activate', 'hello@=2.12.3', '-y')
         self.assertEqual(self.output(), '2.12.3')
 
+    def test_following_activation_chooses_interactive_reason_shared_with_configuration(self):
+        config = self.parent / 'shared.toml'
+        config.write_text('format="mojt-configuration-v1"\nname="main"\n[ports]\nsource="local"\npackages=["hello@2.12"]\n')
+        self.call('apply', '--configuration', str(config), '--sources', str(self.bundle), '-y')
+        self.call('install', 'hello@2.12', '-y')
+        self.call('activate', 'hello@2.12', '-y')
+        choice = self.state()['requests']['description']['selections'][0]
+        self.assertEqual(choice['origin']['kind'], 'interactive')
+        config.write_text('format="mojt-configuration-v1"\nname="main"\n')
+        self.call('apply', '--configuration', str(config), '-y')
+        self.assertEqual(self.output(), '2.12.3')
+        self.assertEqual(self.state()['requests']['description']['selections'][0], choice)
+
     def test_no_activate_and_exact_reference_selection(self):
         self.call('install', 'hello', '--sources', str(self.bundle), '--no-activate', '-y')
         self.assertFalse((self.root / 'current/bin/hello').exists())

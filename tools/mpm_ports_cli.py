@@ -204,7 +204,7 @@ def main(argv, *, root=None, runtime=None, adapters=None):
         require(old is not None, 'activation needs an installed profile')
         package = installed_choice(old, args.request, platform)
         parsed = None if args.request.startswith('sha256:') else parse_selector(args.request)
-        follows = [c for c in state['description']['claims'] if c['role'] == package['role'] and
+        follows = [c for c in state['description']['claims'] if c['origin']['kind'] == 'interactive' and c['role'] == package['role'] and
                    parse_selector(c['policy']['selector']).kind != 'exact' and
                    any(r['claim'] == c['key'] and r['reference'] == package['reference'] for r in old['lock']['description']['resolutions'])]
         if args.follow or parsed is not None and parsed.kind != 'exact':

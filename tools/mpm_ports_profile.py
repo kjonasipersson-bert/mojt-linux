@@ -198,9 +198,9 @@ def preview(root, desired, sources, adapters, *, platform, executor, target_iden
     # First installation convenience, never advancement of an existing default.
     roles={p['role'] for p in prior_packages.values()}
     for role in sorted(({p['role'] for p in packages.values()}-roles-{c['role'] for c in choices}) if auto_select else set()):
-        rows=[r for r in lock['description']['resolutions'] if claims[r['claim']]['role']==role]
-        require(len({planning.key(r['reference']) for r in rows})==1,'multiple first-install versions require an explicit active choice')
-        chosen=sorted(rows,key=lambda r:(claims[r['claim']]['origin']['kind']!='configuration',r['claim']))[0]
+        role_rows=[r for r in lock['description']['resolutions'] if claims[r['claim']]['role']==role]
+        require(len({planning.key(r['reference']) for r in role_rows})==1,'multiple first-install versions require an explicit active choice')
+        chosen=sorted(role_rows,key=lambda r:(claims[r['claim']]['origin']['kind']!='configuration',r['claim']))[0]
         claim=claims[chosen['claim']];choices.append(dict(role=role,origin=claim['origin'],mode='request',claim=claim['key']))
     requests=wishes.seal(requests['description']);wishes.validate(requests)
     lock=resolution_lock(requests)

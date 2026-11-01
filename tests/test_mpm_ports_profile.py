@@ -256,5 +256,24 @@ class ProfileTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'traverses a symlink'):
             ports.safe_root(link/'mpm-nix-home/acceptance/registry')
 
+    def test_first_install_of_different_roles_keeps_the_complete_lock_and_imports(self):
+        source=self.parent/'paint';source.write_text('#!/bin/sh\nprintf "Paint\\n"\n');source.chmod(0o555)
+        sha=hashlib.sha256(source.read_bytes()).hexdigest()
+        ref=dict(provider='copy',identity=dict(format='test-copy-v1',path=str(source),sha256=sha,command='paint'))
+        catalog=copy.deepcopy(self.sources['local']['catalogs']['hello'])
+        catalog['name']='paint'
+        catalog['candidates']=[dict(name='paint',release_id='1.0',upstream_version='1.0',version_scheme='dotted-v1',
+            stability='stable',source='test',artifact='paint-1.0',integrity=dict(sha256=sha),compatibility='verified')]
+        self.sources['local']['catalogs']['paint']=catalog
+        self.offers.append(dict(backend='copy',artifact='paint-1.0',integrity=dict(sha256=sha),reference=ref,dependencies=[],transport_sha256=None))
+        state=wishes.request_interactively(self.state(active=False),'paint','local')
+        plan=self.preview(state);candidate=plan['description']['candidate']
+        self.assertEqual({r['claim'] for r in candidate['lock']['description']['resolutions']},
+                         {c['key'] for c in state['description']['claims']})
+        self.assertEqual(len(candidate['objects']),2)
+        ports.apply(self.root,plan,self.sources,self.adapters,**self.opts)
+        self.assertEqual(self.output(),'2.12.3');self.assertEqual(self.output('paint'),'Paint')
+        self.assertFalse(self.apply(ports.current(self.root)['record']['description']['requests'])['changed'])
+
 
 if __name__=='__main__':unittest.main()
