@@ -1,0 +1,78 @@
+# Mojt Linux
+# Copyright (C) 2026 Jonas Persson
+# SPDX-License-Identifier: GPL-2.0-only
+"""Explicit Nix binary-output adapter; no evaluation, build or global activation."""
+import os
+from pathlib import Path
+import re
+import subprocess
+
+import mpm_requests as wishes
+from mpm_transaction import sync_directory
+from mpm_ports_profile import command, require
+
+
+def store_path(value):
+    require(type(value) is str and re.fullmatch(r'/nix/store/[0-9abcdfghijklmnpqrsvwxyz]{32}-[A-Za-z0-9+._?=-]+',value) and not value.endswith('.drv'),'not an exact Nix output path')
+    return Path(value)
+
+
+class NixBinaryAdapter:
+    def __init__(self, nix_store, runner=None):
+        self.binary=str(nix_store)
+        require(Path(self.binary).is_absolute(),'Nix helper must be a retained absolute path')
+        self.runner=runner or self._run
+
+    @staticmethod
+    def _run(args):
+        result=subprocess.run(args,text=True,stdout=subprocess.PIPE,check=False)
+        require(result.returncode==0,'Nix binary import/verification failed: '+args[1])
+        return result.stdout.strip()
+
+    def identity(self,ref):
+        wishes.fields(ref,('provider','identity'));require(ref['provider']=='nix','wrong adapter')
+        i=ref['identity'];wishes.fields(i,('format','output','closure','commands'))
+        require(i['format']=='mojt-nix-output-v1','unsupported Nix identity')
+        store_path(i['output']);require(type(i['closure']) is list and i['closure'],'missing Nix closure')
+        paths=[]
+        for row in i['closure']:
+            wishes.fields(row,('path','nar_hash'));store_path(row['path'])
+            require(type(row['nar_hash']) is str and re.fullmatch(r'sha256[:\-][A-Za-z0-9+/=]+',row['nar_hash']),'invalid NAR hash')
+            paths.append(row['path'])
+        require(paths==sorted(set(paths)) and i['output'] in paths,'invalid closure inventory')
+        require(type(i['commands']) is list and i['commands']==sorted(set(i['commands'])),'invalid command list')
+        for name in i['commands']:command(name)
+        return i
+
+    def describe(self,ref,root):
+        i=self.identity(ref)
+        return dict(reference=ref,commands={name:str(store_path(i['output'])/'bin'/name) for name in i['commands']})
+
+    def ensure(self,ref,root):
+        i=self.identity(ref);directory=Path(root)/'retained/nix'
+        directory.mkdir(mode=0o700,exist_ok=True)
+        require(not directory.is_symlink(),'unsafe Nix retention directory')
+        gcroot=directory/store_path(i['output']).name
+        if os.path.lexists(gcroot):require(gcroot.is_symlink() and os.readlink(gcroot)==i['output'],'Nix retention conflict')
+        self.runner([self.binary,'--realise',i['output'],'--add-root',str(gcroot),'--indirect',
+                     '--option','max-jobs','0','--option','builders','','--option','require-sigs','true'])
+        require(gcroot.is_symlink() and os.readlink(gcroot)==i['output'],'Nix did not register the expected root')
+        self.verify(ref,root)
+        sync_directory(directory)
+        sync_directory(directory.parent)
+
+    def verify(self,ref,root):
+        i=self.identity(ref);paths=[r['path'] for r in i['closure']]
+        gcroot=Path(root)/'retained/nix'/store_path(i['output']).name
+        require(gcroot.is_symlink() and os.readlink(gcroot)==i['output'] and Path(i['output']).is_dir(),'Nix output/root missing')
+        actual=sorted(self.runner([self.binary,'--query','--requisites',i['output']]).splitlines())
+        require(actual==paths,'Nix closure differs from accepted identity')
+        hashes=self.runner([self.binary,'--query','--hash',*paths]).splitlines()
+        require(hashes==[r['nar_hash'] for r in i['closure']],'Nix registered hashes differ')
+        self.runner([self.binary,'--verify-path',*paths])
+        directory=Path(i['output'])/'bin'
+        actual=sorted(p.name for p in directory.iterdir() if p.is_file() and os.access(p,os.X_OK)) if directory.is_dir() else []
+        require(actual==i['commands'],'Nix command inventory differs')
+        for name in i['commands']:
+            resolved=(directory/name).resolve()
+            require(any(resolved==Path(p) or Path(p) in resolved.parents for p in paths),'command escapes verified closure')

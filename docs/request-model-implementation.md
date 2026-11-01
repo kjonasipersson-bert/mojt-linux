@@ -24,7 +24,7 @@ releases only a named configuration's claims and owned explicit defaults.
 Other configurations, interactive claims and exact overrides persist. Adding an
 interactive wish does not activate an additional version. Existing still-owned
 first-install defaults can be preserved; actually deciding first-install/fallback
-requires the later installed-profile planner. Conflicting declarative defaults
+is now handled by the [installed-profile publisher](ports-profile-implementation.md). Conflicting declarative defaults
 fail, including identical selectors bound to different sources.
 
 Public Python entry points: `parse_configuration`, `empty_state`,
@@ -56,9 +56,12 @@ operation; the pure guard neither acquires locks nor grants permission. Final
 profile assembly/publication is separate because its exact result does not yet
 exist. Metadata-only wish removal prepares candidate data, never physical GC.
 
-Remaining: non-Ports state reconciliation, actual source/acquisition integration,
-installed-role/alias validation, removal/fallback planning, state publication,
-frontend/System runtime integration and public configuration apply/reset syntax.
+The [Ports profile increment](ports-profile-implementation.md) now adds actual
+adapter acquisition, verification, alias/fallback planning and atomic publication
+of requests, effective selection and history. It is an explicit fresh-store Python
+API. Remaining: authenticated source acquisition, non-Ports reconciliation, native
+Port archive import, frontend/System runtime integration and public configuration
+apply/reset syntax.
 The normal imperative prototype still uses its existing path until explicitly
 connected; no backward-compatible migration path is needed.
 
