@@ -18,6 +18,12 @@ state preparation and migration gates. Those effects need their own evidence
 and recovery boundaries: an atomic selection does not make them atomic, and
 the primitives below do not implement that action/migration engine.
 
+See the proposed [native store/receipt](formats/draft-v1/artifact-storage.md)
+and [per-action result protocol](formats/draft-v1/lifecycle-results.md) for
+concrete future publication boundaries. Their append-only action evidence is
+not an additional boot/profile selection authority. The existing helpers and
+legacy record formats below remain unchanged by those proposals.
+
 ## Responsibilities and phases
 
 1. Resolve a request against an explicit catalog snapshot or exact local input.

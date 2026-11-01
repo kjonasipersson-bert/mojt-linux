@@ -12,6 +12,12 @@ engine or wire schema is implemented by this document. This extends the target
 packages' prohibition on executable installation hooks. Names below describe
 capabilities, not accepted JSON keys or public commands.
 
+The [concrete action-set format](formats/draft-v1/lifecycle-actions.md) and
+[result registry](formats/draft-v1/lifecycle-results.md) now provide proposed
+field sets, schemas, identities, ordering and interrupted-execution handling.
+They use a closed initial vocabulary and preserve the no-arbitrary-hooks rule.
+They are proposed wire formats, not an implemented interpreter or migrator.
+
 ## 1. Desired state and known operations
 
 A package may need more than immutable files. Describe the requirement and its

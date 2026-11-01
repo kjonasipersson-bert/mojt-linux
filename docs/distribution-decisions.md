@@ -40,6 +40,24 @@ the lifecycle document now includes a closed first-version handler recommendatio
 D1/D3/D4/D5 have concrete proposals, but are not fully closed: command and
 format decisions below remain explicit gates.
 
+## Concrete format proposals, 2026-11-01
+
+The owner deferred exact MBT syntax and requested the next data-format slice.
+[D2-D4 format drafts](formats/draft-v1/README.md) now include six closed JSON
+schemas, linked synthetic examples and a documentation validator. This progress
+does not mark the decisions adopted or the runtime implemented.
+
+| Gate | Newly specified | Still required before the broader gate is closed |
+| --- | --- | --- |
+| [D2](#open-decisions-and-gates) | Immutable System composition and archive binding; dedicated exact-ID store; local install receipt and representation policy | Owner review; acquisition source/request/cache formats; legacy layout transition; generalized deployment format/realization implementation |
+| [D3](#open-decisions-and-gates) | Fixed action types/versions/phases/parameters; dependency validation; handler/owner binding and first-version limits | Owner review; actual advertised handler implementations and integration/failure tests |
+| [D4](#open-decisions-and-gates) | Action invocation IDs, immutable per-run result chain, factual checks, state observation declarations and durable intent/effect/result ordering | Owner review; family-specific state readers/coordination; actual recovery/failure tests; saved approval-plan wire remains D5 |
+
+The first acquisition trust kind is explicit local-file trust. D7 remote trust
+is not implied by these receipts. D6 destructive migrations remain unsupported.
+D1 syntax is intentionally deferred; do not implement new MBT verbs while
+reviewing data formats.
+
 ## Open decisions and gates
 
 | ID | Decision / required deliverable | Gate |

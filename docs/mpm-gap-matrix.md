@@ -22,6 +22,11 @@ changes, unmanaged Ports data and recovery compatibility. A
 [concrete MBT interface](mbt-interface-proposal.md) is now proposed; D1 remains
 open for discussion, with no new runtime commands implemented.
 
+The [D2-D4 concrete format draft](formats/draft-v1/README.md) now specifies
+composition, storage/receipts, action sets and result records, with schemas and
+linked examples. This narrows the design gaps in G3/G4/G8/G9/G14-G16; it does
+not close their runtime implementation or acceptance gaps. MBT syntax is deferred.
+
 The owner is satisfied with the existing MPM command language. Preserve it.
 The requested new-tool syntax discussion concerns **MBT: Mojt Build/Bootstrap
 Tool**, not an MPM rename or a replacement command language. MPM manages content

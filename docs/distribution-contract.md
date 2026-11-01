@@ -21,6 +21,12 @@ this document defines the complete user journeys and their completion criteria.
 Where an older experiment's implementation falls short, record a gap rather
 than treating the old experiment as the specification.
 
+The [concrete format draft](formats/draft-v1/README.md) now defines System
+compositions, exact-ID native storage/install receipts, lifecycle action sets
+and per-action result chains with schemas and linked examples. These are D2-D4
+review proposals, not activated layouts or accepted wire migrations. MBT syntax
+is parked for later discussion and does not block review of these data formats.
+
 ## 1. Responsibilities and invariants (OWN)
 
 | Owner | Responsibility | Boundary |
