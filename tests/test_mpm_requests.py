@@ -128,5 +128,16 @@ packages = ["python@3.12", "hello@=2.12.3", "neovim"]
         removed = json.loads((root/'request-state-config-removed.json').read_text())
         self.assertEqual(r.reconcile_configuration(state,removed['description']['configurations'][0]['document']),removed)
 
+    def test_malformed_nested_state_has_a_uniform_validation_error(self):
+        for claims in [[None],[{}],['bad']]:
+            bad = copy.deepcopy(self.empty)
+            bad['description']['claims'] = claims
+            with self.assertRaises(ValueError):r.validate(bad)
+
+    def test_configuration_rejects_oversize_package_names(self):
+        doc = copy.deepcopy(self.doc)
+        doc['ports'] = dict(packages=['x'*257])
+        with self.assertRaises(ValueError):r.configuration(doc)
+
 
 if __name__ == '__main__':unittest.main()

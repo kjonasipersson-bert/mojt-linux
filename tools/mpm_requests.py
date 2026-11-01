@@ -8,7 +8,7 @@ import json
 import re
 import tomllib
 
-from mpm_selection import parse_selector, components
+from mpm_selection import parse_selector as _parse_selector, components
 
 CONFIG = 'mojt-configuration-v1'
 STATE = 'mojt-request-state-v1'
@@ -27,6 +27,13 @@ def fields(value, required, optional=()):
 
 def token(value):
     require(type(value) is str and re.fullmatch(TOKEN, value), 'invalid source/origin name')
+
+
+def parse_selector(value):
+    require(type(value) is str and 0 < len(value) <= 4096, 'invalid selector size')
+    result = _parse_selector(value)
+    require(len(result.name) <= 256, 'package name size limit')
+    return result
 
 
 def canonical(value):
@@ -124,7 +131,7 @@ def empty_state(installation):
     return seal(dict(installation=installation, area='ports', configurations=[], claims=[], selections=[]))
 
 
-def validate(state):
+def _validate(state):
     canonical(state)
     fields(state, ('format', 'id', 'description'))
     require(state['format'] == STATE, 'unsupported request state')
@@ -179,6 +186,13 @@ def validate(state):
         if row['origin']['kind'] == 'configuration':
             require(row['origin']['name'] in configs, 'orphan active configuration')
     return copy.deepcopy(state)
+
+
+def validate(state):
+    try:
+        return _validate(state)
+    except (KeyError, TypeError, AttributeError) as error:
+        raise ValueError('invalid request state structure') from error
 
 
 def reconcile_configuration(state, document, *, default_source=None):
