@@ -54,7 +54,7 @@ def adapters_for(sources, previous, runtime):
         return {}
     from mpm_nix_binary import NixBinaryAdapter
     binary = runtime.system_bin / 'nix-store' if runtime else Path(shutil.which('nix-store') or '/nonexistent/nix-store')
-    return {'nix': NixBinaryAdapter(binary.resolve())}
+    return {'nix': NixBinaryAdapter(binary.absolute())}
 
 
 def installed_choice(state, request, platform):

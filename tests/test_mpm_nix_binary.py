@@ -90,5 +90,24 @@ class NixAdapterTests(unittest.TestCase):
         self.assertEqual(ref['identity']['closure'],self.ref['identity']['closure'])
         self.assertEqual(self.calls,[])
 
+    def test_real_symlink_keeps_argv0_and_pins_executable_for_both_frontends(self):
+        import types
+        import mpm_ports_cli as frontend
+        directory=self.root/'helpers';directory.mkdir()
+        alias=directory/'nix-store';alias.symlink_to('/bin/sh')
+        sources={'local':{'offers':[{'reference':self.ref}]}}
+        for installed in (False,True):
+            alias.unlink();alias.symlink_to('/bin/sh')
+            runtime=types.SimpleNamespace(system_bin=directory) if installed else None
+            with self.subTest(installed=installed),mock.patch.object(frontend.shutil,'which',return_value=str(alias)):
+                adapter=frontend.adapters_for(sources,None,runtime)['nix']
+                self.assertEqual(adapter.binary,str(alias))
+                self.assertEqual(adapter.executable,str(Path('/bin/sh').resolve()))
+                # A real executable reports its invocation name through $0;
+                # this is not a mocked subprocess assertion.
+                self.assertEqual(adapter.runner([adapter.binary,'-c','printf "%s" "$0"']),str(alias))
+                alias.unlink();alias.symlink_to('/bin/false')
+                self.assertEqual(adapter.runner([adapter.binary,'-c','printf "%s" "$0"']),str(alias))
+
 
 if __name__=='__main__':unittest.main()

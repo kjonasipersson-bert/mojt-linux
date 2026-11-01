@@ -132,3 +132,11 @@ Remaining gates: live Nix import acceptance, remote authenticated source acquisi
 imperative reason/version removal and reset, native Port archives, lifecycle effects
 and complete recovery, then the remaining Base/System/bootstrap/build milestones.
 No global compiler/libc selection changes or runtime ABI proof follow from this work.
+
+
+Nix helper selection preserves the `nix-store` invocation name while separately
+pinning its resolved executable for the operation. The runner passes that pinned
+path as `subprocess`'s executable and retains the original argv[0]; Nix may use
+one multicall binary behind its legacy-tool symlinks. Changing a helper symlink
+after selection does not redirect this operation. A real symlink/process test
+checks invocation name preservation for both source and installed frontends.

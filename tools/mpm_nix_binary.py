@@ -21,11 +21,14 @@ class NixBinaryAdapter:
     def __init__(self, nix_store, runner=None):
         self.binary=str(nix_store)
         require(Path(self.binary).is_absolute(),'Nix helper must be a retained absolute path')
+        # Pin the executable separately from argv[0]. Nix's legacy tools may
+        # be symlinks to the multicall 'nix' binary; resolving argv[0] would
+        # change 'nix-store --realise' into an unrelated 'nix --realise'.
+        self.executable=str(Path(self.binary).resolve())
         self.runner=runner or self._run
 
-    @staticmethod
-    def _run(args):
-        result=subprocess.run(args,text=True,stdout=subprocess.PIPE,check=False)
+    def _run(self,args):
+        result=subprocess.run(args,executable=self.executable,text=True,stdout=subprocess.PIPE,check=False)
         require(result.returncode==0,'Nix binary import/verification failed: '+args[1])
         return result.stdout.strip()
 
