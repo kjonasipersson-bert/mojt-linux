@@ -30,7 +30,7 @@ def help_text():
     print("usage: mpm {catalog,kernel,ports,base,system} ...\n"
           "  catalog                 explicit local catalog discovery\n"
           "  kernel                  install, status, plan, stage, select, rollback, resolve\n"
-          "  ports                   install, activate, upgrade, update, apply, list, history\n"
+          "  ports                   install, activate, upgrade, update, apply, remove, reset, list, history\n"
           "                          initial/update input: --sources FILE\n"
           "  base/system             search, show, versions with --catalog FILE\n"
           "Base/System mutation commands are not implemented.\n"

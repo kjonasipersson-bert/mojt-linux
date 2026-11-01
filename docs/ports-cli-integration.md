@@ -110,7 +110,8 @@ Only that named configuration's claims are reconciled; removed entries release
 its reason. Independent interactive reasons and overrides survive. Reapplication
 resolves its own moving wishes without upgrading unrelated interactive wishes.
 A file containing Base/System/Kernel sections is rejected rather than partially
-reported as applied. Public imperative removal/reset remains unimplemented here.
+reported as applied. Interactive wish removal and active-choice reset now use the same publisher;
+see [bounded command semantics](ports-remove-reset.md).
 
 ## System boundary and evidence
 
@@ -131,7 +132,7 @@ frontend regressions and System payload/capability tests remain in CI.
 
 The real adapter/frontend acceptance is [recorded separately](ports-profile-acceptance.md).
 Remaining gates: remote authenticated source acquisition,
-imperative reason/version removal and reset, native Port archives, lifecycle effects
+artifact-only pruning and configuration-source forgetting, native Port archives, lifecycle effects
 and complete recovery, then the remaining Base/System/bootstrap/build milestones.
 No global compiler/libc selection changes or runtime ABI proof follow from this work.
 
