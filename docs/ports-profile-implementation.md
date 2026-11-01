@@ -9,9 +9,10 @@ SPDX-License-Identifier: GPL-2.0-only
 This increment advances steps 1–2 of the [six-step consolidation plan](mpm-consolidation-plan.md).
 The callable Python core now joins wish reconciliation, exact resolution, actual
 provider acquisition, verification and one complete published Ports profile.
-It is not yet wired to installed `mpm` dispatch or shipped in the System runtime;
-the old imperative prototype keeps its current implementation until that join.
-No new public MPM/MBT syntax or existing-store migration is introduced.
+It is now wired to installed `mpm` dispatch and shipped in the closed System
+runtime; see [ordinary commands and limits](ports-cli-integration.md).
+The joined Ports commands use explicit finite source inputs. No MBT syntax or
+existing-store migration is introduced.
 
 `mpm_ports_profile.preview` is read-only and returns an exact
 `mojt-ports-publish-plan-v1` record bound to root, installation, platform, executor,
@@ -35,8 +36,8 @@ Fresh store layout:
 | `profiles/<id>/bin/` | Complete executable alias set |
 | `current` | The single atomic selection pointer |
 
-State embeds normalized wishes, exact lock/source views, logical installed
-versions and owning claims, dependency receipts, acquisition order, effective
+State binds its target platform and embeds normalized wishes, exact lock/source views, logical installed
+versions, declared release/stability evidence and owning claims, dependency receipts, acquisition order, effective
 active versions, aliases and monotonic install/activation events. Its parent and
 sequence bind history ancestry. History also records before/after identities,
 request revisions, added/removed logical references, aliases, actor UID and UTC.
@@ -78,6 +79,8 @@ multiple retained libc versions do not establish ABI compatibility.
 A failed acquisition can leave verified retained objects but cannot select a
 partial profile. Pre-publication failure preserves the old pointer; post-rename
 flush failure reports `PublicationUncertain` and retains both generations.
+Accepted targets advance only for an explicit `advance` claim set; by default
+metadata changes preserve them. Exact wishes retain their accepted builds.
 Repeated unchanged plans create no profile/history event and fetch no objects,
 but still verify retained content. Interrupted fresh-store initialization may
 require inspection; no automatic recovery or journal replay is claimed.
@@ -88,6 +91,6 @@ real files and execute the resulting default/series/exact aliases. They cover
 upgrade retention, reason removal, explicit overrides, first-install ambiguity,
 corruption, stale plans, history tampering and both publication failure phases.
 Nix adapter tests simulate its subprocess protocol; **a live Nix import with this
-new adapter remains acceptance work**, as do native Port archives, frontend/System
-delivery, joined bootstrap/build flows and hardware acceptance. These limits do
+new adapter remains acceptance work**, as do native Port archives, reason/version removal and reset, joined bootstrap/
+build flows and hardware acceptance. Frontend/System delivery is now connected. These limits do
 not mark steps 1–2 complete or change the order of the six-step plan.

@@ -77,7 +77,8 @@ VERSION = "0.2"
 MPM_FILES = (
     "mpm", "mpm-system", "mpm_cli.py", "mpm_catalog.py", "mpm_selection.py",
     "mpm_selector_ports.py", "mpm_kernel.py", "mpm_deployment.py", "mpm_kernel_boot.py",
-    "mpm_transaction.py", "mojt_artifact.py", "mojt_boot.py", "mojt_system.py",
+    "mpm_transaction.py", "mpm_requests.py", "mpm_request_plan.py",
+    "mpm_ports_profile.py", "mpm_ports_cli.py", "mpm_nix_binary.py", "mojt_artifact.py", "mojt_boot.py", "mojt_system.py",
     "mojt_system_manifest.py", "mojt_native_image.py", "mojt-vm-build.py",
     "mojt_hardware.py", "mojt_generations.py", "mojt_accounts.py", "mojt-system-inspect.py",
     "mpm-nix-prototype", "mpm-nix-catalog.py",
@@ -794,7 +795,7 @@ def finalize_manifest(tree, generation, base, repo):
     formats, capabilities = [], []
     if record["step"] >= 3:
         declarations = {}
-        for node in ast.parse((system / "tools/mpm-nix-prototype").read_text()).body:
+        for node in ast.parse((system / "tools/mpm_ports_cli.py").read_text()).body:
             if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
                 name = node.targets[0].id
                 if name in ("SUPPORTED_STATE_FORMATS", "SUPPORTED_CAPABILITIES"):

@@ -60,8 +60,8 @@ class ProfileTests(unittest.TestCase):
         area=dict(source='local',packages=[selector])
         if active:area['active']={'hello':selector}
         return wishes.reconcile_configuration(before,dict(format=wishes.CONFIG,name='main',ports=area))
-    def preview(self,state):return ports.preview(self.root,state,self.sources,self.adapters,**self.opts)
-    def apply(self,state,**kwargs):return ports.apply(self.root,self.preview(state),self.sources,self.adapters,**self.opts,**kwargs)
+    def preview(self,state,advance=None):return ports.preview(self.root,state,self.sources,self.adapters,**self.opts,advance=advance)
+    def apply(self,state,advance=None,**kwargs):return ports.apply(self.root,self.preview(state,advance),self.sources,self.adapters,**self.opts,**kwargs)
     def output(self,name='hello'):return subprocess.check_output([str(self.root/'current/bin'/name)],text=True).strip()
 
     def test_preview_is_read_only_and_real_copy_publishes_executable_aliases(self):
@@ -86,7 +86,7 @@ class ProfileTests(unittest.TestCase):
         old=next(k for k in oldaliases if k.startswith('hello-2.12.1-'))
         self.candidates.append(dict(name='hello',release_id='2.12.3',upstream_version='2.12.3',version_scheme='dotted-v1',stability='stable',source='test',artifact='2.12.3',integrity=self.offers[1]['integrity'],compatibility='verified'))
         self.sources['local']['snapshot']='sha256:'+'c'*64
-        self.apply(self.state())
+        state=self.state();self.apply(state,advance=[c['key'] for c in state['description']['claims']])
         self.assertEqual(self.output(),'2.12.3');self.assertEqual(self.output(old),'2.12.1')
         self.assertEqual(len(ports.current(self.root)['record']['description']['packages']),2)
         self.assertEqual([r['description']['sequence'] for r in ports.history(self.root)],[2,1])
@@ -201,6 +201,21 @@ class ProfileTests(unittest.TestCase):
         self.apply(state)
         self.assertEqual(self.output(),'2.12.3')
         self.assertFalse(self.apply(state)['changed'])
+
+    def test_shared_object_cannot_hide_conflicting_dependency_bindings(self):
+        self.sources['other']=copy.deepcopy(self.sources['local'])
+        self.sources['other']['offers'][1]['dependencies']=[self.refs['2.12.1']]
+        state=wishes.request_interactively(self.empty,'hello','local')
+        state=wishes.request_interactively(state,'hello','other')
+        with self.assertRaisesRegex(ValueError,'conflicting acquisition bindings'):self.preview(state)
+        self.assertFalse(self.root.exists());self.assertEqual(self.adapter.fetches,0)
+
+    def test_existing_profile_cannot_be_managed_as_another_platform(self):
+        self.apply(self.state());old=os.readlink(self.root/'current')
+        opts=dict(self.opts,platform='aarch64-linux')
+        with self.assertRaisesRegex(ValueError,'another platform'):
+            ports.preview(self.root,self.state(),self.sources,self.adapters,**opts)
+        self.assertEqual(os.readlink(self.root/'current'),old)
 
 
 if __name__=='__main__':unittest.main()

@@ -30,7 +30,8 @@ def help_text():
     print("usage: mpm {catalog,kernel,ports,base,system} ...\n"
           "  catalog                 explicit local catalog discovery\n"
           "  kernel                  install, status, plan, stage, select, rollback, resolve\n"
-          "  ports                   install, activate, upgrade, update, list, history, ...\n"
+          "  ports                   install, activate, upgrade, update, apply, list, history\n"
+          "                          initial/update input: --sources FILE\n"
           "  base/system             search, show, versions with --catalog FILE\n"
           "Base/System mutation commands are not implemented.\n"
           "Install retains content; Kernel selection changes next boot, never the running Kernel.")
@@ -172,16 +173,13 @@ def dispatch(args, runtime):
         return main(["resolve-kernel" if action == "resolve" else action, *command[2:], "--area", area])
     if area in ("base", "system", "kernel"):
         raise ValueError("unsupported " + area + " operation; use mpm --help")
-    backend_args = list(args)
-    if runtime is not None:
-        prefix = []
-        if not option(backend_args, "--root"):
-            prefix += ["--root", str(runtime.ports)]
-        if not option(backend_args, "--source-manifest"):
-            prefix += ["--source-manifest", str(runtime.source)]
-        backend_args = prefix + backend_args
-    adapter = runpy.run_path(str(Path(__file__).with_name("mpm-nix-prototype")), run_name="mpm_nix_adapter")
-    return adapter["main"](backend_args)
+    if area == "ports":
+        from mpm_ports_cli import main, ACTIONS
+        if action not in ACTIONS | {None, "--help", "-h"}:
+            raise ValueError("unsupported fresh Ports operation; use mpm ports --help")
+        root = Path(roots[-1].split("=", 1)[1] if len(roots) == 1 else roots[-1]) if roots else None
+        return main(command[1:] or ["--help"], root=root, runtime=runtime)
+    raise ValueError("unsupported operation; use mpm --help")
 
 
 def main(argv=None, *, runtime=None):

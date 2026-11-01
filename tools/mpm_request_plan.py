@@ -68,6 +68,18 @@ def sources_view(sources):
     return result
 
 
+def resolve_claim(claim, sources, *, platform):
+    require(claim['source'] in sources, 'missing named source; refresh/bind it explicitly')
+    source = sources[claim['source']]
+    require(claim['role'] in source['catalogs'], 'missing package metadata')
+    chosen = resolve(Catalog.from_dict(source['catalogs'][claim['role']]), claim['policy']['selector'], platform=platform).candidate
+    offers = [o for o in source['offers'] if o['backend'] == chosen.backend and o['artifact'] == chosen.artifact]
+    require(len(offers) == 1 and offers[0]['integrity'] == chosen.integrity, 'missing/contradictory exact adapter binding')
+    offer = offers[0]
+    return dict(claim=claim['key'], basis='catalog', snapshot=source['snapshot'], evidence=source['snapshot'],
+                reference=offer['reference'], dependencies=sorted(offer['dependencies'], key=key))
+
+
 def resolve_requests(state, sources, *, platform):
     """Bind each wish using its named accepted snapshot and explicit adapter offers.
 
@@ -78,15 +90,8 @@ def resolve_requests(state, sources, *, platform):
     d = requests.validate(state)['description']; sources = sources_view(sources)
     rows, snapshots = [], set()
     for claim in d['claims']:
-        require(claim['source'] in sources, 'missing named source; refresh/bind it explicitly')
-        source = sources[claim['source']]
-        require(claim['role'] in source['catalogs'], 'missing package metadata')
-        chosen = resolve(Catalog.from_dict(source['catalogs'][claim['role']]),claim['policy']['selector'],platform=platform).candidate
-        offers = [o for o in source['offers'] if o['backend'] == chosen.backend and o['artifact'] == chosen.artifact]
-        require(len(offers) == 1 and offers[0]['integrity'] == chosen.integrity, 'missing/contradictory exact adapter binding')
-        offer = offers[0]; snapshots.add(source['snapshot'])
-        rows.append(dict(claim=claim['key'],basis='catalog',snapshot=source['snapshot'],evidence=source['snapshot'],
-                         reference=offer['reference'],dependencies=sorted(offer['dependencies'],key=key)))
+        row = resolve_claim(claim, sources, platform=platform)
+        snapshots.add(row['snapshot']); rows.append(row)
     return record('mojt-resolution-lock-v1',dict(installation=d['installation'],area='ports',requests=state['id'],
                   snapshots=sorted(snapshots),resolutions=sorted(rows,key=lambda r:r['claim'])))
 

@@ -60,10 +60,10 @@ The [Ports profile increment](ports-profile-implementation.md) now adds actual
 adapter acquisition, verification, alias/fallback planning and atomic publication
 of requests, effective selection and history. It is an explicit fresh-store Python
 API. Remaining: authenticated source acquisition, non-Ports reconciliation, native
-Port archive import, frontend/System runtime integration and public configuration
-apply/reset syntax.
-The normal imperative prototype still uses its existing path until explicitly
-connected; no backward-compatible migration path is needed.
+Port archive import, imperative removal and public configuration reset. The fresh
+Ports frontend/System runtime and Ports-only apply are now [connected](ports-cli-integration.md).
+The ordinary frontend uses the fresh publisher; the old imperative prototype
+remains a separate experiment. No backward-compatible migration path is needed.
 
 Validation: `python3 -B -m unittest discover -s tests -p test_mpm_requests.py -v`.
 Tests cover parsing/version errors, normalization/idempotence, independent reasons,

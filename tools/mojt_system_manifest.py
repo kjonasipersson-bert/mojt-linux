@@ -45,7 +45,7 @@ def validate(value):
     ports = d["support"]["ports"]
     fields(ports, "read write capabilities", "Ports support")
     for key in ("read", "write"):
-        require(isinstance(ports[key], list) and all(type(n) is int and n > 0 for n in ports[key])
+        require(isinstance(ports[key], list) and all((type(n) is int and n > 0 or type(n) is str and word(n)) for n in ports[key])
                 and len(ports[key]) == len(set(ports[key])), "invalid supported Ports formats")
     require(isinstance(ports["capabilities"], list) and all(word(x) for x in ports["capabilities"]), "invalid Ports capabilities")
     require(isinstance(d["provides"], list) and all(isinstance(p, str) and p.startswith("/run/mojt-system/")
@@ -72,12 +72,13 @@ def validate_context(value):
             "invalid required paths")
     if value["ports"] is not None:
         fields(value["ports"], "format capabilities", "current Ports metadata")
-        require(type(value["ports"]["format"]) is int and value["ports"]["format"] > 0, "invalid current Ports format")
+        require((type(value["ports"]["format"]) is int and value["ports"]["format"] > 0
+                or type(value["ports"]["format"]) is str and word(value["ports"]["format"])), "invalid current Ports format")
         caps = value["ports"]["capabilities"]
         require(isinstance(caps, dict) and set(caps) <= {"reader", "writer"} and all(word(c) for c in caps.values()),
                 "invalid current Ports capabilities")
-        if value["ports"]["format"] == 3:
-            require(set(caps) == {"reader", "writer"}, "format 3 requires explicit reader/writer capabilities")
+        if value["ports"]["format"] in (3, "mojt-ports-profile-v1"):
+            require(set(caps) == {"reader", "writer"}, "format " + str(value["ports"]["format"]) + " requires explicit reader/writer capabilities")
     return value
 
 

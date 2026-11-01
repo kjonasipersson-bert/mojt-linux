@@ -96,8 +96,9 @@ def current(root):
     directory = root/relative
     require(directory.is_dir() and not directory.is_symlink(), 'unsafe profile directory')
     state = read(directory/'state.json');d=verify_record(state,PROFILE)
-    wishes.fields(d,('installation','requests','lock','sources','packages','objects','acquisition','aliases','active','event_sequence','sequence','parent'))
+    wishes.fields(d,('installation','platform','requests','lock','sources','packages','objects','acquisition','aliases','active','event_sequence','sequence','parent'))
     require(d['installation'] == m['installation'], 'wrong installation')
+    wishes.token(d['platform'])
     wishes.validate(d['requests'])
     require(d['lock']['description']['requests'] == d['requests']['id'], 'profile lock differs')
     verify_record(d['lock'],'mojt-resolution-lock-v1')
@@ -128,15 +129,32 @@ def described(adapters,reference,root):
     return copy.deepcopy(value)
 
 
-def preview(root, desired, sources, adapters, *, platform, executor, target_identity):
+def preview(root, desired, sources, adapters, *, platform, executor, target_identity, advance=None, auto_select=True):
     """Read-only: no roots, payload import, command execution or profile creation."""
     root=safe_root(root);old=current(root);requests=wishes.validate(desired)
     installation=requests['description']['installation']
     if root.exists() and (root/'store.json').exists():require(marker(root)['installation']==installation,'wrong installation')
     view=planning.sources_view(sources)
-    lock=planning.resolve_requests(requests,view,platform=platform)
     prior=old['record']['description'] if old else None
+    require(prior is None or prior['platform']==platform,'installed Ports target another platform')
     claims={r['key']:r for r in requests['description']['claims']}
+    require(advance is None or type(advance) is list and len(set(advance))==len(advance) and set(advance)<=claims.keys(),'invalid upgrade scope')
+    require(type(auto_select) is bool,'invalid initial activation policy')
+    advance=sorted(advance or [])
+    accepted={r['claim']:r for r in prior['lock']['description']['resolutions']} if prior else {}
+    frozen=set()
+    rows=[]
+    for key,claim in claims.items():
+        # Accepted targets survive metadata refresh/other installs. Exact release
+        # wishes also keep their accepted full build if the catalog changes it.
+        if key in accepted and (key not in advance or parse_selector(claim['policy']['selector']).kind=='exact'):
+            rows.append(copy.deepcopy(accepted[key]));frozen.add(key)
+        else:rows.append(planning.resolve_claim(claim,view,platform=platform))
+    def resolution_lock(state):
+        return planning.record('mojt-resolution-lock-v1',dict(installation=installation,area='ports',requests=state['id'],
+            snapshots=sorted({r['snapshot'] for r in rows}),resolutions=sorted(rows,key=lambda r:r['claim'])))
+    lock=resolution_lock(requests)
+    prior_packages={planning.key(p['reference']):p for p in prior['packages']} if prior else {}
     event=prior['event_sequence'] if prior else 0
     packages={}
     # Historical versions remain in the logical profile while their claims live.
@@ -146,16 +164,22 @@ def preview(root, desired, sources, adapters, *, platform, executor, target_iden
     resolved={}
     for row in lock['description']['resolutions']:
         claim=claims[row['claim']];ref=row['reference'];k=planning.key(ref)
-        candidate=resolve(Catalog.from_dict(view[claim['source']]['catalogs'][claim['role']]),claim['policy']['selector'],platform=platform).candidate
-        package=dict(reference=ref,role=claim['role'],release_id=candidate.release_id,claims=[],commands=described(adapters,ref,root)['commands'],installed=None,activated=None)
+        if row['claim'] in frozen:
+            require(k in prior_packages,'accepted target is not installed')
+            package=copy.deepcopy(prior_packages[k]);package['claims']=[]
+            require(package['commands']==described(adapters,ref,root)['commands'],'retained exports differ')
+        else:
+            candidate=resolve(Catalog.from_dict(view[claim['source']]['catalogs'][claim['role']]),claim['policy']['selector'],platform=platform).candidate
+            package=dict(reference=ref,role=claim['role'],release_id=candidate.release_id,
+                release={name:copy.deepcopy(getattr(candidate,name)) for name in ('upstream_version','version_scheme','revision_scheme','package_revision','stability','compatibility')},
+                claims=[],commands=described(adapters,ref,root)['commands'],installed=None,activated=None)
         if k in packages:
-            require(all(packages[k][f] == package[f] for f in ('role','release_id','commands')), 'conflicting package identity')
+            require(all(packages[k][f] == package[f] for f in ('role','release_id','release','commands')), 'conflicting package identity')
             package=packages[k]
         else:
             event+=1;package['installed']=event
         package['claims']=sorted(set(package['claims'])|{claim['key']});packages[k]=package;resolved[row['claim']]=k
     choices=requests['description']['selections']
-    prior_packages={planning.key(p['reference']):p for p in prior['packages']} if prior else {}
     for choice in choices:
         if choice['mode']=='exact':
             k=planning.key(choice['reference']);require(k in prior_packages,'exact activation requires an installed package')
@@ -164,13 +188,13 @@ def preview(root, desired, sources, adapters, *, platform, executor, target_iden
                 p=copy.deepcopy(prior_packages[k]);p['claims']=[];packages[k]=p
     # First installation convenience, never advancement of an existing default.
     roles={p['role'] for p in prior_packages.values()}
-    for role in sorted({p['role'] for p in packages.values()}-roles-{c['role'] for c in choices}):
+    for role in sorted(({p['role'] for p in packages.values()}-roles-{c['role'] for c in choices}) if auto_select else set()):
         rows=[r for r in lock['description']['resolutions'] if claims[r['claim']]['role']==role]
         require(len({planning.key(r['reference']) for r in rows})==1,'multiple first-install versions require an explicit active choice')
         chosen=sorted(rows,key=lambda r:(claims[r['claim']]['origin']['kind']!='configuration',r['claim']))[0]
         claim=claims[chosen['claim']];choices.append(dict(role=role,origin=claim['origin'],mode='request',claim=claim['key']))
     requests=wishes.seal(requests['description']);wishes.validate(requests)
-    lock=planning.resolve_requests(requests,view,platform=platform)
+    lock=resolution_lock(requests)
     active={}
     for choice in requests['description']['selections']:
         k=resolved[choice['claim']] if choice['mode']=='request' else planning.key(choice['reference'])
@@ -178,7 +202,7 @@ def preview(root, desired, sources, adapters, *, platform, executor, target_iden
     # Preserve the effective previous version on reapply; if removed, use committed
     # activation/install ordering from retained profile ancestry (not wall time).
     prior_active={role:planning.key(ref) for role,ref in prior['active'].items()} if prior else {}
-    for role in {p['role'] for p in packages.values()}-active.keys():
+    for role in ({p['role'] for p in packages.values()} & prior_active.keys())-active.keys():
         targets=[k for k,p in packages.items() if p['role']==role]
         if prior_active.get(role) in targets:active[role]=prior_active[role]
         else:
@@ -187,15 +211,22 @@ def preview(root, desired, sources, adapters, *, platform, executor, target_iden
     for role,k in sorted(active.items()):
         if prior_active.get(role)!=k:
             event+=1;packages[k]['activated']=event
-    objects={}
+    objects={};bindings={}
     def visit(ref,source_name,stack):
         k=planning.key(ref);require(k not in stack and len(stack)<64,'dependency cycle/depth')
-        if k in objects:return
         source=view[source_name];offers=[o for o in source['offers'] if planning.key(o['reference'])==k]
         require(len(offers)==1,'missing exact dependency offer')
+        require(k not in bindings or bindings[k]==offers[0],'shared reference has conflicting acquisition bindings')
+        if k in bindings:return
+        bindings[k]=copy.deepcopy(offers[0])
         for dep in offers[0]['dependencies']:visit(dep,source_name,stack|{k})
         objects[k]=described(adapters,ref,root)
-    for row in lock['description']['resolutions']:visit(row['reference'],claims[row['claim']]['source'],set())
+    for row in lock['description']['resolutions']:
+        if row['claim'] in frozen:
+            for ref in prior['acquisition']:
+                obj_=next(o for o in prior['objects'] if o['reference']==ref)
+                objects.setdefault(planning.key(ref),copy.deepcopy(obj_))
+        else:visit(row['reference'],claims[row['claim']]['source'],set())
     # Old versions/overrides already have retained receipts, not new catalog wishes.
     for k,p in packages.items():
         if k not in objects:
@@ -215,10 +246,10 @@ def preview(root, desired, sources, adapters, *, platform, executor, target_iden
         parsed=parse_selector(claims[row['claim']]['policy']['selector'])
         if parsed.kind=='series':
             for name,target in packages[planning.key(row['reference'])]['commands'].items():alias(name+'-'+'.'.join(map(str,parsed.value)),target)
-    state=dict(installation=installation,requests=requests,lock=lock,sources=copy.deepcopy(view),packages=sorted(packages.values(),key=lambda p:planning.key(p['reference'])),objects=sorted(objects.values(),key=lambda p:planning.key(p['reference'])),acquisition=[objects[k]['reference'] for k in objects],aliases=dict(sorted(aliases.items())),active={role:packages[k]['reference'] for role,k in sorted(active.items())},event_sequence=event)
+    state=dict(installation=installation,platform=platform,requests=requests,lock=lock,sources=copy.deepcopy(view),packages=sorted(packages.values(),key=lambda p:planning.key(p['reference'])),objects=sorted(objects.values(),key=lambda p:planning.key(p['reference'])),acquisition=([ref for ref in prior['acquisition'] if planning.key(ref) in objects] if prior else [])+[objects[k]['reference'] for k in objects if not prior or k not in {planning.key(ref) for ref in prior['acquisition']}],aliases=dict(sorted(aliases.items())),active={role:packages[k]['reference'] for role,k in sorted(active.items())},event_sequence=event)
     if prior:unchanged=all(prior[k]==v for k,v in state.items())
     else:unchanged=False
-    return planning.record(PLAN,dict(root=str(root),baseline=old['record']['id'] if old else None,platform=platform,executor=planning.reference(executor),target_identity=planning.identity(target_identity),candidate=state,no_op=unchanged))
+    return planning.record(PLAN,dict(root=str(root),baseline=old['record']['id'] if old else None,platform=platform,executor=planning.reference(executor),target_identity=planning.identity(target_identity),candidate=state,no_op=unchanged,advance=advance,auto_select=auto_select))
 
 
 def apply(root, plan, sources, adapters, *, platform, executor, target_identity, action='apply', sync=transaction.sync_directory):
@@ -226,7 +257,7 @@ def apply(root, plan, sources, adapters, *, platform, executor, target_identity,
     pd=verify_record(plan,PLAN);root=safe_root(root,write=True)
     require(pd['root']==str(root),'plan target path changed')
     # Preview/preflight before initializing a new registry or importing anything.
-    require(preview(root,pd['candidate']['requests'],sources,adapters,platform=platform,executor=executor,target_identity=target_identity)==plan,'plan inputs/baseline changed')
+    require(preview(root,pd['candidate']['requests'],sources,adapters,platform=platform,executor=executor,target_identity=target_identity,advance=pd['advance'],auto_select=pd['auto_select'])==plan,'plan inputs/baseline changed')
     fresh=not root.exists();root.mkdir(mode=0o755 if os.geteuid()==0 else 0o700,exist_ok=True)
     safe_root(root,write=True)
     if fresh:root.chmod(0o755 if os.geteuid()==0 else 0o700)
@@ -237,7 +268,7 @@ def apply(root, plan, sources, adapters, *, platform, executor, target_identity,
             (root/'profiles').chmod(0o755);(root/'retained').chmod(0o755)
             write(root/'store.json',dict(format=MARKER,installation=pd['candidate']['installation']))
             sync(root/'profiles');sync(root/'retained');sync(root);sync(root.parent)
-        require(preview(root,pd['candidate']['requests'],sources,adapters,platform=platform,executor=executor,target_identity=target_identity)==plan,'late plan baseline changed')
+        require(preview(root,pd['candidate']['requests'],sources,adapters,platform=platform,executor=executor,target_identity=target_identity,advance=pd['advance'],auto_select=pd['auto_select'])==plan,'late plan baseline changed')
         old=current(root);candidate=pd['candidate']
         if not pd['no_op']:
             previous={planning.key(o['reference']) for o in old['record']['description']['objects']} if old else set()
