@@ -6,6 +6,13 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Using MPM for ordinary Ports
 
+The ordinary fresh `mpm ports` frontend is now documented in
+[Ports CLI integration](ports-cli-integration.md) and `man/mpm.1`. It uses explicit
+versioned source bundles and independent request ownership. The experimental
+Nix prototype and adoption flows below remain historical/separately invoked
+experiments; the ordinary frontend does not migrate their stores.
+
+
 This iteration extends the working Nix probe into a usable experimental CLI.
 It installs command-line applications from a pinned local Nixpkgs source,
 without a new TOML entry for every application. It does not implement the

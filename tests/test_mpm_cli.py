@@ -29,16 +29,16 @@ class DispatchTests(unittest.TestCase):
             with contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(cli.main(["system", "upgrade"]), 1)
 
-    def test_installed_ports_defaults_preserve_explicit_root_and_source(self):
+    def test_installed_ports_defaults_use_fresh_frontend_and_preserve_explicit_root(self):
+        import mpm_ports_cli as ports
         runtime = cli.Runtime()
-        adapter = mock.Mock(return_value=0)
-        with mock.patch.object(cli.runpy, "run_path", return_value={"main": adapter}):
-            self.assertEqual(cli.main(["ports", "update", "--dry-run"], runtime=runtime), 0)
-            self.assertEqual(adapter.call_args.args[0], ["--root", str(runtime.ports),
-                "--source-manifest", str(runtime.source), "ports", "update", "--dry-run"])
-            explicit = ["--root=/private", "--source-manifest", "/pin", "ports", "status"]
-            self.assertEqual(cli.main(explicit, runtime=runtime), 0)
-            self.assertEqual(adapter.call_args.args[0], explicit)
+        with mock.patch.object(ports, "main", return_value=0) as adapter, \
+                mock.patch.object(cli.runpy, "run_path", side_effect=AssertionError("prototype loaded")):
+            self.assertEqual(cli.main(["ports", "update", "--sources", "/snapshot", "--dry-run"], runtime=runtime), 0)
+            self.assertEqual(adapter.call_args.args[0], ["update", "--sources", "/snapshot", "--dry-run"])
+            self.assertEqual(adapter.call_args.kwargs, dict(root=None, runtime=runtime))
+            self.assertEqual(cli.main(["--root=/private", "ports", "status"], runtime=runtime), 0)
+            self.assertEqual(adapter.call_args.kwargs['root'], Path('/private'))
 
     def test_runtime_does_not_attach_running_record_to_an_explicit_disk(self):
         args = ["status", "--disk-root", "/other", "--baseline", "boot/mojt/other/1"]
@@ -170,7 +170,7 @@ sys.exit(main(args,runtime=r))
         shutil.copyfile(self.profile / "tools/mpm-nix-prototype", self.tools / "mpm-nix-prototype")
         before = self.fixture.snapshot()
         result = self.run_cli(["ports", "status"])
-        self.assertEqual(result["installed"], {})
+        self.assertEqual(result["installed"], [])
         self.assertEqual(before, self.fixture.snapshot())
 
     def test_installed_native_status_and_stage_preview_are_read_only(self):

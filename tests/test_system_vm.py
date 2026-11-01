@@ -1211,7 +1211,7 @@ esac""")
         path = directory / "manifest.json"
         original = path.read_bytes()
         manifest = json.loads(original)
-        self.assertEqual(manifest["description"]["support"]["ports"]["write"], [1,2,3])
+        self.assertEqual(manifest["description"]["support"]["ports"]["write"], ["mojt-ports-profile-v1"])
         self.assertIn("/run/mojt-system/bin/bash", manifest["description"]["provides"])
         self.assertIn("tools/mpm-nix-prototype", manifest["description"]["profile"])
         self.assertNotIn("manifest.json", manifest["description"]["profile"])
@@ -1220,11 +1220,14 @@ esac""")
         self.assertEqual(path.read_bytes(), original)
         current = self.tree / "state/var/lib/mojt/ports/current"
         current.mkdir(parents=True)
-        system.write(current / "state.json", json.dumps(dict(format=3, capabilities=dict(
-            reader="mpm-ports-selectors-v1", writer="mpm-ports-selectors-v1"))))
-        backend = directory / "tools/mpm-nix-prototype"
-        backend.write_text(backend.read_text().replace("SUPPORTED_STATE_FORMATS = (1, 2, 3)", "SUPPORTED_STATE_FORMATS = (1, 2)"))
-        with self.assertRaisesRegex(ValueError, "Ports format 3 not supported"):
+        import hashlib
+        envelope = dict(format="mojt-ports-profile-v1", description={})
+        envelope["id"] = "sha256:" + hashlib.sha256(json.dumps(envelope, sort_keys=True,
+            separators=(",", ":")).encode()).hexdigest()
+        system.write(current / "state.json", json.dumps(envelope))
+        backend = directory / "tools/mpm_ports_cli.py"
+        backend.write_text(backend.read_text().replace("SUPPORTED_STATE_FORMATS = ('mojt-ports-profile-v1',)", "SUPPORTED_STATE_FORMATS = ()"))
+        with self.assertRaisesRegex(ValueError, "Ports format mojt-ports-profile-v1 not supported"):
             system.finalize_manifest(self.tree, directory.name, "0.1.3", REPO)
         self.assertEqual(path.read_bytes(), original)
 

@@ -68,6 +68,37 @@ def prepare_catalog(backend, sources, name, attribute, *, catalog_name="ports-ma
     return result
 
 
+def prepare_bundle(backend, catalog, name):
+    """Bind an already-local catalog to the fresh frontend's exact adapter data."""
+    import copy
+    import mpm_requests as wishes
+    import mpm_request_plan as planning
+    from mpm_nix_binary import NixBinaryAdapter
+    from mpm_ports_cli import SOURCES, source_bundle
+    catalog = copy.deepcopy(catalog)
+    catalog['name'] = name
+    backend.selection_core().Catalog.from_dict(catalog)
+    offers = {}
+    for candidate in catalog['candidates']:
+        output = candidate['artifact']
+        commands = backend.discover_commands(dict(output=output, attribute=name))
+        ref = dict(provider='nix', identity=dict(format='mojt-nix-output-v1',
+            output=output, closure=copy.deepcopy(candidate['integrity']['closure']), commands=commands))
+        # Validate shape without importing or retaining payloads.
+        NixBinaryAdapter('/nonexecuted/nix-store').describe(ref, Path('/nonexecuted'))
+        offer = dict(backend='nix', artifact=output, integrity=copy.deepcopy(candidate['integrity']),
+            reference=ref, dependencies=[], transport_sha256=None)
+        key = wishes.digest(ref)
+        backend.require(key not in offers or offers[key] == offer, 'conflicting exact output bindings')
+        offers[key] = offer
+    view = dict(catalogs={name: catalog}, offers=[offers[k] for k in sorted(offers)])
+    snapshot = wishes.digest(dict(format='mojt-ports-source-view-v1', **view))
+    result = planning.record(SOURCES, dict(platform=catalog['platform'],
+        sources=dict(local=dict(snapshot=snapshot, **view))))
+    source_bundle(result, catalog['platform'])
+    return result
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", action="append", required=True, metavar="ID=MANIFEST")
@@ -77,6 +108,7 @@ def main(argv=None):
     parser.add_argument("--stability", choices=("stable", "preview", "unknown"), default="unknown",
                         help="explicit producer classification; default unknown (exact requests only)")
     parser.add_argument("--prefer-source", help="explicit preferred build source on equal-release builds")
+    parser.add_argument("--bundle", action="store_true", help="emit exact mojt-ports-sources-v1 input for installed mpm")
     parser.add_argument("--output", type=Path, required=True, help="new JSON file; existing files are never replaced")
     args = parser.parse_args(argv)
     try:
@@ -86,8 +118,11 @@ def main(argv=None):
             if not separator or not source_id or not manifest:
                 raise ValueError("--source must be ID=MANIFEST")
             sources.append((source_id, manifest))
-        result = prepare_catalog(load_backend(), sources, args.name, args.attribute or args.name,
+        backend = load_backend()
+        result = prepare_catalog(backend, sources, args.name, args.attribute or args.name,
                                  catalog_name=args.catalog_name, preferred_source=args.prefer_source, stability=args.stability)
+        if args.bundle:
+            result = prepare_bundle(backend, result, args.name)
         # Create only after all backend reads and validation; O_EXCL also refuses symlinks.
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(json.dumps(result, indent=2) + "\n")

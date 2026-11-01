@@ -30,7 +30,18 @@ def context_from_target(target, base):
     selection = current.parent
     if selection.is_symlink() or selection.exists():
         state = json.loads(current.read_text())
-        ports = dict(format=state["format"], capabilities=state.get("capabilities", {}))
+        if state.get("format") == "mojt-ports-profile-v1":
+            # Bind the declared capability to the exact published envelope.
+            import hashlib
+            raw = {k: v for k, v in state.items() if k != "id"}
+            identity = "sha256:" + hashlib.sha256(json.dumps(raw, sort_keys=True,
+                separators=(",", ":"), ensure_ascii=True, allow_nan=False).encode()).hexdigest()
+            if set(state) != {"format", "id", "description"} or state["id"] != identity:
+                raise ValueError("invalid Ports profile identity")
+            ports = dict(format=state["format"], capabilities=dict(
+                reader="mpm-request-origins-v1", writer="mpm-request-origins-v1"))
+        else:
+            ports = dict(format=state["format"], capabilities=state.get("capabilities", {}))
     passwd = root / "state/etc/passwd"
     paths = []
     if passwd.exists():

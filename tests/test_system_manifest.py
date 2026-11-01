@@ -72,6 +72,27 @@ class ManifestTests(unittest.TestCase):
         c=context(); c["ports"]["capabilities"]={}
         with self.assertRaises(ValueError): model.check(manifest(),c)
 
+    def test_fresh_ports_profile_requires_declared_reader_and_writer_capabilities(self):
+        import mpm_request_plan as planning
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); (root / 'releases').mkdir()
+            (root / 'releases/base-1.toml').write_text('format=1\n[base]\nversion="1"\narchitecture="x86_64"\n[abi]\nlibc="glibc"\n[state]\nlayout_version=1\n')
+            current = root / 'state/var/lib/mojt/ports/current'; current.mkdir(parents=True)
+            path = current / 'state.json'
+            path.write_text(json.dumps(planning.record('mojt-ports-profile-v1', {})))
+            c = inspect.context_from_target(root, '1')
+            self.assertEqual(c['ports']['format'], 'mojt-ports-profile-v1')
+            d = manifest()['description']; d['requirements']['base_abi'] = dict(libc='glibc')
+            d['provides'] = []
+            self.assertFalse(model.check(model.create(d), c)['compatible'])
+            d['support']['ports'] = dict(read=['mojt-ports-profile-v1'], write=['mojt-ports-profile-v1'],
+                capabilities=['mpm-request-origins-v1'])
+            self.assertTrue(model.check(model.create(d), c)['compatible'])
+            value = json.loads(path.read_text()); value['id'] = 'sha256:' + '0' * 64
+            path.write_text(json.dumps(value))
+            with self.assertRaisesRegex(ValueError, 'profile identity'):
+                inspect.context_from_target(root, '1')
+
     def test_selected_is_unknown_until_explicit_and_changes_are_exact(self):
         current=manifest(); d=copy.deepcopy(current["description"])
         d["artifacts"]={"archive":{"object":"new"}}; candidate=model.create(d)
