@@ -6,6 +6,10 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # First configuration/request implementation
 
+This increment supports steps 1 and 2 of the
+[governing six-step plan](mpm-consolidation-plan.md); it does not complete the
+installed MPM workflow or supersede Base/System, bootstrap and build integration.
+
 `tools/mpm_requests.py` implements a provider-independent, standard-library-only
 configuration parser and pure Ports request ownership model. It executes no
 commands, resolves no catalogs, installs no payload and writes no state. This
@@ -30,7 +34,29 @@ unchanged. Exact selection records intent only: the caller must verify the
 artifact is installed and provides the requested role before publication.
 No availability or ABI claim follows from a structurally valid reference.
 
-Remaining: non-Ports state reconciliation, source/catalog resolution and locks,
+`mpm_request_plan.py` now resolves Ports claims through the shared pure selector
+against explicit finite source snapshots and adapter offers. It returns versioned
+exact locks and preparation plans for acquisition/import and retaining candidate
+wishes. It never publishes a profile or boot choice. Full references identify
+shared objects; two origins can share import while retaining separate claims.
+Exact active overrides require caller-verified installed references.
+
+Native offers bind archive hashes; provider identities/integrity remain explicit
+adapter-owned data. These functions do not authenticate metadata, prove runtime
+ABI or inspect physical content. Missing sources/bindings, stale locks, conflicting
+offers, unsupported target platform and missing/cyclic dependencies fail rather
+than fallback or build. Initial dependency closure stays within each explicitly
+named source's finite offers, with depth bounded to 64; cross-source acquisition
+requires a later explicit source binding rather than guessing.
+
+`revalidate_preparation` compares target/installation/executor and the actual
+request/selected baseline. Running state is informational. The caller must hold
+existing cooperating resource locks, freshly verify content and authorize the
+operation; the pure guard neither acquires locks nor grants permission. Final
+profile assembly/publication is separate because its exact result does not yet
+exist. Metadata-only wish removal prepares candidate data, never physical GC.
+
+Remaining: non-Ports state reconciliation, actual source/acquisition integration,
 installed-role/alias validation, removal/fallback planning, state publication,
 frontend/System runtime integration and public configuration apply/reset syntax.
 The normal imperative prototype still uses its existing path until explicitly
@@ -41,3 +67,8 @@ Tests cover parsing/version errors, normalization/idempotence, independent reaso
 removal, override precedence, first-install default preservation, multi-source
 conflicts, source binding and unchanged inputs on failure. No manual VM test is
 needed for these pure functions; the joined installed-machine flow remains later.
+
+Run both modules with `python3 -B -m unittest discover -s tests -p 'test_mpm_request*.py' -v`.
+Planner tests also exercise exact source/provenance bindings, shared imports,
+provider independence, no-op/removal plans, dependency order/cycles and stale
+baseline refusal. No package import or public CLI behavior is claimed by them.

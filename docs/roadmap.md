@@ -13,6 +13,13 @@ The [architecture](architecture.md) defines the layer boundaries and the
 
 ## Completed foundation
 
+The owner's [six-step MPM consolidation plan](mpm-consolidation-plan.md) is the
+governing implementation sequence. The historical tracks and experiments below
+provide evidence, not a replacement order or proof of a complete installed flow.
+Current configuration/resolver/preparation work belongs to steps 1 and 2;
+Base/System installation, bootstrap, build integration and final acceptance remain
+explicit later gates.
+
 - Whole-image Base packaging, side-by-side installation and return to an
   earlier Base, with persistent configuration/state preservation.
 - A bootable System with systemd, networking and usable Nix-backed Ports.
