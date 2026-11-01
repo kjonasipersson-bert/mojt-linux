@@ -217,5 +217,44 @@ class ProfileTests(unittest.TestCase):
             ports.preview(self.root,self.state(),self.sources,self.adapters,**opts)
         self.assertEqual(os.readlink(self.root/'current'),old)
 
+    def private_home_layout(self):
+        # Remove TemporaryDirectory's own private boundary, so this test really
+        # distinguishes an enclosing private home from a merely private leaf.
+        self.parent.chmod(0o755)
+        home=self.parent/'home';home.mkdir(mode=0o700);home.chmod(0o700)
+        work=home/'mojt-lab';work.mkdir();work.chmod(0o775)
+        nested=work/'mpm-nix-home';nested.mkdir();nested.chmod(0o775)
+        lab=nested/'acceptance';lab.mkdir(mode=0o700);lab.chmod(0o700)
+        self.root=lab/'registry'
+        return home,work,lab
+
+    def test_private_home_protects_group_writable_lab_ancestors(self):
+        self.private_home_layout()
+        self.preview(self.state());self.assertFalse(self.root.exists())
+        self.apply(self.state())
+        self.assertEqual(self.output(),'2.12.3')
+        self.assertFalse(self.apply(self.state())['changed'])
+        self.assertEqual(len(ports.history(self.root)),1)
+
+    def test_private_leaf_does_not_protect_an_exposed_writable_parent(self):
+        home,work,lab=self.private_home_layout();home.chmod(0o755)
+        with self.assertRaisesRegex(ValueError,'writable Ports ancestor: '+str(work)):
+            self.preview(self.state())
+        self.assertFalse(self.root.exists())
+
+    def test_private_boundary_does_not_allow_writable_registry_or_metadata(self):
+        self.private_home_layout();self.apply(self.state())
+        self.root.chmod(0o775)
+        with self.assertRaisesRegex(ValueError,'Ports root is not protected'):ports.current(self.root)
+        self.root.chmod(0o755)
+        state=self.root/'current/state.json';state.chmod(0o664)
+        with self.assertRaisesRegex(ValueError,'unsafe Ports metadata'):ports.current(self.root)
+
+    def test_private_boundary_does_not_allow_symlinked_ancestors(self):
+        home,work,lab=self.private_home_layout()
+        link=home/'alias';link.symlink_to(work,target_is_directory=True)
+        with self.assertRaisesRegex(ValueError,'traverses a symlink'):
+            ports.safe_root(link/'mpm-nix-home/acceptance/registry')
+
 
 if __name__=='__main__':unittest.main()

@@ -94,3 +94,13 @@ Nix adapter tests simulate its subprocess protocol; **a live Nix import with thi
 new adapter remains acceptance work**, as do native Port archives, reason/version removal and reset, joined bootstrap/
 build flows and hardware acceptance. Frontend/System delivery is now connected. These limits do
 not mark steps 1–2 complete or change the order of the six-step plan.
+
+
+Path validation walks from the filesystem root. Before a private boundary it
+refuses group/other-writable ancestors except root-owned sticky directories.
+An effective-user-owned directory with no group/other access (for example a
+0700 home) protects its subtree, allowing owned 0775 lab directories below it.
+A private leaf does not protect an earlier exposed writable parent. All path
+components still require trusted ownership and no symlinks; the registry itself,
+profile directories, metadata and lock retain their stricter permission checks.
+This permits the real Distrobox lab layout without changing host permissions.

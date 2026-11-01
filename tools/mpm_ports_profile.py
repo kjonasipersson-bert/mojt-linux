@@ -29,12 +29,21 @@ require = planning.require
 def safe_root(root, *, write=False):
     root = Path(os.path.abspath(root))
     require(root == root.resolve(), 'Ports root traverses a symlink')
-    for p in [root, *root.parents]:
+    # Check from the filesystem root: a later 0700 child cannot protect an
+    # earlier writable parent from rename/replacement. Once an owned 0700
+    # directory is reached, other users cannot traverse its subtree, so mode
+    # 0775 descendants do not make a private lab externally writable.
+    private = False
+    for p in reversed([root, *root.parents]):
         if not p.exists():
             continue
         info = p.stat()
-        require(stat.S_ISDIR(info.st_mode) and info.st_uid in (0,os.geteuid()), 'unsafe Ports ancestor')
-        require(not info.st_mode & 0o022 or (info.st_uid == 0 and info.st_mode & stat.S_ISVTX), 'writable Ports ancestor')
+        detail = f'{p} (mode={stat.S_IMODE(info.st_mode):04o}, uid={info.st_uid})'
+        require(stat.S_ISDIR(info.st_mode) and info.st_uid in (0,os.geteuid()), 'unsafe Ports ancestor: ' + detail)
+        sticky = info.st_uid == 0 and info.st_mode & stat.S_ISVTX
+        require(private or not info.st_mode & 0o022 or sticky, 'writable Ports ancestor: ' + detail)
+        if info.st_uid == os.geteuid() and not info.st_mode & 0o077:
+            private = True
     if root.exists():
         require(root.stat().st_uid in (0,os.geteuid()) and not root.stat().st_mode & 0o022, 'Ports root is not protected')
         if write:require(root.stat().st_uid == os.geteuid(),'shared Ports mutation requires its administrator')
