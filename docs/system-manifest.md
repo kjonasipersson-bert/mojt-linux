@@ -13,6 +13,12 @@ milestone is running the existing build tools on Mojt to produce a new image.
 
 ## Manifest
 
+The proposed [System composition](formats/draft-v1/system-composition.md)
+describes immutable inputs for distribution/assembly. This existing manifest
+measures the assembled profile. Their IDs and hash rules remain distinct; the
+proposal does not rewrite this manifest or make an old deployment reader accept
+new composition fields.
+
 The fresh-image builder writes `system/<generation>/manifest.json` after each
 System profile is complete, including hardware staging. Existing payloads remain
 usable: the manifest is generated from the payload's verified records and this
@@ -111,3 +117,4 @@ build-on-Mojt experiment, when the manifest is consumed in that workflow.
 
 Existing-disk System deployment, durable boot publication, automatic fallback,
 project locks, retention/GC and runtime libc work remain separate tasks.
+

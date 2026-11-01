@@ -11,6 +11,19 @@ Kernel registry, Kernel boot publisher and Ports adapter. It consolidates their
 coordination/publication rules without replacing area-specific formats, adding
 a database or claiming an existing-disk System installer.
 
+The proposed [distribution contract](distribution-contract.md) connects these
+existing primitives to the complete MPM/MBT journey. The
+[lifecycle/state contract](mpm-lifecycle.md) specifies future declared actions,
+state preparation and migration gates. Those effects need their own evidence
+and recovery boundaries: an atomic selection does not make them atomic, and
+the primitives below do not implement that action/migration engine.
+
+See the proposed [native store/receipt](formats/draft-v1/artifact-storage.md)
+and [per-action result protocol](formats/draft-v1/lifecycle-results.md) for
+concrete future publication boundaries. Their append-only action evidence is
+not an additional boot/profile selection authority. The existing helpers and
+legacy record formats below remain unchanged by those proposals.
+
 ## Responsibilities and phases
 
 1. Resolve a request against an explicit catalog snapshot or exact local input.
@@ -135,4 +148,5 @@ failure semantics; System tests check that the helper is actually delivered.
 Existing Kernel, Base, preview, no-op and late-integrity-gate tests remain in
 place. These are focused regressions; no repeated manual account/boot loop is
 required for this consolidation.
+
 

@@ -7,8 +7,9 @@ SPDX-License-Identifier: GPL-2.0-only
 # Mojt Package Management Contract (draft 0.2)
 
 **Status:** accepted design contract with a partial experimental implementation.
-The repository frontend implements a subset of Ports operations plus local
-Kernel install/status and read-only catalog discovery; the commands below
+The repository frontend implements a subset of Ports operations, local
+Kernel install/status/stage/select/rollback and read-only catalog discovery;
+the commands below
 are design examples unless identified as implemented in section 6. This
 document records the update model accepted on 2026-10-26 and the previously
 accepted high-level selector semantics:
@@ -31,6 +32,14 @@ same backend for every area.
 
 See [the manifesto](manifesto.md), [architecture](architecture.md), and
 [Base release format](base-format.md) for the established layer boundaries.
+
+The proposed [complete distribution behavior contract](distribution-contract.md)
+connects this accepted area model to MBT, bootstrap and source self-hosting.
+The [lifecycle/state proposal](mpm-lifecycle.md) specifies declared installation
+effects, configuration, initialization and migration gates; it does not authorize
+arbitrary package hooks. See the [decision register](distribution-decisions.md)
+for unsettled interfaces. These are review drafts, not implemented capabilities
+or an automatic amendment of the accepted command contract.
 
 The user-directed [artifact architecture manifesto](mpm-artifact-architecture.md)
 (2026-10-28) adds the independent distribution model: Mojt-owned catalogs list
@@ -102,8 +111,21 @@ The [installation and transaction rules](mpm-transactions.md) define shared
 verification, lock, staging, publication and failure boundaries. They preserve
 each area's authoritative records and installation/activation semantics.
 The [System runtime integration](mpm-system-runtime.md) delivers the same
-frontend with installed target defaults. Future spelling/verbs remain subject
-to the [explicit command syntax discussion](mpm-cli-discussion.md).
+frontend with installed target defaults. Existing MPM syntax is retained;
+the new-tool syntax discussion concerns [MBT](mbt-cli-discussion.md). See the
+[gap matrix](mpm-gap-matrix.md) for the remaining implementation work.
+
+The owner's declarative-plus-interactive direction is specified in
+[configuration/wish formats](formats/draft-v1/configuration-wishes.md): named
+configurations own their claims, interactivity adds independent claims, and an
+explicit active override survives configuration reapplication/removal. Reasons
+are references, not one overwritten origin flag. Removing a source's wish never
+means deleting another source's package, a protected dependency or user data.
+Installing further versions still preserves the active default. An explicit
+interactive request for already available content can change origin state/history
+without new bytes; repeating the same existing claim remains a no-op. Proposed
+new metadata requires adoption/old-writer refusal, not extra fields in format 3.
+No new CLI spelling or MBT syntax is approved by the data-format draft.
 
 | Action | Intended behavior |
 | --- | --- |
@@ -172,8 +194,12 @@ Boot rollback selects a previously published, still available deployment.
 Ports recovery normally selects an installed application version explicitly;
 it does not require restoring a whole Ports generation. Persistent
 `/etc`, `/var`, and future user data are not automatically rolled back.
-An old System may be incompatible with newly migrated state; reactivation
-must warn about known compatibility/security problems.
+An old System may be incompatible with newly migrated state. The proposed
+[lifecycle contract](mpm-lifecycle.md) strengthens this gate: known-incompatible
+state blocks ordinary selection, required unknown compatibility is unresolved,
+and data restoration is a separate explicit recovery operation. Security
+advisories and policy also remain visible; warnings alone cannot satisfy a
+required compatibility prerequisite.
 
 ### System generations and boot deployments (accepted 2026-10-26)
 
@@ -214,10 +240,12 @@ The initial activation model selects the next boot; it neither reboots the
 machine automatically nor switches the running root, kernel or services.
 Live System activation would require a separate, explicit design.
 
-This is the accepted user model, not the current builder's on-disk format.
-The [generation experiment](boot-generations.md) composes fresh images and
-uses System labels that also bind kernel inputs. It has not implemented
-independent Kernel selection or an updater for an existing boot disk.
+This is the accepted user model. The earlier
+[generation experiment](boot-generations.md) composes fresh images and uses
+System labels that also bind kernel inputs. The later
+[Kernel boot publisher](kernel-boot-selection.md) implements independent native
+Kernel selection on existing managed disks; generalized Base/System updates
+remain a gap.
 
 ### Kernel request policies (accepted 2026-10-28)
 
@@ -577,8 +605,11 @@ Mojt adapter:
 - Ports-specific versioned runtime library closure, pinned toolchains and
   independent activation. An alternative installation **root** is not
   automatically a relocatable installation **prefix**.
-- Controlled staging of package scripts, hooks, account changes and services
-  without writing to live persistent state or starting host services.
+- Explicit lifecycle requirements for derived output, accounts and services,
+  with controlled staging and state preparation rather than execution of
+  arbitrary archive hooks. The detailed action/state contract is a proposal
+  in [lifecycle rules](mpm-lifecycle.md); imported provider metadata is not
+  permission to write live state or start host services.
 - Safe ownership, integrity, provenance and explicit cleanup of unreferenced
   content. Plain SHA256 is not release authentication; trusted signatures
   and repository policy remain separate work.
@@ -678,12 +709,14 @@ pinned. Plans/history show resolution, dependencies and compatibility changes.
 See [the selector integration contract](mpm-selectors.md#9-implemented-transaction-integration-2026-10-27)
 for commands, state compatibility, measured evidence and pending real/VM tests.
 
-The [local Kernel install/status prototype](mpm-kernel.md) now supports explicit
-exact native-file installation into a separate registry, private retained trees,
-read-only status and an integrity scrub. It does not implement deployment
-selection, catalog acquisition or automatic Kernel upgrade policy. Existing
-installed System launchers still use the Nix prototype; these commands run from
-the repository frontend.
+The [local Kernel registry](mpm-kernel.md) supports explicit exact native-file
+installation, private retained trees, read-only status and integrity scrub.
+The [boot publisher](kernel-boot-selection.md) adds stage/select/rollback on
+existing managed native disks, with owner boot/return and corrected shutdown
+acceptance. Catalog acquisition and persistent automatic Kernel upgrade policy
+remain gaps. The [delivered System frontend](mpm-system-runtime.md) now includes
+these management modules and helpers in new assemblies; retained old Systems
+are not edited in place.
 
 The [read-only Kernel deployment planner](kernel-deployment-plan.md) now binds
 the exact installed Kernel/image/module inventory to explicit selected Base,
@@ -692,11 +725,16 @@ and System ABI/state/Ports/shell checks, preserving Base and System userspace.
 It makes no selection or boot writes; Base/System payloads, actual initramfs
 mount behavior and runtime/hardware compatibility are not verified by this plan.
 
-**Not implemented:** MPM Base/System mutations and Kernel deployment activation/upgrade commands, general version adapters, user-facing rollback/undo, production project profiles/locks,
-pruning/GC, verified external capabilities, signed catalogs, production
-deployment formats, and durable updates to existing boot disks.
+**Not implemented:** MPM Base/System mutations, generalized boot deployment
+updates, catalog-backed Kernel upgrades, general version adapters, general
+Ports transaction undo, production project profiles/locks, pruning/GC, verified
+external capabilities, signed native catalogs and the proposed lifecycle/state
+engine. Existing native Kernel stage/select/rollback is narrower than general
+production boot-disk update/recovery. See the [gap matrix](mpm-gap-matrix.md).
 
 These accepted policies guide future implementation; this document is not
 a complete command reference. See the [roadmap](roadmap.md) for the next work.
+
+
 
 

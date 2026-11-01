@@ -6,7 +6,7 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Mojt development priorities
 
-Updated 2026-10-31. This records the agreed order and measured progress;
+Updated 2026-11-01. This records the agreed order and measured progress;
 future commands and policies are not claims of implemented functionality.
 The [architecture](architecture.md) defines the layer boundaries and the
 [MPM contract](mpm.md) records the accepted update semantics.
@@ -47,25 +47,35 @@ updates to an existing boot disk or power-loss recovery.
 
 ## Work order
 
-The next consolidation increment is [shared installation and transaction
+The merged consolidation includes [shared installation and transaction
 rules](mpm-transactions.md): use common lock/publication primitives for existing
 Base, Kernel and Ports writers, and hold all cooperating resources through
 Kernel boot publication. Preserve exact verification gates, area records and
 installed/selected/running semantics. Report post-rename flush failures explicitly
-and retain possibly committed content. This branch adds that coordination;
-it does not implement existing-disk System/Base boot upgrades. The next
+and retain possibly committed content. It does not implement existing-disk
+System/Base boot upgrades. The merged
 [System runtime integration](mpm-system-runtime.md) now delivers the common
 frontend and its complete management modules, pinned interpreter, retained tools
-and explicit target defaults. Existing images are not rewritten. Command naming
-and future verbs remain a [separate syntax discussion](mpm-cli-discussion.md).
-Base/System upgrades follow before the unified bootstrap/build-environment
-journey and a focused physical Kernel switch test.
+and explicit target defaults. Existing images are not rewritten. Existing MPM
+syntax is satisfactory and retained; the new-tool syntax discussion concerns
+[MBT, Mojt Build/Bootstrap Tool](mbt-cli-discussion.md).
+The [gap matrix](mpm-gap-matrix.md) distinguishes implemented content management
+from the missing catalog/acquisition joins, existing-disk Base/System workflows,
+complete activation and final acceptance. Those precede the unified MBT journey
+and a focused physical Kernel switch test. The proposed
+[complete distribution contract](distribution-contract.md) now defines M1
+integrated administration, M2 native source self-hosting, M3 explicit full-source
+coverage and M4 supported rollout. The [lifecycle/state proposal](mpm-lifecycle.md)
+and [decision gates](distribution-decisions.md) precede new Base/System effects;
+unknown required actions or migrations must be rejected rather than executed
+through generic package hooks. These are design requirements under review,
+not additional completed milestones.
 
 | Priority | Track | Next work |
 | --- | --- | --- |
 | 1 | Base/System generations | VM Base/System and different-kernel return experiments completed. Retain the reference images; production boot-disk updates, compatibility and automatic fallback remain future work. |
 | 2 | More complete System | Diagnostics and console/time/journal acceptance completed. Timezone/UTF-8/manual checks accepted on System A; separate A/B checks deferred to the next stage. The account A/B/A run now preserves new users, identity and home data, with working PAM/sudo, session cleanup and shared Ports. Superseded-password rejection is owner-confirmed. Account integration merged; retain its reference image. |
-| 3 | MPM development | Ports upgrade/history and backend-independent selector integration passed real Nix and compatible-image VM acceptance and merged. PR #25's limited System manifest/preflight increment also merged. Existing-disk Base/System/Kernel publication remains future work; project locks precede pruning/GC. Libc integration stays deferred, with opaque dependency identities retained. |
+| 3 | MPM development | Ports upgrade/history and backend-independent selector integration passed real Nix and compatible-image VM acceptance and merged. PR #25's limited System manifest/preflight increment also merged. Native Kernel existing-disk staging/selection/rollback and shutdown acceptance passed and merged in #32; #33/#34 deliver common transactions/runtime. Existing-disk Base/System publication and lifecycle/state integration remain future work; project locks precede pruning/GC. Libc integration stays deferred, with opaque dependency identities retained. |
 | 4 | Build System on Mojt | Owner-run full image assembly and result boot passed on 2026-10-27: frozen Base 0.1.3, step-10 System payload and Debian 6.12.107 kernel/modules. Inputs unchanged; result system-selfbuild-A boots with root serial login and no failed units. This is image assembly from prebuilt inputs; source compilation of all System packages remains separate work. |
 | 5 | Own-built Linux kernel | Native compilation, image assembly and focused VM acceptance passed on 2026-10-28 for 6.12.107-mojt1, based on the frozen Debian configuration. Matching e1000e module/driver, zero failed services and HTTPS confirmed. PR #27 merged after green CI; retain the Debian reference and accepted result. |
 
@@ -293,6 +303,7 @@ Console usability follow-up: automate geometry setup/refresh for direct
 Debian-host QEMU serial sessions. A manual terminal reset/size adjustment resolved
 the owner's display/paste problem during this test. No automatic terminal fix
 is implemented by the package-format work.
+
 
 
 

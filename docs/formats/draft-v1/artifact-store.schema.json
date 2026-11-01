@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mojt.invalid/spec/draft-v1/artifact-store.schema.json",
+  "$comment": "PROPOSAL. Structure only; normative semantic checks are in the accompanying format specification.",
+  "type": "object",
+  "properties": {
+    "format": {
+      "const": "mojt-artifact-store-v1"
+    },
+    "id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "description": {
+      "type": "object",
+      "properties": {
+        "installation": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$(?![\\s\\S])"
+        },
+        "layout": {
+          "const": "kind-id-v1"
+        }
+      },
+      "required": [
+        "installation",
+        "layout"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "format",
+    "id",
+    "description"
+  ],
+  "additionalProperties": false
+}

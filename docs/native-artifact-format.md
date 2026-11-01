@@ -74,6 +74,11 @@ repository's separately specified trust/update policy.
 
 ## Versions and traceability
 
+The proposed [distribution formats](formats/draft-v1/README.md) add a separate
+System composition, local installation receipt and lifecycle declarations/results.
+They do not change this descriptor/container or its identity. Archive metadata
+is still declarative; no new field grants permission to execute package hooks.
+
 `version` has explicit `upstream`, `scheme`, `revision` and derived `release_id`.
 The numeric scheme is `dotted-v1`; `opaque-v1` preserves nonnumeric names and
 requires exact selection unless a future explicit comparison adapter is added.
@@ -258,3 +263,4 @@ production import/extraction and boot deployment remain separate work. The
 first [local Kernel install/status prototype](mpm-kernel.md) now consumes this
 accepted format with a conservative regular-file/directory subset. Another
 kernel build or unrelated VM account/generation cycle is not required.
+
