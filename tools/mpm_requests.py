@@ -195,6 +195,23 @@ def validate(state):
         raise ValueError('invalid request state structure') from error
 
 
+def _declared_choices(d, choices, *, roles=None):
+    """Resolve only adopted declarative defaults, with no file/provider access."""
+    proposed = {}
+    for config in sorted(d['configurations'], key=lambda r:r['name']):
+        o = dict(kind='configuration', name=config['name'])
+        for role, selector in config['document'].get('ports', {}).get('active', {}).items():
+            if role in choices or roles is not None and role not in roles:
+                continue
+            matches = [r for r in d['claims'] if r['origin'] == o and r['policy']['selector'] == selector]
+            require(len(matches) == 1, 'active configuration wish missing')
+            if role in proposed:
+                require(proposed[role][0] == (selector, matches[0]['source']), 'conflicting configuration defaults')
+            else:
+                proposed[role] = ((selector, matches[0]['source']), dict(role=role, origin=o, mode='request', claim=matches[0]['key']))
+    return proposed
+
+
 def reconcile_configuration(state, document, *, default_source=None):
     d = validate(state)['description']; doc = configuration(document)
     prior_choices = copy.deepcopy(d['selections'])
@@ -214,18 +231,7 @@ def reconcile_configuration(state, document, *, default_source=None):
     d['configurations'].append(dict(name=doc['name'], revision=digest(doc), document=doc))
     # Recompute declarative defaults; interactive overrides mask, but do not erase them.
     choices = {r['role']:r for r in d['selections'] if r['origin']['kind'] == 'interactive'}
-    proposed = {}
-    for config in sorted(d['configurations'], key=lambda r:r['name']):
-        o = dict(kind='configuration', name=config['name'])
-        for role, selector in config['document'].get('ports', {}).get('active', {}).items():
-            if role in choices:
-                continue
-            matches = [r for r in d['claims'] if r['origin'] == o and r['policy']['selector'] == selector]
-            require(len(matches) == 1, 'active configuration wish missing')
-            if role in proposed:
-                require(proposed[role][0] == (selector, matches[0]['source']), 'conflicting configuration defaults')
-            else:
-                proposed[role] = ((selector, matches[0]['source']), dict(role=role, origin=o, mode='request', claim=matches[0]['key']))
+    proposed = _declared_choices(d, choices)
     # Preserve a still-owned first-install default supplied by the installer,
     # but not a formerly explicit file choice removed from the document.
     current_claims = {r['key'] for r in d['claims']}
@@ -253,3 +259,50 @@ def select_interactively(state, role, reference):
     d['selections'] = [r for r in d['selections'] if r['role'] != role]
     d['selections'].append(dict(role=role,origin=dict(kind='interactive',name='interactive'),mode='exact',reference=copy.deepcopy(reference)))
     return validate(seal(d))
+
+
+def _restore_defaults(d, roles):
+    choices = {r['role']:r for r in d['selections']}
+    proposed = _declared_choices(d, choices, roles=roles)
+    d['selections'] = list(choices.values()) + [row for _,row in proposed.values()]
+    return validate(seal(d))
+
+
+def remove_interactive(state, selectors, *, source=None):
+    """Release interactive wishes only; bare roles also release their overrides.
+
+    A selector-qualified release leaves independent exact overrides intact.
+    A source-qualified release never clears an exact override's separate root.
+    No configuration document/claim, dependency object or file is deleted.
+    """
+    d = validate(state)['description']
+    require(type(selectors) is list and selectors, 'provide at least one wish selector')
+    parsed = [(s,parse_selector(s)) for s in selectors]
+    if source is not None:token(source)
+    bare = {p.name for _,p in parsed if p.kind == 'latest'}
+    def matches(c):
+        return c['origin']['kind'] == 'interactive' and (source is None or c['source'] == source) and any(
+            c['role'] == p.name and (p.kind == 'latest' or c['policy']['selector'] == text) for text,p in parsed)
+    removed = {c['key'] for c in d['claims'] if matches(c)}
+    d['claims'] = [c for c in d['claims'] if c['key'] not in removed]
+    kept, cleared = [], set()
+    for choice in d['selections']:
+        drop = choice['origin']['kind'] == 'interactive' and (
+            choice['mode'] == 'request' and choice['claim'] in removed or
+            source is None and choice['role'] in bare)
+        if drop:cleared.add(choice['role'])
+        else:kept.append(choice)
+    d['selections'] = kept
+    return _restore_defaults(d, cleared)
+
+
+def reset_selection(state, roles):
+    """Release interactive active overrides; retain all installed wishes."""
+    d = validate(state)['description']
+    require(type(roles) is list and roles, 'provide at least one package role')
+    for role in roles:
+        parsed = parse_selector(role)
+        require(parsed.kind == 'latest' and parsed.name == role, 'reset takes bare package roles')
+    selected = set(roles)
+    d['selections'] = [r for r in d['selections'] if not (r['role'] in selected and r['origin']['kind'] == 'interactive')]
+    return _restore_defaults(d, selected)

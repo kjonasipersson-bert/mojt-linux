@@ -92,7 +92,7 @@ upgrade retention, reason removal, explicit overrides, first-install ambiguity,
 corruption, stale plans, history tampering and both publication failure phases.
 Nix adapter unit tests cover its subprocess protocol and real helper invocation
 name. The [owner-run real Nix adapter/frontend acceptance](ports-profile-acceptance.md)
-passed on 2026-11-01. Native Port archives, reason/version removal and reset,
+passed on 2026-11-01. Native Port archives, artifact-only pruning and configuration-source forgetting,
 joined bootstrap/build flows and hardware acceptance remain work. These limits
 do not mark steps 1–2 complete or change the order of the six-step plan.
 

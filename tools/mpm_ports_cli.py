@@ -21,7 +21,7 @@ SOURCES = 'mojt-ports-sources-v1'
 SUPPORTED_STATE_FORMATS = ('mojt-ports-profile-v1',)
 SUPPORTED_CAPABILITIES = ('mpm-request-origins-v1',)
 READ_ONLY = {'status', 'list', 'history', 'search', 'info'}
-ACTIONS = READ_ONLY | {'update', 'install', 'activate', 'upgrade', 'apply'}
+ACTIONS = READ_ONLY | {'update', 'install', 'activate', 'upgrade', 'apply', 'remove', 'reset'}
 require = wishes.require
 
 
@@ -86,10 +86,17 @@ def parser():
         sub = actions.add_parser(action)
         sub.add_argument('--root', type=Path)
         if action not in READ_ONLY:
-            sub.add_argument('--sources', type=Path, help='explicit mojt-ports-sources-v1 snapshot bundle')
-            sub.add_argument('--expected-sources', help='required content identity of the supplied bundle')
+            sub.set_defaults(sources=None, expected_sources=None)
+            if action not in {'remove', 'reset'}:
+                sub.add_argument('--sources', type=Path, help='explicit mojt-ports-sources-v1 snapshot bundle')
+                sub.add_argument('--expected-sources', help='required content identity of the supplied bundle')
             sub.add_argument('--dry-run', action='store_true')
             sub.add_argument('-y', '--yes', action='store_true')
+        if action == 'remove':
+            sub.add_argument('names', nargs='+', help='interactive wish selectors; bare names release all interactive reasons for that role')
+            sub.add_argument('--source', help='release wishes bound to this source; keep independent exact overrides')
+        if action == 'reset':
+            sub.add_argument('names', nargs='+', help='bare package roles whose interactive active overrides are released')
         if action == 'install':
             sub.add_argument('names', nargs='+')
             sub.add_argument('--source', help='named accepted source; mandatory if more than one exists')
@@ -166,6 +173,8 @@ def main(argv, *, root=None, runtime=None, adapters=None):
     # Writer permission is checked before reading operator inputs or provider work.
     profiles.safe_root(root, write=True)
     old = previous['record']['description'] if previous else None
+    if args.action in {'remove', 'reset'}:
+        require(old is not None, 'remove/reset require an existing Ports profile')
     installation = old['installation'] if old else (profiles.marker(root)['installation']
         if (root / 'store.json').exists() else uuid.uuid4().hex)
     state = copy.deepcopy(old['requests']) if old else wishes.empty_state(installation)
@@ -200,6 +209,10 @@ def main(argv, *, root=None, runtime=None, adapters=None):
         require(not names - roles, 'upgrade names must have recorded wishes')
         advance = [c['key'] for c in state['description']['claims']
                    if (not names or c['role'] in names) and parse_selector(c['policy']['selector']).kind != 'exact']
+    elif args.action == 'remove':
+        state = wishes.remove_interactive(state, args.names, source=args.source)
+    elif args.action == 'reset':
+        state = wishes.reset_selection(state, args.names)
     elif args.action == 'activate':
         require(old is not None, 'activation needs an installed profile')
         package = installed_choice(old, args.request, platform)
@@ -235,8 +248,20 @@ def main(argv, *, root=None, runtime=None, adapters=None):
         print(json.dumps(dict(dry_run=True, changed=False, plan=plan), indent=2)); return 0
     if not args.yes:
         candidate = plan['description']['candidate']
+        before_claims={c['key']:c for c in old['requests']['description']['claims']} if old else {}
+        after_claims={c['key']:c for c in candidate['requests']['description']['claims']}
+        def reasons(keys,claims):
+            return [dict(origin=claims[k]['origin'],selector=claims[k]['policy']['selector'],source=claims[k]['source']) for k in sorted(keys)]
+        def selections(requests):
+            return [dict(role=c['role'],origin=c['origin'],mode=c['mode'],
+                target=wishes.digest(c['reference']) if c['mode']=='exact' else c['claim'])
+                for c in requests['description']['selections']]
         print(json.dumps(dict(root=str(root), action=args.action, plan=plan['id'],
             unchanged=plan['description']['no_op'],
+            wishes_added=reasons(after_claims.keys()-before_claims.keys(),after_claims),
+            wishes_removed=reasons(before_claims.keys()-after_claims.keys(),before_claims),
+            selections_before=selections(old['requests']) if old else [],
+            selections_after=selections(candidate['requests']),
             packages=[dict(name=p['role'], release=p['release_id'], reference=wishes.digest(p['reference']))
                       for p in candidate['packages']],
             active={name:wishes.digest(ref) for name,ref in candidate['active'].items()},

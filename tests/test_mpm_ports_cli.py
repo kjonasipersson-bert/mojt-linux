@@ -180,5 +180,67 @@ sys.exit(mpm_cli.main(sys.argv[2:]))
         self.assertTrue(json.loads(result.stdout)['changed'])
         self.assertEqual(len(profiles.history(self.root)), 1)
 
+    def test_remove_shared_reason_preserves_config_package_and_repeats_without_history(self):
+        config = self.parent / 'reasons.toml'
+        config.write_text('format="mojt-configuration-v1"\nname="main"\n[ports]\nsource="local"\npackages=["hello@2.12"]\nactive={hello="hello@2.12"}\n')
+        self.call('apply', '--configuration', str(config), '--sources', str(self.bundle), '-y')
+        self.call('install', 'hello@2.12', '-y')
+        self.call('activate', 'hello@2.12', '-y')
+        fetches=self.f.adapter.fetches;self.f.adapter.fail=True
+        preview=self.call('remove','hello','--dry-run')
+        self.assertEqual(len(preview['plan']['description']['candidate']['requests']['description']['claims']),1)
+        self.call('remove','hello','-y')
+        self.assertEqual(self.output(),'2.12.3');self.assertEqual(self.f.adapter.fetches,fetches)
+        self.assertEqual(self.state()['requests']['description']['selections'][0]['origin']['kind'],'configuration')
+        before=profiles.history(self.root)
+        self.assertFalse(self.call('remove','hello','-y')['changed'])
+        self.assertEqual(profiles.history(self.root),before)
+
+    def test_reset_restores_configuration_from_accepted_targets_after_metadata_withdrawal(self):
+        config=self.parent/'reset.toml'
+        config.write_text('format="mojt-configuration-v1"\nname="main"\n[ports]\nsource="local"\npackages=["hello@2.12"]\nactive={hello="hello@2.12"}\n')
+        self.call('apply','--configuration',str(config),'--sources',str(self.bundle),'-y')
+        self.call('install','hello@=2.12.1','-y');self.call('activate','hello@=2.12.1','-y')
+        self.write_sources({});self.call('update','--sources',str(self.bundle),'-y')
+        before=self.state();self.f.adapter.fail=True
+        self.call('reset','hello','-y')
+        self.assertEqual(self.output(),'2.12.3')
+        self.assertEqual(self.state()['requests']['description']['claims'],before['requests']['description']['claims'])
+        self.assertEqual(self.state()['lock']['description']['resolutions'],before['lock']['description']['resolutions'])
+        self.assertFalse(self.call('reset','hello','-y')['changed'])
+
+    def test_selector_removal_keeps_exact_pin_and_bare_removal_releases_current_profile_only(self):
+        self.call('install','hello@2.12','--sources',str(self.bundle),'-y')
+        self.call('activate','hello@=2.12.3','-y')
+        old=profiles.current(self.root);target=Path(old['record']['description']['aliases']['hello'])
+        self.call('remove','hello@2.12','-y')
+        self.assertEqual(self.output(),'2.12.3');self.assertFalse((self.root/'current/bin/hello-2.12').exists())
+        self.call('remove','hello','-y')
+        self.assertEqual(self.state()['packages'],[]);self.assertEqual(self.state()['aliases'],{})
+        self.assertTrue(target.is_file());self.assertTrue((self.root/old['path']).is_dir())
+        self.assertFalse(self.call('remove','hello','-y')['changed'])
+
+    def test_remove_and_reset_require_an_existing_profile(self):
+        for command in ('remove','reset'):
+            self.assertIn('existing Ports profile',self.call(command,'hello','-y',success=False))
+        self.assertFalse(self.root.exists())
+
+    def test_reset_conflict_preserves_profile_and_history(self):
+        self.call('install','hello@=2.12.1','--sources',str(self.bundle),'-y')
+        for name,selector in (('first','hello@=2.12.1'),('second','hello@=2.12.3')):
+            config=self.parent/(name+'.toml')
+            config.write_text('format="mojt-configuration-v1"\nname="'+name+'"\n[ports]\nsource="local"\npackages=["'+selector+'"]\nactive={hello="'+selector+'"}\n')
+            self.call('apply','--configuration',str(config),'-y')
+        before=os.readlink(self.root/'current');history=profiles.history(self.root)
+        self.assertIn('conflicting configuration defaults',self.call('reset','hello','-y',success=False))
+        self.assertEqual(os.readlink(self.root/'current'),before);self.assertEqual(profiles.history(self.root),history)
+        self.assertEqual(self.output(),'2.12.1')
+
+    def test_shared_remove_reset_are_denied_before_target_or_provider_access(self):
+        with mock.patch.object(cli.os,'geteuid',return_value=1000):
+            for action in ('remove','reset'):
+                self.assertIn('administrator',self.call(action,'hello','-y',runtime=cli.Runtime(),success=False))
+        self.assertFalse(self.root.exists());self.assertEqual(self.f.adapter.fetches,0)
+
 
 if __name__ == '__main__': unittest.main()

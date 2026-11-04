@@ -98,6 +98,27 @@ interactive wishes and overrides survive. Configuration reapplication resolves
 its own eligible wishes; unrelated interactive wishes keep accepted targets.
 Logical removal does not physically collect files or older profiles.
 .TP
+.BI "remove " "SELECTOR ... [--source NAME]"
+Release interactive wishes only. A bare NAME releases all interactive wishes and
+active overrides for that role, then restores any explicit adopted configuration
+default. A version/series-qualified selector releases only that wish and preserves
+an independent exact active pin. --source restricts released wishes to that binding
+and preserves independent exact overrides. Configuration-owned wishes stay owned;
+edit and apply their configuration to release those reasons.
+This is logical reason removal, not physical artifact collection. Historical
+profiles, provider roots, shared dependencies and user data remain retained.
+A repeated release of absent interactive reasons is a no-op. Single-artifact
+pruning by full reference ID is not implemented by this command.
+.TP
+.BI "reset " "NAME ..."
+Clear only interactive active overrides for these bare roles. Keep all install
+wishes and restore explicit defaults from already adopted configuration documents.
+No file is reread, source refreshed or accepted target upgraded. If configuration
+choices conflict when the override is released, refuse the whole operation.
+Without an explicit configured default, ordinary retained-version fallback applies.
+Repeated reset with no override is a no-op. This is not a whole-system reset or
+an instruction to forget a configuration source.
+.TP
 .BR "list " [ --exact | --json ]
 Show logically installed versions and active defaults. --exact includes the full
 provider-independent sha256 reference ID usable for activation. --json includes
@@ -131,14 +152,15 @@ before publication. Installed unknown/preview stability remains exact-only;
 no digest sorting or inferred version order breaks a build tie.
 .PP
 Fresh Ports dispatch does not convert experimental state, use attribute fallback,
-or expose the old metadata-adoption/removal interface. Imperative removal and
-configuration reset remain implementation work. Native Port archives and remote
+or expose the old metadata-adoption interface. Artifact pruning and explicit
+configuration-source forgetting remain implementation work. Native Port archives and remote
 source acquisition are not connected yet. The optional Nix catalog exporter's
 --bundle mode prepares this input from already-local outputs without importing
 or retaining anything; it is not a remote catalog downloader.
 .SH MUTATION OPTIONS
-update, install, upgrade, activate and apply accept --sources FILE,
---expected-sources ID, --json and the following options:
+All mutations accept --json and the following options. update, install, upgrade,
+activate and apply additionally accept --sources FILE / --expected-sources ID;
+remove and reset operate solely on already accepted state.
 .TP
 .B --dry-run
 Preview without commands, payload import, roots or state writes. Exact exports
@@ -268,6 +290,8 @@ mpm ports list --exact
 mpm ports activate 'sha256:REFERENCE_FROM_LIST' -y
 mpm ports activate hello@2.12 -y
 mpm ports apply --configuration mojt-configuration.toml --dry-run
+mpm ports remove hello@2.12 --dry-run
+mpm ports reset hello --dry-run
 mpm ports history
 man mpm
 .fi
