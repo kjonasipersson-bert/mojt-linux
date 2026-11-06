@@ -1,0 +1,48 @@
+{
+  "format": "mojt-system-manifest-v1",
+  "id": "sha256:3fee29a01f842eed45863ebcf4d397e94611803b3db1a468d4005b12efc051b4",
+  "description": {
+    "label": "example-System",
+    "architecture": "x86_64",
+    "requirements": {
+      "base_abi": {
+        "libc": "glibc",
+        "libc_version": "2.41"
+      },
+      "state_layout": 1
+    },
+    "support": {
+      "ports": {
+        "read": [
+          1,
+          2,
+          3
+        ],
+        "write": [
+          1,
+          2,
+          3
+        ],
+        "capabilities": [
+          "mpm-ports-selectors-v1"
+        ]
+      }
+    },
+    "provides": [
+      "/run/mojt-system/bin/bash"
+    ],
+    "artifacts": {
+      "example-archive": {
+        "object": "opaque-example-reference"
+      }
+    },
+    "provenance": {
+      "source": "example-pinned-source"
+    },
+    "profile": {
+      "bin/bash": {
+        "link": "example-target"
+      }
+    }
+  }
+}

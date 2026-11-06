@@ -1,0 +1,16 @@
+{
+  "format": "mojt-cache-record-v1",
+  "description": {
+    "artifact": "sha256:5949f14f2c6907758f7978a6746363f39eb7990b030365dc6493db3aaac97137",
+    "archive": {
+      "sha256": "001ee9ec27e3304b9333f52323b6921259f51fc1be9f51cfdd4fd21575afb599",
+      "size": 41
+    },
+    "source_snapshot": "sha256:1dea7e18b9562da6d365497a0bd0af4ed7d56d116fd24acbd4d9b88cc80a4be0",
+    "acquisition_map": "sha256:1149c09a87480d20ef7076fc1ad1819a360ca29bbfd79be0ac0c5725eef376b2",
+    "descriptor": "sha256:5949f14f2c6907758f7978a6746363f39eb7990b030365dc6493db3aaac97137",
+    "trust_policy": "sha256:526a2c37acf2cb6a6b2078728123968533112f11a0c860424ec6296db98cf298",
+    "verified_utc": "2026-11-01T12:00:00Z"
+  },
+  "id": "sha256:b890221b1c48fa935a637715e47273bc65a43d294140b60c7d010d1e0d8fadcc"
+}

@@ -1,0 +1,407 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mojt.invalid/spec/draft-v1/lifecycle-set.schema.json",
+  "$comment": "PROPOSAL. Structure only; normative semantic checks are in the accompanying format specification.",
+  "type": "object",
+  "properties": {
+    "format": {
+      "const": "mojt-lifecycle-set-v1"
+    },
+    "id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "description": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$(?![\\s\\S])"
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$(?![\\s\\S])"
+                  },
+                  "type": {
+                    "const": "kernel-derived"
+                  },
+                  "version": {
+                    "const": 1
+                  },
+                  "phase": {
+                    "const": "stage"
+                  },
+                  "required": {
+                    "const": true
+                  },
+                  "after": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$(?![\\s\\S])"
+                    },
+                    "maxItems": 4096,
+                    "uniqueItems": true
+                  },
+                  "parameters": {
+                    "type": "object",
+                    "properties": {
+                      "module_index": {
+                        "type": "boolean"
+                      },
+                      "initramfs": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "module_index",
+                      "initramfs"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "key",
+                  "type",
+                  "version",
+                  "phase",
+                  "required",
+                  "after",
+                  "parameters"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$(?![\\s\\S])"
+                  },
+                  "type": {
+                    "const": "manual-index"
+                  },
+                  "version": {
+                    "const": 1
+                  },
+                  "phase": {
+                    "const": "stage"
+                  },
+                  "required": {
+                    "const": true
+                  },
+                  "after": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$(?![\\s\\S])"
+                    },
+                    "maxItems": 4096,
+                    "uniqueItems": true
+                  },
+                  "parameters": {
+                    "type": "object",
+                    "properties": {
+                      "profile_paths": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4096,
+                          "pattern": "^(?!/)(?!.*//)(?!.*/$)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^\\u0000-\\u001f\\u007f\\\\:]+$(?![\\s\\S])"
+                        },
+                        "minItems": 1,
+                        "maxItems": 4096
+                      }
+                    },
+                    "required": [
+                      "profile_paths"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "key",
+                  "type",
+                  "version",
+                  "phase",
+                  "required",
+                  "after",
+                  "parameters"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$(?![\\s\\S])"
+                  },
+                  "type": {
+                    "const": "ensure-account"
+                  },
+                  "version": {
+                    "const": 1
+                  },
+                  "phase": {
+                    "const": "initialize"
+                  },
+                  "required": {
+                    "const": true
+                  },
+                  "after": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$(?![\\s\\S])"
+                    },
+                    "maxItems": 4096,
+                    "uniqueItems": true
+                  },
+                  "parameters": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "pattern": "^[a-z_][a-z0-9_-]{0,31}$(?![\\s\\S])"
+                      },
+                      "group": {
+                        "type": "string",
+                        "pattern": "^[a-z_][a-z0-9_-]{0,31}$(?![\\s\\S])"
+                      },
+                      "allocation": {
+                        "const": "system"
+                      },
+                      "home": {
+                        "type": "string",
+                        "pattern": "^/"
+                      },
+                      "shell": {
+                        "type": "string",
+                        "pattern": "^/"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "group",
+                      "allocation",
+                      "home",
+                      "shell"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "key",
+                  "type",
+                  "version",
+                  "phase",
+                  "required",
+                  "after",
+                  "parameters"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$(?![\\s\\S])"
+                  },
+                  "type": {
+                    "const": "ensure-directory"
+                  },
+                  "version": {
+                    "const": 1
+                  },
+                  "phase": {
+                    "const": "initialize"
+                  },
+                  "required": {
+                    "const": true
+                  },
+                  "after": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$(?![\\s\\S])"
+                    },
+                    "maxItems": 4096,
+                    "uniqueItems": true
+                  },
+                  "parameters": {
+                    "type": "object",
+                    "properties": {
+                      "namespace": {
+                        "enum": [
+                          "etc",
+                          "var"
+                        ]
+                      },
+                      "path": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096,
+                        "pattern": "^(?!/)(?!.*//)(?!.*/$)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^\\u0000-\\u001f\\u007f\\\\:]+$(?![\\s\\S])"
+                      },
+                      "owner": {
+                        "type": "string",
+                        "pattern": "^(root|account:[a-z_][a-z0-9_-]{0,31})$(?![\\s\\S])"
+                      },
+                      "group": {
+                        "type": "string",
+                        "pattern": "^(root|account:[a-z_][a-z0-9_-]{0,31})$(?![\\s\\S])"
+                      },
+                      "mode": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 511
+                      }
+                    },
+                    "required": [
+                      "namespace",
+                      "path",
+                      "owner",
+                      "group",
+                      "mode"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "key",
+                  "type",
+                  "version",
+                  "phase",
+                  "required",
+                  "after",
+                  "parameters"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$(?![\\s\\S])"
+                  },
+                  "type": {
+                    "const": "missing-default"
+                  },
+                  "version": {
+                    "const": 1
+                  },
+                  "phase": {
+                    "const": "initialize"
+                  },
+                  "required": {
+                    "const": true
+                  },
+                  "after": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$(?![\\s\\S])"
+                    },
+                    "maxItems": 4096,
+                    "uniqueItems": true
+                  },
+                  "parameters": {
+                    "type": "object",
+                    "properties": {
+                      "namespace": {
+                        "const": "etc"
+                      },
+                      "path": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096,
+                        "pattern": "^(?!/)(?!.*//)(?!.*/$)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^\\u0000-\\u001f\\u007f\\\\:]+$(?![\\s\\S])"
+                      },
+                      "source": {
+                        "type": "object",
+                        "properties": {
+                          "reference": {
+                            "$ref": "common.schema.json#/$defs/reference"
+                          },
+                          "path": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096,
+                            "pattern": "^(?!/)(?!.*//)(?!.*/$)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^\\u0000-\\u001f\\u007f\\\\:]+$(?![\\s\\S])"
+                          },
+                          "sha256": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+                          }
+                        },
+                        "required": [
+                          "reference",
+                          "path",
+                          "sha256"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "owner": {
+                        "const": "root"
+                      },
+                      "group": {
+                        "const": "root"
+                      },
+                      "mode": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 511
+                      }
+                    },
+                    "required": [
+                      "namespace",
+                      "path",
+                      "source",
+                      "owner",
+                      "group",
+                      "mode"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "key",
+                  "type",
+                  "version",
+                  "phase",
+                  "required",
+                  "after",
+                  "parameters"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        }
+      },
+      "required": [
+        "platform",
+        "actions"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "format",
+    "id",
+    "description"
+  ],
+  "additionalProperties": false
+}

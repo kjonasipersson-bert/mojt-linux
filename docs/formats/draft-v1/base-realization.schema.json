@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mojt.invalid/spec/draft-v1/base-realization.schema.json",
+  "type": "object",
+  "properties": {
+    "format": {
+      "const": "mojt-base-realization-v1"
+    },
+    "id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "description": {
+      "type": "object",
+      "properties": {
+        "installation": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "artifact": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "receipt": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "layout": {
+          "const": "base-rootfs-v1"
+        },
+        "rootfs_sha256": {
+          "$ref": "common.schema.json#/$defs/hex"
+        },
+        "inventory": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "constructor": {
+          "$ref": "common.schema.json#/$defs/reference"
+        },
+        "extractor": {
+          "type": "object",
+          "properties": {
+            "program": {
+              "type": "string",
+              "maxLength": 4096,
+              "pattern": "^/[^\\u0000-\\u001f\\u007f]+$(?![\\s\\S])"
+            },
+            "sha256": {
+              "$ref": "common.schema.json#/$defs/hex"
+            }
+          },
+          "required": [
+            "program",
+            "sha256"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "installation",
+        "artifact",
+        "receipt",
+        "layout",
+        "rootfs_sha256",
+        "inventory",
+        "constructor",
+        "extractor"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "format",
+    "id",
+    "description"
+  ],
+  "additionalProperties": false
+}

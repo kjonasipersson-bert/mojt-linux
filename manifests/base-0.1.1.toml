@@ -1,0 +1,17 @@
+# Mojt Linux
+# Copyright (C) 2026 Jonas Persson
+# SPDX-License-Identifier: GPL-2.0-only
+# Input for mojt-base-pack. One file per intended Base release.
+format = 1
+
+[base]
+name = "mojt"
+version = "0.1.1"
+architecture = "x86_64"
+
+[abi]
+libc = "glibc"
+libc_version = "2.41"
+
+[build]
+backend = "void"

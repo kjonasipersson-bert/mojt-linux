@@ -1,0 +1,18 @@
+{
+  "format": "mojt-artifact-spec-v1",
+  "kind": "port",
+  "name": "example",
+  "platform": "x86_64-linux",
+  "version": {
+    "upstream": "1.2.3",
+    "scheme": "dotted-v1",
+    "revision": 1
+  },
+  "dependencies": [],
+  "requirements": {},
+  "provides": {},
+  "provenance": {
+    "note": "Synthetic packaging recipe; supply a real frozen tree and its actual source/build evidence."
+  },
+  "metadata": {}
+}

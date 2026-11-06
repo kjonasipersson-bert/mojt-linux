@@ -1,0 +1,182 @@
+{
+  "format": "mpm-discovery-catalog-v1",
+  "publisher": "example-only",
+  "revision": "fixture-1",
+  "complete": true,
+  "packages": [
+    {
+      "name": "linux",
+      "summary": "Example Linux kernel catalog",
+      "description": "Synthetic discovery fixture; no payload is supplied.",
+      "aliases": [],
+      "category": "kernel",
+      "releases": {
+        "format": "mpm-release-catalog-v1",
+        "area": "kernel",
+        "name": "example",
+        "channel": "stable",
+        "platform": "x86_64-linux",
+        "sources": {
+          "local": {
+            "backend": "native",
+            "identity": {
+              "publisher": "example-only"
+            }
+          }
+        },
+        "candidates": [
+          {
+            "name": "linux",
+            "release_id": "6.1.9",
+            "upstream_version": "6.1.9",
+            "version_scheme": "dotted-v1",
+            "stability": "stable",
+            "source": "local",
+            "artifact": "example:linux-6.1.9",
+            "integrity": {
+              "example_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+            }
+          },
+          {
+            "name": "linux",
+            "release_id": "6.12.100",
+            "upstream_version": "6.12.100",
+            "version_scheme": "dotted-v1",
+            "stability": "stable",
+            "source": "local",
+            "artifact": "example:linux-6.12.100",
+            "integrity": {
+              "example_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+            }
+          },
+          {
+            "name": "linux",
+            "release_id": "6.12.107",
+            "upstream_version": "6.12.107",
+            "version_scheme": "dotted-v1",
+            "stability": "stable",
+            "source": "local",
+            "artifact": "example:linux-6.12.107",
+            "integrity": {
+              "example_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+            }
+          },
+          {
+            "name": "linux",
+            "release_id": "6.18.1",
+            "upstream_version": "6.18.1",
+            "version_scheme": "dotted-v1",
+            "stability": "stable",
+            "source": "local",
+            "artifact": "example:linux-6.18.1",
+            "integrity": {
+              "example_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+            }
+          },
+          {
+            "name": "linux",
+            "release_id": "7.2.9",
+            "upstream_version": "7.2.9",
+            "version_scheme": "dotted-v1",
+            "stability": "stable",
+            "source": "local",
+            "artifact": "example:linux-7.2.9",
+            "integrity": {
+              "example_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+            }
+          },
+          {
+            "name": "linux",
+            "release_id": "7.3",
+            "upstream_version": "7.3",
+            "version_scheme": "dotted-v1",
+            "stability": "stable",
+            "source": "local",
+            "artifact": "example:linux-7.3",
+            "integrity": {
+              "example_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+            }
+          }
+        ]
+      },
+      "kernel": {
+        "releases": {
+          "6.1.9": {
+            "active_lts": true,
+            "upstream_stable": true
+          },
+          "6.12.100": {
+            "active_lts": true,
+            "upstream_stable": true
+          },
+          "6.12.107": {
+            "active_lts": true,
+            "upstream_stable": true
+          },
+          "6.18.1": {
+            "active_lts": true,
+            "upstream_stable": true
+          },
+          "7.2.9": {
+            "active_lts": false,
+            "upstream_stable": true
+          },
+          "7.3": {
+            "active_lts": false,
+            "upstream_stable": true
+          }
+        }
+      }
+    },
+    {
+      "name": "neovim",
+      "summary": "Example text editor",
+      "description": "An editor with Lua support. Synthetic fixture only.",
+      "aliases": [
+        "nvim"
+      ],
+      "category": "editors",
+      "releases": {
+        "format": "mpm-release-catalog-v1",
+        "area": "ports",
+        "name": "example",
+        "channel": "stable",
+        "platform": "x86_64-linux",
+        "sources": {
+          "local": {
+            "backend": "native",
+            "identity": {
+              "publisher": "example-only"
+            }
+          }
+        },
+        "candidates": [
+          {
+            "name": "neovim",
+            "release_id": "0.10.0",
+            "upstream_version": "0.10.0",
+            "version_scheme": "dotted-v1",
+            "stability": "stable",
+            "source": "local",
+            "artifact": "example:neovim-0.10.0",
+            "integrity": {
+              "example_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+            }
+          },
+          {
+            "name": "neovim",
+            "release_id": "0.11.0",
+            "upstream_version": "0.11.0",
+            "version_scheme": "dotted-v1",
+            "stability": "stable",
+            "source": "local",
+            "artifact": "example:neovim-0.11.0",
+            "integrity": {
+              "example_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

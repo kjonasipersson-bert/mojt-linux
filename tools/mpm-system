@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+# Mojt Linux
+# Copyright (C) 2026 Jonas Persson
+# SPDX-License-Identifier: GPL-2.0-only
+"""Installed System launcher; target defaults are not inherited from environment."""
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from mpm_cli import Runtime, main
+
+if __name__ == "__main__":
+    raise SystemExit(main(runtime=Runtime()))

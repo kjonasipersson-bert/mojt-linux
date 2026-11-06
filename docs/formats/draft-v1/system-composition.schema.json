@@ -1,0 +1,224 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mojt.invalid/spec/draft-v1/system-composition.schema.json",
+  "$comment": "PROPOSAL. Structure only; normative semantic checks are in the accompanying format specification.",
+  "type": "object",
+  "properties": {
+    "format": {
+      "const": "mojt-system-composition-v1"
+    },
+    "id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "description": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "platform": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$(?![\\s\\S])"
+        },
+        "components": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "role": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$(?![\\s\\S])"
+              },
+              "reference": {
+                "$ref": "common.schema.json#/$defs/reference"
+              }
+            },
+            "required": [
+              "role",
+              "reference"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 4096
+        },
+        "requirements": {
+          "type": "object",
+          "properties": {
+            "base_abi": {
+              "type": "array",
+              "items": {
+                "$ref": "common.schema.json#/$defs/requirement"
+              },
+              "minItems": 0,
+              "maxItems": 4096
+            },
+            "state_layout": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "kernel_capabilities": {
+              "type": "array",
+              "items": {
+                "$ref": "common.schema.json#/$defs/token"
+              },
+              "minItems": 0,
+              "maxItems": 4096
+            },
+            "host_capabilities": {
+              "type": "array",
+              "items": {
+                "$ref": "common.schema.json#/$defs/token"
+              },
+              "minItems": 0,
+              "maxItems": 4096
+            }
+          },
+          "required": [
+            "base_abi",
+            "state_layout",
+            "kernel_capabilities",
+            "host_capabilities"
+          ],
+          "additionalProperties": false
+        },
+        "management": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/capability"
+          },
+          "minItems": 1,
+          "maxItems": 4096
+        },
+        "state": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/state"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "profile": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096,
+                "pattern": "^(?!/)(?!.*//)(?!.*/$)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^\\u0000-\\u001f\\u007f\\\\:]+$(?![\\s\\S])"
+              },
+              "source": {
+                "$ref": "common.schema.json#/$defs/source"
+              }
+            },
+            "required": [
+              "path",
+              "source"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 4096
+        },
+        "services": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "unit": {
+                "type": "string",
+                "pattern": "^[a-zA-Z0-9_.@:-]+\\.service$(?![\\s\\S])"
+              },
+              "enabled": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "unit",
+              "enabled"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "runtime": {
+          "type": "object",
+          "properties": {
+            "interpreter": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "pattern": "^(?!/)(?!.*//)(?!.*/$)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^\\u0000-\\u001f\\u007f\\\\:]+$(?![\\s\\S])"
+            },
+            "frontend": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "pattern": "^(?!/)(?!.*//)(?!.*/$)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^\\u0000-\\u001f\\u007f\\\\:]+$(?![\\s\\S])"
+            },
+            "module_root": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "pattern": "^(?!/)(?!.*//)(?!.*/$)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^\\u0000-\\u001f\\u007f\\\\:]+$(?![\\s\\S])"
+            }
+          },
+          "required": [
+            "interpreter",
+            "frontend",
+            "module_root"
+          ],
+          "additionalProperties": false
+        },
+        "lifecycle": {
+          "type": "object",
+          "properties": {
+            "format": {
+              "const": "mojt-lifecycle-set-v1"
+            },
+            "id": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$(?![\\s\\S])"
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "pattern": "^(?!/)(?!.*//)(?!.*/$)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^\\u0000-\\u001f\\u007f\\\\:]+$(?![\\s\\S])"
+            }
+          },
+          "required": [
+            "format",
+            "id",
+            "path"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "label",
+        "platform",
+        "components",
+        "requirements",
+        "management",
+        "state",
+        "profile",
+        "services",
+        "runtime",
+        "lifecycle"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "format",
+    "id",
+    "description"
+  ],
+  "additionalProperties": false
+}

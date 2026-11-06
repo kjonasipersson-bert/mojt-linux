@@ -1,0 +1,68 @@
+{
+  "format": "mojt-boot-inputs-v2",
+  "description": {
+    "installation": "0123456789abcdef0123456789abcdef",
+    "platform": "x86_64-linux",
+    "layout": "native-v2",
+    "base": {
+      "artifact": "sha256:95f50e55719a69b6345a505e007a92d7cb0e23891c092bbd26982cf430f6716c",
+      "release": "0.1.3",
+      "rootfs_sha256": "e609d4a2529e86f147838924f241fd26fb2551867ccfaa68fb0175beb6af7555",
+      "kernel_min": "6.12.0",
+      "kernel_max": "6.12.999",
+      "bounds_evidence": "sha256:19795535402581132c12622eefc49328431d4a84c5ddc01f43781faf8761a8c9"
+    },
+    "system": {
+      "artifact": "sha256:b1a164d334705c3afcec36d4d4635429b2a75a71c59a1ad35c14dc69f93a7818",
+      "composition": "sha256:babdb6954edf5d7c83d298e7d05e52027738480195bc03ae6b699f1d9236dabc",
+      "manifest": "sha256:15dce291604f035b280135c472741a8682ec99a91262641f8dfff25ed34b885a",
+      "generation": "system-workflow"
+    },
+    "kernel": {
+      "artifact": "sha256:75e6ee964bd04154d5111795bf8a9624916792ba572cac28ec61816ba6e0f8ef",
+      "release": "6.12.107-mojt1",
+      "upstream": "6.12.107",
+      "image_sha256": "98bf2870bad3a5b548daf764f431ea3e5c63243e2da601e5f0fc8d1e1e1c2c92",
+      "modules_digest": "sha256:e601c72713d3261de3dfce311ba9eafd611a523a4b48d9c7ce1b9d1aaa915c1f"
+    },
+    "firmware": [],
+    "boot": {
+      "root_uuid": "12345678-1234-1234-1234-123456789abc",
+      "console": "serial",
+      "profile": "uefi-qemu-virtio-v1",
+      "extra_args": []
+    },
+    "constructor": {
+      "provider": "native",
+      "artifact": "sha256:6fc1cd2ef13585c325e06adeefd6092a767ac9dc6349cc438efce9ee581ba95d"
+    },
+    "state_requirements": [],
+    "management_required": [
+      {
+        "family": "boot-selection",
+        "read": [
+          2
+        ],
+        "write": [
+          2
+        ],
+        "capabilities": [
+          "mpm-boot-native-v2"
+        ]
+      },
+      {
+        "family": "request-state",
+        "read": [
+          1
+        ],
+        "write": [
+          1
+        ],
+        "capabilities": [
+          "mpm-request-origins-v1"
+        ]
+      }
+    ]
+  },
+  "id": "sha256:3bcd27a6739b4b01a9150fb673376a7af429b182269e150688683d9a20e9c45d"
+}

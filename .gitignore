@@ -1,0 +1,23 @@
+# Mojt Linux
+# Copyright (C) 2026 Jonas Persson
+# SPDX-License-Identifier: GPL-2.0-only
+
+# Host-local experiments and generated images
+mojt-lab/
+rootfs/
+upgrade-test/
+*.tar.zst
+*.tar.xz
+*.xbps
+*.xbps.sig2
+
+# Python and environments
+__pycache__/
+*.py[cod]
+.venv/
+
+# Editor temporary files
+*~
+*.swp
+*.swo
+.DS_Store

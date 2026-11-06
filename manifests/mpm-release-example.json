@@ -1,0 +1,59 @@
+{
+  "format": "mpm-release-catalog-v1",
+  "area": "ports",
+  "name": "demo-apps",
+  "channel": "stable",
+  "platform": "example-platform",
+  "sources": {
+    "one": {
+      "backend": "example-archive",
+      "identity": {
+        "snapshot": "release-index-1"
+      }
+    },
+    "two": {
+      "backend": "another-example-backend",
+      "identity": {
+        "snapshot": "release-index-2"
+      }
+    }
+  },
+  "candidates": [
+    {
+      "name": "paint",
+      "release_id": "3.0.9",
+      "upstream_version": "3.0.9",
+      "version_scheme": "dotted-v1",
+      "stability": "stable",
+      "source": "one",
+      "artifact": "example-object-3.0.9",
+      "integrity": {
+        "digest": "illustrative-digest-3.0.9"
+      }
+    },
+    {
+      "name": "paint",
+      "release_id": "3.0.10",
+      "upstream_version": "3.0.10",
+      "version_scheme": "dotted-v1",
+      "stability": "stable",
+      "source": "two",
+      "artifact": "example-object-3.0.10",
+      "integrity": {
+        "digest": "illustrative-digest-3.0.10"
+      }
+    },
+    {
+      "name": "paint",
+      "release_id": "3.1",
+      "upstream_version": "3.1",
+      "version_scheme": "dotted-v1",
+      "stability": "stable",
+      "source": "two",
+      "artifact": "example-object-3.1",
+      "integrity": {
+        "digest": "illustrative-digest-3.1"
+      }
+    }
+  ]
+}

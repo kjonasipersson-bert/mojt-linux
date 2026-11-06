@@ -1,0 +1,114 @@
+{
+  "format": "mojt-system-composition-v1",
+  "description": {
+    "label": "system-format-example",
+    "platform": "x86_64-linux",
+    "components": [
+      {
+        "role": "manager",
+        "reference": {
+          "provider": "native",
+          "artifact": "sha256:79c44ddc3749932b6f4baa9c5a8e8761c464012545796c96406b47607c8de46b"
+        }
+      }
+    ],
+    "requirements": {
+      "base_abi": [
+        {
+          "name": "glibc",
+          "value": "2.41"
+        }
+      ],
+      "state_layout": 1,
+      "kernel_capabilities": [],
+      "host_capabilities": []
+    },
+    "management": [
+      {
+        "family": "boot-selection",
+        "read": [
+          2
+        ],
+        "write": [
+          2
+        ],
+        "capabilities": [
+          "mpm-boot-native-v2"
+        ]
+      },
+      {
+        "family": "ports-state",
+        "read": [
+          1,
+          2,
+          3
+        ],
+        "write": [
+          1,
+          2,
+          3
+        ],
+        "capabilities": [
+          "mpm-ports-selectors-v1"
+        ]
+      },
+      {
+        "family": "request-state",
+        "read": [
+          1
+        ],
+        "write": [
+          1
+        ],
+        "capabilities": [
+          "mpm-request-origins-v1"
+        ]
+      }
+    ],
+    "state": [],
+    "profile": [
+      {
+        "path": "bin/mpm",
+        "source": {
+          "reference": {
+            "provider": "native",
+            "artifact": "sha256:79c44ddc3749932b6f4baa9c5a8e8761c464012545796c96406b47607c8de46b"
+          },
+          "path": "bin/mpm"
+        }
+      },
+      {
+        "path": "bin/python3",
+        "source": {
+          "reference": {
+            "provider": "native",
+            "artifact": "sha256:79c44ddc3749932b6f4baa9c5a8e8761c464012545796c96406b47607c8de46b"
+          },
+          "path": "bin/python3"
+        }
+      },
+      {
+        "path": "lib/mpm",
+        "source": {
+          "reference": {
+            "provider": "native",
+            "artifact": "sha256:79c44ddc3749932b6f4baa9c5a8e8761c464012545796c96406b47607c8de46b"
+          },
+          "path": "lib/mpm"
+        }
+      }
+    ],
+    "services": [],
+    "runtime": {
+      "interpreter": "bin/python3",
+      "frontend": "bin/mpm",
+      "module_root": "lib/mpm"
+    },
+    "lifecycle": {
+      "format": "mojt-lifecycle-set-v1",
+      "id": "sha256:63c267fce66c162f94b5119d068f5f4dfaa011ec8278e90a0acb39e5ae912fda",
+      "path": "payload/lifecycle.json"
+    }
+  },
+  "id": "sha256:babdb6954edf5d7c83d298e7d05e52027738480195bc03ae6b699f1d9236dabc"
+}
