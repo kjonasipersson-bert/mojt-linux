@@ -206,7 +206,8 @@ class SourceTests(unittest.TestCase):
     def test_system_readonly_access_and_codec_gate(self):
         runtime = dataclasses.replace(cli.Runtime(), sources=self.root, cache=self.cache,
                                       helpers=self.work / 'no-codec', system_bin=self.work / 'no-bin')
-        with mock.patch.object(cli.os, 'geteuid', return_value=1000):
+        ordinary_uid = os.geteuid() or 1000
+        with mock.patch.object(cli.os, 'geteuid', return_value=ordinary_uid):
             for argv in (['source', 'add'], ['source', 'update'], ['cache', 'fetch']):
                 with contextlib.redirect_stderr(io.StringIO()) as err:
                     self.assertEqual(cli.main(argv, runtime=runtime), 1); self.assertIn('administrator', err.getvalue())
