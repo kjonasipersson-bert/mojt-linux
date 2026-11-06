@@ -86,8 +86,12 @@ def inspect_entry(root, relative):
     registry = root / "kernel"
     require(kernel.inspect_root(kernel.root_path(registry)), "native Kernel registry required")
     obj = registry / "installed" / kernel.identifier(d["kernel"]["artifact"])
-    body, unused = kernel.object_record(obj, d["kernel"]["artifact"], verify=True)
+    body, installed = kernel.object_record(obj, d["kernel"]["artifact"], verify=True)
     require(deployment.kernel_identity(body) == d["kernel"], "deployment Kernel identity differs")
+    receipt = read(path / "native-build-inputs.json")
+    require(receipt.get("format") == native.INPUTS_FORMAT, "unsupported native boot input receipt; fresh v2 native image required")
+    require(receipt["kernel_artifact"] == body["id"], "boot input receipt Kernel differs")
+    native.check_kernel_installation(installed, receipt)
     return dict(record=record, relative=relative, path=path, body=body)
 
 
@@ -277,7 +281,7 @@ def stage(root, identifier, *, baseline=None, base_context=None, busybox=None,
     manifest, facts, receipt = live_context(root, selected)
     busybox = busybox or root / "system" / manifest["description"]["label"] / "busybox"
     obj = root / "kernel/installed" / kernel.identifier(identifier)
-    body, unused = kernel.object_record(obj, identifier, verify=True)
+    body, installed = kernel.object_record(obj, identifier, verify=True)
     bounds = read(base_context or selected["path"] / "base-context.json")
     # Exercise the same compatibility gates before any staging writes.
     d = selected["record"]["description"]
@@ -319,9 +323,14 @@ def stage(root, identifier, *, baseline=None, base_context=None, busybox=None,
         record = result["candidate"]
         stage_path = Path(tempfile.mkdtemp(prefix=".stage-", dir=slots))
         try:
+            retained = {k:v for k,v in receipt.items() if k not in
+                        ("kernel_artifact", "kernel_installation_digest", "source_kernel_installation_digest", "kernel_acquisition")}
             values = {"deployment.json": record, "base-context.json": bounds, "system-manifest.json": manifest,
                       "initramfs-binding.json": binding,
-                      "native-build-inputs.json": dict(receipt, selection_origin="existing-disk-stage",
+                      "native-build-inputs.json": dict(retained, selection_origin="existing-disk-stage",
+                                                       kernel_artifact=identifier,
+                                                       kernel_installation_digest=artifact.digest(installed),
+                                                       kernel_acquisition=installed.get("acquisition"),
                                                        kernel_boot_producer=producer, **evidence)}
             for name, value in values.items():
                 kernel.write_json(stage_path / name, value)
@@ -332,7 +341,8 @@ def stage(root, identifier, *, baseline=None, base_context=None, busybox=None,
                     stream.write(data)
                     os.fchmod(stream.fileno(), 0o444)
                     os.fsync(stream.fileno())
-            kernel.object_record(obj, identifier, verify=True)
+            _, fresh_installation = kernel.object_record(obj, identifier, verify=True)
+            require(fresh_installation == installed, "candidate Kernel installation changed during staging")
             require(artifact.file_sha(stage_path / "vmlinuz") == record["description"]["kernel"]["image_sha256"] and
                     artifact.file_sha(stage_path / "initramfs.cpio.gz") == archive["sha256"],
                     "copied boot content differs before publication")

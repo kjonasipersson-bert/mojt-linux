@@ -147,6 +147,23 @@ class SystemVmTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 system.roles(value)
 
+    def test_step3_creates_protected_mpm_state_parent_on_fresh_image(self):
+        parent = self.tree/'state/var/lib/mojt'
+        self.assertFalse(parent.exists())
+        self.install(3)
+        self.assertTrue(parent.is_dir())
+        self.assertFalse(parent.is_symlink())
+        self.assertFalse(parent.stat().st_mode & 0o022)
+
+    def test_step3_refuses_linked_state_parent_without_external_writes(self):
+        outside = self.root/'outside'; outside.mkdir()
+        (outside/'sentinel').write_text('retained')
+        (self.tree/'state/var/lib').symlink_to(outside)
+        with self.assertRaisesRegex(ValueError, 'unsafe MPM state parent'):
+            self.install(3)
+        self.assertEqual((outside/'sentinel').read_text(), 'retained')
+        self.assertFalse((outside/'mojt').exists())
+
     def test_failed_uefi_assembly_publishes_nothing_and_preserves_source(self):
         self.fixture(5)
         for name in ("etc", "var", "dev", "proc", "sys"):

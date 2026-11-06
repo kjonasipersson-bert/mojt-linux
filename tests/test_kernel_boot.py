@@ -7,6 +7,7 @@ import gzip
 import importlib.util
 import json
 import os
+import runpy
 from pathlib import Path
 import shutil
 import subprocess
@@ -94,6 +95,43 @@ class KernelBootTests(unittest.TestCase):
     def snapshot(self):
         return {p.relative_to(self.root).as_posix(): (p.lstat().st_mode, os.readlink(p) if p.is_symlink()
                     else artifact.file_sha(p) if p.is_file() else None) for p in self.root.rglob("*")}
+
+    def test_source_installed_candidate_stages_selects_and_retains_origin(self):
+        import mpm_sources as sources
+        import mpm_kernel_source as joined
+        spec = {k: copy.deepcopy(self.candidate[k]) for k in
+                ('kind','name','platform','dependencies','requirements','provides','provenance','metadata')}
+        spec['format'] = artifact.SPEC_FORMAT
+        spec['version'] = dict(upstream='6.12.107', scheme='dotted-v1', revision=3)
+        payload = self.root/'kernel/installed'/kernel.identifier(self.candidate['id'])/'payload'
+        package_dir = self.fixture.work/'source-candidate'
+        packed = artifact.pack(payload, spec, package_dir)
+        lab = self.fixture.work/'source-lab'; lab.mkdir()
+        helper = runpy.run_path(str(Path(__file__).with_name('run-kernel-source-acceptance.py')))
+        body, encoding = helper['prepare_repository'](package_dir/packed['archive']['file'], lab, 'boot-test',
+                                                     artifact=artifact, cache=sources.cache)
+        root = self.root/'state/var/lib/mojt/sources'; cache = self.root/'state/var/lib/mojt/cache'
+        args = dict(source=json.loads((lab/'source.json').read_bytes()), policy_file=lab/'policy.json')
+        sources.add(root, 'boot-test', sources.prepare_add(root, 'boot-test', **args), **args)
+        sources.update(root, 'boot-test', sources.prepare_update(root, 'boot-test'))
+        result = joined.install(self.root/'kernel', root, cache, 'boot-test', body['id'],
+                                archive_sha256=encoding, yes=True)
+        self.assertTrue(result['changed']); self.candidate = body
+        obj = self.root/'kernel/installed'/kernel.identifier(body['id'])
+        origin = (obj/'installed.json').read_bytes()
+        shutil.rmtree(lab/'repository'); shutil.rmtree(cache)
+        staged = self.stage()
+        receipt = manager.read(self.root/staged['slot']/'native-build-inputs.json')
+        self.assertEqual(receipt['kernel_artifact'], body['id'])
+        self.assertEqual(receipt['kernel_acquisition'], json.loads(origin)['acquisition'])
+        self.assertNotIn('source_kernel_installation_digest', receipt)
+        self.assertFalse(self.stage()['changed'])
+        manager.select(self.root, staged['deployment'], baseline=self.baseline, expected_selected=self.old_id, yes=True)
+        report = manager.status(self.root)
+        self.assertEqual(report['selected_kernel']['artifact'], body['id'])
+        self.assertEqual((obj/'installed.json').read_bytes(), origin)
+        self.assertEqual(next(r for r in report['installed'] if r['artifact']==body['id'])['trust']['kind'],
+                         'registered-native-source')
 
     def test_preview_does_not_create_boot_registry_or_change_any_bytes(self):
         before = self.snapshot()
