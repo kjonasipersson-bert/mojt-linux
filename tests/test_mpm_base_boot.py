@@ -10,6 +10,7 @@ import shutil
 import sys
 import subprocess
 import tempfile
+import runpy
 import unittest
 from unittest import mock
 
@@ -37,6 +38,17 @@ class DefaultsTests(unittest.TestCase):
             self.assertEqual((dst/'hostname').read_text(),'local')
             self.assertEqual(os.readlink(dst/'config'),'/tmp')
             self.assertFalse((dst/'new').exists())
+
+
+class AcceptanceFixtureTests(unittest.TestCase):
+    def test_test_release_rewrite_changes_only_one_declared_field(self):
+        helper=runpy.run_path(str(REPO/'tests/run-base-boot-acceptance.py'))['replace_field']
+        raw='format=1\n[base]\nversion = "0.1.3"\nname="mojt"\n[image]\nsha256="old"\n'
+        changed=helper(raw,'base','version','0.1.3-boot-test')
+        self.assertEqual(changed,raw.replace('version = "0.1.3"','version = "0.1.3-boot-test"'))
+        with self.assertRaisesRegex(ValueError,'ambiguous'):
+            helper(raw+'[base]\nversion="duplicate"\n','base','version','new')
+
 
 
 @unittest.skipUnless(os.geteuid()==0 and shutil.which('cpio') and shutil.which('zstd') and shutil.which('tar'),
@@ -148,10 +160,16 @@ class BaseStageTests(unittest.TestCase):
         before=self.f.f.snapshot()
         preview=manager.select(self.root,result['deployment'],expected_selected=old['selected'],baseline=self.baseline,dry_run=True)
         self.assertFalse(preview['changed']);self.assertEqual(before,self.f.f.snapshot())
+        cli_preview=subprocess.run([sys.executable,'-I','-B',str(REPO/'tools/mpm'),'base','select',
+            '--disk-root',str(self.root),'--baseline',self.baseline,'--deployment',result['deployment'],
+            '--expected-selected',old['selected'],'--dry-run'],text=True,capture_output=True)
+        self.assertEqual(cli_preview.returncode,0,cli_preview.stderr)
+        self.assertEqual(before,self.f.f.snapshot())
         chosen=manager.select(self.root,result['deployment'],expected_selected=old['selected'],baseline=self.baseline,yes=True)
         self.assertTrue(chosen['changed'])
         state,new_entries,new_menu=boot.current(self.root)
         self.assertEqual(state['format'],boot.BASE_MENU_FORMAT)
+        self.assertIn(b'Mojt Base 0.1.4',new_menu);self.assertIn(b'Mojt Base 0.1.3',new_menu)
         self.assertEqual(state['selected'],result['deployment']);self.assertEqual(state['previous'],old['selected'])
         self.assertEqual(set(new_entries),{old['selected'],result['deployment']})
         observed=base_status.status(self.root,running_record=running)

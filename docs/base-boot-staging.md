@@ -4,7 +4,7 @@ Copyright (C) 2026 Jonas Persson
 SPDX-License-Identifier: GPL-2.0-only
 -->
 
-# Exact Base boot staging
+# Exact Base boot staging and selection
 
 Implemented experimental subset, extending the accepted serial native-disk
 Kernel constructor. This does not implement the draft generalized v2 deployment
@@ -81,7 +81,44 @@ next boot, no-op repeats, missing defaults/management, corruption, late input
 changes and publication uncertainty. Real root cases run in CI. Synthetic guest
 files are not a successful VM boot.
 
-Next implement scope-preserving Base next-boot selection/return and its joined
-status. Then run one owner acceptance on a stopped-disk copy: original Base,
-changed Base with the same System/Kernel, and return, preserving identities,
-state, Ports and clean shutdown. Do not run a new manual matrix yet.
+Base next-boot selection/return and joined installed/next/running status are now
+implemented. Run the [focused owner acceptance](base-boot-acceptance.md) on a
+fresh disposable native image, then retain its evidence before merge. No repeated
+Kernel/hardware matrix is requested.
+
+
+## Exact Base selection and return
+
+```
+mpm base select --deployment sha256:FULL_DEPLOYMENT_ID \
+  --expected-selected sha256:CURRENT_DEPLOYMENT_ID --dry-run
+mpm base select --deployment sha256:FULL_DEPLOYMENT_ID \
+  --expected-selected sha256:CURRENT_DEPLOYMENT_ID -y
+mpm base rollback --expected-selected sha256:CURRENT_DEPLOYMENT_ID -y
+mpm base status --json
+```
+
+Both selected recovery and candidate content, management/state capabilities and
+account shell paths are rechecked before publication. A Base-only selection must
+retain exact System, Kernel, platform, root filesystem UUID and console policy.
+The expected selected deployment is mandatory, so a stale preview cannot replace
+a later choice. A repeated choice verifies the same inputs and publishes nothing.
+Rollback selects the previous deployment only when it has the same System/Kernel;
+a history entry changing another layer needs that layer's explicit scope.
+Neither action reboots or changes the running deployment.
+
+The new `mpm-base-boot-selection-v1` menu has a distinct recognized header. It
+retains exact entries from different Bases/Kernels with the same System and disk,
+and commits the full metadata and generated loader entries through one atomic
+menu replacement. The original Kernel-only menu format keeps its exact-Base
+constraint. The existing boot registry marker still describes the retained slot
+layout; it does not cause an unrecognized menu to be adopted. Unknown formats or
+mismatched generated content fail closed. This is a bounded v1 extension, not the
+draft generalized v2 System-composition protocol.
+
+A Kernel update after a Base-slot deployment reuses its exact measured Base boot
+tree via the explicit `base_tree` dependency in the retained input receipt. Its
+new initramfs loads that tree rather than `base/RELEASE`. The dependency is retained
+alongside the slot and must be honored by any future collection implementation;
+no physical collection is performed here. Kernel-only selection still preserves
+Base/System, and Base-only selection still refuses a Kernel change.

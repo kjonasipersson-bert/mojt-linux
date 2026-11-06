@@ -76,5 +76,5 @@ identities, state and Ports, followed by return to the previous deployment.
 The [Base staging subset](base-boot-staging.md) now constructs a complete private
 Base boot tree and bound initramfs from this evidence, and publishes them as one
 retained slot. The preflight record itself remains read-only and never confers
-publication authority. Explicit Base selection and owner changed-Base boot
-acceptance remain separate gates.
+publication authority. Explicit Base selection/return is now implemented as a separate action. Owner
+changed-Base boot acceptance remains pending.

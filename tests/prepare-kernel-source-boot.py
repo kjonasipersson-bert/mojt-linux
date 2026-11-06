@@ -16,7 +16,7 @@ import uuid
 
 REPO = Path(__file__).resolve().parents[1]
 HOST_PATH = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
-COMMANDS = ('git','bash','cp','du','zstd','cpio','busybox','modprobe','mkfs.ext4','sfdisk',
+COMMANDS = ('git','bash','cp','du','tar','zstd','cpio','busybox','modprobe','mkfs.ext4','sfdisk',
             'mkfs.vfat','mcopy','grub-mkstandalone','grub-script-check','openssl','qemu-system-x86_64','sudo')
 
 
@@ -76,8 +76,16 @@ def save_path(path, output):
     finally:temporary.unlink(missing_ok=True)
 
 
-def main():
-    p = argparse.ArgumentParser(description=__doc__)
+def main(*, profile='kernel-source'):
+    profiles = {
+        'kernel-source': ('system-source-kernel-boot', ('run-kernel-source-boot.py','run-kernel-source-acceptance.py'),
+                          'MOJT_SOURCE_BOOT', 'mojt-kernel-source-boot-preparation-v1'),
+        'base': ('system-base-boot-test', ('run-base-boot-acceptance.py',),
+                 'MOJT_BASE_BOOT', 'mojt-base-boot-preparation-v1'),
+    }
+    require(profile in profiles, 'unknown acceptance profile')
+    generation, scripts, volume, record_format = profiles[profile]
+    p = argparse.ArgumentParser(description=("Debian-host preparation of a fresh changed-Base boot/return test." if profile == "base" else __doc__))
     p.add_argument('--output', type=Path, required=True)
     p.add_argument('--base-release', type=Path, required=True)
     p.add_argument('--kernel-package', type=Path, required=True)
@@ -97,6 +105,12 @@ def main():
                  args.kernel_package, args.system_payload/'system.json', args.busybox,
                  Path('/usr/share/OVMF/OVMF_CODE_4M.fd'), Path('/usr/share/OVMF/OVMF_VARS_4M.fd')):
         require(path.is_file(), 'missing input: '+str(path))
+    if profile == 'base':
+        sys.path.insert(0,str(REPO/'tools'))
+        import mojt_system
+        payload = mojt_system.load_payload(args.system_payload)
+        require('tar' in payload['packages'],
+                'Base boot test needs a freshly prepared System payload with retained GNU tar')
     output = fresh_output(args.output, (REPO,args.base_release,args.kernel_package,args.system_payload))
     os.umask(0o077); output.mkdir(mode=0o700)
     print('Test directory:', output, flush=True)
@@ -117,7 +131,7 @@ def main():
         '--base-package',output/'base-package'/packed['archive']['file'], '--base-artifact',packed['artifact']['id'],
         '--base-context',output/'base-context.json', '--kernel-registry',output/'kernel-registry',
         '--kernel-artifact',args.expected_kernel,'--system-payload',args.system_payload.resolve(),
-        '--output',image,'--system-generation','system-source-kernel-boot','--disk-size-mib','8192',
+        '--output',image,'--system-generation',generation,'--disk-size-mib','8192',
         '--busybox',args.busybox]
     print('Verifying native image preview (System hashing may take a while)...',flush=True)
     run([*command,'--dry-run'],result=output/'image-preview.json')
@@ -125,20 +139,20 @@ def main():
     run(['sudo','env','PATH='+HOST_PATH,*command])
     inputs = output/'acceptance-files'; (inputs/'tests').mkdir(parents=True)
     inventory = {}
-    for name in ('run-kernel-source-boot.py','run-kernel-source-acceptance.py'):
+    for name in scripts:
         target = inputs/'tests'/name
         shutil.copyfile(REPO/'tests'/name,target)
         inventory['tests/'+name] = hashlib.sha256(target.read_bytes()).hexdigest()
     (inputs/'inventory.json').write_text(json.dumps(inventory,indent=2)+'\n')
     data_disk = output/'acceptance-inputs.img'
     with data_disk.open('xb') as stream:stream.truncate(32*1024**2)
-    run(['mkfs.ext4','-F','-q','-L','MOJT_SOURCE_BOOT','-d',inputs,data_disk])
+    run(['mkfs.ext4','-F','-q','-L',volume,'-d',inputs,data_disk])
     data_disk.chmod(0o400)
     script = launcher((image/'run-qemu.sh').read_text(), image, data_disk)
     (output/'run-qemu.sh').write_text(script); (output/'run-qemu.sh').chmod(0o755)
     run(['bash','-n',output/'run-qemu.sh'])
     revision = subprocess.check_output(['git','-C',str(REPO),'rev-parse','HEAD'],text=True).strip()
-    (output/'preparation.json').write_text(json.dumps(dict(format='mojt-kernel-source-boot-preparation-v1',
+    (output/'preparation.json').write_text(json.dumps(dict(format=record_format,
         source_revision=revision, base=packed['artifact']['id'], kernel=args.expected_kernel,
         kernel_release=kernel['metadata']['kernel_release'], inputs=inventory),indent=2)+'\n')
     if args.path_file:save_path(args.path_file,output)
@@ -152,3 +166,4 @@ if __name__ == '__main__':
         print('Native source-boot preparation:',error,file=sys.stderr)
         print('Preparation stopped; private output is retained if it was already created.',file=sys.stderr)
         sys.exit(1)
+

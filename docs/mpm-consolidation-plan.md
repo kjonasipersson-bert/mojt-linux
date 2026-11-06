@@ -95,10 +95,11 @@ MBT's final spelling remains deferred and it must reuse this installation model.
 
 Content-only Base import/realization/status is merged. The next bounded increment
 adds [read-only Base transition preflight](base-deployment-preflight.md), binding
-the installed candidate to the selected System/Kernel and observed state. It now feeds [exact Base slot staging](base-boot-staging.md) without selecting it.
+the installed candidate to the selected System/Kernel and observed state. It now feeds [exact Base slot staging](base-boot-staging.md) with explicit next-boot selection/return and joined status.
 The first subset refuses missing defaults and retains matching System management
-code. Continue with Base next-boot selection/return and owner boot acceptance,
-then explicit defaults/lifecycle preparation and System installation integration.
+code. The [fresh-VM owner acceptance](base-boot-acceptance.md) is prepared but has
+not run. After that evidence, continue with explicit defaults/lifecycle preparation
+and System installation integration.
 The next owner VM gate is an actual changed-Base boot. Do not add another manual
 Kernel matrix or move bootstrap/build work ahead of the six-step order.
 

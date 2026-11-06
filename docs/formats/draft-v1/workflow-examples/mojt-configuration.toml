@@ -1,9 +1,0 @@
-format = "mojt-configuration-v1"
-name = "workstation"
-
-[ports]
-source = "local"
-packages = ["hello@2.12"]
-
-[ports.active]
-hello = "hello@2.12"

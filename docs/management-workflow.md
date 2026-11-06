@@ -103,10 +103,11 @@ choice remains intact. Booting older code does not undo changed persistent data.
 ## Review and implementation boundary
 
 The [Base command contract](mpm-base-contract.md) was agreed on 2026-11-06.
-The [first implementation](base-installation.md) is in PR #40; changed-Base
-staging/selection is the following integration. MBT reuses the agreed meanings
+The [first implementation](base-installation.md) merged in PR #40.
+[Base staging/selection/return](base-boot-staging.md) is implemented in draft PR #41,
+with [owner boot acceptance](base-boot-acceptance.md) pending. MBT reuses the agreed meanings
 regardless of its final spelling.
 Detailed behavior remains in the [distribution contract](distribution-contract.md),
 open choices in the [decision register](distribution-decisions.md), and delivery
-order in the [six-step plan](mpm-consolidation-plan.md). No new runtime code,
-schema adoption, automatic cleanup or additional VM matrix is implied here.
+order in the [six-step plan](mpm-consolidation-plan.md). This workflow does not authorize unknown schema adoption, automatic cleanup
+or an additional component cross-product VM matrix.

@@ -7,9 +7,10 @@ SPDX-License-Identifier: GPL-2.0-only
 # Exact Base installation and status
 
 First implementation of the [owner-agreed Base contract](mpm-base-contract.md),
-2026-11-06, in PR #40. Installation means retained exact content **and** a
+2026-11-06, merged in PR #40. Installation means retained exact content **and** a
 validated rootfs realization. It changes neither machine configuration nor boot
-selection. Existing-disk Base boot staging/selection is the following increment.
+selection. Existing-disk [Base staging/selection/return](base-boot-staging.md)
+is implemented separately in draft PR #41, with owner boot acceptance pending.
 
 ## One target and two inputs
 
@@ -122,3 +123,9 @@ independent repeats, corruption, partial publication/retry and publication
 uncertainty. Real root ownership/extraction cases run under sudo in focused CI.
 This is not a VM boot claim; the next owner boot gate accompanies changed-Base
 deployment support.
+
+
+For implemented Base boot staging, explicit selection/return and joined status,
+see [Base boot staging](base-boot-staging.md). These actions remain separate from
+installation. The first subset refuses missing defaults; owner boot acceptance
+is tracked in the [fresh-VM test](base-boot-acceptance.md).

@@ -42,14 +42,14 @@ jobs:
         run: |
           python3 -B -m unittest discover -s tests -p 'test_mpm_base_transition.py' -v
           sudo env PYTHONPATH=tests python3 -B -m unittest discover -s tests -p 'test_mpm_base_transition.py' -v
-      - name: Check exact Base boot slots without state or selection effects
+      - name: Check Base slots, scoped selection, return and subsequent Kernel staging
         run: |
           python3 -B -m unittest discover -s tests -p 'test_mpm_base_boot.py' -v
           sudo env PYTHONPATH=tests python3 -B -m unittest discover -s tests -p 'test_mpm_base_boot.py' -v
       - name: Check offline catalog and fresh frontend dispatch boundaries
         run: python3 -B -m unittest discover -s tests -p 'test_mpm_catalog.py' -v
       - name: Check Python syntax
-        run: python3 -m py_compile tools/mpm_kernel_boot.py tests/test_kernel_boot.py
+        run: python3 -m py_compile tools/mpm_kernel_boot.py tools/mpm_base_boot.py tests/test_kernel_boot.py tests/run-base-boot-acceptance.py tests/prepare-base-boot.py
       - name: Check Kernel verification reuse and publication gates
         run: |
           sudo env PYTHONPATH=tests python3 -m unittest -v \

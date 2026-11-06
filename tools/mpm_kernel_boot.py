@@ -164,7 +164,9 @@ def menu(state, entries):
                     all(candidate["boot"][k] == d["boot"][k] for k in ("root_uuid", "console")),
                     "Base menu must preserve exact System/platform/root/console")
         prefix = "/" + entry["relative"]
-        raw += (f"menuentry 'Mojt Linux {candidate['kernel']['release']} / {identifier[7:19]}' "
+        title = (f"Mojt Linux {candidate['kernel']['release']} / {identifier[7:19]}" if state['format'] == FORMAT else
+                 f"Mojt Base {candidate['base']['release']} / Linux {candidate['kernel']['release']} / {identifier[7:19]}")
+        raw += (f"menuentry '{title}' "
                 f"--id 'mpm-{kernel.identifier(identifier)}' {{\n"
                 f"    linux {prefix}/vmlinuz {candidate['boot']['cmdline']}\n"
                 f"    initrd {prefix}/initramfs.cpio.gz\n}}\n")

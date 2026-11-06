@@ -1,8 +1,0 @@
-{
-  "format": "mojt-artifact-store-v1",
-  "description": {
-    "installation": "0123456789abcdef0123456789abcdef",
-    "layout": "kind-id-v1"
-  },
-  "id": "sha256:8b13a35965b96424652dba301514d1099feafb1e0c3487141d55483a0dd0601d"
-}
