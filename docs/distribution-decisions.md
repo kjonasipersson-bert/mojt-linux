@@ -85,6 +85,22 @@ transition; build recipe/workspace/provenance wire; supported handler/family-rea
 implementation; remote trust/large-catalog indexing and physical acceptance.
 Do not call D2/D5 wholly closed or silently add fields to existing formats 1/2/3.
 
+## Immediate Base command agreement, 2026-11-06
+
+The owner requested a documentation/meaning review before Base implementation.
+The [shared MPM/MBT user model](management-workflow.md) separates availability,
+cache, installation, preparation, selection and running observations. The
+[Base install/status proposal](mpm-base-contract.md) requires a complete validated
+rootfs realization for installation success, leaves machine configuration and
+boot choices unchanged, and specifies honest read-only status. MBT bootstrap
+adds explicit new-target/state preparation using those same MPM rules.
+
+The owner agreed on 2026-11-06 and authorized exact Base install/status.
+D11's command meaning is settled. The first [implementation](base-installation.md)
+uses one `--disk-root` target and explicitly versioned store/receipt/realization/
+status records. This adopts only that bounded storage subset, not generalized
+boot/lifecycle formats or public MBT syntax. The remaining D2-D6 gates still apply.
+
 ## Open decisions and gates
 
 | ID | Decision / required deliverable | Gate |
@@ -99,6 +115,7 @@ Do not call D2/D5 wholly closed or silently add fields to existing formats 1/2/3
 | D8 | Supported physical target profiles, device safety checks, firmware/storage/input/network/console requirements and recovery medium | Before physical installation/update acceptance |
 | D9 | Close remaining MPM contract details within existing syntax: request-policy editing, supported version adapters, multi-command/exact alias escaping, profile namespaces, collision policy and user/project overrides | Before claiming those policies/backends or production project locking; keep the current supported subset explicit |
 | D10 | Advisory/withdrawal and direct-provider-operation policy: when selected content may be used, how externally changed records are detected, and what requires an explicit repair plan | Before claiming production update/security reconciliation; never silently adopt foreign state |
+| D11 | Agreed 2026-11-06: complete content plus validated rootfs, exact-ID coexistence, unchanged state/boot and honest installed/next-boot/running status; PR #40 implements exact import and `--disk-root` with versioned records | Meaning settled; implementation/CI review remains. Base deployment and MBT syntax remain separate gates |
 
 Each deliverable needs a concrete format/interface proposal and focused failure
 tests. Do not hide these decisions inside unrelated integration code. Wire
@@ -120,5 +137,6 @@ be settled before that mechanism accepts real state or user input.
 The [gap matrix](mpm-gap-matrix.md) is the implementation backlog, this register
 is the design backlog, and the AC requirements are the acceptance backlog.
 Keeping those separate makes the meaning of "complete" inspectable.
+
 
 

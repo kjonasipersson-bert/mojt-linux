@@ -33,7 +33,7 @@ def prepare_repository(archive, lab, name, *, artifact, cache):
         stability='stable', compatibility='unknown')
     if version['revision'] is not None:
         candidate.update(package_revision=version['revision'], revision_scheme='mojt-r-v1')
-    catalog = encoded(dict(format='mpm-release-catalog-v1', area='kernel', name=body['name'],
+    catalog = encoded(dict(format='mpm-release-catalog-v1', area='ports' if body['kind']=='port' else body['kind'], name=body['name'],
         platform=body['platform'], channel='stable', sources={name:dict(backend='native',
         identity=dict(repository='owner-trusted VM acceptance fixture'))}, candidates=[candidate]))
     mapping = cache.record('mojt-acquisition-map-v1', dict(catalog_sha256=evidence(catalog)['sha256'],

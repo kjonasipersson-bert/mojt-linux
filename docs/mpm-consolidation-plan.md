@@ -14,7 +14,7 @@ versions, not backward migration of experimental installations.
 
 | Step | Goal | Current evidence and remaining completion gate |
 | --- | --- | --- |
-| 1 | Establish the baseline and deliver complete MPM in System | Common frontend/runtime is merged. Configuration ownership, exact resolution and a complete Ports publisher/acquisition API are implemented in #36. The installed Ports frontend now joins configuration, accepted finite sources, imports and profiles without a checkout. A bounded real Nix adapter/frontend acceptance passed. Interactive reason removal and active-choice reset are implemented in the bounded follow-up. Completion still needs remote source acquisition, artifact pruning/configuration forgetting and supported Base/System operations. |
+| 1 | Establish the baseline and deliver complete MPM in System | Common frontend/runtime is merged. Configuration ownership, exact resolution and a complete Ports publisher/acquisition API are implemented in #36. The installed Ports frontend now joins configuration, accepted finite sources, imports and profiles without a checkout. A bounded real Nix adapter/frontend acceptance passed. Interactive reason removal and active-choice reset are implemented in the bounded follow-up. Completion still needs supported Base/System operations, remaining request/configuration joins and honest diagnostics. Local native source/cache acquisition is implemented; general authenticated remote publication remains the separate P2 gate. |
 | 2 | Consolidate installation and transaction rules | Shared locks/publication primitives are merged; late baseline guards and the fresh Ports profile publisher are added here. Complete other area publishers, lifecycle effects and failure recovery; planning alone is not a transaction commit. |
 | 3 | Make Base and System actual MPM installation units | Package/composition/storage/deployment contracts exist; implement verified import, complete realizations, scope-preserving publication and next-boot selection on the same disk. |
 | 4 | Build bootstrap on those functions | Reuse the same MPM acquisition/install/deploy libraries for explicit new targets; no second installer or experimental-script-only path. MBT syntax remains a separate discussion. |
@@ -80,6 +80,25 @@ Existing build/package inputs were reused. Installation, staging, selection and
 reboot remain separate actions. This continues steps 1–2 and supports the later joined
 acceptance milestone; it does not complete Base/System installation or bootstrap.
 
+## Immediate review gate: Base installation and inspection
+
+Following merged #39 and its accepted source-installed Kernel reboot, the owner
+requested review of MPM/MBT documentation before Base implementation. The
+[shared user model](management-workflow.md) and
+[Base install/status proposal](mpm-base-contract.md) are that review surface.
+They propose complete exact Base retention plus a validated runtime tree, no
+implicit defaults/state/boot changes, and separate installed/next-boot/running
+inspection. The owner agreed to these meanings on 2026-11-06. The first
+[exact import/realization/status implementation](base-installation.md) is in PR #40;
+Base boot selection and System integration remain later gates.
+MBT's final spelling remains deferred and it must reuse this installation model.
+
+Complete review/CI for content-only Base import/realization/status, then
+generalize deployment to a changed Base, followed by System integration.
+The next owner VM gate is an actual changed-Base boot. Do not add another manual
+Kernel matrix or move bootstrap/build work ahead of the six-step order.
+
 Progress reports must name the step, implemented behavior, validation and the
 remaining gate. Unit tests, schema checks and prior experiments do not mark a
 whole milestone complete. No new public command syntax is implied by this plan.
+

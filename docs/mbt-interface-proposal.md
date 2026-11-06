@@ -6,11 +6,15 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # MBT interface: concrete proposal for discussion
 
-Draft 1, 2026-11-01. Proposed commands, not implemented or approved syntax.
+Draft 2, 2026-11-06. Proposed commands, not implemented or approved syntax.
 Existing MPM syntax remains unchanged. D1/D5 in the
 [decision register](distribution-decisions.md) remain open until interfaces and
 formats are settled. The [behavior contract](distribution-contract.md) defines
 guarantees; this proposal makes the user journey concrete.
+
+Start with the [shared user model](management-workflow.md). The owner-agreed
+[Base install/status agreement](mpm-base-contract.md) defines the MPM boundary
+that MBT must reuse; this revision does not authorize either implementation.
 
 ## Command shape
 
@@ -28,6 +32,17 @@ stdout. User redirection does not authorize MBT to create registries, workspaces
 or roots. Plans execute no recipe or payload acquisition; missing prerequisite
 metadata is reported. Execution revalidates/freezes inputs under the original
 approval policy. A preview does not authorize changed scope or baseline.
+
+`plan` is a read-only preview, not a rehearsal build: it resolves from already
+accepted metadata and checks known prerequisites, but does not fetch payloads,
+compile test programs or promise that a compiler/boot will later succeed.
+If required metadata is missing it reports a blocked plan and the needed explicit
+refresh; execution cannot silently replace that missing input with a live channel.
+`build run` performs the approved compilation and writes workspace output; it
+does not install that output. Saving a plan with shell redirection is distinct
+from MBT executing the plan. Saved plans bind exact inputs, target, allowed
+effects and baseline, and are revalidated at execution, never treated as a cache
+of authority. Their exact CLI options remain deferred.
 
 Environment names live in an explicitly owned registry; build/output paths name
 workspaces/results. Names are not content IDs; `show` displays both. Registry
@@ -63,6 +78,14 @@ package commands never install on the running machine, select next boot or
 publish a repository entry. Results report full ID, archive path/digest and
 provenance; callers do not guess filenames. MBT adds no install/select command.
 
+The stable hand-off is the native package plus its original build evidence.
+MPM installation verifies/retains it in the area's supported representation;
+for Base that includes a validated rootfs realization. MPM deployment preparation
+then checks a complete Base/System/Kernel combination, and explicit selection
+changes next boot. A successful build, package, import, selection and actual boot
+are different outcomes. The tools should name the one actually completed and
+the next useful operation, rather than calling all five "installation complete".
+
 `mbt env run kernel-dev -- COMMAND ...` explicitly runs an exploratory command
 without changing the interactive shell globally. It grants neither recorded
 build provenance nor completion status and is not a sandbox claim. Traceable
@@ -80,6 +103,21 @@ Minimal/normal/builder/recovery are composition profiles, not target kinds.
 `machine.toml` selects content, hardware/console and initialization policy.
 All use MPM installation/deployment libraries; target creation cannot bypass
 their checks.
+
+Bootstrap explicitly authorizes a new target and its initial state. It may create
+that target's filesystem/layout, install content through MPM, initialize the
+declared machine state, and prepare/select its first complete deployment. It does
+not turn ordinary `mpm base install` into a formatting/defaults/activation command.
+Directory targets report whether boot preparation is absent; image/disk targets
+claim boot readiness only after their required construction and checks complete,
+with owner boot acceptance still distinguished from those static checks.
+
+The composition's package wishes must become ordinary MPM configuration claims,
+using the reviewed named-configuration/origin model. After bootstrap, interactive
+installs remain possible; reapplying a configuration releases only its own claims
+and preserves explicit interactive choices. MBT must not leave a second package
+list that MPM cannot explain or reconcile. Secrets and mutable machine identity
+are provisioning inputs, not package or build-provenance payloads.
 
 Recommended first delivery: MBT and pinned Python/dependencies in an optional
 builder System composition using the existing assembly route. Ordinary machines
@@ -108,10 +146,19 @@ Target provisioning has a separate checked privileged boundary. Secrets belong
 in neither arguments nor plans/logs.
 
 Human output explains scope, prerequisites, progress, exact result and next step.
+Use the same outcome vocabulary across the tools: completed, no changes, blocked,
+incomplete/failed, or publication durability uncertain. Explain which content,
+selection and state effects committed. Installed/next-boot/running state belongs
+to MPM inspection; workspace completion/provenance belongs to MBT inspection.
 Machine output should distinguish success/no-op/blocked/failed/publication-
 uncertain through a versioned envelope. Exact MBT flags, exit codes and envelope
 must be specified before implementation; existing MPM conventions do not change.
 No destructive cleanup/prune command is proposed for M1.
+
+Building as an ordinary user and controlling a private environment are not by
+themselves sandbox guarantees. The first workflow makes exact tools/libraries
+and outputs inspectable; it does not claim to solve arbitrary desktop/plugin
+libc compatibility. No build environment changes Base's libc or a global compiler.
 
 ## Recommendation awaiting discussion
 
@@ -124,3 +171,4 @@ Still decide saved-plan/lockfile schemas/options, registry selection, machine
 envelope/exit classes and recipe/composition schemas. This proposal does not
 authorize implementing new verbs before discussion. See
 [the review record](distribution-review.md).
+

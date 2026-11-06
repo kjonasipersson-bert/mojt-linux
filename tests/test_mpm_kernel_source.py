@@ -166,7 +166,7 @@ class KernelSourceTests(unittest.TestCase):
 
     def test_delivered_cli_installs_and_inspects_without_provider_or_checkout(self):
         tools = self.f.work / 'delivered'; tools.mkdir()
-        for name in ('mpm', 'mpm_cli.py', 'mpm_kernel.py', 'mpm_kernel_source.py', 'mpm_sources.py',
+        for name in ('mpm', 'mpm_cli.py', 'mpm_kernel.py', 'mpm_native_io.py', 'mpm_kernel_source.py', 'mpm_sources.py',
                      'mpm_sources_cli.py', 'mpm_native_cache.py', 'mpm_transaction.py',
                      'mpm_request_plan.py', 'mpm_requests.py', 'mpm_selection.py', 'mojt_artifact.py'):
             shutil.copyfile(Path(kernel.__file__).parent / name, tools / name)

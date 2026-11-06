@@ -17,3 +17,10 @@ new overall command language.
 
 See [MBT syntax discussion](mbt-cli-discussion.md) for new tooling and
 [the MPM gap matrix](mpm-gap-matrix.md) for the remaining implementation joins.
+
+The [shared user model](management-workflow.md) and owner-agreed
+[Base install/status contract](mpm-base-contract.md) clarify what operations mean
+before implementation. They preserve the existing area/action language and the
+separate preparation/selection boundary; new Base target flags and machine
+records must be specified explicitly rather than inferred from old experiments.
+

@@ -26,6 +26,12 @@ Mojt is an experimental Linux distribution inspired by BSD's separation of the b
 
 Read the [manifesto](docs/manifesto.md), [architecture notes](docs/architecture.md), [Base format specification](docs/base-format.md), and the draft [MPM package-management contract](docs/mpm.md).
 
+For the user-facing model of **MPM and MBT**, start with
+[the management workflow](docs/management-workflow.md). The
+[Base install/status contract](docs/mpm-base-contract.md) was agreed on 2026-11-06;
+its first [implementation](docs/base-installation.md) is in PR #40. Base boot
+changes/upgrades and MBT public command spellings remain subsequent work.
+
 The accepted update model keeps Base as complete releases, System as coherent
 generations, and Ports as parallel program versions with active selections
 and transaction history. Shared MPM verbs preserve those different units of
@@ -46,8 +52,12 @@ and remaining integration work.
 The owner has also verified explicit Base/System generation selection and
 return, persistent markers, authenticated serial-console access from SSH,
 and controlled new-image build interruption. The owner subsequently verified
-two different kernels with matching modules and retained machine state. Updates
-to an existing boot disk remain separate work.
+two different kernels with matching modules and retained machine state. Native
+Kernel install/stage/select/rollback on an existing managed VM disk is now
+accepted, including a source-installed exact Kernel boot with origin retained
+through PR #39. Generalized Base/System updates on an existing disk and the
+complete bootstrap/build integration remain work; see the
+[six-step consolidation plan](docs/mpm-consolidation-plan.md).
 
 ## Requirements on the build/test host
 
@@ -203,3 +213,4 @@ docs/           manifesto, architecture, and format
 Mojt's original tools and documentation are licensed under **GPL-2.0-only**. Copyright (C) 2026 **Jonas Persson**. See `LICENSE`.
 
 Packages and other third-party components included in Base images retain their **own** licenses and respective copyright holders; this repository's GPLv2 notice does not replace those terms. Future external contributors retain their rights unless separately agreed.
+

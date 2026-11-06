@@ -12,6 +12,12 @@ in place. The earlier spelling `mpt` was not a request to rename MPM or create
 an alias. Existing `mojt-*.py` tools are implementation inputs, not a settled
 public MBT interface.
 
+The [shared user model](management-workflow.md) summarizes the responsibilities
+before syntax. The [Base install/status proposal](mpm-base-contract.md) is the
+immediate owner decision: MBT will consume that content-only installation API,
+adding explicit new-target/state/boot initialization only for bootstrap. This
+documentation review does not implement MBT or settle its exact grammar.
+
 The [concrete MBT interface proposal](mbt-interface-proposal.md) now supplies a
 four-object command family and worked journey for discussion: `env`, `build`,
 `package` and `bootstrap`. MPM syntax and build/package/install/select separation
@@ -38,4 +44,5 @@ Do not implement new verbs from these examples without the discussion. MBT
 must not grow a competing installer, catalog authority, dependency solver or
 selection database. See the [MPM gap matrix](mpm-gap-matrix.md) for implementation
 dependencies and acceptance criteria.
+
 
