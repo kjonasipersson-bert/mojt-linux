@@ -70,6 +70,6 @@ def _main(argv,*,runtime=None):
 
 def main(argv,*,runtime=None):
     try:return _main(argv,runtime=runtime)
-    except (OSError,ValueError,KeyError,TypeError,EOFError,subprocess.CalledProcessError,tarfile.TarError) as error:
+    except (OSError,ValueError,KeyError,TypeError,RecursionError,EOFError,subprocess.CalledProcessError,tarfile.TarError) as error:
         print('mpm base: '+str(error),file=sys.stderr)
         return 1

@@ -127,7 +127,7 @@ def dispatch(args, runtime):
     action = command[1] if len(command) > 1 else None
     if runtime is not None and os.geteuid() != 0:
         readonly = (command[2:] in (["--help"], ["-h"]) or
-            area == "base" and action == "status" or
+            area == "base" and action in (None,"status","--help","-h") or
             area == "source" and action in (None, "list", "show", "--help", "-h") or
             area == "cache" and action in (None, "--help", "-h") or
             area == "catalog" and action in ("search", "show", "versions", "resolve-kernel", "--help", "-h") or
@@ -137,7 +137,7 @@ def dispatch(args, runtime):
                 action in ("search", "show", "versions") and option(command, "--catalog"))
         if not readonly:
             raise ValueError("shared installation changes require an administrator")
-    if area == "base" and action in ("install", "status"):
+    if area == "base" and action in (None,"--help","-h","install","status"):
         if roots:raise ValueError("Base commands use --disk-root for one installation target, not --root")
         if not (action == "install" and option(command,"--source") and "--dry-run" in command):
             if action == "install" or option(command,"--verify"):require_codec(runtime,command)
@@ -145,7 +145,7 @@ def dispatch(args, runtime):
             tool=runtime.helpers/"tar"
             if not tool.is_file() or not os.access(tool,os.X_OK):raise ValueError("selected System has no retained GNU tar helper; Base realization unavailable")
         from mpm_base_cli import main
-        return main(command[1:],runtime=runtime)
+        return main(command[1:] or ["--help"],runtime=runtime)
     if area in ("source", "cache"):
         if area == "cache" and action == "fetch" and "--dry-run" not in command:
             require_codec(runtime, command)

@@ -120,10 +120,25 @@ class PreviewTests(Fixture):
         self.assertEqual(result['installed'],[]);self.assertIsNone(result['installation'])
         self.assertEqual(result['running']['state'],'unknown');self.assertFalse(root.exists())
 
+    def test_interrupted_store_initialization_is_visible_without_adoption(self):
+        stage=self.root/'.artifacts-init-retained';stage.mkdir();(stage/'partial').write_text('retain')
+        result=status.status(self.root)
+        self.assertEqual(result['installed'],[]);self.assertIsNone(result['installation'])
+        self.assertEqual(result['incomplete'],[stage.name]);self.assertEqual((stage/'partial').read_text(),'retain')
+        self.assertFalse((self.root/'artifacts').exists())
+
     def test_cli_status_needs_neither_provider_codec_nor_writable_target(self):
         env=dict(os.environ,PATH='/no-management-tools')
         p=subprocess.run([sys.executable,'-I','-B',str(REPO/'tools/mpm'),'base','status','--disk-root',str(self.root),'--json'],text=True,capture_output=True,env=env,cwd='/')
         self.assertEqual(p.returncode,0,p.stderr);self.assertEqual(json.loads(p.stdout)['installed'],[])
+        self.assertEqual(list(self.root.iterdir()),[])
+
+    def test_base_area_help_lists_supported_operations_without_target_or_helpers(self):
+        for command in (['base'],['base','--help']):
+            p=subprocess.run([sys.executable,'-I','-B',str(REPO/'tools/mpm'),*command],cwd='/',
+                             env=dict(os.environ,PATH='/absent'),text=True,capture_output=True)
+            self.assertEqual(p.returncode,0,p.stderr)
+            self.assertIn('install',p.stdout);self.assertIn('status',p.stdout)
         self.assertEqual(list(self.root.iterdir()),[])
 
     def test_unsafe_linked_target_and_unsupported_store_refused(self):
@@ -185,6 +200,19 @@ class PreviewTests(Fixture):
         known=status.status(self.root,running_record=value)
         self.assertEqual(known['selected']['artifact'],self.body['id']);self.assertTrue(known['running_is_selected'])
         self.assertEqual(known['running']['retention'],'not-in-this-store')
+
+    def test_unknown_managed_boot_format_is_not_an_empty_success(self):
+        (self.root/'boot/mojt').mkdir(parents=True)
+        (self.root/'boot/mpm').mkdir()
+        (self.root/'boot/mojt/grub.cfg').write_text('unsupported managed menu')
+        (self.root/'boot/mpm/format').write_text('future-version\n')
+        with self.assertRaisesRegex(ValueError,'managed boot'):status.status(self.root)
+
+    def test_linked_store_marker_is_not_followed(self):
+        outside=self.work/'external.json';outside.write_text('{}')
+        (self.root/'artifacts').mkdir();(self.root/'artifacts/store.json').symlink_to(outside)
+        with self.assertRaises(OSError):status.status(self.root)
+        self.assertEqual(outside.read_text(),'{}')
 
 
 @unittest.skipUnless(os.geteuid()==0 and shutil.which('tar') and shutil.which('zstd'),'requires root and GNU tar/zstd')
@@ -264,6 +292,52 @@ class BaseInstallTests(Fixture):
         self.assertEqual(p.returncode,0,p.stderr);self.assertTrue(json.loads(p.stdout)['changed'])
         p=subprocess.run(command[:4]+['base','status','--disk-root',str(self.root),'--verify','--json'],cwd='/',env=dict(os.environ,PATH='/absent'),text=True,capture_output=True)
         self.assertEqual(p.returncode,0,p.stderr);self.assertEqual(len(json.loads(p.stdout)['installed']),1)
+
+    def test_concurrent_fresh_imports_publish_one_complete_base(self):
+        command=[sys.executable,'-I','-B',str(REPO/'tools/mpm'),'base','install','--disk-root',str(self.root),
+                 '--from-file',str(self.archive),'--expected-id',self.body['id'],'-y']
+        processes=[subprocess.Popen(command,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE) for _ in range(2)]
+        results=[]
+        for process in processes:
+            output,error=process.communicate(timeout=30)
+            self.assertEqual(process.returncode,0,error);results.append(json.loads(output))
+        self.assertEqual(sum(r['changed'] for r in results),1)
+        self.assertEqual(len(status.status(self.root,verify=True)['installed']),1)
+
+    def test_failed_new_realization_keeps_previous_complete_base(self):
+        self.install();archive,body=self.package(extra=[entry('usr/bin/second',b'new')])
+        original=base.tx.publish
+        def fail(source,dest):
+            if dest.parent==self.root/'realizations/base':raise OSError('injected pre-publication failure')
+            return original(source,dest)
+        with mock.patch.object(base.tx,'publish',side_effect=fail),self.assertRaises(OSError):
+            base.install(self.root,archive,body['id'],yes=True)
+        report=status.status(self.root,verify=True)
+        self.assertEqual([r['artifact'] for r in report['installed']],[self.body['id']])
+        self.assertEqual([r['artifact'] for r in report['retained']],[body['id']])
+
+    def test_damaged_origin_or_realization_record_is_rejected(self):
+        self.install();path=base.realization_path(self.root,self.body['id'])/'realization.json'
+        value=base.read(path);value['description']['artifact']='sha256:'+'0'*64
+        path.chmod(0o644);path.write_text(json.dumps(base.record(base.REALIZATION,value['description'])));path.chmod(0o444)
+        with self.assertRaisesRegex(ValueError,'binding'):status.status(self.root)
+
+    def test_managed_selection_and_running_are_separate_metadata_observations(self):
+        import mpm_deployment as dep
+        import mpm_kernel_boot as boot
+        self.install();running=baseline(self.root,self.body['id'])
+        d=copy.deepcopy(running['description']);d['kernel']['artifact']='sha256:'+'8'*64;new=dep.create(d)
+        slot='boot/mpm/slots/'+'2'*32;folder=self.root/slot;folder.mkdir(parents=True)
+        (self.root/'boot/mpm/format').write_text(boot.FORMAT+'\n')
+        (folder/'deployment.json').write_text(json.dumps(new))
+        entries={running['id']:dict(record=running,relative='boot/mojt/system-test/0.1.3'),new['id']:dict(record=new,relative=slot)}
+        state=dict(format=boot.FORMAT,selected=new['id'],previous=running['id'],entries={k:v['relative'] for k,v in entries.items()})
+        (self.root/'boot/mojt/grub.cfg').write_bytes(boot.menu(state,entries))
+        with mock.patch.object(artifact,'verify',side_effect=AssertionError('default status must not decode archives')):
+            result=status.status(self.root,running_record=running)
+        self.assertEqual(result['running']['deployment'],running['id'])
+        self.assertEqual(result['selected']['deployment'],new['id'])
+        self.assertFalse(result['running_is_selected'])
 
 
 if __name__=='__main__':unittest.main()

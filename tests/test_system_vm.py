@@ -907,6 +907,22 @@ esac""")
         self.assertIsNone(json.loads((profile / "mpm-runtime.json").read_text())["helpers"]["zstd"])
         self.assertFalse((profile / "libexec/mpm/bin/zstd").is_symlink())
 
+    def test_base_tar_helper_is_bound_to_retained_system_closure(self):
+        profile, record = self.install(3)
+        expected = record['packages']['tar']['output']+'/bin/tar'
+        self.assertEqual(os.readlink(profile/'libexec/mpm/bin/tar'), expected)
+        self.assertEqual(json.loads((profile/'mpm-runtime.json').read_text())['helpers']['tar'],expected)
+        for name in ('mpm_base.py','mpm_base_cli.py','mpm_base_status.py','mpm_base_source.py','mpm_native_io.py','mojt-base-install'):
+            self.assertEqual((profile/'tools'/name).read_bytes(),(REPO/'tools'/name).read_bytes())
+
+    def test_base_tar_helper_cannot_escape_to_unretained_path(self):
+        record=self.fixture(3)
+        tool=self.payload/(record['packages']['tar']['output']+'/bin/tar').lstrip('/')
+        tool.unlink();tool.symlink_to('/usr/bin/tar')
+        system.write(self.payload/'usr/bin/tar','outside retained closure',0o755)
+        with mock.patch.object(system.os,'chown'), self.assertRaisesRegex(ValueError,'helper outside retained closure'):
+            system.install(self.tree,self.payload,record,self.busybox,'development',REPO)
+
     def test_mpm_codec_refuses_ambiguous_closure_or_external_symlink(self):
         record = self.fixture(3)
         for role in ("python", "nix"):

@@ -95,10 +95,11 @@ rootfs realization for installation success, leaves machine configuration and
 boot choices unchanged, and specifies honest read-only status. MBT bootstrap
 adds explicit new-target/state preparation using those same MPM rules.
 
-This is a proposal awaiting owner agreement, not an implementation authorization
-or adoption of the draft storage/deployment wires. Resolve D11's command meaning
-first; exact target/machine records are still needed before implementation.
-Existing MPM verbs and the deferred MBT-syntax decision are preserved.
+The owner agreed on 2026-11-06 and authorized exact Base install/status.
+D11's command meaning is settled. The first [implementation](base-installation.md)
+uses one `--disk-root` target and explicitly versioned store/receipt/realization/
+status records. This adopts only that bounded storage subset, not generalized
+boot/lifecycle formats or public MBT syntax. The remaining D2-D6 gates still apply.
 
 ## Open decisions and gates
 
@@ -114,7 +115,7 @@ Existing MPM verbs and the deferred MBT-syntax decision are preserved.
 | D8 | Supported physical target profiles, device safety checks, firmware/storage/input/network/console requirements and recovery medium | Before physical installation/update acceptance |
 | D9 | Close remaining MPM contract details within existing syntax: request-policy editing, supported version adapters, multi-command/exact alias escaping, profile namespaces, collision policy and user/project overrides | Before claiming those policies/backends or production project locking; keep the current supported subset explicit |
 | D10 | Advisory/withdrawal and direct-provider-operation policy: when selected content may be used, how externally changed records are detected, and what requires an explicit repair plan | Before claiming production update/security reconciliation; never silently adopt foreign state |
-| D11 | Agree exact Base install/status meaning: complete content plus validated rootfs, exact-ID coexistence, unchanged state/boot, honest installed/next-boot/running status; then specify one target interface and versioned records | Owner agreement before implementing Base commands; not another MBT syntax decision |
+| D11 | Agreed 2026-11-06: complete content plus validated rootfs, exact-ID coexistence, unchanged state/boot and honest installed/next-boot/running status; PR #40 implements exact import and `--disk-root` with versioned records | Meaning settled; implementation/CI review remains. Base deployment and MBT syntax remain separate gates |
 
 Each deliverable needs a concrete format/interface proposal and focused failure
 tests. Do not hide these decisions inside unrelated integration code. Wire

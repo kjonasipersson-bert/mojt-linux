@@ -557,7 +557,8 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
               "PATH=/run/mojt-system/bin:/usr/bin:/bin\nexport PATH\nexec " + python +
               ' -I -B /run/mojt-system/tools/mpm-system "$@"\n', 0o755)
         helper = retained_command(payload, record, "zstd")
-        tar_helper = executable(payload, record, "tar", "bin/tar")
+        tar_helper = retained_command(payload, record, "tar")
+        require(tar_helper is not None, "missing retained GNU tar helper")
         (system / "libexec/mpm/bin").mkdir(parents=True)
         (system / "libexec/mpm/bin/tar").symlink_to(tar_helper)
         if helper is not None:

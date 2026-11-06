@@ -12,7 +12,7 @@ Existing MPM syntax remains unchanged. D1/D5 in the
 formats are settled. The [behavior contract](distribution-contract.md) defines
 guarantees; this proposal makes the user journey concrete.
 
-Start with the [shared user model](management-workflow.md). The pending
+Start with the [shared user model](management-workflow.md). The owner-agreed
 [Base install/status agreement](mpm-base-contract.md) defines the MPM boundary
 that MBT must reuse; this revision does not authorize either implementation.
 

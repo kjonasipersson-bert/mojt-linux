@@ -46,18 +46,38 @@ Catalog selection, recorded requests, installed artifacts and active command
 selections are separate. An artifact identity from
 .B list --exact
 identifies an installed build; it is not itself an upgrade request.
-.SH DESIGN AND IMPLEMENTATION STATUS
-Base/System mutation and the proposed Base status interface are not implemented.
-See docs/management-workflow.md for the shared MPM/MBT user model and
-docs/mpm-base-contract.md for the Base install/status proposal awaiting agreement.
-That proposal requires a verified complete Base and validated rootfs realization;
-installation changes neither machine configuration nor next boot. Cached archive
-bytes alone are not installed Base. Status would report installed, next-boot and
-running identities separately, with unknown state explicit.
+.SH EXACT BASE INSTALL AND STATUS
+.BI "base install --from-file " "ARCHIVE --expected-id sha256:FULL_ID"
+retains the verified complete Base and publishes a validated rootfs realization.
+Use --dry-run for a read-only target preview or -y to accept that operation.
+Alternatively use --source NAME with --expected-id and --archive-sha256 HEX;
+--snapshot, --sources-root and --cache-root have the Kernel source meanings.
+Source preview reads metadata only and does not claim rootfs verification.
 .PP
-MBT public commands remain proposed. Build/package produce results; MPM installs
-and selects content. Bootstrap explicitly creates/initializes a new target using
-those same MPM rules. Documentation examples do not add runnable commands.
+New System payloads retain GNU tar alongside zstd for the reviewed Base extractor.
+Realization preserves numeric owners, modes, supported links and extended metadata;
+it requires an administrator. No defaults are copied into machine /etc, no state
+is initialized and no current link, boot menu or running content is changed.
+The first subset rejects unsupported required dependencies/requirements.
+.PP
+.B base status
+reports installed, next-boot and running Base identities separately. --verify
+rechecks retained archive, wrapper and rootfs content/metadata; --json returns
+mpm-base-status-v1 with complete IDs and explicit unknown observations.
+A cache/archive-only object is retained, not installed Base. Incomplete work and
+missing retention behind running/selected observations are reported separately.
+.PP
+Both actions accept --disk-root DIRECTORY for one existing installation target.
+The source frontend requires it; the installed frontend defaults to its mounted
+disk. Explicit --disk-root is offline inspection and never imports the inspection
+host's running identity. Global --root is rejected for Base commands. Status
+creates no target, registry, lock or selection and needs no provider/refresh.
+.PP
+Exact import preserves the first receipt on an unchanged repeat, including while
+the original archive is unavailable. It does not create a moving upgrade wish.
+Base boot selection/upgrade and System mutation remain unimplemented. See
+docs/base-installation.md and docs/mpm-base-contract.md for the implemented scope.
+MBT public spellings remain proposed; bootstrap will reuse the same MPM functions.
 .SH GLOBAL OPTIONS
 .TP
 .BI --root " DIRECTORY"

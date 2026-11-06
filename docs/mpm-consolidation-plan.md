@@ -93,8 +93,8 @@ inspection. The owner agreed to these meanings on 2026-11-06. The first
 Base boot selection and System integration remain later gates.
 MBT's final spelling remains deferred and it must reuse this installation model.
 
-After agreement, implement/test content-only Base import/realization/status,
-then generalize deployment to a changed Base, followed by System integration.
+Complete review/CI for content-only Base import/realization/status, then
+generalize deployment to a changed Base, followed by System integration.
 The next owner VM gate is an actual changed-Base boot. Do not add another manual
 Kernel matrix or move bootstrap/build work ahead of the six-step order.
 

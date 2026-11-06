@@ -6,7 +6,9 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Native artifact storage and install receipts v1
 
-Review draft. [Marker schema](artifact-store.schema.json),
+Base readonly-tree/receipt subset implemented in PR #40; other category and
+deployment joins remain drafts. See [Base implementation](../../base-installation.md).
+[Marker schema](artifact-store.schema.json),
 [receipt schema](install-receipt.schema.json), [common rules](README.md).
 
 ## Dedicated new-store layout
@@ -49,9 +51,12 @@ representation, direct dependencies, local trust decision, installer UID/time
 and exact manager reference. These fields are all required by the schema.
 
 `dependencies` equals descriptor dependencies, with unique canonical references.
-`trust.expected_id` equals `artifact`. This first receipt only represents
-`explicit-local-file`; new remote trust kinds need reviewed schemas/D7, not a
-made-up success string. Provider dependencies remain in their own stores;
+`trust.expected_id` equals `artifact`. The first Base implementation supports `explicit-local-file` and the existing
+`registered-native-source` observation. The latter includes the complete cache
+verification record and is checked against the exact artifact/encoding. The
+initial, previously unimplemented v1 draft schema now specifies that optional
+acquisition evidence and requires it for registered-source trust. This is not
+remote authentication/D7, nor a migration of experimental Kernel receipts. Provider dependencies remain in their own stores;
 reference them exactly rather than relabelling provider objects as native.
 Retain their complete closures/roots before publishing the installed object.
 
@@ -64,7 +69,7 @@ The initial readonly-tree subset rejects symlinks, hardlinks, special nodes and
 unsupported metadata before publication, as current Kernel extraction does.
 Descriptor/archive preserve original modes/owners. This generic future policy
 does not relabel existing `readonly-kernel-tree-v1` receipts. A Base runtime
-requires a separately validated realization of its nested rootfs archive,
+requires a separately validated [realization](base-realization.schema.json) of its nested rootfs archive,
 preserving appropriate target metadata under a reviewed extractor policy.
 Nix runtime paths remain unchanged. Do not claim relocation from storage alone.
 
@@ -101,3 +106,24 @@ at installation, not a fresh integrity scrub. Explicit verification checks the
 archive, descriptor, materialized inventory and still-retained dependency closure.
 Installation never implies readiness, a selected deployment, or a running build.
 
+
+
+## First Base implementation boundary
+
+Base uses this store marker and readonly wrapper/receipt representation, with a
+separate `realizations/base/FULL_HEX/rootfs` plus `realization.json`. It publishes
+complete store initialization atomically under the stable target
+`.artifact-store.lock`, then uses that lock and `STORE/.lock` for Base writes.
+The realization receipt binds the generic object receipt and a measured inventory,
+including target ownership/modes, xattrs and hardlink relations. It also binds the
+manager-code reference and exact GNU tar executable used by the reviewed extractor.
+The manager provider is `mojt-manager-code` with source-file hashes, not a falsely
+claimed native System artifact. Required future manager capability checks still
+belong to System/deployment integration.
+
+Only both complete representations count as installed Base. A verified wrapper
+without a rootfs is retained content; `.install-*` work is incomplete. The two
+publications do not atomically initialize persistent machine state; this path
+never runs state initialization, changes current links or selects a deployment.
+No generic Port/System installer or migration of the existing Kernel registry is
+claimed by adopting the marker/receipt subset here.

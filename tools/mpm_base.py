@@ -26,6 +26,7 @@ RECEIPT = 'mojt-install-receipt-v1'
 REALIZATION = 'mojt-base-realization-v1'
 PLAN = 'mojt-base-install-plan-v1'
 MAX_ROOTFS = artifact.MAX_CONTENT
+MANAGER_FILES=('mpm_base.py','mpm_native_io.py','mojt-base-install','mojt_native_image.py','mojt_artifact.py','mpm_transaction.py')
 require = io.require
 
 
@@ -91,13 +92,17 @@ def _locked_store(root):
     store=root/'artifacts'
     if store.exists():store_info(root)
     else:
-        store.mkdir(mode=0o755)
-        # Failure after creating this directory is intentionally reported as
-        # incomplete on retry/status; never adopt arbitrary pre-existing data.
-        io.write_json(store/'store.json',record(STORE,dict(installation=uuid.uuid4().hex,layout='kind-id-v1')))
-        with (store/'.lock').open('xb') as stream:
-            os.fchmod(stream.fileno(),0o600);os.fsync(stream.fileno())
-        io.sync_directory(store);io.sync_directory(root)
+        stage=Path(tempfile.mkdtemp(prefix='.artifacts-init-',dir=root))
+        try:
+            io.write_json(stage/'store.json',record(STORE,dict(installation=uuid.uuid4().hex,layout='kind-id-v1')))
+            with (stage/'.lock').open('xb') as stream:
+                os.fchmod(stream.fileno(),0o600);os.fsync(stream.fileno())
+            (stage/'base').mkdir(mode=0o755);(stage/'base/installed').mkdir(mode=0o755)
+            io.sync_directory(stage/'base/installed');io.sync_directory(stage/'base')
+            stage.chmod(0o755);io.sync_directory(stage)
+            require(not os.path.lexists(store), "artifact store appeared during initialization")
+            tx.publish(stage,store)
+        finally:io.clean_stage(stage)
     with tx.file_lock(store/'.lock',create=False):
         info=store_info(root)
         (store/'base').mkdir(exist_ok=True,mode=0o755)
@@ -121,14 +126,13 @@ def acceptable(body):
 
 
 def manager():
-    names=('mpm_base.py','mpm_native_io.py','mojt-base-install')
-    return dict(provider='mojt-manager-code',identity=dict(files={name:artifact.file_sha(Path(__file__).with_name(name)) for name in names}))
+    return dict(provider='mojt-manager-code',identity=dict(files={name:artifact.file_sha(Path(__file__).with_name(name)) for name in MANAGER_FILES}))
 
 
 def validate_manager(value):
     artifact.fields(value, ('provider','identity'))
     artifact.fields(value['identity'], ('files',))
-    require(value['provider']=='mojt-manager-code' and set(value['identity']['files'])=={'mpm_base.py','mpm_native_io.py','mojt-base-install'}, 'unsupported Base manager reference')
+    require(value['provider']=='mojt-manager-code' and set(value['identity']['files'])==set(MANAGER_FILES), 'unsupported Base manager reference')
     for checksum in value['identity']['files'].values():
         require(type(checksum) is str and re.fullmatch('[0-9a-f]{64}',checksum), 'invalid manager code digest')
 
@@ -184,7 +188,10 @@ def realization(root, identifier, receipt, *, verify=False):
     if not os.path.lexists(path):return None
     tx.protected_directory(path,label='Base realization')
     require(set(p.name for p in path.iterdir())=={'rootfs','realization.json'}, 'incomplete/unmanaged Base realization')
+    require(stat.S_IMODE(io.directory(path).st_mode)==0o555,'Base realization must be sealed')
     io.directory(path/'rootfs')
+    meta=io.regular(path/'realization.json')
+    require(meta.st_uid==path.stat().st_uid and stat.S_IMODE(meta.st_mode)==0o444,'unsafe Base realization metadata')
     value=read(path/'realization.json');d=envelope(value,REALIZATION)
     artifact.fields(d,('installation','artifact','receipt','layout','rootfs_sha256','inventory','constructor','extractor'))
     require(d['installation']==receipt['description']['installation'] and d['artifact']==identifier and d['receipt']==receipt['id']
@@ -196,6 +203,7 @@ def realization(root, identifier, receipt, *, verify=False):
     require(len(inner)==1 and d['rootfs_sha256']==inner[0]['sha256'], 'Base realization inner archive differs')
     artifact.fields(d['extractor'],('program','sha256'))
     require(type(d['extractor']['program']) is str and d['extractor']['program'].startswith('/')
+            and len(os.fsencode(d['extractor']['program']))<=4096 and all(ord(c)>=32 and ord(c)!=127 for c in d['extractor']['program'])
             and type(d['extractor']['sha256']) is str and re.fullmatch('[0-9a-f]{64}',d['extractor']['sha256']), 'invalid Base extractor identity')
     if verify:require(rootfs_inventory(path/'rootfs')==d['inventory'], 'Base rootfs content/metadata damaged')
     return value
@@ -264,22 +272,27 @@ def prepare(root, body, *, verify_installed=True):
 
 def install(root, archive, identifier, *, dry_run=False, yes=False, acquisition=None, tar='tar'):
     io.identifier(identifier);root=target(root,write=True);info=store_info(root)
+    acquisition=artifact.parse_json(artifact.canonical(acquisition)) if acquisition is not None else None
     # Exact repeats consume retained bytes, not a vanished original locator.
     if info and os.path.lexists(object_path(root,identifier)):
         body,receipt=object_record(root,identifier,verify=True)
         plan=prepare(root,body)
-        if plan['description']['action']=='no-change':return dict(plan=plan,changed=False,dry_run=dry_run)
+        if plan['description']['action']=='no-change':
+            plan=record(PLAN,dict(plan['description'],archive=receipt['description']['archive'],required_storage_bytes=None))
+            return dict(plan=plan,changed=False,dry_run=dry_run)
         archive=object_path(root,identifier)/'archive.tar.zst'
         acquisition=receipt['description'].get('acquisition')
     with tempfile.TemporaryDirectory(prefix='mojt-base-preview-') as temporary:
         work=Path(temporary);wrapper=work/'wrapper';wrapper.mkdir()
         try:
-            io.frozen_copy(archive,work/'archive.tar.zst')
+            checksum,size=io.frozen_copy(archive,work/'archive.tar.zst')
+            frozen_encoding=dict(sha256=checksum,size=size)
             body=artifact.verify(work/'archive.tar.zst',identifier,max_uncompressed=acquisition['max_expanded'] if acquisition else None)
             acceptable(body);io.unpack_regular(work/'archive.tar.zst',body,wrapper)
             io.acquisition_trust(acquisition,identifier,artifact.file_sha(work/'archive.tar.zst'),(work/'archive.tar.zst').stat().st_size)
-            inner_tar(wrapper,body,work)
-            plan=prepare(root,body)
+            inner,_,_=inner_tar(wrapper,body,work)
+            plan=record(PLAN,dict(prepare(root,body)['description'],archive=frozen_encoding,
+                rootfs_tar_bytes=inner.stat().st_size,required_storage_bytes=None))
         finally:io.clean_stage(wrapper)
         if dry_run:return dict(plan=plan,changed=False,dry_run=True,archive_verified=True,rootfs_audited=True)
         require(os.geteuid()==0, 'Base realization preserving numeric ownership requires an administrator')
@@ -302,7 +315,9 @@ def install(root, archive, identifier, *, dry_run=False, yes=False, acquisition=
                 stage=Path(tempfile.mkdtemp(prefix='.install-',dir=obj.parent))
                 try:
                     checksum,size=io.frozen_copy(work/'archive.tar.zst',stage/'archive.tar.zst')
-                    require(artifact.verify(stage/'archive.tar.zst',identifier)==body,'Base input changed during import')
+                    require(dict(sha256=checksum,size=size)==frozen_encoding,'Base encoding changed after preview')
+                    require(artifact.verify(stage/'archive.tar.zst',identifier,
+                        max_uncompressed=acquisition['max_expanded'] if acquisition else None)==body,'Base input changed during import')
                     io.unpack_regular(stage/'archive.tar.zst',body,stage)
                     d=dict(installation=state['installation'],kind='base',artifact=identifier,
                         archive=dict(sha256=checksum,size=size),representation='readonly-tree-v1',dependencies=[],

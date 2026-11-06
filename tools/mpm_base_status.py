@@ -26,6 +26,10 @@ def selected(root, running_record):
     import mpm_kernel_boot as boot
     import mpm_deployment as deployment
     raw=boot.checked_file(path)
+    marker=root/'boot/mpm/format'
+    if os.path.lexists(marker):
+        base.require(boot.checked_file(marker)==(boot.FORMAT+'\n').encode() and raw.startswith(boot.HEADER.encode()),
+                     'unsupported/inconsistent managed boot selection')
     if raw.startswith(boot.HEADER.encode()):
         lines=raw.decode('ascii').splitlines()
         base.require(len(lines)>1 and lines[1].startswith('# '),'missing selected deployment metadata')
@@ -60,6 +64,9 @@ def status(root, *, verify=False, running_record=None):
     choice=selected(root,running_record) if root.exists() else unknown('target does not exist')
     info=base.store_info(root)
     installed=[];retained=[];incomplete=[];ids=set()
+    if root.exists():
+        for path in sorted(root.glob('.artifacts-init-*')):
+            base.io.directory(path);incomplete.append(path.name)
     if info:
         directory=root/'artifacts/base/installed'
         for path in sorted(directory.iterdir()) if directory.exists() else ():

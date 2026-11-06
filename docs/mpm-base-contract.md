@@ -4,11 +4,13 @@ Copyright (C) 2026 Jonas Persson
 SPDX-License-Identifier: GPL-2.0-only
 -->
 
-# Base install and status: proposal for owner agreement
+# Base install and status: owner-agreed contract
 
 Owner-agreed behavior, 2026-11-06. The first
 [implementation](base-installation.md) is under validation in PR #40. This is the
-behavior contract in the [six-step plan](mpm-consolidation-plan.md), authorized by the owner after the command-meaning review. It preserves the [MPM user model](management-workflow.md)
+behavior contract in the [six-step plan](mpm-consolidation-plan.md), authorized
+by the owner after the command-meaning review. It preserves the
+[MPM user model](management-workflow.md)
 and accepted independent lifecycles. No public MBT spelling is decided here.
 
 ## The two commands in one sentence each
