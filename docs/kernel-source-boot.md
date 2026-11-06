@@ -63,6 +63,60 @@ and the new delivered System runtime. Reuse the already built Kernel, Base relea
 and exported System payload; do not compile another Kernel for this gate.
 Keep other VM disks detached.
 
+### Debian-host preparation
+
+Run `tests/prepare-kernel-source-boot.py` as the ordinary Debian user from the
+pinned source checkout, directly in an interactive terminal. Do not pipe it or
+wrap it in a shell heredoc: image assembly prompts for the new guest root password.
+The helper checks host tools/input paths, uses the existing Base packer and
+Kernel installer, previews the native image and invokes the same image builder
+with sudo. It prints progress before expensive package/image verification.
+
+```sh
+python3 -I -B /CHECKOUT/tests/prepare-kernel-source-boot.py \
+  --output /NEW/TEST \
+  --base-release /RETAINED/base-0.1.3-x86_64 \
+  --kernel-package /RETAINED/kernel-package.tar.zst \
+  --expected-kernel sha256:EXACT_KERNEL_ID \
+  --system-payload /RETAINED/system-step10 \
+  --path-file /HOME/mojt-source-boot-test-path
+```
+
+The output must not exist and must be separate from every input. This wraps the
+retained Base release without modifying it and creates a private host Kernel
+registry. The test-local Base context admits only this already accepted upstream
+Kernel version; it is not published compatibility policy for future versions.
+The exported System payload is reused, while System assembly delivers MPM from
+the pinned checkout. No old VM disk is attached or converted.
+
+The helper produces `run-qemu.sh` alongside `image/` and a separate 32 MiB ext4
+disk containing the pinned acceptance scripts plus their checksum inventory.
+Its wrapper attaches the new VM disk first and the test-input disk second with
+`readonly=on`. The original image launcher is unchanged. Start the wrapper
+reported by `READY` rather than `image/run-qemu.sh`:
+
+```sh
+bash "$(cat /HOME/mojt-source-boot-test-path)/run-qemu.sh"
+```
+
+After logging in as root, inspect System version, `uname -r`, the native Kernel
+artifact and failed units. Expect `system-source-kernel-boot`, the previously
+compiled Kernel release and its exact input artifact ID, with no failed units.
+Mount the extra test disk in this disposable guest before each test session:
+
+```sh
+mkdir -p /run/source-boot-inputs
+mount -o ro /dev/vdb /run/source-boot-inputs
+```
+
+The script paths below can then use `/run/source-boot-inputs` in place of `/TEST`.
+After the deliberate restart, mount the input disk again before `check`; the
+checkpoint remains under persistent `/var`. The input script checksums and source
+revision are also recorded in host-side `preparation.json`. These local checks
+provide integrity/traceability of owner-selected test inputs, not release signing.
+
+### Guest phases
+
 `tests/run-kernel-source-boot.py` uses the selected System's installed MPM commands.
 Place it beside `run-kernel-source-acceptance.py` in the disposable guest. It has
 explicit phases, recorded under `/var/lib/mojt/kernel-source-boot/state.json`:
@@ -114,3 +168,8 @@ synthetic guest executables/disk output; they are not real boot acceptance.
 remains valid evidence for its original scope. One forward reboot in this separate
 native image is the next owner gate after CI; an additional hardware or full
 Base/System/Kernel cross-product is not requested here.
+
+Host-preparation tests exercise refusal of existing/overlapping or symlinked
+output paths, the narrow test context, refusal of an unexpected launcher and the
+actual generated QEMU argument list (including a path containing spaces). A fake
+QEMU executable records those arguments; this is not a VM boot test.

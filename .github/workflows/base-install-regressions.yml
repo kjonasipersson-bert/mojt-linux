@@ -28,6 +28,7 @@ jobs:
       - name: Check owner-authorized native acquisition and verified cache
         run: |
           python3 -B -m unittest discover -s tests -p 'test_kernel_image_origin.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_kernel_source_boot_prepare.py' -v
           python3 -B -m unittest discover -s tests -p 'test_mpm_kernel_source.py' -v
           python3 -B -m unittest discover -s tests -p 'test_mpm_kernel.py' -v
           python3 -B -m unittest discover -s tests -p 'test_mpm_sources.py' -v
