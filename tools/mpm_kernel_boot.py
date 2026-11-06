@@ -325,6 +325,8 @@ def stage(root, identifier, *, baseline=None, base_context=None, busybox=None,
         Path(__file__).with_name(name)) for name in ("mpm_kernel_boot.py", "mojt-vm-build.py", "mojt_native_image.py",
                                                     "mojt_system.py", "mojt_boot.py", "mpm_transaction.py")}))
     if receipt.get('format') == 'mojt-base-boot-inputs-v1':
+        from mpm_base_boot import management
+        management(root / 'system' / manifest['description']['label'])
         producer = artifact.digest(dict(kernel=producer, base_constructor={name: artifact.file_sha(
             Path(__file__).with_name(name)) for name in ('mpm_base_boot.py', 'mpm_base_transition.py')}))
     retained_entries, unused = available(root, state, entries)
