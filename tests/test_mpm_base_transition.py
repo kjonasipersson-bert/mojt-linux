@@ -97,7 +97,8 @@ class NativePreflightTests(unittest.TestCase):
     def setUp(self):
         self.f=boot_fixture.KernelBootTests();self.f.setUp();self.addCleanup(self.f.doCleanups)
         self.b=base_fixture.PreviewTests();self.b.setUp();self.addCleanup(self.b.doCleanups)
-        archive,self.body=self.b.package(version='0.1.4',abi={'libc':'glibc','libc_version':'2.41'})
+        archive,self.body=self.b.package(version='0.1.4',abi={'libc':'glibc','libc_version':'2.41'},
+            extra=[base_fixture.entry('usr/bin/sh',b'#!/bin/sh\n# synthetic candidate shell\n')])
         self.root=self.f.root
         base.install(self.root,archive,self.body['id'],yes=True)
         self.bounds=dict(format=catalog.BASE_FORMAT,base=dict(artifact=self.body['id'],release='0.1.4'),
@@ -122,10 +123,10 @@ class NativePreflightTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'inputs changed'):transition.recheck(self.root,value)
 
     def test_base_owned_account_shell_must_exist_in_candidate_not_inspector_host(self):
-        passwd=self.root/'state/etc/passwd';passwd.write_text(passwd.read_text().replace('/run/mojt-system/bin/bash','/bin/sh'))
+        passwd=self.root/'state/etc/passwd';passwd.write_text(passwd.read_text().replace('/bin/sh','/bin/bash'))
         report=self.prepare()['description']['checks']
         self.assertFalse(report['declared_compatible'])
-        self.assertTrue(any('/bin/sh' in error for error in report['errors']))
+        self.assertTrue(any('/bin/bash' in error for error in report['errors']))
 
     def test_corrupt_candidate_or_system_is_blocked_without_menu_change(self):
         before=(self.root/'boot/mojt/grub.cfg').read_bytes()
