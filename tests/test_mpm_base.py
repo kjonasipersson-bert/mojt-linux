@@ -242,7 +242,7 @@ class BaseInstallTests(Fixture):
         self.assertEqual(before,((obj/'installed.json').read_bytes(),(real/'realization.json').read_bytes()))
 
     def test_corrupt_runtime_detected_and_never_silently_repaired(self):
-        self.install();tree=base.realization_path(self.root,self.body['id'])/'rootfs'
+        self.install();tree=base.realization_path(self.root,self.body['id'])/'tree/rootfs'
         (tree/'usr/bin/tool').write_bytes(b'corrupt')
         self.assertEqual(len(status.status(self.root)['installed']),1)
         with self.assertRaisesRegex(ValueError,'rootfs'):status.status(self.root,verify=True)
@@ -338,6 +338,30 @@ class BaseInstallTests(Fixture):
         self.assertEqual(result['running']['deployment'],running['id'])
         self.assertEqual(result['selected']['deployment'],new['id'])
         self.assertFalse(result['running_is_selected'])
+
+    def test_unprivileged_status_reads_metadata_but_cannot_write_unbooted_rootfs(self):
+        import mojt_system as system
+        archive,body=self.package(extra=[entry('tmp',mode=0o1777)])
+        base.install(self.root,archive,body['id'],yes=True)
+        tree=base.realization_path(self.root,body['id'])/'tree/rootfs'
+        self.assertEqual(stat.S_IMODE((tree/'tmp').stat().st_mode),0o1777)
+        self.work.chmod(0o755);self.root.chmod(0o755)
+        copied=self.work/'public-tools';copied.mkdir(mode=0o755)
+        for name in system.MPM_FILES:
+            shutil.copyfile(REPO/'tools'/name,copied/name);(copied/name).chmod(0o644)
+        def ordinary():
+            os.setgroups([]);os.setgid(65534);os.setuid(65534)
+        command='import sys;sys.path.insert(0,'+repr(str(copied))+');from mpm_cli import main;raise SystemExit(main('+repr(['base','status','--disk-root',str(self.root),'--json'])+'))'
+        p=subprocess.run([sys.executable,'-I','-B','-c',command],preexec_fn=ordinary,
+                         env=dict(os.environ,PATH='/absent'),text=True,capture_output=True,cwd='/')
+        self.assertEqual(p.returncode,0,p.stderr)
+        self.assertEqual(json.loads(p.stdout)['installed'][0]['artifact'],body['id'])
+        attempt='from pathlib import Path;Path('+repr(str(tree/'tmp/forbidden'))+').write_text("must fail")'
+        p=subprocess.run([sys.executable,'-I','-B','-c',attempt],preexec_fn=ordinary,
+                         text=True,capture_output=True,cwd='/')
+        self.assertNotEqual(p.returncode,0);self.assertIn('PermissionError',p.stderr)
+        self.assertFalse((tree/'tmp/forbidden').exists())
+        self.assertEqual(len(status.status(self.root,verify=True)['installed']),1)
 
 
 if __name__=='__main__':unittest.main()

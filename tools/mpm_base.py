@@ -187,9 +187,10 @@ def realization(root, identifier, receipt, *, verify=False):
     path=realization_path(root,identifier)
     if not os.path.lexists(path):return None
     tx.protected_directory(path,label='Base realization')
-    require(set(p.name for p in path.iterdir())=={'rootfs','realization.json'}, 'incomplete/unmanaged Base realization')
+    require(set(p.name for p in path.iterdir())=={'tree','realization.json'}, 'incomplete/unmanaged Base realization')
     require(stat.S_IMODE(io.directory(path).st_mode)==0o555,'Base realization must be sealed')
-    io.directory(path/'rootfs')
+    protected=io.directory(path/'tree')
+    require(protected.st_uid==path.stat().st_uid and stat.S_IMODE(protected.st_mode)==0o500, 'unsafe Base realization tree container')
     meta=io.regular(path/'realization.json')
     require(meta.st_uid==path.stat().st_uid and stat.S_IMODE(meta.st_mode)==0o444,'unsafe Base realization metadata')
     value=read(path/'realization.json');d=envelope(value,REALIZATION)
@@ -205,7 +206,7 @@ def realization(root, identifier, receipt, *, verify=False):
     require(type(d['extractor']['program']) is str and d['extractor']['program'].startswith('/')
             and len(os.fsencode(d['extractor']['program']))<=4096 and all(ord(c)>=32 and ord(c)!=127 for c in d['extractor']['program'])
             and type(d['extractor']['sha256']) is str and re.fullmatch('[0-9a-f]{64}',d['extractor']['sha256']), 'invalid Base extractor identity')
-    if verify:require(rootfs_inventory(path/'rootfs')==d['inventory'], 'Base rootfs content/metadata damaged')
+    if verify:require(rootfs_inventory(path/'tree/rootfs')==d['inventory'], 'Base rootfs content/metadata damaged')
     return value
 
 
@@ -333,7 +334,8 @@ def install(root, archive, identifier, *, dry_run=False, yes=False, acquisition=
             stage=Path(tempfile.mkdtemp(prefix='.install-',dir=dest.parent))
             try:
                 inner,checksum,old=inner_tar(obj,body,stage)
-                tree=stage/'rootfs';tree.mkdir()
+                private=stage/'tree';private.mkdir(mode=0o700)
+                tree=private/'rootfs';tree.mkdir()
                 command=[str(tool),'--numeric-owner','--acls','--xattrs','--xattrs-include=*','--same-owner','--same-permissions']
                 subprocess.run([*command,'-xf',str(inner),'-C',str(tree)],check=True)
                 try:old['check_rootfs'](tree,body['version']['upstream'])
@@ -341,6 +343,7 @@ def install(root, archive, identifier, *, dry_run=False, yes=False, acquisition=
                 subprocess.run([*command,'--compare','-f',str(inner),'-C',str(tree)],check=True)
                 inner.unlink()
                 old['sync_tree'](tree)
+                private.chmod(0o500);io.sync_directory(private)
                 evidence=record(REALIZATION,dict(installation=state['installation'],artifact=identifier,receipt=receipt['id'],
                     layout='base-rootfs-v1',rootfs_sha256=checksum,inventory=rootfs_inventory(tree),constructor=manager(),extractor=tool_evidence))
                 io.write_json(stage/'realization.json',evidence);stage.chmod(0o555);io.sync_directory(stage)

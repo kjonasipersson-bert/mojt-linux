@@ -77,7 +77,7 @@ def status(root, *, verify=False, running_record=None):
             body,receipt=base.object_record(root,identifier,verify=verify)
             realized=base.realization(root,identifier,receipt,verify=verify)
             row=dict(artifact=identifier,version=body['version'],platform=body['platform'],
-                path=str(path),realization=str(base.realization_path(root,identifier)/'rootfs') if realized else None,
+                path=str(path),realization=str(base.realization_path(root,identifier)/'tree/rootfs') if realized else None,
                 integrity='verified-now' if verify else 'verified-at-installation',
                 trust=receipt['description']['trust'],acquisition=receipt['description'].get('acquisition'),
                 running=running['artifact']==identifier,next_boot=choice['artifact']==identifier)

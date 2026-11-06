@@ -54,7 +54,7 @@ store is migrated or silently adopted. Paths under the target are:
 | `.artifact-store.lock` | Stable target initialization/Base writer lock |
 | `artifacts/store.json`, `artifacts/.lock` | Store identity and shared object writer lock |
 | `artifacts/base/installed/FULL_HEX/` | Exact descriptor, original archive, `mojt-install-receipt-v1`, normalized wrapper payload/provenance |
-| `realizations/base/FULL_HEX/rootfs/` | Realized rootfs, preserving reviewed ownership, modes, links and xattrs/ACLs |
+| `realizations/base/FULL_HEX/tree/rootfs/` | Realized rootfs, preserving reviewed ownership, modes, links and xattrs/ACLs |
 | `realizations/base/FULL_HEX/realization.json` | `mojt-base-realization-v1` binding installation/artifact/receipt, compressed inner digest, measured inventory, constructor code and GNU tar identity |
 | `.install-*` siblings | Incomplete work, not an installed Base |
 
@@ -73,6 +73,12 @@ content is retained. An exact repeat verifies retained content, preserves receip
 and needs no original archive. Source repeats preserve their original acquisition
 observation; the accepted registration/policy binding must still authorize use.
 No physical garbage collection or automatic incomplete-stage cleanup is added.
+
+The rootfs's own metadata is preserved. A separate root-owned `tree/` container
+with mode 0500 protects it while not booted, including intentionally writable Unix
+paths such as `/tmp`. Public realization metadata remains readable for ordinary
+status; `--verify` requires access to the protected tree. The future boot path can
+bind the exact rootfs read-only while applying the usual runtime state mounts.
 
 The shared native I/O primitives are reused by Kernel import. The Base path
 reuses the directory installer's manifest/audit/rootfs validation and sync policy,

@@ -111,7 +111,9 @@ Installation never implies readiness, a selected deployment, or a running build.
 ## First Base implementation boundary
 
 Base uses this store marker and readonly wrapper/receipt representation, with a
-separate `realizations/base/FULL_HEX/rootfs` plus `realization.json`. It publishes
+separate `realizations/base/FULL_HEX/tree/rootfs` plus `realization.json`.
+A root-owned 0500 `tree/` container prevents unprivileged writes through writable
+Unix directories while preserving the rootfs metadata; status metadata stays public. It publishes
 complete store initialization atomically under the stable target
 `.artifact-store.lock`, then uses that lock and `STORE/.lock` for Base writes.
 The realization receipt binds the generic object receipt and a measured inventory,
