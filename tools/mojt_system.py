@@ -76,7 +76,7 @@ VERSION = "0.2"
 # This does not ship a source checkout or expose image/build commands.
 MPM_FILES = (
     "mpm", "mpm-system", "mpm_cli.py", "mpm_catalog.py", "mpm_selection.py",
-    "mpm_selector_ports.py", "mpm_kernel.py", "mpm_deployment.py", "mpm_kernel_boot.py",
+    "mpm_selector_ports.py", "mpm_kernel.py", "mpm_kernel_source.py", "mpm_deployment.py", "mpm_kernel_boot.py",
     "mpm_transaction.py", "mpm_requests.py", "mpm_request_plan.py", "mpm_sources.py", "mpm_sources_cli.py",
     "mpm_ports_profile.py", "mpm_ports_cli.py", "mpm_nix_binary.py", "mpm_native_cache.py", "mojt_artifact.py", "mojt_boot.py", "mojt_system.py",
     "mojt_system_manifest.py", "mojt_native_image.py", "mojt-vm-build.py",

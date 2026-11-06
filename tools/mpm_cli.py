@@ -160,7 +160,8 @@ def dispatch(args, runtime):
             from mpm_kernel_boot import main
             return main(boot_options(command[1:], runtime))
     if area == "kernel" and action in ("install", "status", "plan"):
-        if action != "status" or "--verify" in command:
+        source_preview = action == "install" and option(command, "--source") and "--dry-run" in command
+        if (action != "status" or "--verify" in command) and not source_preview:
             require_codec(runtime, command)
         if runtime is not None and not roots and not option(command, "--root"):
             if "--help" not in command and "-h" not in command and not (runtime.disk / "boot/mojt").is_dir():
@@ -169,6 +170,12 @@ def dispatch(args, runtime):
         if action == "plan":
             from mpm_deployment import main
             return main([*roots, *command[2:]])
+        if action == "install" and option(command, "--source") and runtime is not None:
+            command = list(command)
+            if not option(command, "--sources-root"):
+                command += ["--sources-root", str(runtime.sources)]
+            if not option(command, "--cache-root"):
+                command += ["--cache-root", str(runtime.cache)]
         from mpm_kernel import main
         return main([*roots, *command[1:]])
     if area == "catalog" and not roots:

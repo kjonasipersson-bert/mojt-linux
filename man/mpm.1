@@ -257,7 +257,7 @@ or --release exact-release. All policies apply declared selected-Base limits;
 an impossible request fails without a policy or Base fallback. This does not
 install a kernel, persist its policy or change boot selection. See
 docs/mpm-catalog.md for synthetic examples and the experimental schema.
-.SH LOCAL KERNEL INSTALL AND STATUS
+.SH EXACT KERNEL INSTALL AND STATUS
 The repository frontend supports kernel install --from-file ARCHIVE
 --expected-id sha256:FULL_HEX_ID, with optional --dry-run or -y, and kernel
 status with optional --verify and --json. Use --root DIRECTORY before kernel
@@ -271,6 +271,22 @@ Status distinguishes installed content from unknown selected deployment and
 the actual running release; uname alone does not establish artifact identity.
 No boot selection or running module tree changes. Deployment compatibility is
 unevaluated. See docs/mpm-kernel.md for the supported local subset and limits.
+.PP
+Alternatively use kernel install --source NAME --expected-id sha256:FULL_ID
+--archive-sha256 HEX, with optional --snapshot ID, --sources-root and --cache-root.
+This joins an accepted native source snapshot and verified archive cache to the
+same Kernel installer. Source and file input modes are mutually exclusive.
+Eligibility is checked before acquisition; source-mode --dry-run writes nothing
+and does not read the archive body. Actual import re-verifies a private frozen
+copy and retains the source ID, snapshot/cache verification record and exact
+encoding as origin evidence. Installation remains separate from deployment.
+.PP
+An already installed artifact is scrubbed and remains a no-op, retaining its
+original origin record without needing source archive/cache bytes. Source or
+policy reconfiguration invalidates the old authorization. A metadata-only refresh
+does not replace an explicitly planned snapshot. On failure, verified cached
+bytes may remain even though no Kernel object was installed. See
+docs/kernel-source-install.md for the pending bounded VM acceptance gate.
 .SH READ-ONLY KERNEL DEPLOYMENT PLAN
 kernel plan --request FILE [--json] checks a complete explicit local plan.
 Use --root DIRECTORY before kernel or after plan, once only, to name the Kernel

@@ -116,8 +116,8 @@ no-ops, offline metadata reuse, withdrawal, old pins, reconfiguration, path safe
 publication/flush failure and authorization locking. Existing cache/package tests
 cover four category namespaces and full byte verification.
 
-The cache output is still acquisition evidence. The native Kernel installer can
-already consume an exact archive through `--from-file`, but there is no automatic
-source-to-install adapter yet. Native Ports publication, Base/System install and
+The cache output is still acquisition evidence. The [Kernel source-install join](kernel-source-install.md)
+now passes an exact acquired archive to the existing installer, retaining source
+provenance and keeping boot selection separate. Native Ports publication, Base/System install and
 deployment integration, remote authentication/signing, pruning and lifecycle
 recovery remain explicit gates in the governing six-step roadmap.

@@ -55,8 +55,12 @@ It joins accepted source/snapshot/catalog/acquisition records to a separately
 protected owner policy, a read-only exact plan and no-overwrite cache publication.
 Real synthetic tar/zstd tests exercise all categories and failure/retry boundaries.
 The library and source/cache commands ship in System. Named registrations, explicit
-metadata refresh and exact fetch now use frozen snapshots; installation integration
-is still pending. See [source runtime integration](source-runtime-integration.md).
+metadata refresh and exact fetch now use frozen snapshots. The first
+[source-to-install join](kernel-source-install.md) connects them to the existing
+Kernel publisher, with shared eligibility, retained origin evidence and separate
+boot selection. Its next gate is a bounded owner VM acceptance of the installed
+runtime with a real package. Base/System and native Ports installation integration
+remain pending. See [source runtime integration](source-runtime-integration.md).
 Local owner trust does not implement
 remote authentication or signing. This advances steps 1 and 2; it does not mark
 MPM complete or displace actual Base/System installation in step 3.

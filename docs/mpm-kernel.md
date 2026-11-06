@@ -9,10 +9,12 @@ SPDX-License-Identifier: GPL-2.0-only
 Status: experimental local native import/installation and read-only inspection,
 following merged PR #28 and its [real package acceptance](native-artifact-format.md#owner-native-package-acceptance-2026-10-29).
 The command works from a repository checkout with Python 3.11+ and zstd, without
-Nix/provider code. The installed System launcher still invokes the older Nix
-prototype directly; bundling/adopting this frontend in System is separate work.
-No `activate`, upgrade, automatic tracking policy, catalog acquisition, boot
-publication, GRUB/initramfs generation or existing-disk updater is implemented.
+Nix/provider code. The same frontend is delivered in System. The
+[registered source path](kernel-source-install.md) now joins an exact accepted
+snapshot and verified cache to this publisher while retaining source origin.
+This document describes the standalone file-input subset. Installation itself
+does not implement `activate`, upgrade, automatic tracking, boot publication or
+GRUB/initramfs generation; explicit boot operations remain separate.
 The next [read-only deployment planner](kernel-deployment-plan.md) checks an
 installed Kernel against an explicit complete selection and initramfs binding;
 it does not adopt that selection or establish boot readiness.
@@ -133,7 +135,10 @@ If publication's directory fsync fails after rename, inspect status: the complet
 object may already be visible. This is not a power-cut-tested recovery protocol.
 
 `installed.json` records the schema, full artifact ID, retained archive checksum/
-size, installation UID/time, explicit-local-file trust and storage policy. It is
+size, installation UID/time, input trust and storage policy. File inputs have
+explicit-local-file trust. Source inputs additionally retain typed acquisition
+evidence and registered-native-source trust as specified in the
+[source-install join](kernel-source-install.md). The record is
 published with its object, not through a separately updated database or ledger.
 Byte integrity does not authenticate remote publishers or prove runtime ABI.
 Remote repository trust/update and production hostile-input/resource hardening
