@@ -58,8 +58,10 @@ The library and source/cache commands ship in System. Named registrations, expli
 metadata refresh and exact fetch now use frozen snapshots. The first
 [source-to-install join](kernel-source-install.md) connects them to the existing
 Kernel publisher, with shared eligibility, retained origin evidence and separate
-boot selection. Its next gate is a bounded owner VM acceptance of the installed
-runtime with a real package. Base/System and native Ports installation integration
+boot selection. The bounded owner VM acceptance passed on 2026-11-06 at
+source revision `386b204`, using the installed runtime and a real package; see the
+[recorded evidence](kernel-source-install.md#owner-installed-system-vm-acceptance-2026-11-06).
+Full CI and final review remain merge gates. Base/System and native Ports installation integration
 remain pending. See [source runtime integration](source-runtime-integration.md).
 Local owner trust does not implement
 remote authentication or signing. This advances steps 1 and 2; it does not mark

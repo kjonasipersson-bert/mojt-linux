@@ -89,7 +89,8 @@ same-artifact/raw-encoding substitution. An isolated delivered copy installs and
 inspects packages from `/` without provider files or checkout imports. Existing
 local-file Kernel tests remain passing.
 
-**Next owner acceptance is one bounded VM test before merging this integration.**
+**The bounded owner VM gate passed on 2026-11-06; see the evidence below.**
+For another run, use the same limited scope:
 Use a disposable copy with a System that delivers this MPM runtime and a real
 native Kernel artifact not already installed in its Kernel registry. An existing
 build can be packaged with another explicit package revision while retaining the
@@ -114,6 +115,41 @@ Once that updated System and real archive are in the VM, run as root:
 The runner refuses an already installed artifact because that would only test a
 no-op. Its synthetic source-policy fixture is deliberately owner-trusted local
 metadata; it does not introduce a signed distribution service. The fixture
-publisher is exercised in unit tests, including package revisions, but **VM
-acceptance has not run in this development environment**. A later `stage`/`select`
+publisher is exercised in unit tests, including package revisions. The VM result
+below was reported by the owner; it was not run on the owner's machine by the
+development agent. A later `stage`/`select`
 test and restart are a separate boot-deployment gate, not an installation step.
+
+
+## Owner installed-System VM acceptance, 2026-11-06
+
+The owner built a fresh, independent UEFI/serial VM from source revision
+`386b20430e1b33a72c640700e0ea98ef69e9accc`, reusing the retained Base/System
+binary inputs and the matched Debian Kernel/module set. Before acceptance the
+guest reported:
+
+- System: `system-source-kernel-test`.
+- Running Kernel: `6.12.107+deb13-amd64`.
+- MPM: `/run/mojt-system/bin/mpm`.
+- No failed units at the initial boot check.
+
+The real input was the previously accepted native package
+`kernel-linux-6.12.107-r1-x86_64-linux-eed451b5497d.tar.zst`, copied into the
+VM's persistent test-input directory. No new Kernel compilation was required.
+The owner ran the pinned `run-kernel-source-acceptance.py` with the selected
+System Python and reported:
+
+```text
+PASS: installed System MPM joined named source, cache and exact Kernel installation
+PASS: retained source provenance, archive and module tree verified; repeat was a no-op
+PASS: running Kernel, machine identity, Base/System and existing boot records unchanged
+No boot selection or reboot performed. Lab retained: /var/lib/mojt/kernel-source-acceptance.dr52vial
+```
+
+This accepts the installed command join, real acquisition/installation, retained
+origin/tree verification and no-op behavior after the fixture archive was removed.
+The result JSON is retained in that guest lab as `result.json`. No source/snapshot
+or verification IDs have been inferred from the log. It does not accept remote
+publisher authentication, dependency acquisition, Kernel boot compatibility,
+selection or a restart into this installed package. No additional A/B matrix or
+physical-hardware result is claimed.
