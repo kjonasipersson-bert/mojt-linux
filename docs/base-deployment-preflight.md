@@ -70,3 +70,11 @@ compatibility bounds.
 No additional manual VM matrix is needed for this internal read-only increment.
 The next owner VM gate is an actual changed-Base boot retaining System, Kernel,
 identities, state and Ports, followed by return to the previous deployment.
+
+## Implemented staging follow-up
+
+The [Base staging subset](base-boot-staging.md) now constructs a complete private
+Base boot tree and bound initramfs from this evidence, and publishes them as one
+retained slot. The preflight record itself remains read-only and never confers
+publication authority. Explicit Base selection and owner changed-Base boot
+acceptance remain separate gates.

@@ -22,8 +22,12 @@ def _main(argv,*,runtime=None):
     for flag in ('archive-sha256','snapshot'):install.add_argument('--'+flag)
     for flag in ('sources-root','cache-root'):install.add_argument('--'+flag,type=Path)
     install.add_argument('--dry-run',action='store_true');install.add_argument('-y','--yes',action='store_true')
+    stage=sub.add_parser('stage');stage.add_argument('--artifact',required=True)
+    stage.add_argument('--base-context',required=True,type=Path)
+    stage.add_argument('--baseline');stage.add_argument('--dry-run',action='store_true')
+    stage.add_argument('-y','--yes',action='store_true')
     status=sub.add_parser('status');status.add_argument('--verify',action='store_true')
-    for command in (install,status):
+    for command in (install,stage,status):
         command.add_argument('--disk-root',type=Path);command.add_argument('--json',action='store_true')
     args=p.parse_args(argv)
     base.require(args.disk_root is not None or runtime is not None,'specify --disk-root for a checkout/offline target')
@@ -35,6 +39,15 @@ def _main(argv,*,runtime=None):
         running=None
         if runtime is not None and args.disk_root is None and runtime.running.is_file():running=base.read(runtime.running)
         result=inspect(root,verify=args.verify,running_record=running)
+    elif args.action=='stage':
+        from mpm_base_boot import stage as construct
+        baseline=args.baseline
+        if baseline is None and runtime is not None and args.disk_root is None:
+            from mpm_cli import boot_options
+            options=boot_options(['stage'],runtime)
+            baseline=options[options.index('--baseline')+1] if '--baseline' in options else None
+        result=construct(root,args.artifact,base.read(args.base_context),baseline=baseline,
+            dry_run=args.dry_run,yes=args.yes,tar=str(runtime.helpers/'tar') if runtime else 'tar')
     else:
         base.io.identifier(args.expected_id)
         source=args.source is not None
@@ -49,7 +62,7 @@ def _main(argv,*,runtime=None):
             base.require(not any(v is not None for v in (args.archive_sha256,args.snapshot,args.sources_root,args.cache_root)),'source/cache flags require --source')
             result=base.install(root,args.from_file,args.expected_id,dry_run=args.dry_run,yes=args.yes,
                                 tar=str(runtime.helpers/'tar') if runtime else 'tar')
-    if args.json or args.action=='install':print(json.dumps(result,indent=2,sort_keys=True))
+    if args.json or args.action in ('install','stage'):print(json.dumps(result,indent=2,sort_keys=True))
     else:
         print('Base on:',result['target'])
         for label,key in (('Running','running'),('Next boot','selected')):

@@ -60,6 +60,14 @@ it requires an administrator. No defaults are copied into machine /etc, no state
 is initialized and no current link, boot menu or running content is changed.
 The first subset rejects unsupported required dependencies/requirements.
 .PP
+.BI "base stage --artifact " "sha256:FULL_ID --base-context FILE"
+verifies installed Base against selected System/Kernel and actual state, then
+retains a private read-only boot tree and bound initramfs. Requires matching
+retained System management code and already present configuration defaults.
+Missing defaults are reported without changing configuration. --dry-run writes
+no slot. Staging never changes next boot or the running deployment. Explicit
+Base selection and changed-Base boot acceptance remain pending.
+.PP
 .B base status
 reports installed, next-boot and running Base identities separately. --verify
 rechecks retained archive, wrapper and rootfs content/metadata; --json returns
@@ -67,7 +75,7 @@ mpm-base-status-v1 with complete IDs and explicit unknown observations.
 A cache/archive-only object is retained, not installed Base. Incomplete work and
 missing retention behind running/selected observations are reported separately.
 .PP
-Both actions accept --disk-root DIRECTORY for one existing installation target.
+All Base actions accept --disk-root DIRECTORY for one existing installation target.
 The source frontend requires it; the installed frontend defaults to its mounted
 disk. Explicit --disk-root is offline inspection and never imports the inspection
 host's running identity. Global --root is rejected for Base commands. Status

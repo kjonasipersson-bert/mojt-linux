@@ -89,7 +89,7 @@ def inspect_entry(root, relative):
     body, installed = kernel.object_record(obj, d["kernel"]["artifact"], verify=True)
     require(deployment.kernel_identity(body) == d["kernel"], "deployment Kernel identity differs")
     receipt = read(path / "native-build-inputs.json")
-    require(receipt.get("format") == native.INPUTS_FORMAT, "unsupported native boot input receipt; fresh v2 native image required")
+    require(receipt.get("format") in (native.INPUTS_FORMAT, "mojt-base-boot-inputs-v1"), "unsupported native boot input receipt; fresh v2 native image required")
     require(receipt["kernel_artifact"] == body["id"], "boot input receipt Kernel differs")
     native.check_kernel_installation(installed, receipt)
     return dict(record=record, relative=relative, path=path, body=body)
@@ -112,6 +112,13 @@ def live_context(root, entry):
                 "selected System provider object differs")
     # Ports may legitimately have added other store objects; do not reject them.
     receipt = read(entry["path"] / "native-build-inputs.json")
+    if receipt.get("format") == "mojt-base-boot-inputs-v1":
+        from mpm_base_boot import context
+        facts = context(root, entry, manifest, receipt)
+        bounds = read(entry["path"] / "base-context.json")
+        deployment.compose(entry["record"], entry["body"], bounds, manifest, facts,
+                           read(entry["path"] / "initramfs-binding.json"), d["initramfs"]["archive"])
+        return manifest, facts, receipt
     base_path = root / "base" / base
     require(base_path == base_path.resolve(), "linked Base generation")
     require(artifact.digest(native.base_inventory(base_path)) == receipt["base_copy"]["assembled"],
@@ -247,7 +254,7 @@ def write_initramfs(root):
     return raw
 
 
-def build_initramfs(root, body, selected, slot, busybox, work):
+def build_initramfs(root, body, selected, slot, busybox, work, *, transform=None):
     vm = vm_module()
     require(vm.static_x86_64_elf(busybox), "requires a trusted static x86_64 BusyBox")
     vm.validate_busybox_applets(busybox, "password", extra=("findfs", *system.SHUTDOWN_APPLETS))
@@ -260,6 +267,8 @@ def build_initramfs(root, body, selected, slot, busybox, work):
     require(script.count(old) == 1, "native deployment record hook changed")
     script = script.replace(old, "/sysroot/boot/mpm/slots/" + slot + "/deployment.json")
     script = boot.init_script(script, d["boot"]["root_uuid"], label, base)
+    if transform is not None:
+        script = transform(script)
     initroot = work / "initroot"
     raw = vm.make_initramfs(initroot, busybox, modules, script, system.SHUTDOWN,
                            extra_applets=("findfs",), archive_writer=write_initramfs)

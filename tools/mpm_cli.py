@@ -36,9 +36,9 @@ def help_text():
           "  kernel                  install, status, plan, stage, select, rollback, resolve\n"
           "  ports                   install, activate, upgrade, update, apply, remove, reset, list, history\n"
           "                          initial/update input: --sources FILE\n"
-          "  base                    install, status; search, show, versions with --catalog FILE\n"
+          "  base                    install, status, stage; search, show, versions with --catalog FILE\n"
           "  system                  search, show, versions with --catalog FILE\n"
-          "System mutation and Base boot changes are not implemented.\n"
+          "System mutation and Base next-boot selection are not implemented.\n"
           "Install retains content; Kernel selection changes next boot, never the running Kernel.")
 
 
@@ -137,11 +137,11 @@ def dispatch(args, runtime):
                 action in ("search", "show", "versions") and option(command, "--catalog"))
         if not readonly:
             raise ValueError("shared installation changes require an administrator")
-    if area == "base" and action in (None,"--help","-h","install","status"):
+    if area == "base" and action in (None,"--help","-h","install","stage","status"):
         if roots:raise ValueError("Base commands use --disk-root for one installation target, not --root")
         if not (action == "install" and option(command,"--source") and "--dry-run" in command):
-            if action == "install" or option(command,"--verify"):require_codec(runtime,command)
-        if runtime is not None and action == "install" and "--dry-run" not in command and not any(v in command for v in ("--help","-h")):
+            if action in ("install","stage") or option(command,"--verify"):require_codec(runtime,command)
+        if runtime is not None and action in ("install","stage") and "--dry-run" not in command and not any(v in command for v in ("--help","-h")):
             tool=runtime.helpers/"tar"
             if not tool.is_file() or not os.access(tool,os.X_OK):raise ValueError("selected System has no retained GNU tar helper; Base realization unavailable")
         from mpm_base_cli import main
