@@ -25,6 +25,13 @@ jobs:
           python3 -B -m unittest discover -s tests -p 'test_mpm_nix_binary.py' -v
       - name: Check fresh Ports capability gates in System metadata
         run: python3 -B -m unittest discover -s tests -p 'test_system_manifest.py' -v
+      - name: Check owner-authorized native acquisition and verified cache
+        run: |
+          python3 -B -m unittest discover -s tests -p 'test_mpm_kernel_source.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_mpm_kernel.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_mpm_sources.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_mpm_native_cache.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_mojt_artifact.py' -v
       - name: Check offline catalog and fresh frontend dispatch boundaries
         run: python3 -B -m unittest discover -s tests -p 'test_mpm_catalog.py' -v
       - name: Check Python syntax

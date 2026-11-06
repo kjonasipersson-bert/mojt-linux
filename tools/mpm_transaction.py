@@ -9,6 +9,29 @@ from pathlib import Path
 import stat
 
 
+def protected_directory(root, *, write=False, label='MPM'):
+    """Canonical owned directory, respecting an enclosing private home boundary."""
+    def require(ok, message):
+        if not ok:raise ValueError(message)
+    root = Path(os.path.abspath(root))
+    require(root == root.resolve(), f'{label} root traverses a symlink')
+    # A private child cannot protect an earlier writable parent from rename.
+    # Inside an owned 0700 boundary, other users cannot reach 0775 descendants.
+    private = False
+    for path in reversed([root, *root.parents]):
+        if not path.exists():continue
+        info = path.stat()
+        detail = f'{path} (mode={stat.S_IMODE(info.st_mode):04o}, uid={info.st_uid})'
+        require(stat.S_ISDIR(info.st_mode) and info.st_uid in (0,os.geteuid()), f'unsafe {label} ancestor: ' + detail)
+        sticky = info.st_uid == 0 and info.st_mode & stat.S_ISVTX
+        require(private or not info.st_mode & 0o022 or sticky, f'writable {label} ancestor: ' + detail)
+        if info.st_uid == os.geteuid() and not info.st_mode & 0o077:private = True
+    if root.exists():
+        require(root.stat().st_uid in (0,os.geteuid()) and not root.stat().st_mode & 0o022, f'{label} root is not protected')
+        if write:require(root.stat().st_uid == os.geteuid(), f'shared {label} mutation requires its administrator')
+    return root
+
+
 class PublicationUncertain(OSError):
     """The rename completed, but its directory flush failed. Retain new content."""
     committed = True

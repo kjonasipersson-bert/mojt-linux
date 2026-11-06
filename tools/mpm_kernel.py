@@ -1,7 +1,7 @@
 # Mojt Linux
 # Copyright (C) 2026 Jonas Persson
 # SPDX-License-Identifier: GPL-2.0-only
-"""Local exact Kernel import/install/status. No provider, deployment or boot writes."""
+"""Exact Kernel import/status; registered source orchestration loads on demand."""
 import argparse
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -215,13 +215,14 @@ def object_record(path, expected_id, *, verify=False):
     require((path / "artifact.json").read_bytes() == artifact.canonical(body) + b"\n", "stored descriptor encoding differs")
     require(body["id"] == expected_id, "installed artifact identity differs")
     record = artifact.read_json(path / "installed.json")
-    artifact.fields(record, ("format", "artifact", "archive_sha256", "archive_size", "installed_utc", "uid", "trust", "storage"))
+    artifact.fields(record, ("format", "artifact", "archive_sha256", "archive_size", "installed_utc", "uid", "trust", "storage"), ("acquisition",))
     require(record["format"] == RECORD and record["artifact"] == expected_id and
             record["storage"] == "readonly-kernel-tree-v1", "unsupported/mismatched install record")
     require(isinstance(record["archive_sha256"], str) and re.fullmatch(r"[0-9a-f]{64}", record["archive_sha256"])
             and type(record["archive_size"]) is int and record["archive_size"] >= 0, "invalid installed archive evidence")
     require(type(record["uid"]) is int and record["uid"] == owner and isinstance(record["installed_utc"], str)
-            and record["trust"] == dict(kind="explicit-local-file", expected_id=expected_id), "invalid installed trust record")
+            and record["trust"] == acquisition_trust(record.get("acquisition"), expected_id,
+                record["archive_sha256"], record["archive_size"]), "invalid installed trust record")
     require(stat.S_IMODE(path.stat().st_mode) == 0o555, "installed directory must be read-only")
     if verify:
         require((path / "archive.tar.zst").stat().st_size == record["archive_size"] and
@@ -252,22 +253,63 @@ def clean_stage(path):
     shutil.rmtree(path)
 
 
-def install(root, archive, expected_id, *, dry_run=False, yes=False):
-    key = identifier(expected_id)
+def acquisition_trust(value, expected_id, checksum=None, size=None):
+    """Validate retained origin evidence; live source authorization is external."""
+    if value is None:
+        return dict(kind="explicit-local-file", expected_id=expected_id)
+    import mpm_native_cache as cache
+    artifact.fields(value, ("source", "name", "verification", "max_expanded"))
+    identifier(value["source"]); cache.model.token(value["name"])
+    require(type(value["max_expanded"]) is int and 0 < value["max_expanded"] <= 2 * artifact.MAX_CONTENT,
+            "invalid acquired archive expansion limit")
+    receipt = cache.envelope(value["verification"], cache.RECORD)
+    artifact.fields(receipt, ("artifact", "archive", "source_snapshot", "acquisition_map",
+                             "descriptor", "trust_policy", "verified_utc"))
+    for key in ("source_snapshot", "acquisition_map", "trust_policy"):
+        identifier(receipt[key])
+    require(receipt["artifact"] == receipt["descriptor"] == expected_id, "acquisition artifact differs")
+    artifact.fields(receipt["archive"], ("sha256", "size"))
+    cache.hex_sha(receipt["archive"]["sha256"]); cache.size(receipt["archive"]["size"], MAX_ARCHIVE)
+    require(type(receipt["verified_utc"]) is str and
+            datetime.fromisoformat(receipt["verified_utc"]).utcoffset() == timezone.utc.utcoffset(None),
+            "invalid acquisition verification time")
+    require(checksum is None or receipt["archive"] == dict(sha256=checksum, size=size),
+            "acquired archive encoding differs")
+    return dict(kind="registered-native-source", expected_id=expected_id,
+                source=value["source"], verification=value["verification"]["id"])
+
+
+def plan_install(root, body):
+    """Shared descriptor/target eligibility, without fetching or creating state."""
     root = root_path(root, write=True)
     managed = inspect_root(root, allow_empty=True)
-    archive = Path(archive)
-    require(not archive.is_symlink() and stat.S_ISREG(archive.stat().st_mode)
-            and archive.stat().st_size <= MAX_ARCHIVE, "input must be a bounded regular archive")
-    body = artifact.verify(archive, expected_id=expected_id)
     acceptable(body)
+    expected_id = body["id"]; key = identifier(expected_id)
     destination = root / "installed" / key
     exists = managed and os.path.lexists(destination)
     if exists:
         object_record(destination, expected_id, verify=True)
-    plan = dict(action="no-change" if exists else "install", artifact=expected_id, version=body["version"],
+    return dict(action="no-change" if exists else "install", artifact=expected_id, version=body["version"],
                 kernel_release=body["metadata"]["kernel_release"], root=str(root),
                 compatibility="not-evaluated-for-a-deployment", selected="unchanged", running="unchanged")
+
+
+def install(root, archive, expected_id, *, dry_run=False, yes=False, acquisition=None):
+    key = identifier(expected_id)
+    root = root_path(root, write=True)
+    inspect_root(root, allow_empty=True)
+    acquisition = artifact.parse_json(artifact.canonical(acquisition)) if acquisition is not None else None
+    trust = acquisition_trust(acquisition, expected_id)
+    limit = acquisition["max_expanded"] if acquisition else None
+    archive = Path(archive)
+    require(not archive.is_symlink() and stat.S_ISREG(archive.stat().st_mode)
+            and archive.stat().st_size <= MAX_ARCHIVE, "input must be a bounded regular archive")
+    body = artifact.verify(archive, expected_id=expected_id, max_uncompressed=limit)
+    if acquisition:
+        acquisition_trust(acquisition, expected_id, artifact.file_sha(archive), archive.stat().st_size)
+    plan = plan_install(root, body)
+    exists = plan["action"] == "no-change"
+    destination = root / "installed" / key
     if dry_run or exists:
         return dict(plan=plan, changed=False, dry_run=dry_run)
     if not yes:
@@ -284,14 +326,17 @@ def install(root, archive, expected_id, *, dry_run=False, yes=False):
         stage = Path(tempfile.mkdtemp(prefix=".install-", dir=root / "installed"))
         try:
             checksum, size = frozen_copy(archive, stage / "archive.tar.zst")
-            copied = artifact.verify(stage / "archive.tar.zst", expected_id=expected_id)
+            copied = artifact.verify(stage / "archive.tar.zst", expected_id=expected_id, max_uncompressed=limit)
             require(copied == body, "input changed after planning")
+            acquisition_trust(acquisition, expected_id, checksum, size)
             unpack_kernel(stage / "archive.tar.zst", body, stage)
             write_json(stage / "artifact.json", body)
-            write_json(stage / "installed.json", dict(format=RECORD, artifact=expected_id,
+            install_record = dict(format=RECORD, artifact=expected_id,
                 archive_sha256=checksum, archive_size=size, installed_utc=datetime.now(timezone.utc).isoformat(),
-                uid=os.geteuid(), trust=dict(kind="explicit-local-file", expected_id=expected_id),
-                storage="readonly-kernel-tree-v1"))
+                uid=os.geteuid(), trust=trust, storage="readonly-kernel-tree-v1")
+            if acquisition is not None:
+                install_record["acquisition"] = acquisition
+            write_json(stage / "installed.json", install_record)
             stage.chmod(0o555)
             sync_directory(stage)
             stage.rename(destination)
@@ -317,7 +362,8 @@ def status(root, *, verify=False):
             body, record = object_record(path, "sha256:" + path.name, verify=verify)
             rows.append(dict(artifact=body["id"], version=body["version"], kernel_release=body["metadata"]["kernel_release"],
                 platform=body["platform"], installed_utc=record["installed_utc"], path=str(path),
-                integrity="verified-now" if verify else "verified-at-installation", release_matches_running=body["metadata"]["kernel_release"] == running))
+                integrity="verified-now" if verify else "verified-at-installation", trust=record["trust"],
+                acquisition=record.get("acquisition"), release_matches_running=body["metadata"]["kernel_release"] == running))
         staging += sorted(path.name for path in (root / "staging").iterdir())
     return dict(format="mpm-kernel-status-v1", root=str(root), installed=rows, staging_entries=staging,
         selected=dict(state="unknown", artifact=None, reason="deployment selection not integrated"),
@@ -330,8 +376,14 @@ def main(argv=None):
     parser.add_argument("--root", type=Path)
     commands = parser.add_subparsers(dest="action", required=True)
     add = commands.add_parser("install")
-    add.add_argument("--from-file", type=Path, required=True)
+    origin = add.add_mutually_exclusive_group(required=True)
+    origin.add_argument("--from-file", type=Path)
+    origin.add_argument("--source", help="registered native source name")
     add.add_argument("--expected-id", required=True)
+    add.add_argument("--archive-sha256", help="approved compressed encoding for --source")
+    add.add_argument("--snapshot", help="retained source snapshot; defaults to current")
+    add.add_argument("--sources-root", type=Path)
+    add.add_argument("--cache-root", type=Path)
     add.add_argument("--dry-run", action="store_true")
     add.add_argument("-y", "--yes", action="store_true")
     show = commands.add_parser("status")
@@ -343,8 +395,20 @@ def main(argv=None):
     try:
         require(args.root is None or args.action_root is None, "specify root only once")
         root = args.root or args.action_root or DEFAULT_ROOT
-        result = (install(root, args.from_file, args.expected_id, dry_run=args.dry_run, yes=args.yes)
-                  if args.action == "install" else status(root, verify=args.verify))
+        if args.action == "status":
+            result = status(root, verify=args.verify)
+        elif args.source is not None:
+            require(args.archive_sha256 is not None, "--source requires --archive-sha256")
+            from mpm_kernel_source import install as from_source
+            result = from_source(root, args.sources_root or Path('/var/lib/mojt/sources'),
+                args.cache_root or Path('/var/lib/mojt/cache'), args.source, args.expected_id,
+                archive_sha256=args.archive_sha256, snapshot=args.snapshot,
+                dry_run=args.dry_run, yes=args.yes)
+        else:
+            require(not any(v is not None for v in
+                    (args.archive_sha256, args.snapshot, args.sources_root, args.cache_root)),
+                    "source/cache options require --source")
+            result = install(root, args.from_file, args.expected_id, dry_run=args.dry_run, yes=args.yes)
         if args.json or args.action == "install":
             print(json.dumps(result, indent=2, sort_keys=True))
         else:

@@ -73,6 +73,20 @@ class PackageTests(unittest.TestCase):
         self.file("lib/modules/" + release + "/modules.dep", b"kernel/example.ko:\n")
         self.file("lib/modules/" + release + "/kernel/example.ko", b"synthetic module")
 
+    def test_verification_budget_covers_trailing_padding_and_rejects_invalid_limits(self):
+        self.file('bin/tool')
+        package,result=self.package()
+        expanded=raw_tar(package)
+        self.assertEqual(artifact.verify(package,max_uncompressed=len(expanded)),result['artifact'])
+        package.write_bytes(compress(expanded+b'\0'*32768))
+        with self.assertRaisesRegex(ValueError,'decompressed'):
+            artifact.verify(package,max_uncompressed=len(expanded))
+        for limit in (0,-1,True,1.5):
+            with self.subTest(limit=limit),mock.patch.object(artifact.subprocess,'Popen') as process:
+                with self.assertRaisesRegex(ValueError,'invalid decompression'):
+                    artifact.verify(package,max_uncompressed=limit)
+                process.assert_not_called()
+
     def base(self):
         stream = io.BytesIO()
         with tarfile.open(fileobj=stream, mode="w:") as inner:

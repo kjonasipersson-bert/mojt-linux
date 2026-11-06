@@ -1,7 +1,7 @@
 .\" Mojt Linux
 .\" Copyright (C) 2026 Jonas Persson
 .\" SPDX-License-Identifier: GPL-2.0-only
-.TH MPM 1 "2026-11-01" "Mojt Linux" "User Commands"
+.TH MPM 1 "2026-11-06" "Mojt Linux" "User Commands"
 .SH NAME
 mpm \- manage Mojt Ports, catalogs and native Kernel deployments
 .SH SYNOPSIS
@@ -54,6 +54,47 @@ The source frontend's standalone Kernel default is /var/lib/mojt/kernel;
 the installed frontend defaults to the mounted disk's Kernel registry.
 Use a new empty directory for experiments. Never move an initialized root:
 Nix indirect garbage-collection roots refer to its original location.
+.SH SOURCE AND CACHE ACTIONS
+.TP
+.BI "source add " "NAME --from-file SOURCE --policy-file POLICY [--replace]"
+Register an exact local native source and adopt its protected owner policy.
+A new source needs an explicit metadata update. Repeating the same registration
+preserves its snapshot; changing source/policy needs --replace and resets current
+metadata. Previous records and snapshots remain retained. Editing the original
+policy file does not change the adopted policy; reconfigure explicitly.
+.TP
+.BI "source update " "NAME"
+Accept snapshot.json, catalog.json and acquisition-map.json under the registered
+local repository root, together with verified external descriptors. Optional
+--snapshot-file, --catalog-file and --acquisition-file select confined relative
+metadata paths. Publish all accepted bytes before one current snapshot pointer.
+An invalid refresh preserves the last good snapshot. No payload is fetched,
+installed or activated. Initially supports one native release catalog per snapshot.
+.TP
+.BI "source list " "[--json]"
+List registered names and accepted snapshot IDs without refresh or providers.
+.TP
+.BI "source show " "NAME [--snapshot ID] [--json]"
+Show the exact accepted registration, snapshot and retained catalog. Report pending
+refresh and local directory presence; snapshot age is unknown. An old snapshot
+must still match the currently registered source and policy.
+.TP
+.BI "cache fetch " "ARTIFACT --source NAME --kind KIND --archive-sha256 HEX"
+Acquire one full native sha256 artifact ID with an approved compressed encoding.
+KIND is base, system, kernel or port. --snapshot ID pins a retained snapshot;
+otherwise use current accepted metadata. Verify the complete archive before cache
+publication and retain acquisition evidence. This does not install or deploy it.
+.PP
+Source/cache mutation supports --dry-run and -y. Preview writes nothing and does
+not verify the archive body. Normal mutation asks for confirmation unless -y.
+Installed mutation requires an administrator. Source registry defaults to
+/var/lib/mojt/sources; cache defaults to /var/lib/mojt/cache. --root selects the
+registry for source commands and cache for cache commands; --sources-root on
+cache fetch selects its source registry. Parents must already exist.
+.PP
+Source trust comes from explicit protected local owner policy, not SHA256 alone.
+Remote native sources, signing and automatic source-to-install integration are
+not provided. Existing explicit Ports source bundles continue to work separately.
 .SH PORTS ACTIONS
 .TP
 .BI "update --sources " "FILE [--expected-sources ID]"
@@ -216,7 +257,7 @@ or --release exact-release. All policies apply declared selected-Base limits;
 an impossible request fails without a policy or Base fallback. This does not
 install a kernel, persist its policy or change boot selection. See
 docs/mpm-catalog.md for synthetic examples and the experimental schema.
-.SH LOCAL KERNEL INSTALL AND STATUS
+.SH EXACT KERNEL INSTALL AND STATUS
 The repository frontend supports kernel install --from-file ARCHIVE
 --expected-id sha256:FULL_HEX_ID, with optional --dry-run or -y, and kernel
 status with optional --verify and --json. Use --root DIRECTORY before kernel
@@ -230,6 +271,22 @@ Status distinguishes installed content from unknown selected deployment and
 the actual running release; uname alone does not establish artifact identity.
 No boot selection or running module tree changes. Deployment compatibility is
 unevaluated. See docs/mpm-kernel.md for the supported local subset and limits.
+.PP
+Alternatively use kernel install --source NAME --expected-id sha256:FULL_ID
+--archive-sha256 HEX, with optional --snapshot ID, --sources-root and --cache-root.
+This joins an accepted native source snapshot and verified archive cache to the
+same Kernel installer. Source and file input modes are mutually exclusive.
+Eligibility is checked before acquisition; source-mode --dry-run writes nothing
+and does not read the archive body. Actual import re-verifies a private frozen
+copy and retains the source ID, snapshot/cache verification record and exact
+encoding as origin evidence. Installation remains separate from deployment.
+.PP
+An already installed artifact is scrubbed and remains a no-op, retaining its
+original origin record without needing source archive/cache bytes. Source or
+policy reconfiguration invalidates the old authorization. A metadata-only refresh
+does not replace an explicitly planned snapshot. On failure, verified cached
+bytes may remain even though no Kernel object was installed. See
+docs/kernel-source-install.md for the pending bounded VM acceptance gate.
 .SH READ-ONLY KERNEL DEPLOYMENT PLAN
 kernel plan --request FILE [--json] checks a complete explicit local plan.
 Use --root DIRECTORY before kernel or after plan, once only, to name the Kernel

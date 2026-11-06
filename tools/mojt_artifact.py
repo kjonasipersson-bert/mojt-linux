@@ -370,12 +370,22 @@ def pack(source, spec, output, attachments=None):
     return dict(artifact=body, archive=transport)
 
 
-def verify(path, expected_id=None):
+def verify(path, expected_id=None, *, max_uncompressed=None):
     """Stream and compare every logical member; never extract or run code."""
+    require(max_uncompressed is None or type(max_uncompressed) is int and 0 < max_uncompressed <= 2*MAX_CONTENT, "invalid decompression limit")
     with tempfile.TemporaryFile() as errors:
         process = subprocess.Popen(["zstd", "-q", "-d", "-c", "--", str(path)], stdout=subprocess.PIPE, stderr=errors)
+        class Bounded:
+            def __init__(self, stream):self.stream=stream;self.used=0
+            def read(self, size):
+                require(type(size) is int and size >= 0, "unbounded archive read")
+                raw=self.stream.read(min(size,max_uncompressed-self.used+1))
+                self.used+=len(raw)
+                require(self.used <= max_uncompressed, "decompressed archive exceeds policy limit")
+                return raw
         try:
-            with tarfile.open(fileobj=process.stdout, mode="r|", format=tarfile.PAX_FORMAT) as archive:
+            output=process.stdout if max_uncompressed is None else Bounded(process.stdout)
+            with tarfile.open(fileobj=output, mode="r|", format=tarfile.PAX_FORMAT) as archive:
                 root = archive.next()
                 require(root is not None and root.name in ("./" + k for k in KINDS) and root.isdir(), "archive needs one category root")
                 require(root.mode == 0o755 and root.uid == root.gid == root.mtime == 0, "invalid category metadata")
@@ -422,7 +432,7 @@ def verify(path, expected_id=None):
                         break
                     require(not any(trailer), "nonzero data after tar end marker")
             # Drain the frame to require successful zstd checksum/truncation checks.
-            while process.stdout.read(128 * 1024):
+            while output.read(128 * 1024):
                 pass
             require(process.wait() == 0, "zstd verification failed")
             return body

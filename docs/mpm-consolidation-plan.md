@@ -47,6 +47,26 @@ and native Port support.
 Non-Ports reconciliation and lifecycle/recovery remain explicit work. Preserve the
 same provider-independent transaction boundary for Base/System.
 
+## Next bounded increment: native source acquisition and cache
+
+The [local native source/cache library](native-source-cache.md) adds actual verified
+archive acquisition for Base, System, Kernel and Port without a provider dependency.
+It joins accepted source/snapshot/catalog/acquisition records to a separately
+protected owner policy, a read-only exact plan and no-overwrite cache publication.
+Real synthetic tar/zstd tests exercise all categories and failure/retry boundaries.
+The library and source/cache commands ship in System. Named registrations, explicit
+metadata refresh and exact fetch now use frozen snapshots. The first
+[source-to-install join](kernel-source-install.md) connects them to the existing
+Kernel publisher, with shared eligibility, retained origin evidence and separate
+boot selection. The bounded owner VM acceptance passed on 2026-11-06 at
+source revision `386b204`, using the installed runtime and a real package; see the
+[recorded evidence](kernel-source-install.md#owner-installed-system-vm-acceptance-2026-11-06).
+Full CI and final review remain merge gates. Base/System and native Ports installation integration
+remain pending. See [source runtime integration](source-runtime-integration.md).
+Local owner trust does not implement
+remote authentication or signing. This advances steps 1 and 2; it does not mark
+MPM complete or displace actual Base/System installation in step 3.
+
 Progress reports must name the step, implemented behavior, validation and the
 remaining gate. Unit tests, schema checks and prior experiments do not mark a
 whole milestone complete. No new public command syntax is implied by this plan.
