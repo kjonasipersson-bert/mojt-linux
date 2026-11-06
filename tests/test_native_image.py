@@ -9,6 +9,7 @@ import importlib.util
 import io
 import json
 import os
+import runpy
 from pathlib import Path
 import shlex
 import shutil
@@ -359,8 +360,41 @@ packages="packages.txt"
         base = tree / "base/0.1.3"
         (base / "usr/lib").mkdir(parents=True)
         (base / "lib").symlink_to("/usr/lib")
+        _, record = kernel.object_record(self.registry / 'installed' / kernel.identifier(self.kernel['id']),
+                                         self.kernel['id'], verify=True)
+        context = dict(registry=str(self.registry), kernel=self.kernel,
+                       kernel_installation_digest=artifact.digest(record), kernel_acquisition=record.get('acquisition'))
         with self.assertRaisesRegex(ValueError, "absolute or escaping"):
-            native.stage(tree, dict(registry=str(self.registry), kernel=self.kernel), "0.1.3")
+            native.stage(tree, context, "0.1.3")
+
+    @unittest.skipUnless(os.geteuid() == 0, "real Base installation requires root")
+    def test_full_pipeline_retains_registered_source_origin(self):
+        import mpm_sources as sources
+        import mpm_kernel_source as joined
+        old = self.kernel
+        spec = {k:copy.deepcopy(old[k]) for k in
+                ('kind','name','platform','dependencies','requirements','provides','provenance','metadata')}
+        spec['format'] = artifact.SPEC_FORMAT
+        spec['version'] = dict(upstream='6.12.107', scheme='dotted-v1', revision=2)
+        payload = self.registry/'installed'/kernel.identifier(old['id'])/'payload'
+        packed = artifact.pack(payload, spec, self.work/'origin-package')
+        lab = self.work/'origin-source'; lab.mkdir()
+        helper = runpy.run_path(str(Path(__file__).with_name('run-kernel-source-acceptance.py')))
+        body, encoding = helper['prepare_repository'](self.work/'origin-package'/packed['archive']['file'], lab,
+            'image-source', artifact=artifact, cache=sources.cache)
+        registry = self.work/'sources'; cache = self.work/'cache'
+        args = dict(source=json.loads((lab/'source.json').read_bytes()), policy_file=lab/'policy.json')
+        sources.add(registry, 'image-source', sources.prepare_add(registry, 'image-source', **args), **args)
+        sources.update(registry, 'image-source', sources.prepare_update(registry, 'image-source'))
+        joined.install(self.registry, registry, cache, 'image-source', body['id'], archive_sha256=encoding, yes=True)
+        _, installed = kernel.object_record(self.registry/'installed'/kernel.identifier(body['id']), body['id'], verify=True)
+        self.kernel = body; self.args.kernel_artifact = body['id']
+        self.synthetic_build()
+        receipt = json.loads((self.args.output/'native-build-inputs.json').read_bytes())
+        self.assertEqual(receipt['format'], native.INPUTS_FORMAT)
+        self.assertEqual(receipt['kernel_artifact'], body['id'])
+        self.assertEqual(receipt['source_kernel_installation_digest'], artifact.digest(installed))
+        self.assertEqual(receipt['kernel_acquisition'], installed['acquisition'])
 
     @unittest.skipUnless(os.geteuid() == 0, "real Base installation requires root")
     def test_full_native_input_pipeline_binds_real_cpio_and_preserves_originals(self):

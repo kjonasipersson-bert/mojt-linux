@@ -27,6 +27,7 @@ import mpm_deployment as deployment
 import mpm_kernel as kernel
 
 MAX_INITRAMFS = 256 * 1024**2
+INPUTS_FORMAT = "mojt-native-image-inputs-v2"
 
 
 def require(value, message):
@@ -73,7 +74,31 @@ def preview(args):
             "output must be separate from all input trees/files")
     return dict(base=body, kernel=candidate, bounds=bounds, system_record=payload_record,
                 source_archive=dict(sha256=artifact.file_sha(package), size=package.stat().st_size),
-                kernel_installation_digest=artifact.digest(record))
+                kernel_installation_digest=artifact.digest(record), kernel_acquisition=record.get("acquisition"))
+
+
+def copy_kernel_input(source_registry, destination, identifier, expected_digest):
+    """Freeze one verified input into a private registry, retaining acquisition origin."""
+    source = kernel.root_path(source_registry) / "installed" / kernel.identifier(identifier)
+    body, installed = kernel.object_record(source, identifier, verify=True)
+    require(artifact.digest(installed) == expected_digest, "Kernel installation changed after preview")
+    kernel.install(destination, source / "archive.tar.zst", identifier, yes=True,
+                   acquisition=installed.get("acquisition"))
+    copied = destination / "installed" / kernel.identifier(identifier)
+    result, record = kernel.object_record(copied, identifier, verify=True)
+    require(result == body and record.get("acquisition") == installed.get("acquisition") and
+            record["trust"] == installed["trust"] and
+            all(record[k] == installed[k] for k in ("archive_sha256", "archive_size")),
+            "copied Kernel origin or encoding differs")
+    _, fresh = kernel.object_record(source, identifier, verify=True)
+    require(artifact.digest(fresh) == expected_digest, "Kernel installation changed while freezing")
+    return result, record
+
+
+def check_kernel_installation(record, evidence):
+    require(evidence.get("kernel_installation_digest") == artifact.digest(record) and
+            evidence.get("kernel_acquisition") == record.get("acquisition"),
+            "Kernel installation/origin differs from retained boot evidence")
 
 
 def unpack_base(path, body, target):
@@ -128,8 +153,9 @@ def stage(tree, context, base):
     destination = tree / "kernel"
     shutil.copytree(source, destination, symlinks=False)
     key = kernel.identifier(context["kernel"]["id"])
-    copied, unused = kernel.object_record(destination / "installed" / key, context["kernel"]["id"], verify=True)
+    copied, installed = kernel.object_record(destination / "installed" / key, context["kernel"]["id"], verify=True)
     require(copied == context["kernel"], "copied Kernel artifact differs")
+    check_kernel_installation(installed, context)
     # The new image mounts this independent native module tree, never System/kernel.
     point = system.virtual_file(tree / "base" / base, "/lib/modules")
     require((tree / "base" / base / "lib/modules").resolve() == point,
@@ -267,8 +293,9 @@ def complete(tree, result, context, *, base, selected_system, root_uuid, console
              decode_module):
     key = kernel.identifier(context["kernel"]["id"])
     obj = tree / "kernel/installed" / key
-    body, unused = kernel.object_record(obj, context["kernel"]["id"], verify=True)
+    body, installed = kernel.object_record(obj, context["kernel"]["id"], verify=True)
     require(body == context["kernel"], "staged Kernel changed")
+    check_kernel_installation(installed, context)
     require((initroot / "init").read_bytes() == script.encode("ascii"), "generated init script differs")
     early = []
     for index, source in enumerate(modules):
@@ -307,10 +334,12 @@ def complete(tree, result, context, *, base, selected_system, root_uuid, console
                  facts=inspector.context_from_target(tree, base))
     plan = deployment.compose(selected, body, context["bounds"], current, facts, binding, archive)
     plan["evidence"]["kernel_integrity"] = "verified-now"
-    receipt = dict(format="mojt-native-image-inputs-v1", selection_origin="fresh-image-bootstrap",
+    receipt = dict(format=INPUTS_FORMAT, selection_origin="fresh-image-bootstrap",
         base_artifact=context["base"]["id"], base_archive=context["source_archive"],
         base_copy=base_copy,
-        kernel_artifact=body["id"], system_record_digest=artifact.digest(context["system_record"]),
+        kernel_artifact=body["id"], kernel_installation_digest=artifact.digest(installed),
+        source_kernel_installation_digest=context["source_kernel_installation_digest"],
+        kernel_acquisition=installed.get("acquisition"), system_record_digest=artifact.digest(context["system_record"]),
         system_manifest=current["id"], initramfs_inventory=inventory_digest, early_modules=early,
         status="assembled; owner boot acceptance pending; no existing installation updated")
     files = {"deployment.json": selected, "selected-deployment.json": selected, "initramfs-binding.json": binding,
@@ -358,10 +387,9 @@ def build(args, vm=None):
         if args.login_mode == "password":
             fresh_login_state(target)
         registry = work / "kernel-registry"
-        source = kernel.root_path(args.kernel_registry) / "installed" / kernel.identifier(args.kernel_artifact)
-        kernel.install(registry, source / "archive.tar.zst", args.kernel_artifact, yes=True)
+        copied, installed = copy_kernel_input(args.kernel_registry, registry, args.kernel_artifact,
+                                             evidence["kernel_installation_digest"])
         obj = registry / "installed" / kernel.identifier(args.kernel_artifact)
-        copied, unused = kernel.object_record(obj, args.kernel_artifact, verify=True)
         require(copied == evidence["kernel"], "Kernel input changed after preview")
         payload = work / "system-payload"
         shutil.copytree(args.system_payload, payload, symlinks=True)
@@ -371,6 +399,8 @@ def build(args, vm=None):
         busybox.chmod(0o755)
         base = evidence["base"]["version"]["upstream"]
         context = dict(evidence, registry=str(registry), payload=str(obj / "payload"),
+            source_kernel_installation_digest=evidence["kernel_installation_digest"],
+            kernel_installation_digest=artifact.digest(installed),
             base_manifest=str(release / "payload/manifest.toml"), base_inventory=base_inventory(target / "base" / base))
         options = SimpleNamespace(target=target, output=publish / "image", kernel=obj / "payload/boot" /
             ("vmlinuz-" + copied["metadata"]["kernel_release"]), modules_dir=obj / "payload/lib/modules" /

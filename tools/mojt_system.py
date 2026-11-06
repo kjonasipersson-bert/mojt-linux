@@ -528,6 +528,15 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
         require(virtual_file(payload, cert).is_file(), "missing exported CA bundle")
         write(system / "ca-path", cert + "\n")
     if step >= 3:
+        # MPM's default source/cache/profile roots need a protected machine-state
+        # parent even on a fresh image without acceptance fixtures or old state.
+        for relative in ('state/var/lib', 'state/var/lib/mojt'):
+            point = tree / relative
+            require(not point.is_symlink() and (not point.exists() or point.is_dir()),
+                    'unsafe MPM state parent: ' + relative)
+            point.mkdir(mode=0o755, exist_ok=True)
+            require(point.stat().st_uid in (0, tree.stat().st_uid) and not point.stat().st_mode & 0o022,
+                    'unprotected MPM state parent: ' + relative)
         for name in ("nix", "nix-store", "nix-instantiate"):
             export(name, "nix", "bin/" + name)
         python = export("python3", "python", "bin/python3")

@@ -61,11 +61,22 @@ Kernel publisher, with shared eligibility, retained origin evidence and separate
 boot selection. The bounded owner VM acceptance passed on 2026-11-06 at
 source revision `386b204`, using the installed runtime and a real package; see the
 [recorded evidence](kernel-source-install.md#owner-installed-system-vm-acceptance-2026-11-06).
-Full CI and final review remain merge gates. Base/System and native Ports installation integration
+PR #38 passed full CI and merged. Base/System and native Ports installation integration
 remain pending. See [source runtime integration](source-runtime-integration.md).
 Local owner trust does not implement
 remote authentication or signing. This advances steps 1 and 2; it does not mark
 MPM complete or displace actual Base/System installation in step 3.
+
+## Following bounded gate: source-installed Kernel to native boot
+
+PR #38 passed full CI and owner installation acceptance, then merged. The
+[native boot follow-up](kernel-source-boot.md) retains acquisition origin during
+fresh-image copying and candidate staging, with mandatory v2 input-receipt binding.
+It also makes the fresh MPM state parent part of System assembly. The next owner
+gate is one exact source-installed deployment boot in a separate native image,
+using existing build/package inputs. Installation, staging, selection and reboot
+remain separate actions. This continues steps 1–2 and supports the later joined
+acceptance milestone; it does not complete Base/System installation or bootstrap.
 
 Progress reports must name the step, implemented behavior, validation and the
 remaining gate. Unit tests, schema checks and prior experiments do not mark a
