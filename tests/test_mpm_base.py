@@ -177,6 +177,15 @@ class PreviewTests(Fixture):
             self.install(dry_run=True)
         self.assertEqual(list(self.root.iterdir()),[])
 
+    def test_sparse_logical_expansion_is_bounded_before_any_extraction(self):
+        sparse,content=entry('usr/bin/sparse',b'')
+        sparse.pax_headers={'GNU.sparse.map':'0,0','GNU.sparse.size':str(base.MAX_ROOTFS+1),
+                            'GNU.sparse.name':'usr/bin/sparse'}
+        archive,body=self.package(extra=[(sparse,content)])
+        with self.assertRaisesRegex(ValueError,'logical file size'):
+            base.install(self.root,archive,body['id'],dry_run=True)
+        self.assertEqual(list(self.root.iterdir()),[])
+
     def test_source_preview_uses_only_frozen_metadata_and_no_archive(self):
         registry,cache,checksum,lab=self.source()
         (lab/'repository/kernel.tar.zst').unlink()

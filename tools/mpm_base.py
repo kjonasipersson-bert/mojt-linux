@@ -237,10 +237,14 @@ def inner_tar(wrapper, body, work):
     # Bound header count and target metadata before invoking GNU tar. The original
     # auditor remains the authority for traversal, links and special-node policy.
     with tarfile.open(output,'r:') as archive:
-        count=0
+        count=0;logical=0
         for member in archive:
             count+=1;require(count<=artifact.MAX_ENTRIES, 'too many Base rootfs entries')
             require(0<=member.uid<2**32-1 and 0<=member.gid<2**32-1 and 0<=member.mode<=0o7777, 'unsupported Base owner/mode')
+            if member.isfile():
+                require(0<=member.size<=MAX_ROOTFS, 'Base logical file size exceeds limit')
+                logical+=member.size
+                require(logical<=MAX_ROOTFS, 'Base logical content exceeds limit')
     try:old['audit_tar'](output)
     except old['InstallError'] as error:raise ValueError(str(error)) from error
     # Read identity from archive members, not through guest absolute symlinks on
