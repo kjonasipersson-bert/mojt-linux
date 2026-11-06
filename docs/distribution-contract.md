@@ -157,6 +157,14 @@ the chosen composition profile, not undocumented experiment scripts.
 ## 6. Installed machine updates (BOOT and PORTS)
 
 Base installation retains one complete exact release beside existing releases.
+The pending [Base install/status contract](mpm-base-contract.md) proposes that
+successful Base installation also requires its validated rootfs realization;
+cache-only or retained-archive-only content is not installed Base. Installation
+must not merge defaults into machine `/etc`. Supported defaults/state preparation
+belongs to an explicitly approved transition or bootstrap; unknown required
+effects block that transition. This clarification is for owner review before
+Base implementation, not a claim that those commands exist.
+
 System installation imports exact components and publishes a coherent immutable
 generation. Kernel installation retains the kernel and matching modules together.
 Installing any of these alone MUST NOT change next boot or running services.
@@ -281,5 +289,6 @@ components; run one bounded combined real-Mojt journey per milestone instead of
 repeating account/kernel/version cross-products. Documentation alone establishes
 none of these execution results. See [decision gates](distribution-decisions.md)
 before calling this draft implementation-ready.
+
 
 

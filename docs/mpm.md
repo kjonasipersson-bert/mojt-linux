@@ -4,11 +4,12 @@ Copyright (C) 2026 Jonas Persson
 SPDX-License-Identifier: GPL-2.0-only
 -->
 
-# Mojt Package Management Contract (draft 0.2)
+# Mojt Package Management Contract
 
 **Status:** accepted design contract with a partial experimental implementation.
-The repository frontend implements a subset of Ports operations, local
-Kernel install/status/stage/select/rollback and read-only catalog discovery;
+The repository frontend implements a subset of Ports operations, named local
+sources/cache, exact local/source Kernel installation, native Kernel boot
+management and read-only catalog discovery;
 the commands below
 are design examples unless identified as implemented in section 6. This
 document records the update model accepted on 2026-10-26 and the previously
@@ -18,9 +19,10 @@ accepted high-level selector semantics:
 dotted-numeric adapter; other version schemes remain exact-only. Nix is selected for Ports and, for early Mojt
 versions, for System package acquisition and shared dependency storage.
 System release/deployment formats and the full command grammar remain open.
-The [selector/catalog contract](mpm-selectors.md) records an implemented pure
-parser/resolver plus selector-mode installation, activation, series aliases
-and explicit format-3 metadata adoption. Native requests keep their original policy.
+The current Ports frontend uses independent configuration/interactive wishes
+and complete profiles; older format-3 adoption belongs to the separately invoked
+prototype. The [selector/catalog contract](mpm-selectors.md) records the original
+grammar and integration history. See section 6 for the current delivered path.
 The [mixed-libc analysis](mpm-libc-policy.md) is deferred reference work. Linking
 a proposal here does not make its remaining details accepted or implemented.
 
@@ -32,6 +34,11 @@ same backend for every area.
 
 See [the manifesto](manifesto.md), [architecture](architecture.md), and
 [Base release format](base-format.md) for the established layer boundaries.
+
+For a shorter user model, start with [MPM and MBT](management-workflow.md).
+The next [Base install/status proposal](mpm-base-contract.md) specifies content-only
+installation and honest state inspection. It is pending owner agreement; Base
+mutations and the proposed Base status command are not implemented.
 
 The proposed [complete distribution behavior contract](distribution-contract.md)
 connects this accepted area model to MBT, bootstrap and source self-hosting.
@@ -134,6 +141,14 @@ No new CLI spelling or MBT syntax is approved by the data-format draft.
 | `upgrade` | Propose changes to tracked requests **within the selected area**, respecting their policies and pins. After approval, retain eligible new releases and advance permitted selections, preserving previous content. Boot-area selections take effect at the next boot; Ports selections apply to new program starts. |
 | `activate` | Select an **already installed** version for a chosen profile, or a bootable deployment for Base/System/Kernel. |
 | `remove` | Remove selected Ports installations from the current profile; if an active installation is removed, choose an installed replacement by the history rule below. Physical collection is separate and must preserve dependencies, project pins and rollback references. Base/System/Kernel deployment removal needs separate safeguards. |
+| `status` | Read-only inspection of installed content and separate selected/running observations; no metadata refresh, store initialization, repair or implied selection. Per-area support is listed in section 6. |
+
+The boot-area `activate` terminology above describes the intended selection
+effect. Today's implemented Kernel interface spells out `stage` (prepare a
+complete deployment) and `select` (choose next boot). Do not infer that an
+unimplemented `mpm base activate` exists or that `install` also selects a Base.
+The Base command proposal preserves that separation; generalized deployment
+spelling is not decided by this documentation update.
 
 Examples, describing desired behavior rather than runnable commands:
 
@@ -688,53 +703,49 @@ and [NixOS's separate package/service integration](https://nixos.org/manual/nixo
 
 ## 6. Implementation status
 
-**Implemented today:** host-side whole-image Base packaging and generation
-installation/selection, persistent-state preservation, and fresh UEFI images
-with explicit Base/System boot pairs. The owner verified full Mojt
-A/A → A/B → B/B → A/A boots, authenticated serial login, and controlled
-new-image build interruption with no published output and an unchanged
-completed VM disk. Both System labels used the same kernel/payload; this is
-not evidence of a different-kernel upgrade or an existing-disk updater.
+Current as of 2026-11-06, through merged PR #39. The ordinary System frontend
+and the separately invoked earlier prototypes must not be confused.
 
-The full System VM uses systemd, NetworkManager/D-Bus, Nix and management
-Python. Its earlier VM acceptance also covered networking and binary Ports
-imports with parallel Python versions. The current Nix-backed area accepts only
-the `ports` area: `update`, `install`, `activate`, `remove`, `status`, `list`,
-`search`, `info`, `upgrade`, `history`, read-only `resolve`, and explicit
-`metadata` adoption on the selector branch. Formats 1/2 retain native attribute
-semantics. Explicit format-3 adoption adds typed latest/series/exact requests,
-installed-only activation and series aliases using the shared pure resolver.
-Requests and active selections stay separate; exact builds/closures remain
-pinned. Plans/history show resolution, dependencies and compatibility changes.
-See [the selector integration contract](mpm-selectors.md#9-implemented-transaction-integration-2026-10-27)
-for commands, state compatibility, measured evidence and pending real/VM tests.
+| Area | Delivered/implemented behavior | Remaining user-flow boundary |
+| --- | --- | --- |
+| Sources/cache | Named owner-trusted local source registration, frozen metadata update, list/show and exact verified native fetch for all four artifact categories | General authenticated remote native distribution, common configured discovery and all area-install joins |
+| Ports | Fresh request-origin/resolver/profile frontend; install, activate, upgrade, update, apply, remove/reset, status/list/history and discovery; Nix binary-output adapter | Native Port publisher, pruning/configuration forgetting and the final joined installed-machine journey |
+| Kernel | Exact local-file or named-source install, retained matching modules/origin, status/verification, plan/stage/select/rollback on the managed native serial UEFI/VirtIO layout | Persistent Kernel upgrade policies joined to resolution/acquisition, generalized deployment and physical rollout |
+| Base | Whole-release packer/directory installer, wrapped native packages and fresh-image input validation | MPM Base install/status and exact-ID runtime realizations on existing installations; proposed meanings await owner agreement |
+| System | Pinned binary payload export, coherent userspace/manifest assembly and delivered MPM/Python/helpers | Distributable System composition import/install/status/upgrade on an existing disk and state/management compatibility gates |
+| MBT | Separate image, build-environment, Kernel build and packaging tools provide working inputs | Public MBT grammar, named environments, bootstrap/build integration through the ordinary MPM path |
 
-The [local Kernel registry](mpm-kernel.md) supports explicit exact native-file
-installation, private retained trees, read-only status and integrity scrub.
-The [boot publisher](kernel-boot-selection.md) adds stage/select/rollback on
-existing managed native disks, with owner boot/return and corrected shutdown
-acceptance. Catalog acquisition and persistent automatic Kernel upgrade policy
-remain gaps. The [delivered System frontend](mpm-system-runtime.md) now includes
-these management modules and helpers in new assemblies; retained old Systems
-are not edited in place.
+The fresh [Ports frontend](ports-cli-integration.md) accepts explicit finite
+source bundles and publishes complete profiles with independent configuration
+and interactive wishes. Metadata update preserves accepted targets; explicit
+upgrade advances only its requested moving wishes; exact active pins survive.
+The real Nix adapter/frontend acceptance is recorded in
+[Ports acceptance](ports-profile-acceptance.md). Older format-1/2/3 metadata
+adoption remains in `mpm-nix-prototype`, not the ordinary fresh-store frontend.
 
-The [read-only Kernel deployment planner](kernel-deployment-plan.md) now binds
-the exact installed Kernel/image/module inventory to explicit selected Base,
-System, root/console and initramfs declarations. It reuses selected-Base limits
-and System ABI/state/Ports/shell checks, preserving Base and System userspace.
-It makes no selection or boot writes; Base/System payloads, actual initramfs
-mount behavior and runtime/hardware compatibility are not verified by this plan.
+The [named-source integration](source-runtime-integration.md) and
+[Kernel source install](kernel-source-install.md) use the same existing native
+Kernel publisher. The owner accepted source installation through the delivered
+System frontend on 2026-11-06. The [source-to-boot follow-up](kernel-source-boot.md)
+also passed one real reboot: retained source origin/install evidence, exact
+selected/running deployment agreement, read-only modules, preserved Base/System
+and machine identity, and no failed units. The two package revisions used the
+same compiled Kernel release; exact IDs, not uname, distinguish this acceptance.
+Kernel boot recovery and corrected shutdown have earlier separate evidence.
 
-**Not implemented:** MPM Base/System mutations, generalized boot deployment
-updates, catalog-backed Kernel upgrades, general version adapters, general
-Ports transaction undo, production project profiles/locks, pruning/GC, verified
-external capabilities, signed native catalogs and the proposed lifecycle/state
-engine. Existing native Kernel stage/select/rollback is narrower than general
-production boot-disk update/recovery. See the [gap matrix](mpm-gap-matrix.md).
+The [System runtime](mpm-system-runtime.md) delivers the frontend's closed Python
+module/helper set in new assemblies. Retained running Systems are not edited by
+publishing new repository code. A local file import/source snapshot is explicit
+owner trust; hashes do not authenticate a publisher.
 
-These accepted policies guide future implementation; this document is not
-a complete command reference. See the [roadmap](roadmap.md) for the next work.
+The [Base command review](mpm-base-contract.md) is the immediate gate. Its proposed
+installation success requires a validated rootfs, not just a cached archive;
+installation changes neither persistent machine configuration nor next boot.
+Implementation remains paused pending owner agreement.
 
-
-
-
+**Not implemented:** MPM Base/System mutations or their proposed status views,
+generalized boot deployments, catalog-backed persistent Kernel upgrades,
+public MBT bootstrap/build integration, generic native Ports publication,
+pruning/GC, signed remote-native distribution and the proposed lifecycle/state
+engine. A successful Kernel source boot does not complete the six-step plan.
+See the [gap matrix](mpm-gap-matrix.md) and [governing plan](mpm-consolidation-plan.md).

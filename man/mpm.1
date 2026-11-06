@@ -46,6 +46,18 @@ Catalog selection, recorded requests, installed artifacts and active command
 selections are separate. An artifact identity from
 .B list --exact
 identifies an installed build; it is not itself an upgrade request.
+.SH DESIGN AND IMPLEMENTATION STATUS
+Base/System mutation and the proposed Base status interface are not implemented.
+See docs/management-workflow.md for the shared MPM/MBT user model and
+docs/mpm-base-contract.md for the Base install/status proposal awaiting agreement.
+That proposal requires a verified complete Base and validated rootfs realization;
+installation changes neither machine configuration nor next boot. Cached archive
+bytes alone are not installed Base. Status would report installed, next-boot and
+running identities separately, with unknown state explicit.
+.PP
+MBT public commands remain proposed. Build/package produce results; MPM installs
+and selects content. Bootstrap explicitly creates/initializes a new target using
+those same MPM rules. Documentation examples do not add runnable commands.
 .SH GLOBAL OPTIONS
 .TP
 .BI --root " DIRECTORY"
@@ -93,8 +105,10 @@ registry for source commands and cache for cache commands; --sources-root on
 cache fetch selects its source registry. Parents must already exist.
 .PP
 Source trust comes from explicit protected local owner policy, not SHA256 alone.
-Remote native sources, signing and automatic source-to-install integration are
-not provided. Existing explicit Ports source bundles continue to work separately.
+Remote native sources and signing are not provided. Exact Kernel installation
+can consume a named source through the verified cache, as described below;
+Base/System/native Port installation joins remain work. Existing explicit Ports
+source bundles continue to work separately.
 .SH PORTS ACTIONS
 .TP
 .BI "update --sources " "FILE [--expected-sources ID]"
@@ -286,7 +300,8 @@ original origin record without needing source archive/cache bytes. Source or
 policy reconfiguration invalidates the old authorization. A metadata-only refresh
 does not replace an explicitly planned snapshot. On failure, verified cached
 bytes may remain even though no Kernel object was installed. See
-docs/kernel-source-install.md for the pending bounded VM acceptance gate.
+docs/kernel-source-install.md and docs/kernel-source-boot.md for the recorded
+owner installation and exact-deployment reboot acceptance.
 .SH READ-ONLY KERNEL DEPLOYMENT PLAN
 kernel plan --request FILE [--json] checks a complete explicit local plan.
 Use --root DIRECTORY before kernel or after plan, once only, to name the Kernel
@@ -363,5 +378,6 @@ status/plans. Area-specific ownership and compatibility checks still apply.
 .PP
 Repository documentation: docs/mpm.md, docs/mpm-ports.md, docs/mpm-selectors.md,
 docs/mpm-catalog.md, docs/mpm-artifact-architecture.md and docs/roadmap.md.
+
 
 
