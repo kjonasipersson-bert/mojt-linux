@@ -28,9 +28,9 @@ def selected(root, running_record):
     raw=boot.checked_file(path)
     marker=root/'boot/mpm/format'
     if os.path.lexists(marker):
-        base.require(boot.checked_file(marker)==(boot.FORMAT+'\n').encode() and raw.startswith(boot.HEADER.encode()),
+        base.require(boot.checked_file(marker)==(boot.FORMAT+'\n').encode() and boot.managed_menu(raw),
                      'unsupported/inconsistent managed boot selection')
-    if raw.startswith(boot.HEADER.encode()):
+    if boot.managed_menu(raw):
         lines=raw.decode('ascii').splitlines()
         base.require(len(lines)>1 and lines[1].startswith('# '),'missing selected deployment metadata')
         state=artifact.parse_json(lines[1][2:].encode())

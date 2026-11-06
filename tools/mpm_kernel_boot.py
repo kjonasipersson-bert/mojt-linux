@@ -30,6 +30,12 @@ import mpm_transaction as transaction
 
 FORMAT = "mpm-kernel-boot-v1"
 HEADER = "# " + FORMAT + "\n"
+BASE_MENU_FORMAT = "mpm-base-boot-selection-v1"
+BASE_HEADER = "# " + BASE_MENU_FORMAT + "\n"
+
+
+def managed_menu(raw):
+    return raw.startswith((HEADER.encode(), BASE_HEADER.encode()))
 FILES = ("deployment.json", "base-context.json", "system-manifest.json", "initramfs-binding.json",
          "native-build-inputs.json", "vmlinuz", "initramfs.cpio.gz")
 
@@ -135,20 +141,28 @@ def live_context(root, entry):
 
 
 def menu(state, entries):
-    require(set(state) == {"format", "selected", "previous", "entries"} and state["format"] == FORMAT,
+    require(set(state) == {"format", "selected", "previous", "entries"} and state["format"] in (FORMAT, BASE_MENU_FORMAT),
             "unsupported boot selection metadata")
     require(state["selected"] in state["entries"] and
             (state["previous"] is None or state["previous"] in state["entries"]), "unknown selected/previous deployment")
     require(set(entries) == set(state["entries"]), "boot menu entries differ")
     require(0 < len(entries) <= 128, "boot menu entry limit exceeded")
     d = entries[state["selected"]]["record"]["description"]
-    raw = HEADER + "# " + artifact.canonical(state).decode("ascii") + "\n"
+    header = HEADER if state["format"] == FORMAT else BASE_HEADER
+    raw = header + "# " + artifact.canonical(state).decode("ascii") + "\n"
     raw += boot.terminal("serial") + "set timeout=10\nset default='mpm-" + kernel.identifier(state["selected"]) + "'\n"
     for identifier in [state["selected"], *sorted(set(entries) - {state["selected"]})]:
         entry = entries[identifier]
         candidate = entry["record"]["description"]
-        require(all(candidate[k] == d[k] for k in ("base", "system", "platform", "boot")),
-                "Kernel menu must preserve exact Base/System/root/console")
+        if state["format"] == FORMAT:
+            require(all(candidate[k] == d[k] for k in ("base", "system", "platform", "boot")),
+                    "Kernel menu must preserve exact Base/System/root/console")
+        else:
+            # A Base-aware menu retains recovery entries from earlier Bases and
+            # Kernels. Each writer separately enforces its own change scope.
+            require(all(candidate[k] == d[k] for k in ("system", "platform")) and
+                    all(candidate["boot"][k] == d["boot"][k] for k in ("root_uuid", "console")),
+                    "Base menu must preserve exact System/platform/root/console")
         prefix = "/" + entry["relative"]
         raw += (f"menuentry 'Mojt Linux {candidate['kernel']['release']} / {identifier[7:19]}' "
                 f"--id 'mpm-{kernel.identifier(identifier)}' {{\n"
@@ -159,7 +173,7 @@ def menu(state, entries):
 
 def current(root, baseline=None):
     raw = checked_file(root / "boot/mojt/grub.cfg")
-    if raw.startswith(HEADER.encode()):
+    if managed_menu(raw):
         lines = raw.decode("ascii").splitlines()
         require(len(lines) >= 2 and lines[1].startswith("# "), "missing boot selection metadata")
         state = artifact.parse_json(lines[1][2:].encode("ascii"))
@@ -197,7 +211,12 @@ def locked(root):
     kernel.root_path(ports, write=True)
     ports.mkdir(parents=True, exist_ok=True, mode=0o755)
     kernel.root_path(ports, write=True)
-    with transaction.resource_locks(transaction.boot_lock_paths(root), modes={root / ".install-lock": 0o644}):
+    paths = set(transaction.boot_lock_paths(root))
+    if (root / 'artifacts/store.json').exists():
+        import mpm_base
+        mpm_base.store_info(mpm_base.target(root))
+        paths.update((root / '.artifact-store.lock', root / 'artifacts/.lock'))
+    with transaction.resource_locks(paths, modes={root / ".install-lock": 0o644}):
         initialize_boot_registry(directory)
         yield
 
@@ -303,6 +322,9 @@ def stage(root, identifier, *, baseline=None, base_context=None, busybox=None,
     producer = artifact.digest(dict(busybox=artifact.file_sha(busybox), code={name: artifact.file_sha(
         Path(__file__).with_name(name)) for name in ("mpm_kernel_boot.py", "mojt-vm-build.py", "mojt_native_image.py",
                                                     "mojt_system.py", "mojt_boot.py", "mpm_transaction.py")}))
+    if receipt.get('format') == 'mojt-base-boot-inputs-v1':
+        producer = artifact.digest(dict(kernel=producer, base_constructor={name: artifact.file_sha(
+            Path(__file__).with_name(name)) for name in ('mpm_base_boot.py', 'mpm_base_transition.py')}))
     retained_entries, unused = available(root, state, entries)
     for existing in retained_entries.values():
         old = existing["record"]["description"]
@@ -324,7 +346,12 @@ def stage(root, identifier, *, baseline=None, base_context=None, busybox=None,
             frozen_busybox = Path(temporary) / "busybox"
             shutil.copyfile(busybox, frozen_busybox)
             frozen_busybox.chmod(0o755)
-            raw, evidence = builder(root, body, selected, slot, frozen_busybox, Path(temporary))
+            if receipt.get("format") == "mojt-base-boot-inputs-v1":
+                from mpm_base_boot import init_transform
+                raw, evidence = builder(root, body, selected, slot, frozen_busybox, Path(temporary),
+                    transform=init_transform(d['base']['artifact'], receipt['base_tree']))
+            else:
+                raw, evidence = builder(root, body, selected, slot, frozen_busybox, Path(temporary))
         archive = dict(sha256=hashlib.sha256(raw).hexdigest(), size=len(raw))
         binding = deployment.create(dict(platform=d["platform"], base=d["base"], system=d["system"],
             kernel=deployment.kernel_identity(body), boot=d["boot"], archive=archive), deployment.BINDING)

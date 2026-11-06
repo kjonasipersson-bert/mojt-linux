@@ -6,6 +6,7 @@ from contextlib import contextmanager
 import copy
 import hashlib
 import os
+import re
 from pathlib import Path
 import shutil
 import stat
@@ -125,23 +126,30 @@ def boot_tree(root, identifier, stage, tool):
     return evidence
 
 
-def build_initramfs(root, body, candidate, slot, busybox, work):
-    identifier = candidate['record']['description']['base']['artifact']
+def init_transform(identifier, relative):
     key = kernel.identifier(identifier)
+    require(isinstance(relative, str) and re.fullmatch(r'boot/mpm/slots/[0-9a-f]{32}/tree/rootfs', relative),
+            'invalid exact Base boot tree reference')
     def transform(script):
         old_root = 'root="/sysroot/base/$version"'
         old_manifest = '[ -f "/sysroot/releases/base-$version.toml" ] || panic "Base metadata missing"'
         bind = 'mount --bind "$root" /newroot || panic "cannot bind Base root"'
         require(script.count(old_root) == script.count(old_manifest) == script.count(bind) == 1,
                 'Base initramfs hooks changed; review required')
-        script = script.replace(old_root, 'root="/sysroot/boot/mpm/slots/' + slot + '/tree/rootfs"')
+        script = script.replace(old_root, 'root="/sysroot/' + relative + '"')
         script = script.replace(old_manifest, '[ -f /sysroot/artifacts/base/installed/' + key +
             '/payload/manifest.toml ] || panic "Base metadata missing"')
         return script.replace(bind, bind + '\nmount -o remount,bind,ro "$root" /newroot || panic "cannot protect Base root"')
+    return transform
+
+
+def build_initramfs(root, body, candidate, slot, busybox, work):
+    transform = init_transform(candidate['record']['description']['base']['artifact'],
+                               'boot/mpm/slots/' + slot + '/tree/rootfs')
     return boot.build_initramfs(root, body, candidate, slot, busybox, work, transform=transform)
 
 
-def context(root, entry, manifest, receipt):
+def context(root, entry, manifest, receipt, *, constructing=False):
     """Validate a staged Base receipt and derive facts from its candidate root."""
     d = entry['record']['description']
     require(receipt.get('format') == INPUTS and receipt['base_artifact'] == d['base']['artifact'], 'Base boot receipt identity differs')
@@ -151,7 +159,15 @@ def context(root, entry, manifest, receipt):
     realized = base.realization(root, identifier, installed, verify=True)
     require(realized is not None and receipt['base_receipt'] == installed['id'] and
             receipt['base_realization'] == realized['id'], 'Base boot receipt differs from installation')
-    private = entry['path'] / 'tree'
+    relative = receipt['base_tree']
+    require(isinstance(relative, str) and re.fullmatch(r'boot/mpm/slots/[0-9a-f]{32}/tree/rootfs', relative),
+            'invalid Base boot tree reference')
+    if constructing:
+        private = entry['path'] / 'tree'
+    else:
+        owner = boot.entry_path(root, relative.removesuffix('/tree/rootfs'))
+        private = owner / 'tree'
+
     require(private == private.resolve() and stat.S_IMODE(private.stat().st_mode) == 0o500 and
             private.stat().st_uid == 0 and {p.name for p in private.iterdir()} == {'rootfs'}, 'unprotected Base boot tree')
     tree = private / 'rootfs'
@@ -244,7 +260,8 @@ def stage(root, identifier, bounds, *, baseline=None, dry_run=False, yes=False, 
             _, kernel_receipt = kernel.object_record(root / 'kernel/installed' / kernel.identifier(d['kernel']['artifact']), d['kernel']['artifact'], verify=True)
             receipt = dict(format=INPUTS, selection_origin='existing-disk-base-stage', base_artifact=identifier,
                 base_receipt=p['candidate_base']['receipt'], base_realization=p['candidate_base']['realization'],
-                base_copy=base_copy, base_boot_producer=made_by, preflight=preflight,
+                base_copy=base_copy, base_tree='boot/mpm/slots/' + slot + '/tree/rootfs',
+                base_boot_producer=made_by, preflight=preflight,
                 kernel_artifact=d['kernel']['artifact'], kernel_installation_digest=artifact.digest(kernel_receipt),
                 kernel_acquisition=kernel_receipt.get('acquisition'), system_manifest=manifest['id'], **evidence)
             for name, value in {'deployment.json':record, 'base-context.json':bounds, 'system-manifest.json':manifest,
@@ -260,7 +277,7 @@ def stage(root, identifier, bounds, *, baseline=None, dry_run=False, yes=False, 
             require(producer(profile, tar) == made_by, 'Base constructor changed during staging')
             require(boot.checked_file(root / 'boot/mojt/grub.cfg') == old_menu, 'selection changed during Base staging')
             transient = dict(record=record, path=staging, body=selected['body'])
-            context(root, transient, manifest, receipt)
+            context(root, transient, manifest, receipt, constructing=True)
             require(hashlib.sha256(image).hexdigest() == d['kernel']['image_sha256'], 'retained Kernel image changed')
             kernel.sync_directory(staging);staging.chmod(0o555)
             tx.publish(staging, slots / slot, sync=kernel.sync_directory)
@@ -271,3 +288,81 @@ def stage(root, identifier, bounds, *, baseline=None, dry_run=False, yes=False, 
     return dict(plan=plan, changed=True, deployment=record['id'], slot='boot/mpm/slots/' + slot,
                 selected=state['selected'], running='unchanged', persistent_state='unchanged',
                 stage_ready=True, boot_ready=False)
+
+
+def selection_context(root, entry):
+    """Recheck both the candidate and the retained recovery deployment."""
+    manifest, facts, receipt = boot.live_context(root, entry)
+    state = transition.state_inputs(root)
+    require(facts['facts']['state_layout'] == state['layout'] and
+            facts['facts']['ports'] == state['ports'] and
+            facts['facts']['required_system_paths'] == state['system_shells'],
+            'observed persistent state differs from deployment compatibility facts')
+    d = entry['record']['description']
+    if receipt.get('format') == INPUTS:
+        tree = root / receipt['base_tree']
+    else:
+        tree = root / 'base' / d['base']['release']
+    for shell in state['base_shells']:
+        file = system.virtual_file(tree, shell)
+        require(file.is_file() and file.stat().st_mode & 0o111, 'deployment lacks executable account shell: ' + shell)
+    require(not defaults_check(root, tree)['missing'], 'deployment needs missing-default preparation')
+    management(root / 'system' / d['system']['generation'])
+    return dict(manifest=manifest, facts=facts, receipt=receipt, state=state)
+
+
+def selection_scope(selected, candidate):
+    old = deployment.validate_deployment(selected)
+    new = deployment.validate_deployment(candidate)
+    require(all(old[k] == new[k] for k in ('system', 'kernel', 'platform')) and
+            all(old['boot'][k] == new['boot'][k] for k in ('root_uuid', 'console')),
+            'Base selection must preserve exact System/Kernel/platform/root/console')
+
+
+def select(root, identifier, *, expected_selected, baseline=None, dry_run=False, yes=False, rollback=False):
+    root = boot.disk_root(base.target(root), write=not dry_run)
+    state, selected_entries, old_menu = boot.current(root, baseline)
+    require(state['selected'] == expected_selected, 'selected deployment changed; repeat preview')
+    if rollback:
+        identifier = state['previous']
+        require(identifier is not None, 'no previous selected deployment')
+    kernel.identifier(identifier)
+    entries, unused = boot.available(root, state, selected_entries)
+    require(identifier in entries, 'deployment is not completely staged')
+    selected, candidate = selected_entries[state['selected']], entries[identifier]
+    selection_scope(selected['record'], candidate['record'])
+    old_context = selection_context(root, selected)
+    new_context = old_context if identifier == state['selected'] else selection_context(root, candidate)
+    d = candidate['record']['description']
+    plan = dict(action='no-change' if identifier == state['selected'] else 'select',
+        before=state['selected'], after=identifier, base=d['base'], retained_system=d['system'], retained_kernel=d['kernel'],
+        persistent_state_changes=False, running='unchanged until boot')
+    if dry_run or identifier == state['selected']:
+        return dict(plan=plan, changed=False, dry_run=dry_run)
+    if not yes:
+        require(input('Select this exact Base deployment for next boot? [y/N] ').lower() == 'y', 'selection cancelled')
+    with locked(root):
+        require(boot.checked_file(root / 'boot/mojt/grub.cfg') == old_menu, 'boot selection changed; repeat preview')
+        new = dict(state, format=boot.BASE_MENU_FORMAT, selected=identifier, previous=state['selected'], entries=dict(state['entries']))
+        new['entries'][identifier] = candidate['relative']
+        raw = boot.menu(new, {i: entries[i] for i in new['entries']})
+        target = root / 'boot/mojt/grub.cfg'
+        fd, temporary = tempfile.mkstemp(prefix='.grub-', dir=target.parent)
+        try:
+            with os.fdopen(fd, 'wb') as stream:
+                stream.write(raw);os.fchmod(stream.fileno(), 0o644);os.fsync(stream.fileno())
+            # One menu is the commit point for both metadata and loader entries.
+            # Do not trust a previous preview or only recheck the menu's bytes.
+            fresh_selected = boot.inspect_entry(root, selected['relative'])
+            fresh_candidate = boot.inspect_entry(root, candidate['relative'])
+            require(fresh_selected['record'] == selected['record'] and fresh_candidate['record'] == candidate['record'],
+                    'deployment changed during Base selection')
+            require(selection_context(root, fresh_selected) == old_context and
+                    selection_context(root, fresh_candidate) == new_context,
+                    'deployment or persistent state changed during Base selection')
+            selection_scope(fresh_selected['record'], fresh_candidate['record'])
+            require(boot.checked_file(target) == old_menu, 'boot menu changed before publication')
+            tx.publish(temporary, target, sync=kernel.sync_directory)
+        finally:
+            Path(temporary).unlink(missing_ok=True)
+    return dict(plan=plan, changed=True, selected=identifier, previous=state['selected'], running='unchanged until boot')

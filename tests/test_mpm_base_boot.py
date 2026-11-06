@@ -20,6 +20,7 @@ import mpm_base as base
 import mpm_base_boot as manager
 import mpm_kernel_boot as boot
 import mpm_base_cli as cli
+import mpm_base_status as base_status
 import test_mpm_base as base_fixture
 import test_mpm_base_transition as transition_fixture
 
@@ -139,6 +140,92 @@ class BaseStageTests(unittest.TestCase):
             self.stage()
         self.assertEqual(list((self.root/'boot/mpm/slots').iterdir()),[])
         self.assertEqual((self.root/'boot/mojt/grub.cfg').read_bytes(),menu)
+
+    def test_select_and_return_preserve_system_kernel_state_and_status_identity(self):
+        result=self.stage();old,entries,menu=boot.current(self.root,self.baseline)
+        running=entries[old['selected']]['record']
+        state_before=manager.transition.state_inputs(self.root)
+        before=self.f.f.snapshot()
+        preview=manager.select(self.root,result['deployment'],expected_selected=old['selected'],baseline=self.baseline,dry_run=True)
+        self.assertFalse(preview['changed']);self.assertEqual(before,self.f.f.snapshot())
+        chosen=manager.select(self.root,result['deployment'],expected_selected=old['selected'],baseline=self.baseline,yes=True)
+        self.assertTrue(chosen['changed'])
+        state,new_entries,new_menu=boot.current(self.root)
+        self.assertEqual(state['format'],boot.BASE_MENU_FORMAT)
+        self.assertEqual(state['selected'],result['deployment']);self.assertEqual(state['previous'],old['selected'])
+        self.assertEqual(set(new_entries),{old['selected'],result['deployment']})
+        observed=base_status.status(self.root,running_record=running)
+        self.assertEqual(observed['selected']['artifact'],self.body['id'])
+        self.assertEqual(observed['running']['deployment'],old['selected']);self.assertFalse(observed['running_is_selected'])
+        unchanged=self.f.f.snapshot()
+        self.assertFalse(manager.select(self.root,result['deployment'],expected_selected=state['selected'],yes=True)['changed'])
+        self.assertEqual(unchanged,self.f.f.snapshot())
+        returned=manager.select(self.root,None,expected_selected=state['selected'],rollback=True,yes=True)
+        self.assertEqual(returned['selected'],old['selected'])
+        restored=base_status.status(self.root,running_record=running)
+        self.assertTrue(restored['running_is_selected'])
+        self.assertEqual(manager.transition.state_inputs(self.root),state_before)
+        self.assertEqual(set(boot.current(self.root)[1]),set(new_entries))
+
+    def test_selection_requires_the_expected_current_deployment(self):
+        result=self.stage();menu=(self.root/'boot/mojt/grub.cfg').read_bytes()
+        with self.assertRaisesRegex(ValueError,'selected deployment changed'):
+            manager.select(self.root,result['deployment'],expected_selected='sha256:'+'0'*64,baseline=self.baseline,yes=True)
+        self.assertEqual((self.root/'boot/mojt/grub.cfg').read_bytes(),menu)
+
+    def test_base_selection_cannot_smuggle_a_kernel_change(self):
+        original=self.f.f.old_id
+        kernel_candidate=self.f.f.stage()
+        menu=(self.root/'boot/mojt/grub.cfg').read_bytes()
+        with self.assertRaisesRegex(ValueError,'preserve exact System/Kernel'):
+            manager.select(self.root,kernel_candidate['deployment'],expected_selected=original,baseline=self.baseline,yes=True)
+        self.assertEqual((self.root/'boot/mojt/grub.cfg').read_bytes(),menu)
+
+    def test_late_candidate_tree_change_blocks_menu_publication(self):
+        result=self.stage();original=manager.selection_context;calls=0
+        def mutate(root,entry):
+            nonlocal calls
+            calls+=1
+            if calls==3:(root/result['slot']/'tree/rootfs/usr/bin/tool').write_text('late corruption')
+            return original(root,entry)
+        menu=(self.root/'boot/mojt/grub.cfg').read_bytes()
+        with mock.patch.object(manager,'selection_context',side_effect=mutate),self.assertRaisesRegex(ValueError,'Base content'):
+            manager.select(self.root,result['deployment'],expected_selected=self.f.f.old_id,baseline=self.baseline,yes=True)
+        self.assertEqual((self.root/'boot/mojt/grub.cfg').read_bytes(),menu)
+
+    def test_selection_flush_uncertainty_retains_new_menu_and_both_entries(self):
+        result=self.stage();original=manager.kernel.sync_directory
+        def fail(path):
+            if path==self.root/'boot/mojt':raise OSError('menu flush failed')
+            return original(path)
+        with mock.patch.object(manager.kernel,'sync_directory',side_effect=fail),self.assertRaises(tx_error()):
+            manager.select(self.root,result['deployment'],expected_selected=self.f.f.old_id,baseline=self.baseline,yes=True)
+        state,entries,raw=boot.current(self.root)
+        self.assertEqual(state['selected'],result['deployment']);self.assertEqual(len(entries),2)
+        for entry in entries.values():boot.live_context(self.root,entry)
+
+    def test_kernel_update_after_base_selection_keeps_exact_base_slot_tree(self):
+        first=self.stage()
+        manager.select(self.root,first['deployment'],expected_selected=self.f.f.old_id,baseline=self.baseline,yes=True)
+        def kernel_builder(*args,**kwargs):
+            vm=boot.vm_module()
+            with mock.patch.object(boot,'vm_module',return_value=vm), \
+                 mock.patch.object(vm,'static_x86_64_elf',return_value=True), \
+                 mock.patch.object(vm,'validate_busybox_applets'), \
+                 mock.patch.object(vm,'module_paths',side_effect=lambda release,p,**kw:[p/'kernel/example.ko']), \
+                 mock.patch.object(vm.os,'mknod',side_effect=lambda path,*unused:path.touch()):
+                return boot.build_initramfs(*args,**kwargs)
+        new=boot.stage(self.root,self.f.f.candidate['id'],yes=True,builder=kernel_builder)
+        entry=boot.inspect_entry(self.root,new['slot'])
+        receipt=boot.live_context(self.root,entry)[2]
+        self.assertEqual(receipt['base_tree'],first['slot']+'/tree/rootfs')
+        raw=gzip.decompress((entry['path']/'initramfs.cpio.gz').read_bytes())
+        self.assertIn(('/sysroot/'+receipt['base_tree']).encode(),raw)
+        self.assertNotIn(b'root="/sysroot/base/$version"',raw)
+        boot.select(self.root,new['deployment'],expected_selected=first['deployment'],yes=True)
+        state,entries,_=boot.current(self.root)
+        self.assertEqual(entries[state['selected']]['record']['description']['base'],self.bounds['base'])
+        self.assertEqual(state['selected'],new['deployment'])
 
     def test_post_publish_flush_failure_retains_complete_slot_and_old_selection(self):
         original=manager.kernel.sync_directory
