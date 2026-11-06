@@ -65,7 +65,7 @@ class SystemVmTests(unittest.TestCase):
                             "lib/systemd/systemd-user-runtime-dir", "lib/systemd/systemd-sysctl", "bin/loginctl"],
                 "dbus": ["bin/dbus-daemon"], "networkmanager": ["bin/NetworkManager", "bin/nmcli"],
                 "curl": ["bin/curl"], "cacert": [], "iproute2": ["bin/ip", "bin/ss"],
-                "nix": ["bin/nix", "bin/nix-store", "bin/nix-instantiate"], "python": ["bin/python3"],
+                "nix": ["bin/nix", "bin/nix-store", "bin/nix-instantiate"], "python": ["bin/python3"], "tar": ["bin/tar"],
                 "shell": ["bin/bash"], "tzdata": [], "man-db": ["bin/man", "bin/manpath"],
                 "shadow": ["bin/" + n for n in system.accounts.COMMANDS],
                 "pam": ["bin/unix_chkpwd"], "sudo": ["bin/sudo", "sbin/visudo"],

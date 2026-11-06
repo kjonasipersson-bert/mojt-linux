@@ -88,7 +88,9 @@ requested review of MPM/MBT documentation before Base implementation. The
 [Base install/status proposal](mpm-base-contract.md) are that review surface.
 They propose complete exact Base retention plus a validated runtime tree, no
 implicit defaults/state/boot changes, and separate installed/next-boot/running
-inspection. These meanings await owner agreement; implementation is paused.
+inspection. The owner agreed to these meanings on 2026-11-06. The first
+[exact import/realization/status implementation](base-installation.md) is in PR #40;
+Base boot selection and System integration remain later gates.
 MBT's final spelling remains deferred and it must reuse this installation model.
 
 After agreement, implement/test content-only Base import/realization/status,

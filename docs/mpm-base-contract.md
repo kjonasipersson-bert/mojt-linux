@@ -6,9 +6,9 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Base install and status: proposal for owner agreement
 
-Draft 1, 2026-11-06. **Not implemented and not yet adopted.** This is the next
-behavior decision in the [six-step plan](mpm-consolidation-plan.md), not permission
-to start its implementation. It preserves the [MPM user model](management-workflow.md)
+Owner-agreed behavior, 2026-11-06. The first
+[implementation](base-installation.md) is under validation in PR #40. This is the
+behavior contract in the [six-step plan](mpm-consolidation-plan.md), authorized by the owner after the command-meaning review. It preserves the [MPM user model](management-workflow.md)
 and accepted independent lifecycles. No public MBT spelling is decided here.
 
 ## The two commands in one sentence each
@@ -85,7 +85,7 @@ the entire installer or change old experimental disks implicitly.
 ## Proposed invocation boundary
 
 The first bounded implementation should mirror the established exact Kernel
-import interface. These are **proposal examples, not runnable commands**:
+import interface. These are interface examples with placeholder IDs; substitute real verified values:
 
 ```sh
 mpm base install --from-file /packages/base-EXACT.tar.zst \
@@ -114,8 +114,9 @@ For normal use, the target remains the current installation; the user should not
 need to name internal directories. Explicit offline/new-target operation must
 identify one target installation consistently across content, realization and
 status. Do not silently interpret global `--root` as a disk in one area and a
-registry in another. The exact target option/wire is a remaining implementation
-design gate, to be specified before accepting mutable state.
+registry in another. The first implementation uses explicit `--disk-root` for both actions, matching
+the existing native Kernel boot target option. It rejects global `--root` for Base.
+Its versioned target/receipt/status records are described in the implementation guide.
 
 The existing name/series/exact selector model also remains the intended normal
 catalog route: for example the Base family `mojt`, `mojt@0.1` or
@@ -218,8 +219,7 @@ gates. Only that next join needs a new owner boot test. System import/compositio
 and its deployment join follow in the governing roadmap, before public MBT
 bootstrap/build integration. No repeated Kernel matrix is required here.
 
-**Owner decision requested:** adopt the two command meanings and the definition
-of installed Base above, with defaults/state preparation deferred to an explicit
-transition. Target flags and versioned record details are follow-up design work;
-new MBT spellings remain deferred. Do not implement either command until the
-owner agrees with this proposal.
+**Owner agreement:** the two command meanings and the definition of installed
+Base above were accepted on 2026-11-06, with defaults/state preparation deferred
+to an explicit transition. Exact import/status implementation is authorized.
+New MBT spellings and Base deployment/upgrade integration remain separate work.

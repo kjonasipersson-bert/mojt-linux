@@ -26,7 +26,7 @@ ROLES = {
     1: {"systemd": "systemd"},
     2: {"dbus": "dbus", "networkmanager": "networkmanager", "curl": "curl",
         "cacert": "cacert", "iproute2": "iproute2"},
-    3: {"nix": "nix", "python": "python3"},
+    3: {"nix": "nix", "python": "python3", "tar": "gnutar"},
     4: {"procps": "procps", "util-linux": "util-linux", "less": "less", "editor": "nvi"},
     5: {"shell": "bashInteractive"},
     6: {"kmod": "kmod", "wpa-supplicant": "wpa_supplicant", "iw": "iw"},
@@ -76,7 +76,8 @@ VERSION = "0.2"
 # This does not ship a source checkout or expose image/build commands.
 MPM_FILES = (
     "mpm", "mpm-system", "mpm_cli.py", "mpm_catalog.py", "mpm_selection.py",
-    "mpm_selector_ports.py", "mpm_kernel.py", "mpm_kernel_source.py", "mpm_deployment.py", "mpm_kernel_boot.py",
+    "mpm_selector_ports.py", "mpm_base.py", "mpm_base_cli.py", "mpm_base_source.py", "mpm_base_status.py",
+    "mpm_native_io.py", "mojt-base-install", "mpm_kernel.py", "mpm_kernel_source.py", "mpm_deployment.py", "mpm_kernel_boot.py",
     "mpm_transaction.py", "mpm_requests.py", "mpm_request_plan.py", "mpm_sources.py", "mpm_sources_cli.py",
     "mpm_ports_profile.py", "mpm_ports_cli.py", "mpm_nix_binary.py", "mpm_native_cache.py", "mojt_artifact.py", "mojt_boot.py", "mojt_system.py",
     "mojt_system_manifest.py", "mojt_native_image.py", "mojt-vm-build.py",
@@ -556,12 +557,14 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
               "PATH=/run/mojt-system/bin:/usr/bin:/bin\nexport PATH\nexec " + python +
               ' -I -B /run/mojt-system/tools/mpm-system "$@"\n', 0o755)
         helper = retained_command(payload, record, "zstd")
+        tar_helper = executable(payload, record, "tar", "bin/tar")
         (system / "libexec/mpm/bin").mkdir(parents=True)
+        (system / "libexec/mpm/bin/tar").symlink_to(tar_helper)
         if helper is not None:
             (system / "libexec/mpm/bin/zstd").symlink_to(helper)
         write(system / "mpm-runtime.json", json.dumps(dict(
             format="mojt-mpm-runtime-v1", python=python, files=list(MPM_FILES),
-            helpers={"zstd": helper}, ports_root="/var/lib/mojt/ports",
+            helpers={"zstd": helper, "tar": tar_helper}, ports_root="/var/lib/mojt/ports",
             kernel_root="/run/mojt-disk/kernel", disk_root="/run/mojt-disk"), indent=2) + "\n")
         source = record["source"]
         write(system / "ports.toml", 'format = 1\n[nixpkgs]\n' +
