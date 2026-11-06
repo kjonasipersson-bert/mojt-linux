@@ -72,10 +72,12 @@ MPM complete or displace actual Base/System installation in step 3.
 PR #38 passed full CI and owner installation acceptance, then merged. The
 [native boot follow-up](kernel-source-boot.md) retains acquisition origin during
 fresh-image copying and candidate staging, with mandatory v2 input-receipt binding.
-It also makes the fresh MPM state parent part of System assembly. The next owner
-gate is one exact source-installed deployment boot in a separate native image,
-using existing build/package inputs. Installation, staging, selection and reboot
-remain separate actions. This continues steps 1–2 and supports the later joined
+It also makes the fresh MPM state parent part of System assembly. The owner
+accepted one exact source-installed deployment boot on 2026-11-06 in a separate
+native image at `0dd0b40`, retaining source origin, read-only modules, Base/System
+and machine identity, with selected/running IDs agreeing and no failed units.
+Existing build/package inputs were reused. Installation, staging, selection and
+reboot remain separate actions. This continues steps 1–2 and supports the later joined
 acceptance milestone; it does not complete Base/System installation or bootstrap.
 
 Progress reports must name the step, implemented behavior, validation and the
