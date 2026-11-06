@@ -54,8 +54,10 @@ archive acquisition for Base, System, Kernel and Port without a provider depende
 It joins accepted source/snapshot/catalog/acquisition records to a separately
 protected owner policy, a read-only exact plan and no-overwrite cache publication.
 Real synthetic tar/zstd tests exercise all categories and failure/retry boundaries.
-The library ships in System; public source commands, named snapshot refresh and
-installation integration are still pending. Local owner trust does not implement
+The library and source/cache commands ship in System. Named registrations, explicit
+metadata refresh and exact fetch now use frozen snapshots; installation integration
+is still pending. See [source runtime integration](source-runtime-integration.md).
+Local owner trust does not implement
 remote authentication or signing. This advances steps 1 and 2; it does not mark
 MPM complete or displace actual Base/System installation in step 3.
 

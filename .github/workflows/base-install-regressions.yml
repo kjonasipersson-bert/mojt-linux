@@ -27,6 +27,7 @@ jobs:
         run: python3 -B -m unittest discover -s tests -p 'test_system_manifest.py' -v
       - name: Check owner-authorized native acquisition and verified cache
         run: |
+          python3 -B -m unittest discover -s tests -p 'test_mpm_sources.py' -v
           python3 -B -m unittest discover -s tests -p 'test_mpm_native_cache.py' -v
           python3 -B -m unittest discover -s tests -p 'test_mojt_artifact.py' -v
       - name: Check offline catalog and fresh frontend dispatch boundaries

@@ -13,7 +13,9 @@ remains authoritative. This increment does not complete either milestone.
 
 `tools/mpm_native_cache.py` implements `prepare(cache, **inputs)` and
 `acquire(cache, accepted_plan, **inputs)`. It ships with the MPM runtime in System.
-There is no public source/cache CLI or connection to area installers yet.
+The [installed source/cache frontend](source-runtime-integration.md) now joins
+named registrations, frozen snapshots and exact acquisition. Connections to area
+installers remain pending.
 
 ## Inputs and authorization
 
@@ -53,9 +55,11 @@ descriptors. Symlinks, hardlinked inputs, FIFOs and other special files are refu
 Authority comes from the owner's protected local policy, not from SHA256. A hash
 by itself authenticates neither a publisher nor a release. A cached copy of a
 policy is evidence only: each operation still reads the authorized policy file.
-This API assumes the caller chooses that protected policy deliberately; a future
-privileged frontend must select it from administrator-owned configuration, never
-from an unprivileged request's proposed trust policy.
+This low-level API assumes the caller chooses that protected policy deliberately.
+The installed frontend permits only an administrator to register/reconfigure a
+source. Registration copies the accepted policy to its protected registry, then
+fetch selects that registered policy. It never accepts a replacement policy from
+an unprivileged fetch request.
 
 Native HTTP(S), signature verification, revocation services and implicit source
 refresh are unsupported. Other provider bindings can be retained as metadata;
@@ -125,8 +129,8 @@ unsafe paths and special files, stale/revoked policies, decompression limits,
 failed verification, post-publication flush failure and retry. Existing native
 package and Ports/transaction tests cover the reused boundaries.
 
-Next, join named source/snapshot retention and explicit refresh to the installed
-frontend, then pass verified cached native archives into the area publishers.
+Named source/snapshot retention and explicit refresh are now joined to the installed
+frontend. Next, pass verified cached native archives into the area publishers.
 Remote acquisition needs an explicit authentication extension before enabling a
 network transport. Base/System installation, configuration forgetting, retained
 artifact pruning and lifecycle/recovery remain separate completion gates.

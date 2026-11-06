@@ -20,6 +20,8 @@ class Runtime:
     running: Path = Path("/run/mojt/deployment.json")
     helpers: Path = Path("/run/mojt-system/libexec/mpm/bin")
     system_bin: Path = Path("/run/mojt-system/bin")
+    sources: Path = Path("/var/lib/mojt/sources")
+    cache: Path = Path("/var/lib/mojt/cache")
 
 
 def option(args, name):
@@ -27,7 +29,9 @@ def option(args, name):
 
 
 def help_text():
-    print("usage: mpm {catalog,kernel,ports,base,system} ...\n"
+    print("usage: mpm {source,cache,catalog,kernel,ports,base,system} ...\n"
+          "  source                  add, update, list, show (explicit local metadata)\n"
+          "  cache                   fetch (exact native archive; no installation)\n"
           "  catalog                 explicit local catalog discovery\n"
           "  kernel                  install, status, plan, stage, select, rollback, resolve\n"
           "  ports                   install, activate, upgrade, update, apply, remove, reset, list, history\n"
@@ -122,6 +126,8 @@ def dispatch(args, runtime):
     action = command[1] if len(command) > 1 else None
     if runtime is not None and os.geteuid() != 0:
         readonly = (command[2:] in (["--help"], ["-h"]) or
+            area == "source" and action in (None, "list", "show", "--help", "-h") or
+            area == "cache" and action in (None, "--help", "-h") or
             area == "catalog" and action in ("search", "show", "versions", "resolve-kernel", "--help", "-h") or
             area == "kernel" and action in (None, "status", "plan", "resolve", "--help", "-h") or
             area == "ports" and action in (None, "status", "list", "history", "resolve", "search", "info", "--help", "-h") or
@@ -129,6 +135,12 @@ def dispatch(args, runtime):
                 action in ("search", "show", "versions") and option(command, "--catalog"))
         if not readonly:
             raise ValueError("shared installation changes require an administrator")
+    if area in ("source", "cache"):
+        if area == "cache" and action == "fetch" and "--dry-run" not in command:
+            require_codec(runtime, command)
+        from mpm_sources_cli import main
+        root = Path(roots[-1].split("=", 1)[1] if len(roots) == 1 else roots[-1]) if roots else None
+        return main(area, command[1:] or ["--help"], root=root, runtime=runtime)
     if area == "kernel" and action in (None, "-h", "--help"):
         help_text()
         return 0

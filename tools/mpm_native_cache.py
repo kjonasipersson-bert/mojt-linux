@@ -89,8 +89,8 @@ def cache_root(path, *, write=False):
     return root
 
 
-def inputs(cache, *, policy_file, source, snapshot, catalog_bytes, acquisition_bytes, ref, archive_sha256, kind):
-    root=cache_root(cache)
+def local_source(policy_file, source):
+    """Protected local policy and exact source binding, shared with registration."""
     policy_file=Path(os.path.abspath(policy_file))
     policy_raw=read_file(policy_file.parent,policy_file.name)
     policy_record=artifact.parse_json(policy_raw);policy=envelope(policy_record,POLICY)
@@ -106,6 +106,12 @@ def inputs(cache, *, policy_file, source, snapshot, catalog_bytes, acquisition_b
     directory=Path(policy['root'])
     require(directory.is_absolute() and str(directory)==policy['root'],'noncanonical local source path')
     tx.protected_directory(directory,label='Source')
+    return directory, policy_raw, policy_record
+
+
+def metadata(*, policy_file, source, snapshot, catalog_bytes, acquisition_bytes):
+    directory, policy_raw, policy_record = local_source(policy_file, source)
+    policy = policy_record['description']; src = source['description']
     snap=envelope(snapshot,'mojt-source-snapshot-v1')
     fields(snap,('source','catalog','acquisition','provider_snapshot','trust_policy'))
     require(snap['source']==source['id'] and snap['trust_policy']==policy_record['id'] and snap['provider_snapshot'] is None,'source snapshot binding differs')
@@ -133,15 +139,12 @@ def inputs(cache, *, policy_file, source, snapshot, catalog_bytes, acquisition_b
             for name in encoding['paths']:artifact.relative(name)
         require(encodings==sorted(set(encodings)),'duplicate/unordered encodings')
     require(keys==sorted(set(keys)),'duplicate/unordered offers')
-    require(reference(ref)['provider']=='native' and kind in artifact.KINDS,'unsupported native acquisition target')
-    offers=[o for o in md['offers'] if o['reference']==ref];require(len(offers)==1,'missing exact acquisition offer')
-    offer=offers[0];encodings=[e for e in offer['archives'] if e['sha256']==archive_sha256]
-    require(len(encodings)==1,'archive encoding not approved');encoding=encodings[0]
-    size(encoding['size'],policy['max_archive'])
-    cached_descriptor='metadata/'+offer['descriptor']['sha256']
-    descriptor_raw=read_file(root,cached_descriptor) if os.path.lexists(root/cached_descriptor) else read_file(directory,offer['descriptor']['path'])
+    return directory, policy_raw, policy_record, catalog, mapping
+
+
+def descriptor_binding(descriptor_raw, offer, catalog, policy, kind):
     bound(descriptor_raw,offer['descriptor']);body=artifact.parse_json(descriptor_raw);artifact.validate_descriptor(body)
-    require(body['id']==ref['artifact'] and body['kind']==kind and catalog.area==('ports' if kind=='port' else kind),'artifact/category binding differs')
+    require(body['id']==offer['reference']['artifact'] and body['kind']==kind and catalog.area==('ports' if kind=='port' else kind),'artifact/category binding differs')
     candidates=[c for c in catalog.candidates if c.backend=='native' and c.artifact==body['id']]
     require(candidates,'artifact absent from accepted catalog')
     for c in candidates:
@@ -149,6 +152,24 @@ def inputs(cache, *, policy_file, source, snapshot, catalog_bytes, acquisition_b
                 (body['name'],body['version']['release_id'],body['version']['upstream'],body['version']['scheme'],body['version']['revision'],body['platform']),'catalog/descriptor release differs')
         require(c.integrity==dict(sha256=c.integrity.get('sha256')) and c.integrity['sha256'] in {e['sha256'] for e in offer['archives']},'native catalog transport binding differs')
     require(sum(row.get('size',0) for row in body['files'])<=policy['max_expanded'],'declared content exceeds policy')
+    return body
+
+
+def inputs(cache, *, policy_file, source, snapshot, catalog_bytes, acquisition_bytes, ref, archive_sha256, kind, descriptor_bytes=None):
+    root=cache_root(cache)
+    directory, policy_raw, policy_record, catalog, mapping = metadata(policy_file=policy_file, source=source, snapshot=snapshot, catalog_bytes=catalog_bytes, acquisition_bytes=acquisition_bytes)
+    policy=policy_record['description']; md=mapping['description']
+    policy_file=Path(os.path.abspath(policy_file))
+    require(reference(ref)['provider']=='native' and kind in artifact.KINDS,'unsupported native acquisition target')
+    offers=[o for o in md['offers'] if o['reference']==ref];require(len(offers)==1,'missing exact acquisition offer')
+    offer=offers[0];encodings=[e for e in offer['archives'] if e['sha256']==archive_sha256]
+    require(len(encodings)==1,'archive encoding not approved');encoding=encodings[0]
+    size(encoding['size'],policy['max_archive'])
+    cached_descriptor='metadata/'+offer['descriptor']['sha256']
+    descriptor_raw = descriptor_bytes
+    if descriptor_raw is None:
+        descriptor_raw=read_file(root,cached_descriptor) if os.path.lexists(root/cached_descriptor) else read_file(directory,offer['descriptor']['path'])
+    body = descriptor_binding(descriptor_raw, offer, catalog, policy, kind)
     binding=dict(artifact=body['id'],archive={k:encoding[k] for k in ('sha256','size')},source_snapshot=snapshot['id'],acquisition_map=mapping['id'],descriptor=body['id'],trust_policy=policy_record['id'])
     plan=record(PLAN,dict(cache=str(root),policy_file=str(policy_file),policy_raw_sha256=hashlib.sha256(policy_raw).hexdigest(),source=source['id'],kind=kind,binding=binding,descriptor_bytes=offer['descriptor'],archive_paths=encoding['paths'],max_expanded=policy['max_expanded']))
     objects=[source,snapshot,mapping,policy_record]
