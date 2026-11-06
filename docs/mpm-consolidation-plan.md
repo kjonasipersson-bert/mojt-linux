@@ -89,12 +89,16 @@ requested review of MPM/MBT documentation before Base implementation. The
 They propose complete exact Base retention plus a validated runtime tree, no
 implicit defaults/state/boot changes, and separate installed/next-boot/running
 inspection. The owner agreed to these meanings on 2026-11-06. The first
-[exact import/realization/status implementation](base-installation.md) is in PR #40;
+[exact import/realization/status implementation](base-installation.md) merged in PR #40 after full green CI;
 Base boot selection and System integration remain later gates.
 MBT's final spelling remains deferred and it must reuse this installation model.
 
-Complete review/CI for content-only Base import/realization/status, then
-generalize deployment to a changed Base, followed by System integration.
+Content-only Base import/realization/status is merged. The next bounded increment
+adds [read-only Base transition preflight](base-deployment-preflight.md), binding
+the installed candidate to the selected System/Kernel and observed state. It does
+not stage or select a changed Base. Continue with explicit defaults/lifecycle and
+management-capability gates, bound initramfs/slot publication and next-boot
+selection, followed by System installation integration.
 The next owner VM gate is an actual changed-Base boot. Do not add another manual
 Kernel matrix or move bootstrap/build work ahead of the six-step order.
 

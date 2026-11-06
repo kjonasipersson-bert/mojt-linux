@@ -62,10 +62,10 @@ class Fixture(unittest.TestCase):
         self.work=Path(self.tmp.name);self.root=self.work/'disk';self.root.mkdir()
         self.serial=0;self.archive,self.body=self.package()
 
-    def package(self,*,extra=(),revision=1,change=None):
+    def package(self,*,extra=(),revision=1,change=None,version="0.1.3",abi=None):
         self.serial+=1;release=self.work/('release-'+str(self.serial));release.mkdir()
         rows=[entry(n) for n in ('.','usr','usr/lib','usr/etc','usr/bin','etc','var','home')]
-        rows += [entry('root',mode=0o700),entry('usr/lib/os-release',b'ID=mojt\nIMAGE_VERSION="0.1.3"\n',mode=0o644),
+        rows += [entry('root',mode=0o700),entry('usr/lib/os-release',f'ID=mojt\nIMAGE_VERSION="{version}"\n'.encode(),mode=0o644),
                  entry('usr/bin/tool',b'#!/bin/sh\necho Base fixture\n'),entry('usr/etc/hostname',b'mojt-default\n',mode=0o644),
                  entry('lib',kind=tarfile.SYMTYPE,link='/usr/lib'),entry('bin',kind=tarfile.SYMTYPE,link='usr/bin')]
         if change:rows=change(rows)
@@ -78,7 +78,7 @@ class Fixture(unittest.TestCase):
         (release/'manifest.toml').write_text(f'''format = 1
 [base]
 name = "mojt"
-version = "0.1.3"
+version = "{version}"
 architecture = "{os.uname().machine}"
 [image]
 file = "rootfs.tar.zst"
@@ -89,6 +89,9 @@ etc_defaults = "/usr/etc"
 etc_policy = "add-missing"
 var_policy = "persistent"
 ''')
+        if abi is not None:
+            with (release/'manifest.toml').open('a') as stream:
+                stream.write('\n[abi]\n'+''.join(k+' = '+json.dumps(v)+'\n' for k,v in abi.items()))
         spec,attachments=artifact.base_input(release,revision)
         result=artifact.pack(release,spec,self.work/('package-'+str(self.serial)),attachments)
         return self.work/('package-'+str(self.serial))/result['archive']['file'],result['artifact']
