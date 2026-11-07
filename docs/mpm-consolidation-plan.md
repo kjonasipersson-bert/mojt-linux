@@ -100,9 +100,12 @@ the installed candidate to the selected System/Kernel and observed state. It now
 The first subset refuses missing defaults and retains matching System management
 code. The [fresh-VM owner acceptance](base-boot-acceptance.md#recorded-owner-acceptance-2026-11-07)
 passed on 2026-11-07: exact changed Base booted read-only and returned to the old
-deployment with System/Kernel and saved state retained. Finish review/CI for #41,
-then continue with explicit defaults/lifecycle preparation and System installation
-integration. Do not add another unchanged manual Kernel/Base matrix or move
+deployment with System/Kernel and saved state retained. PR #41 is merged.
+The [bounded defaults preparation library](defaults-preparation.md) now adds an
+explicit root-authorized ensure-file operation and durable attempt evidence. It
+is not called by install/stage/select, and is not the general lifecycle executor.
+Next join supported state/handler capabilities and the initialization boundary
+to actual native System installation/deployment. Do not add another unchanged manual Kernel/Base matrix or move
 bootstrap/build work ahead of the six-step order.
 
 Progress reports must name the step, implemented behavior, validation and the
