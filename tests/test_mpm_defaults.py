@@ -244,6 +244,45 @@ class PreparationTests(Fixture):
         terminal.write_bytes(original);(run / '000003.json').write_bytes(original)
         with self.assertRaises(ValueError):self.status()
 
+    def test_interruption_immediately_after_link_is_uncertain(self):
+        link = defaults.os.link
+        def interrupted(src, dst, **kw):
+            link(src, dst, **kw)
+            if dst == 'hostname':raise KeyboardInterrupt('injected after link')
+        with mock.patch.object(defaults.os, 'link', side_effect=interrupted), self.assertRaises(tx.PublicationUncertain):self.apply()
+        self.assertEqual(self.destination().read_bytes(), b'mojt-default\n')
+        # Both links may survive this boundary: diagnose, never delete/adopt them.
+        self.assertEqual(self.destination().stat().st_nlink, 2)
+        with self.assertRaises(ValueError):self.apply(reconcile=True)
+
+    def test_partial_multi_file_attempt_resumes_without_overwriting_first_file(self):
+        archive, body = self.package(extra=[entry('usr/etc/locale.conf', b'LANG=C.UTF-8\n', mode=0o644)])
+        base.install(self.root, archive, body['id'], yes=True)
+        self.plan = defaults.prepare(self.root, body['id'], ['locale.conf', 'hostname'])
+        original = defaults.publish
+        def interrupted(fd, name, data, **kw):
+            if name == 'locale.conf':raise OSError('injected second default failure')
+            return original(fd, name, data, **kw)
+        with mock.patch.object(defaults, 'publish', side_effect=interrupted), self.assertRaises(OSError):self.apply()
+        self.assertEqual(self.destination().read_bytes(), b'mojt-default\n')
+        self.assertFalse((self.root / 'state/etc/locale.conf').exists())
+        self.destination().write_bytes(b'local edit during partial attempt\n')
+        self.assertTrue(self.apply(reconcile=True)['changed'])
+        self.assertEqual(self.destination().read_bytes(), b'local edit during partial attempt\n')
+        self.assertEqual((self.root / 'state/etc/locale.conf').read_bytes(), b'LANG=C.UTF-8\n')
+        self.assertEqual(len(self.status()['attempts']), 1)
+
+    def test_source_hardlink_is_not_an_ordinary_default(self):
+        import tarfile
+        archive, body = self.package(extra=[entry('usr/etc/hard', kind=tarfile.LNKTYPE, link='usr/etc/hostname')])
+        base.install(self.root, archive, body['id'], yes=True)
+        with self.assertRaisesRegex(ValueError, 'unsafe'):defaults.prepare(self.root, body['id'], ['hard'])
+
+    def test_directory_scan_stops_at_budget(self):
+        self.apply();run = next(p for p in self.registry().iterdir() if p.is_dir())
+        for number in range(5):(run / ('.result-' + f'{number:032x}')).write_bytes(b'incomplete')
+        with self.assertRaisesRegex(ValueError, 'unbounded'):self.status()
+
     def test_limits_and_incomplete_temps_not_success(self):
         self.apply();run = next(p for p in self.registry().iterdir() if p.is_dir())
         temp = run / ('.result-' + 'a' * 32);temp.write_bytes(b'incomplete')

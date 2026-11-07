@@ -117,7 +117,7 @@ def observe(root, path):
 
 def handler():
     # Exact executing manager code, never a path supplied by a package.
-    names = ('mpm_defaults.py', 'mpm_base.py', 'mpm_transaction.py', 'mojt_artifact.py')
+    names = sorted({'mpm_defaults.py', *base.MANAGER_FILES})
     return dict(type='missing-default', version=1,
                 implementation=dict(provider='mojt-manager-code', identity=dict(
                     files={name: artifact.file_sha(Path(__file__).with_name(name)) for name in names})))
@@ -209,6 +209,7 @@ def publish(fd, name, data, *, mode=0o600, prefix='.result-'):
     temp = prefix + uuid.uuid4().hex
     file = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=fd)
     linked = False
+    prepared = None
     try:
         with os.fdopen(file, 'wb') as stream:
             stream.write(data)
@@ -216,6 +217,7 @@ def publish(fd, name, data, *, mode=0o600, prefix='.result-'):
             os.fchown(stream.fileno(), 0, 0)
             os.fchmod(stream.fileno(), mode)
             os.fsync(stream.fileno())
+            prepared = os.fstat(stream.fileno())
         try:os.link(temp, name, src_dir_fd=fd, dst_dir_fd=fd, follow_symlinks=False)
         except FileExistsError:
             os.unlink(temp, dir_fd=fd)
@@ -225,6 +227,12 @@ def publish(fd, name, data, *, mode=0o600, prefix='.result-'):
         os.unlink(temp, dir_fd=fd)
         os.fsync(fd)
     except BaseException as error:
+        # An asynchronous interruption can land just after the link syscall.
+        try:
+            visible = os.stat(name, dir_fd=fd, follow_symlinks=False)
+            linked = linked or (prepared is not None and
+                (visible.st_dev, visible.st_ino) == (prepared.st_dev, prepared.st_ino))
+        except OSError:pass
         if linked:
             raise tx.PublicationUncertain('default/evidence publication uncertain; retain and inspect') from error
         # Keep incomplete temp as evidence; do not mistake it for a final record.
@@ -285,11 +293,20 @@ def _validate_result(value, plan, approval, run, sequence, previous):
                     'created default differs from declaration')
 
 
+def _names(path, limit):
+    names = []
+    with os.scandir(path) as entries:
+        for entry in entries:
+            require(len(names) < limit, 'unbounded default registry directory')
+            names.append(entry.name)
+    return sorted(names)
+
+
 def _scan(root, plan):
     path = location(root, plan)
     if not os.path.lexists(path):return dict(attempts=[], incomplete=[])
     with directory(path):pass
-    names = sorted(os.listdir(path))
+    names = _names(path, MAX_RUNS + 3)
     require(len(names) <= MAX_RUNS + 3 and set(names) >= {'plan.json', 'approval.json', '.lock'},
             'incomplete/unbounded default registry')
     require(_read(path / 'plan.json', PLAN) == plan and _read(path / 'approval.json', APPROVAL) == _approval(plan),
@@ -301,7 +318,7 @@ def _scan(root, plan):
         require(re.fullmatch('[0-9a-f]{32}', name), 'unknown default registry entry')
         run = path / name
         with directory(run):pass
-        files = sorted(os.listdir(run))
+        files = _names(run, 4)
         require(len(files) <= 4 and all(n in ('000001.json', '000002.json') or re.fullmatch(r'\.result-[0-9a-f]{32}', n) for n in files),
                 'invalid default result sequence')
         temps = [n for n in files if n.startswith('.result-')]
@@ -408,6 +425,7 @@ def initialize(root, plan, *, yes=False, reconcile=False):
                 run = unresolved[0]['run']
                 destination = scope / run
                 started = _read(destination / '000001.json', RESULT)
+                tx.sync_directory(destination)  # Re-establish durable intent before resumed effects.
             else:
                 require(len(prior['attempts']) < MAX_RUNS, 'default attempt limit reached')
                 run = uuid.uuid4().hex
