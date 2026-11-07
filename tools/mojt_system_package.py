@@ -6,6 +6,7 @@ import hashlib
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import tempfile
 
 import mojt_artifact as artifact
@@ -57,11 +58,27 @@ def raw(value):return artifact.canonical(value) + b'\n'
 def evidence(value):return dict(sha256=hashlib.sha256(value).hexdigest(), size=len(value))
 
 
+def expanded_size(path):
+    """Bound the entire tar stream, including headers/PAX metadata and padding."""
+    with tempfile.TemporaryFile() as errors:
+        process = subprocess.Popen(['zstd', '-q', '-d', '-c', '--', str(path)], stdout=subprocess.PIPE, stderr=errors)
+        try:
+            length = 0
+            while chunk := process.stdout.read(128 * 1024):
+                length += len(chunk)
+                artifact.require(length <= 2 * artifact.MAX_CONTENT, 'System archive expansion exceeds limit')
+            artifact.require(process.wait() == 0, 'cannot measure System archive expansion')
+            return length
+        finally:
+            process.stdout.close()
+            if process.poll() is None:process.terminate();process.wait()
+
+
 def source_metadata(stage, destination, results):
     """An ordinary owner-authorized local kit, using existing source/cache wires."""
     name = 'system-kit';channel = 'local'
     maximum = max(r['archive']['size'] for r in results.values())
-    expanded = max(sum(f.get('size', 0) for f in r['artifact']['files']) for r in results.values())
+    expanded = max(expanded_size(stage / role / r['archive']['file']) for role, r in results.items())
     policy = base.record(cache.POLICY, dict(name=name, provider='native', channel=channel,
         root=str(destination), max_archive=max(1, maximum), max_expanded=max(1, expanded)))
     source = base.record('mojt-source-v1', dict(name=name, provider='native', channel=channel,
@@ -98,6 +115,7 @@ def package(tree, generation, upstream, revision, output, *, adapter):
     tx.protected_directory(output.parent, write=True, label='System package output')
     artifact.require(not os.path.lexists(output), 'System kit output already exists')
     artifact.require(not output.is_relative_to(tree) and not tree.is_relative_to(output), 'System inputs and output must be disjoint')
+    base.io.regular(profile / 'manifest.json')
     manifest = manifests.validate(artifact.read_json(profile / 'manifest.json'));d = manifest['description']
     artifact.require(d['label'] == generation and system.inventory(profile) == d['profile'], 'assembled System profile differs from manifest')
     support = management.retained(profile, manifest)

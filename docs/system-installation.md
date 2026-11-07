@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-2.0-only
 # Native System content installation and status
 
 This implements the first native System installation unit in consolidation step
-3. It imports exact ordinary-file native components, validates a generation's
+3. It imports exact native components with controlled profile links, validates a generation's
 resolved composition and materializes an immutable profile. It does not change
 persistent configuration/accounts/data, existing System profiles, services,
 Base/Kernel selection, the boot menu or the running System. No package code,
