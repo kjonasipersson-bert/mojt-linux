@@ -14,6 +14,23 @@ import mpm_base as base
 import mpm_system as system
 
 
+class ProviderAdapters(dict):
+    """Load only the selected System's helper, and never import into a host store for an offline target."""
+    def __init__(self, runtime):
+        super().__init__();self.runtime = runtime
+
+    def __missing__(self, name):
+        base.require(name == 'nix', 'unsupported System provider: ' + name)
+        base.require(self.runtime is not None, 'System provider operations require the running installation; offline provider import/verification is unavailable')
+        try:from mpm_nix_binary import NixBinaryAdapter
+        except ImportError as error:raise ValueError('selected System has no Nix binary adapter') from error
+        binary = self.runtime.system_bin / 'nix-store'
+        base.require(binary.is_file() and os.access(binary, os.X_OK), 'selected System has no retained nix-store helper')
+        adapter = NixBinaryAdapter(binary)
+        self[name] = adapter
+        return adapter
+
+
 def main(argv, *, runtime=None):
     try:
         parser = argparse.ArgumentParser(prog='mpm system')
@@ -28,12 +45,13 @@ def main(argv, *, runtime=None):
         args = parser.parse_args(argv)
         base.require(args.disk_root is not None or runtime is not None, 'specify --disk-root for a checkout/offline target')
         root = args.disk_root or runtime.disk
+        adapters = ProviderAdapters(runtime if args.disk_root is None else None)
         if runtime is not None and args.disk_root is None:base.require(os.path.ismount(root), 'running installation disk is unavailable')
         if args.action == 'install':
-            result = system.install(root, args.from_file, args.expected_id, dependency_files=args.dependency_file, dry_run=args.dry_run, yes=args.yes)
+            result = system.install(root, args.from_file, args.expected_id, dependency_files=args.dependency_file, dry_run=args.dry_run, yes=args.yes, adapters=adapters)
         else:
             running = base.read(runtime.running) if runtime is not None and args.disk_root is None and runtime.running.is_file() else None
-            result = system.status(root, verify=args.verify, running_record=running)
+            result = system.status(root, verify=args.verify, running_record=running, adapters=adapters)
         if args.json or args.action == 'install':print(json.dumps(result, indent=2, sort_keys=True))
         else:
             print('System on:', result['target'])
