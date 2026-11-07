@@ -29,8 +29,11 @@ Read the [manifesto](docs/manifesto.md), [architecture notes](docs/architecture.
 For the user-facing model of **MPM and MBT**, start with
 [the management workflow](docs/management-workflow.md). The
 [Base install/status contract](docs/mpm-base-contract.md) was agreed on 2026-11-06;
-its first [implementation](docs/base-installation.md) is in PR #40. Base boot
-changes/upgrades and MBT public command spellings remain subsequent work.
+its first [implementation](docs/base-installation.md) merged in PR #40.
+[Exact Base staging/selection/return](docs/base-boot-staging.md) is implemented
+in PR #41 with [owner boot/return acceptance](docs/base-boot-acceptance.md#recorded-owner-acceptance-2026-11-07)
+passed on 2026-11-07.
+Moving Base upgrades and MBT public command spellings remain subsequent work.
 
 The accepted update model keeps Base as complete releases, System as coherent
 generations, and Ports as parallel program versions with active selections

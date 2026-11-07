@@ -46,7 +46,7 @@ Catalog selection, recorded requests, installed artifacts and active command
 selections are separate. An artifact identity from
 .B list --exact
 identifies an installed build; it is not itself an upgrade request.
-.SH EXACT BASE INSTALL AND STATUS
+.SH BASE CONTENT AND NEXT BOOT
 .BI "base install --from-file " "ARCHIVE --expected-id sha256:FULL_ID"
 retains the verified complete Base and publishes a validated rootfs realization.
 Use --dry-run for a read-only target preview or -y to accept that operation.
@@ -60,6 +60,24 @@ it requires an administrator. No defaults are copied into machine /etc, no state
 is initialized and no current link, boot menu or running content is changed.
 The first subset rejects unsupported required dependencies/requirements.
 .PP
+.BI "base stage --artifact " "sha256:FULL_ID --base-context FILE"
+verifies installed Base against selected System/Kernel and actual state, then
+retains a private read-only boot tree and bound initramfs. Requires matching
+retained System management code and already present configuration defaults.
+Missing defaults are reported without changing configuration. --dry-run writes
+no slot. Staging never changes next boot or the running deployment. Explicit
+Base selection is separate. Confirm the running deployment after reboot.
+.PP
+.BI "base select --deployment " "sha256:FULL_DEPLOYMENT_ID --expected-selected sha256:CURRENT_ID"
+selects a fully staged exact deployment for next boot while retaining System and
+Kernel. --dry-run verifies without publication; -y accepts the choice. Both the
+candidate and recovery deployment are checked again at publication. A repeated
+choice is a verified no-op. Running content is unchanged until reboot.
+.PP
+.BI "base rollback --expected-selected " "sha256:CURRENT_ID"
+selects the previous deployment only if exact System and Kernel are retained.
+Both deployments remain available. Rollback does not undo persistent state.
+.PP
 .B base status
 reports installed, next-boot and running Base identities separately. --verify
 rechecks retained archive, wrapper and rootfs content/metadata; --json returns
@@ -67,7 +85,7 @@ mpm-base-status-v1 with complete IDs and explicit unknown observations.
 A cache/archive-only object is retained, not installed Base. Incomplete work and
 missing retention behind running/selected observations are reported separately.
 .PP
-Both actions accept --disk-root DIRECTORY for one existing installation target.
+All Base actions accept --disk-root DIRECTORY for one existing installation target.
 The source frontend requires it; the installed frontend defaults to its mounted
 disk. Explicit --disk-root is offline inspection and never imports the inspection
 host's running identity. Global --root is rejected for Base commands. Status
@@ -75,7 +93,7 @@ creates no target, registry, lock or selection and needs no provider/refresh.
 .PP
 Exact import preserves the first receipt on an unchanged repeat, including while
 the original archive is unavailable. It does not create a moving upgrade wish.
-Base boot selection/upgrade and System mutation remain unimplemented. See
+Base moving upgrades and System mutation remain unimplemented. See
 docs/base-installation.md and docs/mpm-base-contract.md for the implemented scope.
 MBT public spellings remain proposed; bootstrap will reuse the same MPM functions.
 .SH GLOBAL OPTIONS

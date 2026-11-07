@@ -77,6 +77,9 @@ class SystemVmTests(unittest.TestCase):
                    for role, names in system.DIAGNOSTIC_COMMANDS.items()
                    if role not in ("iproute2", "kmod")},
             }[role]
+            # Real sysusers defaults may use an absolute dependency-store nologin.
+            if role == "util-linux":
+                names = [*names, "bin/nologin"]
             base.mkdir(parents=True)
             for name in names:
                 system.write(base / name, "#!/bin/sh\nexit 0\n", 0o755)
@@ -912,7 +915,7 @@ esac""")
         expected = record['packages']['tar']['output']+'/bin/tar'
         self.assertEqual(os.readlink(profile/'libexec/mpm/bin/tar'), expected)
         self.assertEqual(json.loads((profile/'mpm-runtime.json').read_text())['helpers']['tar'],expected)
-        for name in ('mpm_base.py','mpm_base_cli.py','mpm_base_status.py','mpm_base_source.py','mpm_native_io.py','mojt-base-install'):
+        for name in ('mpm_base.py','mpm_base_transition.py','mpm_base_boot.py','mpm_base_cli.py','mpm_base_status.py','mpm_base_source.py','mpm_native_io.py','mojt-base-install'):
             self.assertEqual((profile/'tools'/name).read_bytes(),(REPO/'tools'/name).read_bytes())
 
     def test_base_tar_helper_cannot_escape_to_unretained_path(self):

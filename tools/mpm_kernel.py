@@ -45,14 +45,10 @@ def root_path(value, *, write=False):
     if write:
         if root == DEFAULT_ROOT:
             require(os.geteuid() == 0, "shared Kernel changes require an administrator")
-        for parent in (root, *root.parents):
-            try:
-                info = directory(parent)
-            except FileNotFoundError:
-                continue
-            require(info.st_uid in (0, os.geteuid()), "untrusted registry ancestor owner")
-            sticky_temporary = info.st_uid == 0 and info.st_mode & stat.S_ISVTX
-            require(not info.st_mode & 0o022 or sticky_temporary, "writable registry ancestor")
+        # Use the same enclosing-private-directory policy as Base/Ports.
+        # Registry ownership is still enforced by registry_lock before writing;
+        # a preview may inspect a protected root-owned custom registry.
+        root = transaction.protected_directory(root, label="Kernel registry")
     return root
 
 

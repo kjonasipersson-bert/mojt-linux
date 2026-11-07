@@ -16,7 +16,7 @@ versions, not backward migration of experimental installations.
 | --- | --- | --- |
 | 1 | Establish the baseline and deliver complete MPM in System | Common frontend/runtime is merged. Configuration ownership, exact resolution and a complete Ports publisher/acquisition API are implemented in #36. The installed Ports frontend now joins configuration, accepted finite sources, imports and profiles without a checkout. A bounded real Nix adapter/frontend acceptance passed. Interactive reason removal and active-choice reset are implemented in the bounded follow-up. Completion still needs supported Base/System operations, remaining request/configuration joins and honest diagnostics. Local native source/cache acquisition is implemented; general authenticated remote publication remains the separate P2 gate. |
 | 2 | Consolidate installation and transaction rules | Shared locks/publication primitives are merged; late baseline guards and the fresh Ports profile publisher are added here. Complete other area publishers, lifecycle effects and failure recovery; planning alone is not a transaction commit. |
-| 3 | Make Base and System actual MPM installation units | Package/composition/storage/deployment contracts exist; implement verified import, complete realizations, scope-preserving publication and next-boot selection on the same disk. |
+| 3 | Make Base and System actual MPM installation units | Base exact import/realization/status merged in #40; bounded Base staging/selection/boot/return passed owner acceptance in #41 on 2026-11-07. Complete defaults/lifecycle preparation and actual native System composition install/upgrade/status before bootstrap. |
 | 4 | Build bootstrap on those functions | Reuse the same MPM acquisition/install/deploy libraries for explicit new targets; no second installer or experimental-script-only path. MBT syntax remains a separate discussion. |
 | 5 | Integrate environment, Kernel build and packaging | Prior real builds/boot experiments exist. Join exact environment retention, ordinary-user builds, native packaging and normal MPM install/select without global compiler/libc changes. |
 | 6 | One joined acceptance flow, then hardware | Prove the delivered tools administer the installation, update Base/System, build/install/boot a Kernel and recover with state retained. Then accept a supported physical profile; do not repeat unchanged component cross-products. |
@@ -89,14 +89,21 @@ requested review of MPM/MBT documentation before Base implementation. The
 They propose complete exact Base retention plus a validated runtime tree, no
 implicit defaults/state/boot changes, and separate installed/next-boot/running
 inspection. The owner agreed to these meanings on 2026-11-06. The first
-[exact import/realization/status implementation](base-installation.md) is in PR #40;
-Base boot selection and System integration remain later gates.
+[exact import/realization/status implementation](base-installation.md) merged in PR #40 after full green CI;
+Base-only boot selection/return is implemented and owner-accepted in #41;
+System integration remains a later gate.
 MBT's final spelling remains deferred and it must reuse this installation model.
 
-Complete review/CI for content-only Base import/realization/status, then
-generalize deployment to a changed Base, followed by System integration.
-The next owner VM gate is an actual changed-Base boot. Do not add another manual
-Kernel matrix or move bootstrap/build work ahead of the six-step order.
+Content-only Base import/realization/status is merged. The next bounded increment
+adds [read-only Base transition preflight](base-deployment-preflight.md), binding
+the installed candidate to the selected System/Kernel and observed state. It now feeds [exact Base slot staging](base-boot-staging.md) with explicit next-boot selection/return and joined status.
+The first subset refuses missing defaults and retains matching System management
+code. The [fresh-VM owner acceptance](base-boot-acceptance.md#recorded-owner-acceptance-2026-11-07)
+passed on 2026-11-07: exact changed Base booted read-only and returned to the old
+deployment with System/Kernel and saved state retained. Finish review/CI for #41,
+then continue with explicit defaults/lifecycle preparation and System installation
+integration. Do not add another unchanged manual Kernel/Base matrix or move
+bootstrap/build work ahead of the six-step order.
 
 Progress reports must name the step, implemented behavior, validation and the
 remaining gate. Unit tests, schema checks and prior experiments do not mark a

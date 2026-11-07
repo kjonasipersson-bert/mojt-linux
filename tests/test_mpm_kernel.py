@@ -74,6 +74,35 @@ class KernelTests(unittest.TestCase):
         self.assertEqual(plan["plan"]["action"], "install")
         self.assertEqual(self.snapshot(self.work), before)
 
+    def test_real_import_under_private_home_accepts_inaccessible_group_writable_descendants(self):
+        self.work.chmod(0o755)
+        home = self.work / "private-home"; home.mkdir(mode=0o700)
+        shared = home / "lab"; shared.mkdir(); shared.chmod(0o775)
+        private = shared / "test"; private.mkdir(mode=0o700)
+        self.root = private / "registry"
+        result = self.install()
+        self.assertTrue(result["changed"])
+        self.assertEqual(kernel.status(self.root, verify=True)["installed"][0]["artifact"], self.identifier)
+        before = self.snapshot(self.root)
+        self.assertFalse(self.install()["changed"])
+        self.assertEqual(before, self.snapshot(self.root))
+        self.assertEqual(stat.S_IMODE(shared.stat().st_mode), 0o775)
+
+    def test_private_child_cannot_hide_writable_ancestor_above_its_boundary(self):
+        self.work.chmod(0o755)
+        exposed = self.work / "exposed"; exposed.mkdir(); exposed.chmod(0o775)
+        private = exposed / "private"; private.mkdir(mode=0o700)
+        self.root = private / "registry"
+        with self.assertRaisesRegex(ValueError, "writable Kernel registry ancestor"):
+            self.install()
+        self.assertFalse(self.root.exists())
+
+    def test_existing_registry_itself_must_be_protected_even_inside_private_home(self):
+        self.root.mkdir(); self.root.chmod(0o775)
+        with self.assertRaisesRegex(ValueError, "root is not protected"):
+            self.install()
+        self.assertEqual(list(self.root.iterdir()), [])
+
     def test_real_import_retains_archive_private_tree_and_complete_record(self):
         before = self.snapshot(self.source)
         sentinel = self.work / "selected-deployment.json"
