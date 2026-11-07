@@ -16,8 +16,8 @@ command syntax is unchanged.
 New step-3+ assemblies include `system/GENERATION/management.json`, an ordinary
 file in the measured System profile inventory. Its independent versioned format
 avoids silently extending the closed `mojt-system-manifest-v1` wire. The profile
-manifest binds its SHA256/mode; the sidecar binds the exact bundled code closure for the advertised native
-capabilities, which the reader checks against both profile metadata and bytes.
+manifest binds its SHA256/mode; the sidecar binds the exact bundled code closure
+for the advertised native capabilities, checked against profile metadata/bytes.
 It contains no self-referential manifest/artifact ID.
 
 `mojt-management-capabilities-v1` uses the standard `{format, description, id}`
@@ -36,14 +36,16 @@ Current declarations support the `mpm-defaults` registry family, version 1, and
 `missing-default` version 1 / `initialize` /
 `mojt-defaults-preparation-v1`. This is the bounded preparation protocol from
 [#42](https://github.com/kjonasipersson-bert/mojt-linux/pull/42), **not** support
-for the proposed general lifecycle action-set/result/saved-plan wires. Optional provider adapters are independently inventoried by System; a native
+for the proposed general lifecycle action-set/result/saved-plan wires. Optional
+provider adapters are independently inventoried by System; a native
 preparing manager needs no Nix prototype/catalog/binary adapter files merely to
-inspect or prepare defaults. No managed data-schema family is advertised yet: `state` is empty. Registry-format support
+inspect or prepare defaults. No managed data-schema family is advertised yet:
+`state` is empty. Registry-format support
 is distinct from knowing the schema of a service's database or configuration.
 
 An old writer cannot gain support by adding a new sidecar claim: its declared
-support must match the literal bundled declarations, the complete native capability code must be
-retained and inventoried, and their hashes/modes must agree. This is measured
+support must match the literal bundled declarations. The complete native
+capability code must be retained/inventoried, with matching hashes/modes. This is measured
 publisher/runtime declaration evidence, not a proof that arbitrary new code is
 correct or authentic. Existing source trust and exact artifact bindings remain
 necessary; hashes are not signatures.
