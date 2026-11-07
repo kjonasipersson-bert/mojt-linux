@@ -40,7 +40,8 @@ The [Base install/status contract](mpm-base-contract.md) specifies content-only
 installation and honest state inspection, agreed on 2026-11-06. The first
 [exact import/status implementation](base-installation.md) merged in PR #40.
 [Base staging/selection/return](base-boot-staging.md) is implemented in PR #41;
-[owner changed-Base boot acceptance](base-boot-acceptance.md) is prepared, not yet run.
+[owner changed-Base boot/return acceptance](base-boot-acceptance.md#recorded-owner-acceptance-2026-11-07)
+passed on 2026-11-07.
 Moving upgrades and general lifecycle preparation remain subsequent work.
 
 The proposed [complete distribution behavior contract](distribution-contract.md)
@@ -706,7 +707,7 @@ and [NixOS's separate package/service integration](https://nixos.org/manual/nixo
 
 ## 6. Implementation status
 
-Current as of 2026-11-06: merged PR #40 plus Base deployment integration in draft PR #41 (owner boot acceptance pending). The ordinary System frontend
+Current as of 2026-11-07: merged PR #40 plus Base deployment integration in PR #41 (bounded owner boot/return acceptance passed; final review/CI remains). The ordinary System frontend
 and the separately invoked earlier prototypes must not be confused.
 
 | Area | Delivered/implemented behavior | Remaining user-flow boundary |
@@ -714,7 +715,7 @@ and the separately invoked earlier prototypes must not be confused.
 | Sources/cache | Named owner-trusted local source registration, frozen metadata update, list/show and exact verified native fetch for all four artifact categories | General authenticated remote native distribution, common configured discovery and all area-install joins |
 | Ports | Fresh request-origin/resolver/profile frontend; install, activate, upgrade, update, apply, remove/reset, status/list/history and discovery; Nix binary-output adapter | Native Port publisher, pruning/configuration forgetting and the final joined installed-machine journey |
 | Kernel | Exact local-file or named-source install, retained matching modules/origin, status/verification, plan/stage/select/rollback on the managed native serial UEFI/VirtIO layout | Persistent Kernel upgrade policies joined to resolution/acquisition, generalized deployment and physical rollout |
-| Base | Whole-release packer/directory installer, native packages, fresh-image inputs; PR #40 delivers exact local/source install and validated full-ID realizations; PR #41 implements exact Base staging/selection/return and joined status | Owner changed-Base boot acceptance, moving upgrades and configuration/lifecycle transitions |
+| Base | Whole-release packer/directory installer, native packages, fresh-image inputs; PR #40 delivers exact local/source install and validated full-ID realizations; PR #41 implements exact Base staging/selection/return and joined status | Final review/CI, moving upgrades and configuration/lifecycle transitions |
 | System | Pinned binary payload export, coherent userspace/manifest assembly and delivered MPM/Python/helpers | Distributable System composition import/install/status/upgrade on an existing disk and state/management compatibility gates |
 | MBT | Separate image, build-environment, Kernel build and packaging tools provide working inputs | Public MBT grammar, named environments, bootstrap/build integration through the ordinary MPM path |
 
@@ -745,7 +746,8 @@ The [agreed Base contract](mpm-base-contract.md) requires a validated rootfs,
 not just a cached archive; installation changes neither persistent machine
 configuration nor next boot. The [first implementation](base-installation.md)
 merged in PR #40. Exact [Base deployment](base-boot-staging.md) is implemented
-in draft PR #41, with the [owner VM test](base-boot-acceptance.md) still pending.
+in PR #41, with the [owner VM boot/return test](base-boot-acceptance.md#recorded-owner-acceptance-2026-11-07)
+passed on 2026-11-07.
 
 **Not implemented:** Moving Base upgrades, missing-default lifecycle preparation and System mutations/status,
 generalized boot deployments, catalog-backed persistent Kernel upgrades,

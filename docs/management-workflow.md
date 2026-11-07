@@ -104,8 +104,9 @@ choice remains intact. Booting older code does not undo changed persistent data.
 
 The [Base command contract](mpm-base-contract.md) was agreed on 2026-11-06.
 The [first implementation](base-installation.md) merged in PR #40.
-[Base staging/selection/return](base-boot-staging.md) is implemented in draft PR #41,
-with [owner boot acceptance](base-boot-acceptance.md) pending. MBT reuses the agreed meanings
+[Base staging/selection/return](base-boot-staging.md) is implemented in PR #41,
+with [owner boot/return acceptance](base-boot-acceptance.md#recorded-owner-acceptance-2026-11-07)
+passed on 2026-11-07. MBT reuses the agreed meanings
 regardless of its final spelling.
 Detailed behavior remains in the [distribution contract](distribution-contract.md),
 open choices in the [decision register](distribution-decisions.md), and delivery

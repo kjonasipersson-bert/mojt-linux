@@ -6,10 +6,11 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Owner acceptance: changed Base, retained System/Kernel, return
 
-Prepared owner test, not a claimed VM result. Use one new disposable native VM;
-previous VM disks and the Debian root disk must not be attached. No hardware or
-large cross-product matrix is requested. Existing image/Kernel tests are not
-repeated manually.
+Owner-run changed-Base boot and return passed on 2026-11-07 at source
+`f9d70ec5400429086aaa10bd85109b2dede095a4`. The procedure below remains the
+focused reproduction recipe; the recorded result and limits follow at the end.
+Use one new disposable native VM; previous VM disks and the Debian root disk
+must not be attached. No repeated component cross-product matrix is requested.
 
 ## Debian preparation
 
@@ -153,3 +154,41 @@ management files. Retain the previous stopped image/checkpoint; do not hot-patch
 its System, rewrite passwd or weaken the gate to continue. Start the focused
 acceptance from the fixed fresh baseline. No changed-Base boot result is claimed
 for the stopped attempt.
+
+
+## Recorded owner acceptance: 2026-11-07
+
+The owner completed the following through the installed System MPM on a fresh
+private native VM. These are owner-reported VM results, not execution on the
+owner's host by the assistant.
+
+| Input or observation | Recorded value/result |
+| --- | --- |
+| Source | `f9d70ec5400429086aaa10bd85109b2dede095a4` |
+| Retained image | `/home/jonasp/mojt-lab/mpm-nix-home/mojt-base-deployment.k3eJaO/vm-shell-fixed/image` |
+| Image build UTC | `2026-11-07T09:30:15Z` |
+| Original Base | `0.1.3`, `sha256:4718c046420a2901ed8fd6bc52cac012de1bcfab8e47c15431eaa4b015e9f6f3` |
+| Test Base | `0.1.3-boot-test`, `sha256:1bff295d5bad99506ec90e3e8268fd17cab206f6f6201a85e41ee75bfe583b2e` |
+| System | Exact selected `system-base-boot-test` manifest retained through boot and return |
+| Kernel | `6.12.107-mojt1`, exact artifact `sha256:eed451b5497d078b8de4c098539cf63a4551aa0a46864fe7550b59066fe26250` retained |
+| Install | Distinct Base installed; original Base/System/Kernel and next boot retained |
+| Stage/repeat | Changed Base staged; next boot unchanged; repeat was a no-op |
+| Candidate boot | Exact new deployment running; actual Base root read-only; selected/running IDs agree |
+| State | Machine/account data, persistent markers and the saved Ports baseline retained |
+| Modules/services | Exact native modules read-only; no failed units on either checked boot |
+| Return | Previous exact deployment and Base 0.1.3 restored; all final acceptance PASS lines reported |
+
+Exact deployment IDs and account-file digests remain in the private guest
+checkpoint `/var/lib/mojt/base-boot-acceptance/state.json`; they were not copied
+into this public report. The Ports assertion compares the saved baseline and is
+not a separate claim that a real Ports package was installed or upgraded here.
+The new Base deliberately retains libc; this is no proof of changed-libc ABI
+compatibility. Shutdown console/full-unmount lines were not included in the
+reported result, so no additional shutdown-specific observation is recorded.
+
+This closes this bounded Base-only owner acceptance gate. It does not complete
+System composition/install/upgrade, missing-default or general lifecycle actions,
+moving Base requests/upgrades, bootstrap/MBT, the generalized v2 deployment
+protocol, the final joined distribution journey or physical hardware acceptance.
+Retain the successful VM and its checkpoint. No further manual repetition of this
+component matrix is required before the next integration change.

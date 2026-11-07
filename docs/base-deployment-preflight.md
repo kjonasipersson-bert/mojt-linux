@@ -75,13 +75,15 @@ and System delivery regressions. Synthetic declarations do not publish real Base
 compatibility bounds.
 
 No additional manual VM matrix is needed for this internal read-only increment.
-The next owner VM gate is an actual changed-Base boot retaining System, Kernel,
-identities, state and Ports, followed by return to the previous deployment.
+The subsequent [owner changed-Base boot and return](base-boot-acceptance.md#recorded-owner-acceptance-2026-11-07)
+passed on 2026-11-07, retaining exact System/Kernel, identities, state and the
+saved Ports baseline. This does not turn the read-only preflight itself into
+a boot-readiness proof for other candidates.
 
 ## Implemented staging follow-up
 
 The [Base staging subset](base-boot-staging.md) now constructs a complete private
 Base boot tree and bound initramfs from this evidence, and publishes them as one
 retained slot. The preflight record itself remains read-only and never confers
-publication authority. Explicit Base selection/return is now implemented as a separate action. Owner
-changed-Base boot acceptance remains pending.
+publication authority. Explicit Base selection/return is implemented separately and its bounded owner
+changed-Base boot/return acceptance passed on 2026-11-07.

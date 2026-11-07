@@ -82,9 +82,11 @@ changes and publication uncertainty. Real root cases run in CI. Synthetic guest
 files are not a successful VM boot.
 
 Base next-boot selection/return and joined installed/next/running status are now
-implemented. Run the [focused owner acceptance](base-boot-acceptance.md) on a
-fresh disposable native image, then retain its evidence before merge. No repeated
-Kernel/hardware matrix is requested.
+implemented. The [focused owner acceptance](base-boot-acceptance.md#recorded-owner-acceptance-2026-11-07)
+passed on 2026-11-07: changed Base booted read-only with exact System/Kernel and
+state retained, then the previous deployment was restored. Retain the successful
+image/checkpoint. No repeated Kernel/hardware matrix is requested. Missing-default
+lifecycle actions and actual System installation remain separate integration gates.
 
 
 ## Exact Base selection and return

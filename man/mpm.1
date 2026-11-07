@@ -66,7 +66,7 @@ retains a private read-only boot tree and bound initramfs. Requires matching
 retained System management code and already present configuration defaults.
 Missing defaults are reported without changing configuration. --dry-run writes
 no slot. Staging never changes next boot or the running deployment. Explicit
-Base selection is separate; owner changed-Base boot acceptance remains pending.
+Base selection is separate. Confirm the running deployment after reboot.
 .PP
 .BI "base select --deployment " "sha256:FULL_DEPLOYMENT_ID --expected-selected sha256:CURRENT_ID"
 selects a fully staged exact deployment for next boot while retaining System and

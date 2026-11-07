@@ -8,8 +8,8 @@ SPDX-License-Identifier: GPL-2.0-only
 
 Owner-agreed behavior, 2026-11-06. The first
 [implementation](base-installation.md) merged in PR #40. The subsequent
-[deployment integration](base-boot-staging.md) is in draft PR #41 with owner
-boot acceptance pending. This is the
+[deployment integration](base-boot-staging.md) is in PR #41, with bounded
+owner boot/return acceptance passed on 2026-11-07. This is the
 behavior contract in the [six-step plan](mpm-consolidation-plan.md), authorized
 by the owner after the command-meaning review. It preserves the
 [MPM user model](management-workflow.md)
