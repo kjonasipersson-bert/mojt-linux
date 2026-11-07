@@ -51,6 +51,20 @@ class NixBinaryAdapter:
         i=self.identity(ref)
         return dict(reference=ref,commands={name:str(store_path(i['output'])/'bin'/name) for name in i['commands']})
 
+    def contains(self,ref,path):
+        """Pure authorization of a profile link into an accepted exact closure."""
+        i=self.identity(ref)
+        require(type(path) is str and path.startswith('/') and str(Path(path))==path
+                and '..' not in Path(path).parts, 'noncanonical provider link')
+        return any(path==r['path'] or path.startswith(r['path']+'/') for r in i['closure'])
+
+    def verify_path(self,ref,path,*,executable=False):
+        require(self.contains(ref,path), 'unbound provider path')
+        resolved=Path(path).resolve(strict=True)
+        require(self.contains(ref,str(resolved)) and (resolved.is_file() or resolved.is_dir()),
+                'provider path escapes closure or has an unsupported type')
+        require(not executable or resolved.is_file() and resolved.stat().st_mode & 0o001, 'provider export is not a public executable')
+
     def ensure(self,ref,root):
         i=self.identity(ref);directory=Path(root)/'retained/nix'
         protected_directory(directory, write=True, label='Nix retention')

@@ -139,7 +139,8 @@ def dispatch(args, runtime):
             raise ValueError("shared installation changes require an administrator")
     if area == 'system' and action in (None, '--help', '-h', 'install', 'status'):
         if roots:raise ValueError('System commands use --disk-root for one installation target, not --root')
-        if action == 'install' or option(command, '--verify'):require_codec(runtime, command)
+        if not (action == 'install' and option(command, '--source') and '--dry-run' in command):
+            if action == 'install' or option(command, '--verify'):require_codec(runtime, command)
         from mpm_system_cli import main
         return main(command[1:] or ['--help'], runtime=runtime)
     if area == "base" and action in (None,"--help","-h","install","stage","select","rollback","status"):
