@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """Content-only native System composition install. No state effects or selection."""
 from datetime import datetime, timezone
+import copy
 import json
 import os
 from pathlib import Path
@@ -22,7 +23,7 @@ import mpm_transaction as tx
 REGISTRY = 'mojt-system-registry-v1'
 REALIZATION = 'mojt-system-realization-v1'
 PLAN = 'mojt-system-install-plan-v1'
-MANAGEMENT_SUPPORT = [{'family': 'mpm-system', 'read': [1], 'write': [1], 'capabilities': []}]
+MANAGEMENT_SUPPORT = [{'family': 'mpm-system', 'read': [1], 'write': [1], 'capabilities': ['exact-provider-dependencies']}]
 CODE = ('mpm_system.py', 'mpm_system_model.py', 'mpm_native_io.py', 'mpm_base.py',
         'mojt_artifact.py', 'mojt_system_manifest.py', 'mpm_management.py', 'mpm_transaction.py')
 require = base.require
@@ -30,7 +31,7 @@ require = base.require
 
 def target(value, *, write=False):
     root = base.target(value, write=write)
-    for name in ('artifacts/system', 'artifacts/system/installed', 'realizations/system'):
+    for name in ('artifacts/system', 'artifacts/system/installed', 'realizations/system', 'retained'):
         tx.protected_directory(root / name, write=write, label='System storage')
     return root
 
@@ -64,7 +65,41 @@ def acceptable(body, role=None):
     require(all(row['type'] in ('file', 'directory') and row['uid'] == row['gid'] == 0
                 and not row['mode'] & 0o7022 and row['mode'] & 0o400 and (row['type'] != 'directory' or row['mode'] & 0o100) for row in body['files']),
             'System install requires protected root-owned ordinary files/directories; links need a supported adapter')
-    if body['metadata']['system_role'] == 'component':require(not body['dependencies'], 'System component transitive dependencies are not supported yet')
+    if body['metadata']['system_role'] == 'component':
+        require(len(body['dependencies']) <= model.MAX_ROWS and all(r['provider'] != 'native' for r in body['dependencies']),
+                'native transitive System components are not supported yet')
+
+
+def provider_references(parts):
+    """Native components bind opaque exact provider identities; core does not interpret them."""
+    refs = {artifact.canonical(ref):ref for body, unused in parts.values() for ref in body['dependencies']}
+    require(len(refs) <= model.MAX_ROWS, 'too many System provider dependencies')
+    return [copy.deepcopy(refs[key]) for key in sorted(refs)]
+
+
+def providers(root, refs, adapters, *, effect=None):
+    """Reuse the Ports adapter protocol. Describe is pure; ensure is post-approval only."""
+    for ref in refs:
+        require(adapters is not None, 'System provider adapter required: ' + ref['provider'])
+        try:adapter = adapters[ref['provider']]
+        except KeyError as error:raise ValueError('unsupported System provider: ' + ref['provider']) from error
+        description = adapter.describe(copy.deepcopy(ref), root)
+        require(description['reference'] == ref, 'System provider changed accepted identity')
+        if effect is not None:getattr(adapter, effect)(copy.deepcopy(ref), root)
+
+
+def retained_providers(root, identifier):
+    body, unused = object_record(root, identifier)
+    parts = {dep['artifact']:(object_record(root, dep['artifact'])[0], None) for dep in body['dependencies']}
+    return provider_references(parts)
+
+
+def required_capabilities(root):
+    for name in object_names(root):
+        body, unused = object_record(root, 'sha256:' + name)
+        if body['metadata']['system_role'] == 'component' and body['dependencies']:
+            return ['exact-provider-dependencies']
+    return []
 
 
 def manager():
@@ -166,7 +201,8 @@ def build_profile(profile, body, value, parts):
         management.path(name);require('/' not in name and (tools / name).is_file() and (tools / name).stat().st_mode & 0o004, 'incomplete/unreadable delivered MPM: ' + str(name))
     support = management.produce(tools, names)
     require(support['description']['management'] == d['management'] and support['description']['state'] == d['state'], 'System composition overstates bundled management/schema support')
-    own = management.context(registries=[dict(family='mpm-system', version=1, capabilities=[], evidence=body['id'])])
+    own = management.context(registries=[dict(family='mpm-system', version=1,
+        capabilities=['exact-provider-dependencies'] if provider_references(parts) else [], evidence=body['id'])])
     checked = management.check_transition(management.current(), support, own)
     require(checked['compatible'], 'System cannot manage its installed representation: ' + '; '.join(checked['errors']))
     for service in d['services']:require((profile / 'units' / service['unit']).is_file(), 'missing declared System unit')
@@ -260,7 +296,7 @@ def target_identity(root):
     return dict(device=info.st_dev, inode=info.st_ino)
 
 
-def install(root, archive, identifier, *, dependency_files=(), dry_run=False, yes=False, acquisition=None):
+def install(root, archive, identifier, *, dependency_files=(), dry_run=False, yes=False, acquisition=None, adapters=None):
     io.identifier(identifier);root = target(root, write=not dry_run)
     physical = target_identity(root)
     require(dry_run or os.geteuid() == 0, 'System realization requires an administrator')
@@ -270,6 +306,7 @@ def install(root, archive, identifier, *, dependency_files=(), dry_run=False, ye
         body, receipt = object_record(root, identifier, verify=True)
         completed = realization(root, identifier, verify=True)
         if completed:
+            providers(root, retained_providers(root, identifier), adapters, effect=None if dry_run else 'verify')
             if not dry_run:
                 io.sync_directory(realization_path(root, identifier));io.sync_directory(realization_path(root, identifier).parent)
             return dict(changed=False, dry_run=dry_run, action='no-change', artifact=identifier, realization=completed['id'], selected='unchanged', running='unchanged')
@@ -292,10 +329,12 @@ def install(root, archive, identifier, *, dependency_files=(), dry_run=False, ye
             require(marker is not None and management.present(object_path(root, dep)), 'missing exact System component: ' + dep + '; supply --dependency-file')
             component, unused = object_record(root, dep, verify=True);acceptable(component, 'component');parts[dep] = (component, object_path(root, dep))
         measured = build_profile(work / 'profile', body, comp, parts)
+        references = provider_references(parts)
+        providers(root, references, adapters)
         require(target_identity(root) == physical, 'System target changed during preview')
         plan = base.record(PLAN, dict(target=str(root), target_identity=physical, installation=base.store_info(root)['installation'] if base.store_info(root) else None,
             artifact=identifier, composition=comp['id'], dependencies=sorted(required), manifest=measured['id'],
-            archive=encoding, configuration_changes=False, service_changes=False, selection_changes=False, running_changes=False))
+            archive=encoding, providers=references, configuration_changes=False, service_changes=False, selection_changes=False, running_changes=False))
         if dry_run:return dict(plan=plan, changed=False, dry_run=True, archive_verified=True, profile_validated=True)
         if not yes:
             print(json.dumps(plan, indent=2), file=__import__('sys').stderr)
@@ -307,11 +346,19 @@ def install(root, archive, identifier, *, dependency_files=(), dry_run=False, ye
             require(plan['description']['installation'] in (None, info['installation']), 'System installation identity changed after preview')
             _initialize(root, info)
             existing = realization(root, identifier, verify=True) if management.present(object_path(root, identifier)) else None
-            if existing:return dict(plan=plan, changed=False, realization=existing['id'])
+            if existing:
+                providers(root, retained_providers(root, identifier), adapters, effect='verify')
+                return dict(plan=plan, changed=False, realization=existing['id'])
             for dep in sorted(required):
                 if dep in frozen:_retain(root, info, parts[dep][0], frozen[dep], encodings[dep])
                 else:object_record(root, dep, verify=True)
             receipt = _retain(root, info, body, work / 'generation', encoding, acquisition)
+            if references:
+                (root / 'retained').mkdir(mode=0o755, exist_ok=True)
+                target(root, write=True)
+                providers(root, references, adapters, effect='ensure')
+                providers(root, references, adapters, effect='verify')
+                io.sync_directory(root / 'retained');io.sync_directory(root)
             destination = realization_path(root, identifier)
             require(not management.present(destination), 'refuse to replace a System realization')
             stage = Path(tempfile.mkdtemp(prefix='.install-', dir=destination.parent))
@@ -360,7 +407,7 @@ def registry_observation(root):
     return base.record('mojt-system-observation-v1', dict(installation=marker['description']['installation'], records=sorted(identities)))
 
 
-def status(root, *, verify=False, running_record=None):
+def status(root, *, verify=False, running_record=None, adapters=None):
     root = target(root)
     from mpm_boot_status import selected
     from mpm_deployment import validate_deployment
@@ -372,6 +419,8 @@ def status(root, *, verify=False, running_record=None):
                 io.directory(root / 'artifacts/system/installed' / name);incomplete.append('artifacts/system/installed/' + name);continue
             require(re.fullmatch('[0-9a-f]{64}', name), 'unknown System object entry')
             identifier = 'sha256:' + name;body, receipt = object_record(root, identifier, verify=verify)
+            if verify and body['metadata']['system_role'] == 'component':
+                providers(root, body['dependencies'], adapters, effect='verify')
             row = dict(artifact=identifier, version=body['version'], role=body['metadata']['system_role'],
                        dependencies=body['dependencies'], trust=receipt['description']['trust'], acquisition=receipt['description'].get('acquisition'))
             if row['role'] == 'component':components.append(row);continue
