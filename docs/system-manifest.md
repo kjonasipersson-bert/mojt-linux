@@ -9,7 +9,9 @@ SPDX-License-Identifier: GPL-2.0-only
 This limited increment describes a completed System and checks explicit
 installation requirements. It does not implement `mpm system upgrade`, change
 GRUB/next-boot selection, migrate state or modify a running System. The next
-milestone is running the existing build tools on Mojt to produce a new image.
+milestone is native System composition install/status, followed by authorized
+initialization and existing-disk activation. Image assembly and Kernel builds
+on Mojt already have separate recorded acceptance.
 
 ## Manifest
 
@@ -48,10 +50,10 @@ immutable profile inventory. The pure model does not interpret backend identity,
 package version, path, digest or dependency syntax. No dependency/libc solver is
 added. Core schema changes require an explicit new format.
 
-The Nix adapter reads literal capability declarations from the bundled MPM
-source using AST data extraction. It does not execute that source while
-inventorying a candidate. Formats 1/2/3 and `mpm-ports-selectors-v1` match the
-current MPM implementation; a System without MPM advertises no Ports support.
+The builder reads literal capability declarations from the bundled Ports
+frontend using AST data extraction. It does not execute that source while
+inventorying a candidate. New runtimes advertise `mojt-ports-profile-v1` and
+`mpm-request-origins-v1`; a System without MPM advertises no Ports support.
 Future writers must update both declarations and their actual validation, with
 an appropriate compatibility test.
 
@@ -60,8 +62,8 @@ an appropriate compatibility test.
 Before publishing the new image, the builder compares each candidate with its
 private copied installation state. It checks architecture, exact declared Base
 ABI, state-layout version, Ports read and write formats/capabilities, and
-persistent accounts' required `/run/mojt-system/` shells. Thus a candidate whose
-MPM supports only formats 1/2 is rejected when the copied state uses format 3.
+persistent accounts' required `/run/mojt-system/` shells. A candidate whose MPM
+cannot read/write the actual shared Ports profile format is rejected.
 The comparison uses installation facts, not the running System's version label.
 Unknown manifest/context formats, corrupt identities, incomplete format-3
 capability evidence and dangling Ports profiles fail rather than being inferred.
@@ -118,3 +120,15 @@ build-on-Mojt experiment, when the manifest is consumed in that workflow.
 Existing-disk System deployment, durable boot publication, automatic fallback,
 project locks, retention/GC and runtime libc work remain separate tasks.
 
+
+
+## Measured management sidecar
+
+New step-3+ profiles also inventory [management capabilities](management-capabilities.md)
+in `management.json`. This independent versioned record binds the complete
+native capability code closure and declared registry/handler support; it does not add fields
+to `mojt-system-manifest-v1`. Target inspection and native boot preflight now
+check actual defaults-registry state against both the preparing and candidate
+runtimes. The existing ABI/layout/Ports checks and the distinction between
+installed, selected, running and ready remain unchanged. Native System content
+installation and initialization/service activation are still separate work.

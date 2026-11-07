@@ -74,6 +74,14 @@ def main(argv=None):
         candidate = read(args.candidate)
         report = model.compare(candidate, read(args.running), read(args.selected))
         report.update(model.check(candidate, facts))
+        if args.target:
+            spec = importlib.util.spec_from_file_location('mpm_management', Path(__file__).with_name('mpm_management.py'))
+            management = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(management)
+            checked = management.check_target(args.target, args.candidate.parent, candidate)
+            report['management'] = checked
+            report['errors'].extend(checked['errors'])
+            report['compatible'] = report['compatible'] and checked['compatible']
         print(json.dumps(report, indent=2))
         return 0 if report["compatible"] else 1
     except (ValueError, OSError, KeyError, TypeError) as error:

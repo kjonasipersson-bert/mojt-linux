@@ -29,7 +29,7 @@ import mpm_transaction as tx
 INPUTS = 'mojt-base-boot-inputs-v1'
 CODE = ('mpm_cli.py', 'mpm_base_cli.py', 'mpm_base_status.py', 'mpm_base_boot.py', 'mpm_base_transition.py', 'mpm_base.py', 'mpm_native_io.py',
         'mojt-base-install', 'mpm_kernel_boot.py', 'mpm_deployment.py', 'mojt-vm-build.py',
-        'mojt_native_image.py', 'mojt_system.py', 'mojt_boot.py', 'mpm_transaction.py')
+        'mojt_native_image.py', 'mojt_system.py', 'mojt_boot.py', 'mpm_transaction.py', 'mpm_defaults.py', 'mpm_management.py')
 require = base.require
 
 

@@ -112,6 +112,9 @@ def live_context(root, entry):
             "selected System manifest differs")
     require(read(entry["path"] / "system-manifest.json") == manifest, "retained System manifest differs")
     native.verify_profile(profile, manifest)
+    import mpm_management as management
+    checked_management = management.check_target(root, profile, manifest)
+    require(checked_management['compatible'], 'System management compatibility failed: ' + '; '.join(checked_management['errors']))
     objects = manifest["description"]["artifacts"]["nix"]["objects"]
     for item in objects:
         require(system.tree_hash(root / "nix/store" / Path(item["path"]).name) == item["tree_sha256"],

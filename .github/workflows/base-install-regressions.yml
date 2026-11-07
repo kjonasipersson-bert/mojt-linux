@@ -50,6 +50,8 @@ jobs:
         run: |
           python3 -B -m unittest discover -s tests -p 'test_mpm_defaults.py' -v
           sudo env PYTHONPATH=tests python3 -B -m unittest discover -s tests -p 'test_mpm_defaults.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_mpm_management.py' -v
+          sudo env PYTHONPATH=tests python3 -B -m unittest discover -s tests -p 'test_mpm_management.py' -v
       - name: Check offline catalog and fresh frontend dispatch boundaries
         run: python3 -B -m unittest discover -s tests -p 'test_mpm_catalog.py' -v
       - name: Check Python syntax
@@ -61,6 +63,7 @@ jobs:
             test_kernel_boot.KernelBootTests.test_source_installed_candidate_stages_selects_and_retains_origin \
             test_kernel_boot.KernelBootTests.test_preview_and_status_inspect_each_boot_entry_once \
             test_kernel_boot.KernelBootTests.test_selection_rechecks_candidate_at_publication \
+            test_kernel_boot.KernelBootTests.test_unknown_lifecycle_registry_blocks_stage_and_selection_without_writes \
             test_kernel_boot.KernelBootTests.test_corrupt_staged_initramfs_blocks_selection \
             test_kernel_boot.KernelBootTests.test_boot_publication_holds_the_existing_base_kernel_ports_and_boot_locks \
             test_kernel_boot.KernelBootTests.test_post_publication_flush_failure_preserves_new_menu_and_old_deployment

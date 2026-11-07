@@ -111,7 +111,7 @@ These deliberately named narrow formats do **not** claim implementation of the
 [general lifecycle](formats/draft-v1/lifecycle-results.md) or
 [saved execution-plan/approval](formats/draft-v1/saved-plans.md) wires. In
 particular, generic action DAGs, state-owner declarations, complete selected
-System handler capability references, schema compatibility, generic retry runs,
+System lifecycle execution, actual service-schema observation, generic retry runs,
 required-service gating and ready status remain unimplemented. A later adapter
 must validate those full contracts, not treat the narrow approval ID as generic
 execution authority. Unknown format versions are refused; no migration/adoption
@@ -134,3 +134,9 @@ CI job runs both ordinary-user contracts and root effect tests. Existing Base
 install/stage tests continue to prove those paths leave persistent defaults
 untouched. This increment requires no repeated unchanged owner A/B/A VM matrix;
 actual System/boot initialization integration will require focused VM acceptance.
+
+The subsequent [management capability gate](management-capabilities.md) measures
+the bundled preparation support and reads known registry metadata independently
+of the current handler implementation hash. It blocks unknown/unfinished
+registry state before a transition. This is a read-only compatibility join,
+not automatic defaults execution or generic schema/service readiness support.
