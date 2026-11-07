@@ -76,7 +76,7 @@ VERSION = "0.2"
 # This does not ship a source checkout or expose image/build commands.
 MPM_FILES = (
     "mpm", "mpm-system", "mpm_cli.py", "mpm_catalog.py", "mpm_selection.py",
-    "mpm_selector_ports.py", "mpm_base.py", "mpm_base_transition.py", "mpm_base_boot.py", "mpm_base_cli.py", "mpm_base_source.py", "mpm_base_status.py",
+    "mpm_selector_ports.py", "mpm_system.py", "mpm_system_model.py", "mpm_system_cli.py", "mpm_boot_status.py", "mpm_base.py", "mpm_base_transition.py", "mpm_base_boot.py", "mpm_base_cli.py", "mpm_base_source.py", "mpm_base_status.py",
     "mpm_native_io.py", "mojt-base-install", "mpm_kernel.py", "mpm_kernel_source.py", "mpm_deployment.py", "mpm_kernel_boot.py",
     "mpm_transaction.py", "mpm_defaults.py", "mpm_management.py", "mpm_requests.py", "mpm_request_plan.py", "mpm_sources.py", "mpm_sources_cli.py",
     "mpm_ports_profile.py", "mpm_ports_cli.py", "mpm_nix_binary.py", "mpm_native_cache.py", "mojt_artifact.py", "mojt_boot.py", "mojt_system.py",
@@ -879,11 +879,11 @@ def finalize_manifest(tree, generation, base, repo):
     spec.loader.exec_module(inspector)
     report = model.check(manifest, inspector.context_from_target(tree, base))
     require(report["compatible"], "System metadata compatibility failed: " + "; ".join(report["errors"]))
-    if record['step'] >= 3 or os.path.lexists(tree / 'state/var/lib/mojt/lifecycle'):
+    if record['step'] >= 3 or os.path.lexists(tree / 'state/var/lib/mojt/lifecycle') or os.path.lexists(tree / 'artifacts/system'):
         if record['step'] < 3:
             spec = importlib.util.spec_from_file_location('mpm_management', repo / 'tools/mpm_management.py')
             management = importlib.util.module_from_spec(spec);spec.loader.exec_module(management)
-        if os.path.lexists(tree / 'state/var/lib/mojt/lifecycle'):
+        if os.path.lexists(tree / 'state/var/lib/mojt/lifecycle') or os.path.lexists(tree / 'artifacts/system'):
             checked = management.check_target(tree, system, manifest)
         else:
             # This private assembly has no lifecycle registry to inspect. Its

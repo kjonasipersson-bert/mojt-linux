@@ -80,9 +80,11 @@ def store_info(root):
 
 
 @contextmanager
-def locked(root):
+def locked(root, *, installation_lock=False):
     target(root,write=True)
-    with tx.file_lock(root/'.artifact-store.lock'):
+    paths = {root/'.artifact-store.lock'}
+    if installation_lock:paths.add(root/'.install-lock')
+    with tx.resource_locks(paths, modes={root/'.install-lock':0o644}):
         with _locked_store(root) as info:yield info
 
 

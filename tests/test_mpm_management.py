@@ -21,6 +21,7 @@ import mojt_system_manifest as manifests
 import mpm_base as base
 import mpm_defaults as defaults
 import mpm_management as management
+import mpm_system as native_system
 from test_mpm_base import Fixture
 
 
@@ -60,7 +61,7 @@ class ProfileFixture:
 class ModelTests(unittest.TestCase):
     def test_actual_runtime_matches_declared_bounded_handler_without_mutating_inputs(self):
         actual = management.current()
-        self.assertEqual(actual['description']['management'], defaults.MANAGEMENT_SUPPORT)
+        self.assertEqual(actual['description']['management'], defaults.MANAGEMENT_SUPPORT + native_system.MANAGEMENT_SUPPORT)
         self.assertEqual(actual['description']['handlers'], defaults.HANDLER_SUPPORT)
         self.assertEqual(actual['description']['state'], [])
         context = management.context(actions=[required_action()]);before = copy.deepcopy((actual, context))
@@ -156,7 +157,7 @@ class MeasuredProfileTests(ProfileFixture, unittest.TestCase):
             (self.candidate / 'tools' / name).unlink()
         measured = management.produce(self.candidate / 'tools', system.MPM_FILES)
         self.assertEqual(set(measured['description']['implementation']['identity']['files']), set(management.CAPABILITY_FILES))
-        self.assertEqual(measured['description']['management'], defaults.MANAGEMENT_SUPPORT)
+        self.assertEqual(measured['description']['management'], defaults.MANAGEMENT_SUPPORT + native_system.MANAGEMENT_SUPPORT)
 
     def test_metadata_cannot_claim_support_absent_from_bundled_code(self):
         evidence = management.produce(self.candidate / 'tools', system.MPM_FILES)

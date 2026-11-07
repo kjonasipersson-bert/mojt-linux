@@ -1,9 +1,9 @@
 .\" Mojt Linux
 .\" Copyright (C) 2026 Jonas Persson
 .\" SPDX-License-Identifier: GPL-2.0-only
-.TH MPM 1 "2026-11-06" "Mojt Linux" "User Commands"
+.TH MPM 1 "2026-11-07" "Mojt Linux" "User Commands"
 .SH NAME
-mpm \- manage Mojt Ports, catalogs and native Kernel deployments
+mpm \- manage Mojt content, Ports, catalogs and native boot choices
 .SH SYNOPSIS
 .B mpm
 .RI [ global-options ] " ports " action " " [ arguments ]
@@ -13,6 +13,9 @@ mpm \- manage Mojt Ports, catalogs and native Kernel deployments
 .br
 .B mpm
 .RI "kernel " stage|select|rollback|status " [--disk-root DIRECTORY] " [ arguments ]
+.br
+.B mpm
+.RI "system " install|status " [--disk-root DIRECTORY] " [ arguments ]
 .SH DESCRIPTION
 MPM is Mojt's experimental package manager. The Nix-backed
 .B ports
@@ -93,9 +96,33 @@ creates no target, registry, lock or selection and needs no provider/refresh.
 .PP
 Exact import preserves the first receipt on an unchanged repeat, including while
 the original archive is unavailable. It does not create a moving upgrade wish.
-Base moving upgrades and System mutation remain unimplemented. See
+Base moving upgrades and System deployment remain unimplemented. See
 docs/base-installation.md and docs/mpm-base-contract.md for the implemented scope.
 MBT public spellings remain proposed; bootstrap will reuse the same MPM functions.
+.SH SYSTEM CONTENT
+.BI "system install --from-file " "GENERATION --expected-id sha256:FULL_ID"
+verifies a native System generation, its exact native component inputs and its
+resolved composition, then materializes an immutable profile. Supply missing
+components with repeatable --dependency-file ARCHIVE. Installed exact components
+are reused; unrelated inputs fail. --dry-run validates without target writes;
+-y approves installation. No package code, services or lifecycle actions execute.
+.PP
+The first subset requires native leaf components with ordinary protected files,
+explicit Base ABI facts, the bin/python3, bin/mpm and tools runtime layout, and
+an empty lifecycle action set. Provider-backed/transitive components and links
+require later supported adapters. No source refresh or implicit fetch occurs.
+.PP
+.B system status
+reports installed generations, retained incomplete generations, components and
+explicit running/next-boot identities separately. A matching human label does
+not identify a native artifact. --verify audits retained archives and profile
+content; --json returns mpm-system-status-v1. Plain status creates no registry
+or locks and needs no codec. Installation does not imply boot readiness.
+.PP
+System actions use --disk-root DIRECTORY, with the same installed/offline target
+rules as Base. Global --root is rejected. Installation requires an administrator,
+preserves current configuration, Base/Kernel, boot choices and running services,
+and does not publish an upgrade wish. See docs/system-installation.md for scope.
 .SH GLOBAL OPTIONS
 .TP
 .BI --root " DIRECTORY"
