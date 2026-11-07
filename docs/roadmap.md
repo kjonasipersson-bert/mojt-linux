@@ -6,7 +6,7 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Mojt development priorities
 
-Updated 2026-11-01. This records the agreed order and measured progress;
+Updated 2026-11-07. This records the agreed order and measured progress;
 future commands and policies are not claims of implemented functionality.
 The [architecture](architecture.md) defines the layer boundaries and the
 [MPM contract](mpm.md) records the accepted update semantics.
@@ -90,6 +90,21 @@ MPM work continues alongside System integration where needed. The current
 working Debian kernel remains the reference while the build/deployment chain
 is developed; the first own-built kernel now completes the next measured
 milestone after generation switching and image assembly.
+
+## Current bounded lifecycle increment
+
+Exact Base deployment boot/return passed owner acceptance and merged in #41.
+The [defaults preparation library](defaults-preparation.md) starts the minimal
+state-effects work: verified exact Base sources, explicit administrator consent,
+preserved local files, no-overwrite publication and bounded attempt evidence.
+It introduces no public command and is not wired into install/stage/select or
+boot readiness. Those operations retain the existing-defaults-only gate.
+
+Next: declared management/state/handler compatibility, then actual native System
+composition install/status and deployment. Reuse the accepted Base/Kernel VM
+evidence; request a focused owner VM test when the new System/initialization
+boundary exists. Bootstrap, build integration and final combined acceptance
+remain steps 4, 5 and 6 of the consolidation plan.
 
 ## MPM selectors and runtime identity
 
@@ -310,6 +325,7 @@ Console usability follow-up: automate geometry setup/refresh for direct
 Debian-host QEMU serial sessions. A manual terminal reset/size adjustment resolved
 the owner's display/paste problem during this test. No automatic terminal fix
 is implemented by the package-format work.
+
 
 
 
