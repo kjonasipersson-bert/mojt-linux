@@ -40,6 +40,13 @@ packages the unchanged release, installs the exact Kernel into a private host
 registry, writes narrowly scoped test bounds, previews, then assembles the new
 image with sudo and an interactive new guest root password. It also creates a
 separate read-only test-input disk and records source revision/script hashes.
+Kernel registry preparation uses the common protected-ancestry policy. An owned
+private home may contain inaccessible group-writable lab directories; a private
+child never excuses a writable ancestor above that boundary, and the registry
+itself must remain protected. No chmod of the owner's existing directories is
+needed. This path is checked before packaging inputs. If a preparation fails,
+retain its partial directory and choose a new output when retrying.
+
 Only that new VM image and the test disk are attached. No install or boot choice
 is made on Debian or an older VM. Its `READY` launcher is the one to start.
 

@@ -112,6 +112,10 @@ def main(*, profile='kernel-source'):
         require('tar' in payload['packages'],
                 'Base boot test needs a freshly prepared System payload with retained GNU tar')
     output = fresh_output(args.output, (REPO,args.base_release,args.kernel_package,args.system_payload))
+    # Validate the actual future registry ancestry before packaging any inputs.
+    sys.path.insert(0,str(REPO/'tools'))
+    import mpm_kernel
+    mpm_kernel.root_path(output/'kernel-registry', write=True)
     os.umask(0o077); output.mkdir(mode=0o700)
     print('Test directory:', output, flush=True)
     python = [sys.executable,'-I','-B']
