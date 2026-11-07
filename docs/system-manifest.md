@@ -118,3 +118,15 @@ build-on-Mojt experiment, when the manifest is consumed in that workflow.
 Existing-disk System deployment, durable boot publication, automatic fallback,
 project locks, retention/GC and runtime libc work remain separate tasks.
 
+
+
+## Measured management sidecar
+
+New step-3+ profiles also inventory [management capabilities](management-capabilities.md)
+in `management.json`. This independent versioned record binds the complete
+bundled MPM code and declared registry/handler support; it does not add fields
+to `mojt-system-manifest-v1`. Target inspection and native boot preflight now
+check actual defaults-registry state against both the preparing and candidate
+runtimes. The existing ABI/layout/Ports checks and the distinction between
+installed, selected, running and ready remain unchanged. Native System content
+installation and initialization/service activation are still separate work.

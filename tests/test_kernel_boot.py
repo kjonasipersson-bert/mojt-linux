@@ -182,6 +182,37 @@ except BlockingIOError: sys.exit(75)
             self.assertEqual(status["selected"], self.old_id)
             self.assertEqual(check.call_count, 1)
 
+    def test_unknown_lifecycle_registry_blocks_stage_and_selection_without_writes(self):
+        lifecycle = self.root / 'state/var/lib/mojt/lifecycle/defaults-v2'
+        lifecycle.mkdir(parents=True)
+        before = self.snapshot()
+        with self.assertRaisesRegex(ValueError, 'unsupported lifecycle registry'):
+            self.stage(dry_run=True)
+        self.assertEqual(self.snapshot(), before)
+        lifecycle.rmdir();lifecycle.parent.rmdir()
+        staged = self.stage()
+        lifecycle.mkdir(parents=True)
+        before = self.snapshot()
+        with self.assertRaisesRegex(ValueError, 'unsupported lifecycle registry'):
+            manager.select(self.root, staged['deployment'], expected_selected=self.old_id,
+                           baseline=self.baseline, yes=True)
+        self.assertEqual(self.snapshot(), before)
+        self.assertEqual((self.root / 'boot/mojt/grub.cfg').read_bytes(), self.menu)
+        lifecycle.rmdir();lifecycle.parent.rmdir()
+        original = manager.checked_file
+        reads = [0]
+        def introduce_state_at_commit(path, *args, **kwargs):
+            result = original(path, *args, **kwargs)
+            if path == self.root / 'boot/mojt/grub.cfg':
+                reads[0] += 1
+                if reads[0] == 3:lifecycle.mkdir(parents=True)
+            return result
+        with mock.patch.object(manager, 'checked_file', side_effect=introduce_state_at_commit):
+            with self.assertRaisesRegex(ValueError, 'unsupported lifecycle registry'):
+                manager.select(self.root, staged['deployment'], expected_selected=self.old_id,
+                               baseline=self.baseline, yes=True)
+        self.assertEqual((self.root / 'boot/mojt/grub.cfg').read_bytes(), self.menu)
+
     def test_selection_rechecks_candidate_at_publication(self):
         staged = self.stage()
         path = self.root / staged["slot"] / "initramfs.cpio.gz"

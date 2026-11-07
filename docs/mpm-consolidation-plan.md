@@ -104,8 +104,10 @@ deployment with System/Kernel and saved state retained. PR #41 is merged.
 The [bounded defaults preparation library](defaults-preparation.md) now adds an
 explicit root-authorized ensure-file operation and durable attempt evidence. It
 is not called by install/stage/select, and is not the general lifecycle executor.
-Next join supported state/handler capabilities and the initialization boundary
-to actual native System installation/deployment. Do not add another unchanged manual Kernel/Base matrix or move
+The next [management/state/handler gate](management-capabilities.md) now measures
+bundled support, observes the actual defaults registry and checks both runtimes
+without effects. Actual native System install/status/deployment and its authorized
+initialization/service boundary remain next. Do not add another unchanged manual Kernel/Base matrix or move
 bootstrap/build work ahead of the six-step order.
 
 Progress reports must name the step, implemented behavior, validation and the

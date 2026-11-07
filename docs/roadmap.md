@@ -100,8 +100,11 @@ preserved local files, no-overwrite publication and bounded attempt evidence.
 It introduces no public command and is not wired into install/stage/select or
 boot readiness. Those operations retain the existing-defaults-only gate.
 
-Next: declared management/state/handler compatibility, then actual native System
-composition install/status and deployment. Reuse the accepted Base/Kernel VM
+The [management/state/handler gate](management-capabilities.md) now measures
+bundled support and checks real defaults-registry requirements in preflight,
+including old-writer/unknown-format refusal. No generic service-schema support
+or action execution is claimed. Next: actual native System composition
+install/status and deployment with explicit initialization/service gating. Reuse the accepted Base/Kernel VM
 evidence; request a focused owner VM test when the new System/initialization
 boundary exists. Bootstrap, build integration and final combined acceptance
 remain steps 4, 5 and 6 of the consolidation plan.

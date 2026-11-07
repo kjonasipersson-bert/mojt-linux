@@ -27,6 +27,9 @@ MAX_FILE = 1024 * 1024
 MAX_RECORD = 64 * 1024
 MAX_ACTIONS = 64
 MAX_RUNS = 128
+# Literal, measured support for this bounded protocol; not the generic action wire.
+MANAGEMENT_SUPPORT = [{'family': 'mpm-defaults', 'read': [1], 'write': [1], 'capabilities': []}]
+HANDLER_SUPPORT = [{'type': 'missing-default', 'version': 1, 'phase': 'initialize', 'contract': 'mojt-defaults-preparation-v1'}]
 PROTECTED = {'passwd', 'group', 'shadow', 'gshadow', 'machine-id', 'os-release'}
 require = base.require
 
@@ -156,16 +159,50 @@ def prepare(root, identifier, paths):
     return result
 
 
-def _validated(root, plan):
+def validate_plan(plan):
+    """Read known records across manager revisions without granting authority."""
     d = base.envelope(plan, PLAN)
+    require(len(artifact.canonical(plan)) <= MAX_RECORD, 'unbounded default plan')
     artifact.fields(d, ('installation', 'owner', 'realization', 'target', 'handler', 'actions'))
-    require(type(d['actions']) is list and len(d['actions']) <= MAX_ACTIONS,
-            'invalid default actions')
+    require(type(d['installation']) is str and re.fullmatch('[0-9a-f]{32}', d['installation']), 'invalid default installation')
+    base.io.identifier(d['owner']);base.io.identifier(d['realization'])
+    artifact.fields(d['target'], ('root', 'root_identity', 'etc', 'state'))
+    target = d['target']['root']
+    require(type(target) is str and target.startswith('/') and 0 < len(os.fsencode(target)) <= 4096
+            and os.path.normpath(target) == target and not any(ord(c) < 32 or ord(c) == 127 for c in target), 'invalid stored default target')
+    for key in ('root_identity', 'etc', 'state'):
+        value = d['target'][key];artifact.fields(value, ('device', 'inode'))
+        require(all(type(n) is int and 0 <= n < 2**64 for n in value.values()), 'invalid default target identity')
+    artifact.fields(d['handler'], ('type', 'version', 'implementation'))
+    require(d['handler']['type'] == 'missing-default' and type(d['handler']['version']) is int
+            and d['handler']['version'] == 1, 'unsupported stored default handler')
+    implementation = d['handler']['implementation'];artifact.fields(implementation, ('provider', 'identity'))
+    require(implementation['provider'] == 'mojt-manager-code', 'unsupported stored default implementation')
+    artifact.fields(implementation['identity'], ('files',));files = implementation['identity']['files']
+    require(type(files) is dict and 'mpm_defaults.py' in files and 0 < len(files) <= 128, 'invalid default manager evidence')
+    for name, checksum in files.items():
+        require(type(name) is str and re.fullmatch('[A-Za-z0-9_.-]{1,128}', name)
+                and name not in ('.', '..') and type(checksum) is str and re.fullmatch('[0-9a-f]{64}', checksum), 'invalid default code identity')
+    require(type(d['actions']) is list and 0 < len(d['actions']) <= MAX_ACTIONS, 'invalid default actions')
     paths = []
     for action in d['actions']:
         artifact.fields(action, ('path', 'source', 'uid', 'gid', 'mode'))
-        paths.append(action['path'])
-    require(prepare(root, d['owner'], paths) == plan, 'default plan or target changed; prepare again')
+        relative(action['path']);paths.append(action['path'])
+        source = action['source'];artifact.fields(source, ('reference', 'path', 'sha256'))
+        require(source['reference'] == dict(provider='native', artifact=d['owner'])
+                and source['path'] == 'usr/etc/' + action['path'] and type(source['sha256']) is str
+                and re.fullmatch('[0-9a-f]{64}', source['sha256']), 'invalid default source binding')
+        require(type(action['uid']) is type(action['gid']) is type(action['mode']) is int
+                and action['uid'] == action['gid'] == 0 and 0 <= action['mode'] <= 0o777
+                and not action['mode'] & 0o022, 'unsupported default ownership/mode')
+    require(paths == sorted(set(paths)), 'default paths must be sorted and unique')
+    return d
+
+
+def _validated(root, plan):
+    d = validate_plan(plan)
+    require(prepare(root, d['owner'], [a['path'] for a in d['actions']]) == plan,
+            'default plan or target changed; prepare again')
     return d
 
 
@@ -302,14 +339,16 @@ def _names(path, limit):
     return sorted(names)
 
 
-def _scan(root, plan):
+def _scan(root, plan, *, read_record=None):
+    validate_plan(plan)
+    read_record = read_record or _read
     path = location(root, plan)
     if not os.path.lexists(path):return dict(attempts=[], incomplete=[])
     with directory(path):pass
     names = _names(path, MAX_RUNS + 3)
     require(len(names) <= MAX_RUNS + 3 and set(names) >= {'plan.json', 'approval.json', '.lock'},
             'incomplete/unbounded default registry')
-    require(_read(path / 'plan.json', PLAN) == plan and _read(path / 'approval.json', APPROVAL) == _approval(plan),
+    require(read_record(path / 'plan.json', PLAN) == plan and read_record(path / 'approval.json', APPROVAL) == _approval(plan),
             'default registry plan/approval differs')
     tx.check_lock_file(path / '.lock', shared=True)
     attempts, incomplete = [], []
@@ -327,14 +366,62 @@ def _scan(root, plan):
             require('000002.json' not in files, 'orphan default terminal result')
             attempts.append(dict(run=name, state='interrupted', checks=[]))
             continue
-        started = _read(run / '000001.json', RESULT)
+        started = read_record(run / '000001.json', RESULT)
         _validate_result(started, plan, _approval(plan), name, 1, None)
         if '000002.json' in files:
-            end = _read(run / '000002.json', RESULT)
+            end = read_record(run / '000002.json', RESULT)
             _validate_result(end, plan, _approval(plan), name, 2, started['id'])
             attempts.append(dict(run=name, state='completed', checks=end['description']['checks']))
         else:attempts.append(dict(run=name, state='interrupted', checks=[]))
     return dict(attempts=attempts, incomplete=incomplete)
+
+
+def inspect_registry(root):
+    """Bounded format/integrity observation, independent of current handler hash."""
+    root = tx.protected_directory(root, label='lifecycle target')
+    lifecycle = root / 'state/var/lib/mojt/lifecycle'
+    tx.protected_directory(lifecycle, label='lifecycle registry')
+    if not os.path.lexists(lifecycle):return None
+    with directory(lifecycle):pass
+    names = _names(lifecycle, 16)
+    require(set(names) <= {'defaults-v1'}, 'unsupported lifecycle registry: ' + ', '.join(names))
+    if not names:return None
+    version = root / REGISTRY
+    with directory(version):pass
+    info = base.store_info(root)
+    require(info is not None, 'lifecycle registry lacks an installation identity')
+    installations = _names(version, 1)
+    require(set(installations) <= {info['installation']}, 'lifecycle registry belongs to another installation')
+    objects, interrupted, incomplete = {}, [], []
+    read_count = total_bytes = 0
+    def read_record(path, fmt):
+        nonlocal read_count, total_bytes
+        read_count += 1
+        require(read_count <= 4096, 'lifecycle observation record budget exceeded')
+        value = _read(path, fmt)
+        total_bytes += len(artifact.canonical(value))
+        require(total_bytes <= 32 * 1024 * 1024, 'lifecycle observation byte budget exceeded')
+        objects[str(path.relative_to(version))] = value['id']
+        return value
+    if installations:
+        installation = version / info['installation']
+        with directory(installation):pass
+        for name in _names(installation, 128):
+            require(re.fullmatch('[0-9a-f]{64}', name), 'invalid lifecycle invocation directory')
+            scope = installation / name
+            with directory(scope):pass
+            lock = scope / '.lock'
+            require(lock.lstat().st_uid == lock.lstat().st_gid == 0, 'unprotected lifecycle lock owner')
+            with tx.file_lock(lock, shared=True, create=False):
+                plan = read_record(scope / 'plan.json', PLAN)
+                validate_plan(plan)
+                require(plan['description']['installation'] == info['installation']
+                        and invocation(plan)[7:] == name, 'lifecycle invocation/installation differs')
+                observed = _scan(root, plan, read_record=read_record)
+            interrupted.extend(name + '/' + a['run'] for a in observed['attempts'] if a['state'] == 'interrupted')
+            incomplete.extend(name + '/' + p for p in observed['incomplete'])
+    return base.record('mojt-defaults-observation-v1', dict(installation=info['installation'],
+        objects=dict(sorted(objects.items())), interrupted=sorted(interrupted), incomplete=sorted(incomplete)))
 
 
 def status(root, plan):

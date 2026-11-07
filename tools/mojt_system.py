@@ -78,7 +78,7 @@ MPM_FILES = (
     "mpm", "mpm-system", "mpm_cli.py", "mpm_catalog.py", "mpm_selection.py",
     "mpm_selector_ports.py", "mpm_base.py", "mpm_base_transition.py", "mpm_base_boot.py", "mpm_base_cli.py", "mpm_base_source.py", "mpm_base_status.py",
     "mpm_native_io.py", "mojt-base-install", "mpm_kernel.py", "mpm_kernel_source.py", "mpm_deployment.py", "mpm_kernel_boot.py",
-    "mpm_transaction.py", "mpm_defaults.py", "mpm_requests.py", "mpm_request_plan.py", "mpm_sources.py", "mpm_sources_cli.py",
+    "mpm_transaction.py", "mpm_defaults.py", "mpm_management.py", "mpm_requests.py", "mpm_request_plan.py", "mpm_sources.py", "mpm_sources_cli.py",
     "mpm_ports_profile.py", "mpm_ports_cli.py", "mpm_nix_binary.py", "mpm_native_cache.py", "mojt_artifact.py", "mojt_boot.py", "mojt_system.py",
     "mojt_system_manifest.py", "mojt_native_image.py", "mojt-vm-build.py",
     "mojt_hardware.py", "mojt_generations.py", "mojt_accounts.py", "mojt-system-inspect.py",
@@ -828,6 +828,15 @@ def finalize_manifest(tree, generation, base, repo):
             type(base_record.get("state", {}).get("layout_version")) is int,
             "System manifest requires complete committed Base metadata")
     record = json.loads((system / "record.json").read_text())
+    # Measure supported formats/handlers from the bundled runtime without importing
+    # candidate code. This sidecar is an ordinary inventoried profile file, not an
+    # unversioned extension to mojt-system-manifest-v1.
+    if record['step'] >= 3:
+        spec = importlib.util.spec_from_file_location('mpm_management', repo / 'tools/mpm_management.py')
+        management = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(management)
+        evidence = management.produce(system / 'tools', MPM_FILES)
+        write(system / management.FILENAME, json.dumps(evidence, indent=2) + '\n')
     inventory = {}
     provided = []
     for path in sorted(system.rglob("*")):
@@ -870,6 +879,21 @@ def finalize_manifest(tree, generation, base, repo):
     spec.loader.exec_module(inspector)
     report = model.check(manifest, inspector.context_from_target(tree, base))
     require(report["compatible"], "System metadata compatibility failed: " + "; ".join(report["errors"]))
+    if record['step'] >= 3 or os.path.lexists(tree / 'state/var/lib/mojt/lifecycle'):
+        if record['step'] < 3:
+            spec = importlib.util.spec_from_file_location('mpm_management', repo / 'tools/mpm_management.py')
+            management = importlib.util.module_from_spec(spec);spec.loader.exec_module(management)
+        if os.path.lexists(tree / 'state/var/lib/mojt/lifecycle'):
+            checked = management.check_target(tree, system, manifest)
+        else:
+            # This private assembly has no lifecycle registry to inspect. Its
+            # measured declaration is still checked against the code inventory;
+            # do not confuse source-tree ownership with a live root-owned registry.
+            require(all(inventory['tools/' + name]['sha256'] == checksum for name, checksum in
+                    evidence['description']['implementation']['identity']['files'].items()),
+                    'management code changed after measurement')
+            checked = management.check_transition(management.current(), evidence, management.context())
+        require(checked['compatible'], 'System management compatibility failed: ' + '; '.join(checked['errors']))
     write(system / "manifest.json", json.dumps(manifest, indent=2) + "\n")
 
 
