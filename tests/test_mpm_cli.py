@@ -158,6 +158,22 @@ sys.exit(main(args,runtime=r))
         self.assertIn("neovim", json.dumps(result))
         self.assertEqual(before, self.fixture.snapshot())
 
+    def test_installed_system_install_and_plain_status_need_no_provider_backend(self):
+        import test_mpm_system as packages
+        package = packages.Fixture();package.setUp();self.addCleanup(package.doCleanups)
+        before_menu = (self.root / 'boot/mojt/grub.cfg').read_bytes()
+        result = self.run_cli(['system', 'install', '--disk-root', str(self.root),
+            '--from-file', str(package.archive), '--expected-id', package.body['id'],
+            '--dependency-file', str(package.component_archive), '-y', '--json'])
+        self.assertTrue(result['changed'])
+        self.assertFalse(package.marker.exists())
+        (self.runtime.helpers / 'zstd').unlink()
+        result = self.run_cli(['system', 'status', '--disk-root', str(self.root), '--json'])
+        self.assertEqual(len(result['installed']), 1)
+        self.assertEqual(result['installed'][0]['artifact'], package.body['id'])
+        self.assertEqual(result['running']['state'], 'unknown')
+        self.assertEqual((self.root / 'boot/mojt/grub.cfg').read_bytes(), before_menu)
+
     def test_installed_ports_resolve_is_provider_independent(self):
         catalog = self.fixture.fixture.work / "releases.json"
         shutil.copyfile(REPO / "manifests/mpm-release-example.json", catalog)

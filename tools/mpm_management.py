@@ -28,6 +28,7 @@ CAPABILITY_FILES = (
     'mojt_native_image.py', 'mojt_system.py', 'mojt_system_manifest.py', 'mpm_base.py',
     'mpm_catalog.py', 'mpm_defaults.py', 'mpm_deployment.py', 'mpm_kernel.py',
     'mpm_management.py', 'mpm_native_io.py', 'mpm_selection.py', 'mpm_transaction.py',
+    'mpm_system.py', 'mpm_system_model.py',
 )
 ACTION_REGISTRIES = {
     ('missing-default', 1, 'initialize', 'mojt-defaults-preparation-v1'): ('mpm-defaults', 1),
@@ -210,7 +211,9 @@ def check_transition(preparing, candidate, observed):
 def literal(file, name):
     file_hash(file)
     definitions = []
-    for node in ast.parse(file.read_text()).body:
+    try:body = ast.parse(file.read_text()).body
+    except (SyntaxError, RecursionError) as error:raise ValueError('invalid bundled manager source: ' + file.name) from error
+    for node in body:
         if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name) and node.targets[0].id == name:
             definitions.append(ast.literal_eval(node.value))
     require(len(definitions) == 1, 'missing/duplicate literal manager declaration: ' + name)
@@ -230,7 +233,9 @@ def produce(tools, names):
     require(set(CAPABILITY_FILES) <= set(names), 'incomplete native management runtime')
     for name in names:path(name);require('/' not in name, 'invalid bundled manager path')
     hashes = {name:file_hash(tools / name) for name in CAPABILITY_FILES}
-    description = dict(management=literal(tools / 'mpm_defaults.py', 'MANAGEMENT_SUPPORT'), state=[],
+    supported = literal(tools / 'mpm_defaults.py', 'MANAGEMENT_SUPPORT') + literal(tools / 'mpm_system.py', 'MANAGEMENT_SUPPORT')
+    supported.sort(key=lambda row:row['family'])
+    description = dict(management=supported, state=[],
         handlers=literal(tools / 'mpm_defaults.py', 'HANDLER_SUPPORT'),
         implementation=dict(provider='mojt-manager-code', identity=dict(files=hashes)))
     result = create(description)
@@ -288,6 +293,9 @@ def observe_target(root):
         require(not observation['description']['interrupted'] and not observation['description']['incomplete'],
                 'incomplete defaults preparation; reconcile explicitly before transition')
     registries = [] if observation is None else [dict(family='mpm-defaults', version=1, capabilities=[], evidence=observation['id'])]
+    import mpm_system as system
+    system_state = system.registry_observation(root)
+    if system_state is not None:registries.append(dict(family='mpm-system', version=1, capabilities=[], evidence=system_state['id']))
     return context(registries=registries)
 
 

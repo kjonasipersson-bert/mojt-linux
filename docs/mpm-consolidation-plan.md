@@ -16,7 +16,7 @@ versions, not backward migration of experimental installations.
 | --- | --- | --- |
 | 1 | Establish the baseline and deliver complete MPM in System | Common frontend/runtime is merged. Configuration ownership, exact resolution and a complete Ports publisher/acquisition API are implemented in #36. The installed Ports frontend now joins configuration, accepted finite sources, imports and profiles without a checkout. A bounded real Nix adapter/frontend acceptance passed. Interactive reason removal and active-choice reset are implemented in the bounded follow-up. Completion still needs supported Base/System operations, remaining request/configuration joins and honest diagnostics. Local native source/cache acquisition is implemented; general authenticated remote publication remains the separate P2 gate. |
 | 2 | Consolidate installation and transaction rules | Shared locks/publication primitives are merged; late baseline guards and the fresh Ports profile publisher are added here. Complete other area publishers, lifecycle effects and failure recovery; planning alone is not a transaction commit. |
-| 3 | Make Base and System actual MPM installation units | Base exact import/realization/status merged in #40; bounded Base staging/selection/boot/return passed owner acceptance in #41 on 2026-11-07. Complete defaults/lifecycle preparation and actual native System composition install/upgrade/status before bootstrap. |
+| 3 | Make Base and System actual MPM installation units | Base exact import/realization/status merged in #40; bounded Base staging/selection/boot/return passed owner acceptance in #41 on 2026-11-07. Bounded native System composition/component install/status now materializes an immutable profile. Provider/source joins, System deployment/upgrade and authorized initialization/service gating remain before bootstrap. |
 | 4 | Build bootstrap on those functions | Reuse the same MPM acquisition/install/deploy libraries for explicit new targets; no second installer or experimental-script-only path. MBT syntax remains a separate discussion. |
 | 5 | Integrate environment, Kernel build and packaging | Prior real builds/boot experiments exist. Join exact environment retention, ordinary-user builds, native packaging and normal MPM install/select without global compiler/libc changes. |
 | 6 | One joined acceptance flow, then hardware | Prove the delivered tools administer the installation, update Base/System, build/install/boot a Kernel and recover with state retained. Then accept a supported physical profile; do not repeat unchanged component cross-products. |
@@ -106,8 +106,9 @@ explicit root-authorized ensure-file operation and durable attempt evidence. It
 is not called by install/stage/select, and is not the general lifecycle executor.
 The next [management/state/handler gate](management-capabilities.md) now measures
 bundled support, observes the actual defaults registry and checks both runtimes
-without effects. Actual native System install/status/deployment and its authorized
-initialization/service boundary remain next. Do not add another unchanged manual Kernel/Base matrix or move
+without effects. [Native System install/status](system-installation.md) now
+implements local native leaf components and immutable profile realization.
+Provider/source joins and System-scoped deployment/initialization remain next. Do not add another unchanged manual Kernel/Base matrix or move
 bootstrap/build work ahead of the six-step order.
 
 Progress reports must name the step, implemented behavior, validation and the

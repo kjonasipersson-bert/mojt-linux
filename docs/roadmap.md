@@ -103,8 +103,10 @@ boot readiness. Those operations retain the existing-defaults-only gate.
 The [management/state/handler gate](management-capabilities.md) now measures
 bundled support and checks real defaults-registry requirements in preflight,
 including old-writer/unknown-format refusal. No generic service-schema support
-or action execution is claimed. Next: actual native System composition
-install/status and deployment with explicit initialization/service gating. Reuse the accepted Base/Kernel VM
+or action execution is claimed. The first [native System install/status](system-installation.md)
+now imports exact native leaf components and realizes a profile without activation.
+Provider/source joins and System deployment with explicit initialization/service
+gating remain next. Reuse the accepted Base/Kernel VM
 evidence; request a focused owner VM test when the new System/initialization
 boundary exists. Bootstrap, build integration and final combined acceptance
 remain steps 4, 5 and 6 of the consolidation plan.
