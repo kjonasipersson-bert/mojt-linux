@@ -234,6 +234,47 @@ def retained_command(payload, record, name):
     return next(iter(candidates), None)
 
 
+def retained_provider_executable(root, manifest, absolute):
+    """Verify a direct provider path owned by this exact System, or return None.
+
+    Keep native-provider interpretation here, alongside retained_command. Base
+    transition policy consumes the verified result without depending on Nix path
+    syntax. This is the adapter for today's native System manifest, not a grant
+    of ownership to unrelated installed or Ports objects.
+    """
+    if not absolute.startswith('/nix/store/'):
+        return None
+    from mojt_system_manifest import validate
+    validate(manifest)
+    nix = manifest['description']['artifacts'].get('nix', {})
+    require(type(nix) is dict and type(nix.get('objects', [])) is list, 'unsupported System provider inventory')
+    objects = {}
+    for row in nix.get('objects', []):
+        require(type(row) is dict and type(row.get('path')) is str and
+                type(row.get('tree_sha256')) is str and re.fullmatch('[0-9a-f]{64}', row['tree_sha256']),
+                'invalid retained System provider object')
+        path = str(store_path(row['path']))
+        require(path not in objects, 'duplicate System provider object')
+        objects[path] = row
+    def owner(path):
+        return next((p for p in objects if path.startswith(p + '/')), None)
+    source = owner(absolute)
+    if source is None:
+        return None
+    resolved = virtual_file(root, absolute)
+    guest = '/' + resolved.relative_to(root).as_posix()
+    destination = owner(guest)
+    require(destination is not None, 'provider executable resolves outside selected System closure: ' + absolute)
+    for dependency in sorted({source, destination}):
+        path = root / dependency.lstrip('/')
+        require(path == path.resolve() and path.is_dir(), 'linked/missing System provider object: ' + dependency)
+        require(tree_hash(path) == objects[dependency]['tree_sha256'], 'System provider object changed: ' + absolute)
+    require(resolved.is_file() and resolved.stat().st_mode & 0o111,
+            'System provider executable is missing or not executable: ' + absolute)
+    return dict(provider='nix', path=absolute, resolved=guest,
+                objects={p:objects[p]['tree_sha256'] for p in sorted({source,destination})})
+
+
 def account_inputs(payload, record):
     result = {"shadow": {}, "pam": {}, "helpers": {}}
     for name in accounts.COMMANDS:
