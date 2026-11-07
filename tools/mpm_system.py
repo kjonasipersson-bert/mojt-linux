@@ -228,7 +228,7 @@ def verify_links(profile, references, adapters, outputs=()):
             adapter, ref = next((adapters[r['provider']], r) for r in references
                                 if hasattr(adapters[r['provider']], 'contains') and adapters[r['provider']].contains(r, target))
             require(hasattr(adapter, 'verify_path'), 'provider cannot verify profile link targets')
-            adapter.verify_path(copy.deepcopy(ref), target)
+            adapter.verify_path(copy.deepcopy(ref), target, executable=path.relative_to(profile).parts[0] == 'bin')
 
 
 def build_profile(profile, body, value, parts, *, adapters=None):
@@ -267,11 +267,12 @@ def build_profile(profile, body, value, parts, *, adapters=None):
     links = [path for path in profile.rglob('*') if path.is_symlink()]
     if links:providers(profile, references, adapters)
     for path in links:profile_path(profile, path.relative_to(profile).as_posix(), references, adapters, outputs)
-    exported = {path for ref in references for path in adapters[ref['provider']].describe(copy.deepcopy(ref), profile)['commands'].values()} if links else set()
     def executable(name):
         path, external = profile_path(profile, name, references, adapters, outputs)
         if external == 'runtime':return False
-        return path in exported if external else path.is_file() and path.stat().st_mode & 0o001
+        # Provider paths are explicit mappings, not just Ports' bin exports.
+        # Actual type/public mode are checked after acquisition, before publish.
+        return name.startswith('bin/') if external else path.is_file() and path.stat().st_mode & 0o001
     for name in ('interpreter', 'frontend'):
         require(executable(runtime[name]), 'System runtime must be a public executable: ' + runtime[name])
     require(not (profile / 'bin').is_symlink() and (profile / 'bin').is_dir(), 'System bin must be an inventoried directory')

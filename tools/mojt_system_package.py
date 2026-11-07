@@ -47,7 +47,7 @@ def nix_references(manifest, adapter):
         ref = dict(provider='nix', identity=dict(format='mojt-nix-output-v1', output=output,
             closure=[dict(path=p, nar_hash=expected[p]) for p in paths], commands=commands))
         adapter.describe(ref, None)
-        for name in commands:adapter.verify_path(ref, str(directory / name))
+        for name in commands:adapter.verify_path(ref, str(directory / name), executable=True)
         refs.append(ref)
     return sorted(refs, key=artifact.canonical)
 

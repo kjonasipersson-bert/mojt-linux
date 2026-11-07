@@ -58,11 +58,12 @@ class NixBinaryAdapter:
                 and '..' not in Path(path).parts, 'noncanonical provider link')
         return any(path==r['path'] or path.startswith(r['path']+'/') for r in i['closure'])
 
-    def verify_path(self,ref,path):
+    def verify_path(self,ref,path,*,executable=False):
         require(self.contains(ref,path), 'unbound provider path')
         resolved=Path(path).resolve(strict=True)
         require(self.contains(ref,str(resolved)) and (resolved.is_file() or resolved.is_dir()),
                 'provider path escapes closure or has an unsupported type')
+        require(not executable or resolved.is_file() and resolved.stat().st_mode & 0o001, 'provider export is not a public executable')
 
     def ensure(self,ref,root):
         i=self.identity(ref);directory=Path(root)/'retained/nix'

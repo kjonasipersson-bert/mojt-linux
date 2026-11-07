@@ -34,7 +34,8 @@ class Adapter:
     def verify(self, ref, root):
         self.events.append('verify')
         if not self.present:raise ValueError('provider missing')
-    def verify_path(self, ref, path):
+    def verify_path(self, ref, path, *, executable=False):
+        self.events.append(('path', path, executable))
         if not self.present or not self.contains(ref, path):raise ValueError('provider link unavailable')
 
 
@@ -48,6 +49,7 @@ class PackageFixture(Fixture):
         self.tree = self.work / 'assembled';self.profile = self.tree / 'system/system-package-test'
         self.profile.parent.mkdir(parents=True);shutil.copytree(self.work / 'component-source', self.profile)
         (self.profile / 'bin/python3').unlink();(self.profile / 'bin/python3').symlink_to(output + '/bin/python3')
+        (self.profile / 'bin/daemon').symlink_to(output + '/sbin/daemon')
         units = self.profile / 'units';units.mkdir();(units / 'mojt.target').write_text('[Unit]\nWants=demo.service\n')
         (units / 'demo.service').write_text('[Service]\nExecStart=/run/mojt-system/bin/mpm\n')
         (units / 'mojt.target.wants').mkdir();(units / 'mojt.target.wants/demo.service').symlink_to('../demo.service')
@@ -140,6 +142,9 @@ class SourceInstallTests(PackageFixture):
         for row in status['components'] + status['installed']:
             self.assertEqual(row['acquisition']['name'], 'system-kit')
         profile = Path(status['installed'][0]['profile'])
+        measured = artifact.read_json(profile / 'manifest.json')
+        self.assertIn('/run/mojt-system/bin/daemon', measured['description']['provides'])
+        self.assertIn(('path', self.provider['identity']['output'] + '/sbin/daemon', True), self.adapter.events)
         self.assertEqual(os.readlink(profile / 'units/default.target'), 'mojt.target')
         self.assertEqual(os.readlink(profile / 'bin/python3'), self.provider['identity']['output'] + '/bin/python3')
         self.assertIn('profile-symlinks', system.required_capabilities(self.root))
