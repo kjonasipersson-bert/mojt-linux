@@ -180,10 +180,8 @@ def context(root, entry, manifest, receipt, *, constructing=False):
         state_layout=state['layout'], ports=state['ports'], required_system_paths=state['system_shells'])
     bounds = boot.read(entry['path'] / 'base-context.json')
     report = transition.candidate_checks(body, release, entry['record'], manifest, entry['body'], bounds, facts)
-    for shell in state['base_shells']:
-        file = system.virtual_file(tree, shell)
-        if not file.is_file() or not file.stat().st_mode & 0o111:
-            report['errors'].append('candidate Base lacks executable account shell: ' + shell)
+    account_shells = transition.account_shell_check(root, tree, state, manifest)
+    report['errors'].extend(account_shells['errors'])
     require(not report['errors'], 'Base declaration check failed: ' + '; '.join(report['errors']))
     require(not defaults_check(root, tree)['missing'], 'Base requires missing-default preparation before boot')
     return dict(format=deployment.CONTEXT, selected=entry['record']['id'], base=d['base'],
@@ -303,12 +301,11 @@ def selection_context(root, entry):
         tree = root / receipt['base_tree']
     else:
         tree = root / 'base' / d['base']['release']
-    for shell in state['base_shells']:
-        file = system.virtual_file(tree, shell)
-        require(file.is_file() and file.stat().st_mode & 0o111, 'deployment lacks executable account shell: ' + shell)
+    account_shells = transition.account_shell_check(root, tree, state, manifest)
+    require(account_shells['compatible'], 'deployment account shells differ: ' + '; '.join(account_shells['errors']))
     require(not defaults_check(root, tree)['missing'], 'deployment needs missing-default preparation')
     management(root / 'system' / d['system']['generation'])
-    return dict(manifest=manifest, facts=facts, receipt=receipt, state=state)
+    return dict(manifest=manifest, facts=facts, receipt=receipt, state=state, account_shells=account_shells)
 
 
 def selection_scope(selected, candidate):

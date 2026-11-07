@@ -6,6 +6,7 @@ import copy
 import os
 from pathlib import Path
 import shutil
+import tempfile
 import sys
 import unittest
 from unittest import mock
@@ -21,6 +22,74 @@ import mpm_kernel as kernel
 import test_mpm_base as base_fixture
 import test_mpm_deployment as selected_fixture
 import test_kernel_boot as boot_fixture
+
+
+class AccountShellTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
+        self.root=Path(self.tmp.name).resolve();self.tree=self.root/'candidate';self.tree.mkdir()
+        self.login='/nix/store/'+'0'*32+'-util-linux-login'
+        self.other='/nix/store/'+'1'*32+'-shell-dependency'
+        for name in (self.login,self.other):
+            path=self.root/name.lstrip('/');(path/'bin').mkdir(parents=True)
+        self.shell=self.login+'/bin/nologin'
+        self.file=self.root/self.shell.lstrip('/');self.file.write_text('#!/bin/sh\nexit 1\n');self.file.chmod(0o755)
+        self.rows=[]
+        self.refresh()
+
+    def refresh(self):
+        self.rows=[dict(path=p,tree_sha256=transition.system.tree_hash(self.root/p.lstrip('/'))) for p in (self.login,self.other)]
+        self.manifest=transition.manifests.create(dict(label='shell-fixture',architecture=os.uname().machine,
+            requirements=dict(base_abi={'libc':'glibc'},state_layout=1),
+            support=dict(ports=dict(read=[],write=[],capabilities=[])),provides=[],
+            artifacts=dict(nix=dict(objects=self.rows,packages={})),provenance={'fixture':True},profile={}))
+
+    def check(self,shell=None):
+        return transition.account_shell_check(self.root,self.tree,dict(base_shells=[shell or self.shell]),self.manifest)
+
+    def test_indirect_retained_system_nologin_is_not_required_in_base(self):
+        result=self.check();self.assertTrue(result['compatible'],result['errors'])
+        proof,=result['retained_system_provider_paths']
+        self.assertEqual(proof['path'],self.shell);self.assertEqual(proof['objects'],{self.login:self.rows[0]['tree_sha256']})
+        self.assertFalse((self.tree/self.shell.lstrip('/')).exists())
+
+    def test_unknown_and_prefix_collision_store_objects_are_not_exempt(self):
+        for shell in ('/nix/store/'+'2'*32+'-unrelated/bin/nologin',self.login+'-extra/bin/nologin'):
+            path=self.root/shell.lstrip('/');path.parent.mkdir(parents=True);path.write_text('unrelated');path.chmod(0o755)
+            result=self.check(shell);self.assertFalse(result['compatible']);self.assertEqual(result['retained_system_provider_paths'],[])
+
+    def test_symlink_may_resolve_only_inside_exact_retained_closure(self):
+        target=self.root/self.other.lstrip('/')/'bin/nologin';target.write_text('fixture');target.chmod(0o755)
+        self.file.unlink();self.file.symlink_to(self.other+'/bin/nologin');self.refresh()
+        result=self.check();self.assertTrue(result['compatible'],result['errors'])
+        self.assertEqual(set(result['retained_system_provider_paths'][0]['objects']),{self.login,self.other})
+
+    def test_symlink_to_unretained_store_or_inspector_host_is_rejected(self):
+        self.file.unlink();self.file.symlink_to('/bin/sh');self.refresh()
+        result=self.check();self.assertFalse(result['compatible'])
+        self.assertTrue(any('outside selected System closure' in error for error in result['errors']))
+
+    def test_changed_system_dependency_blocks_instead_of_inheriting_a_label(self):
+        self.file.write_text('changed after measurement')
+        result=self.check();self.assertFalse(result['compatible'])
+        self.assertTrue(any('provider object changed' in error for error in result['errors']))
+
+    def test_missing_or_nonexecutable_provider_shell_is_not_accepted(self):
+        self.file.chmod(0o644);self.refresh()
+        self.assertFalse(self.check()['compatible'])
+        self.file.unlink();self.refresh()
+        self.assertFalse(self.check()['compatible'])
+
+    def test_ordinary_base_shell_still_has_to_exist_in_candidate(self):
+        result=self.check('/bin/sh');self.assertFalse(result['compatible'])
+        (self.tree/'bin').mkdir();file=self.tree/'bin/sh';file.write_text('candidate');file.chmod(0o755)
+        self.assertTrue(self.check('/bin/sh')['compatible'])
+
+    def test_linked_provider_root_does_not_escape_guest_tree(self):
+        source=self.root/self.login.lstrip('/')
+        shutil.rmtree(source);source.symlink_to('/tmp')
+        # Keep the old measured metadata. No inspector-host object is trusted.
+        self.assertFalse(self.check()['compatible'])
 
 
 @unittest.skipUnless(shutil.which('zstd'),'requires real packages')
@@ -100,6 +169,10 @@ class NativePreflightTests(unittest.TestCase):
         archive,self.body=self.b.package(version='0.1.4',abi={'libc':'glibc','libc_version':'2.41'},
             extra=[base_fixture.entry('usr/bin/sh',b'#!/bin/sh\n# synthetic candidate shell\n')])
         self.root=self.f.root
+        manifest=base.read(self.root/'system/native-fixture/manifest.json')
+        provider=manifest['description']['artifacts']['nix']['packages']['util-linux']['output']+'/bin/nologin'
+        with (self.root/'state/etc/passwd').open('a') as stream:
+            stream.write('service-fixture:x:65534:65534:Service fixture:/:'+provider+'\n')
         base.install(self.root,archive,self.body['id'],yes=True)
         self.bounds=dict(format=catalog.BASE_FORMAT,base=dict(artifact=self.body['id'],release='0.1.4'),
                          platform=self.body['platform'],kernel_min='6.12',kernel_max='6.12.999')

@@ -137,3 +137,19 @@ immutable marker absent, and state/System/Kernel still retained. Both slots rema
 available. Also retain the shutdown console result, especially the static exitrd's
 full-unmount line. No automatic fallback, arbitrary migrations, signed release
 trust, full generalized v2 protocol or physical hardware acceptance is claimed.
+
+
+## Account-shell regression found in owner staging
+
+An owner test at f27c4804 installed its distinct Base, then correctly left next
+boot unchanged when preflight incorrectly treated a System-closure nologin path
+as Base content. The check is corrected to verify exact retained System provider
+ownership/content instead. Test fixtures now include provider-backed service
+accounts throughout staging/selection/return, not only a root Base shell.
+
+This changes management code delivered in immutable System. Re-exporting the
+Nix payload is unnecessary, but a fresh native test image must assemble the fixed
+management files. Retain the previous stopped image/checkpoint; do not hot-patch
+its System, rewrite passwd or weaken the gate to continue. Start the focused
+acceptance from the fixed fresh baseline. No changed-Base boot result is claimed
+for the stopped attempt.

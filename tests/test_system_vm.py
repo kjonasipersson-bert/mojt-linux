@@ -77,6 +77,9 @@ class SystemVmTests(unittest.TestCase):
                    for role, names in system.DIAGNOSTIC_COMMANDS.items()
                    if role not in ("iproute2", "kmod")},
             }[role]
+            # Real sysusers defaults may use an absolute dependency-store nologin.
+            if role == "util-linux":
+                names = [*names, "bin/nologin"]
             base.mkdir(parents=True)
             for name in names:
                 system.write(base / name, "#!/bin/sh\nexit 0\n", 0o755)

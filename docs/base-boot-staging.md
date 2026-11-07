@@ -122,3 +122,15 @@ new initramfs loads that tree rather than `base/RELEASE`. The dependency is reta
 alongside the slot and must be honored by any future collection implementation;
 no physical collection is performed here. Kernel-only selection still preserves
 Base/System, and Base-only selection still refuses a Kernel change.
+
+
+## Persistent account shell dependencies
+
+Base-only updates retain System-owned provider dependencies used by passwd as
+well as stable `/run/mojt-system` exports. The native Nix adapter checks exact
+recorded closure membership, measured object content, guest symlink containment
+and executable files; a nologin basename or `/nix/store` prefix is not sufficient.
+Unrelated/Ports objects, changed dependencies, missing/nonexecutable files and
+symlinks escaping the retained closure block the transition. Base-owned shells
+remain checked in the candidate Base. These checks run for preflight, staged
+content, next-boot selection and recovery. Account data is never changed by them.

@@ -6,6 +6,7 @@ from contextlib import ExitStack, contextmanager
 import copy
 import hashlib
 import os
+import re
 from pathlib import Path
 import stat
 import tomllib
@@ -117,6 +118,55 @@ def state_inputs(root):
     return dict(layout=1,ports=port_facts,base_shells=sorted(set(base_paths)),system_shells=sorted(set(system_paths)),evidence=evidence)
 
 
+def account_shell_check(root, candidate_root, persistent, manifest):
+    """Distinguish Base paths from exact retained System provider dependencies.
+
+    This is the current native System's Nix-closure adapter boundary, not an
+    exemption for /nix/store or a basename such as nologin. Unknown providers and
+    unrelated installed/Ports objects confer no System ownership.
+    """
+    manifests.validate(manifest)
+    nix = manifest['description']['artifacts'].get('nix', {})
+    base.require(type(nix) is dict and type(nix.get('objects', [])) is list, 'unsupported System provider inventory')
+    objects = {}
+    for row in nix.get('objects', []):
+        base.require(type(row) is dict and type(row.get('path')) is str and
+                     type(row.get('tree_sha256')) is str and re.fullmatch('[0-9a-f]{64}', row['tree_sha256']),
+                     'invalid retained System provider object')
+        path = str(system.store_path(row['path']))
+        base.require(path not in objects, 'duplicate System provider object')
+        objects[path] = row
+    errors = []; retained = []; checked = set()
+    def owner(path):
+        return next((p for p in objects if path.startswith(p + '/')), None)
+    for shell in persistent['base_shells']:
+        source = owner(shell)
+        if source is None:
+            file = system.virtual_file(candidate_root, shell)
+            if not file.is_file() or not file.stat().st_mode & 0o111:
+                errors.append('candidate Base lacks executable account shell: ' + shell)
+            continue
+        try:
+            resolved = system.virtual_file(root, shell)
+            guest = '/' + resolved.relative_to(root).as_posix()
+            destination = owner(guest)
+            base.require(destination is not None, 'account shell resolves outside selected System closure: ' + shell)
+            for dependency in sorted({source, destination}):
+                if dependency in checked:continue
+                path = root / dependency.lstrip('/')
+                base.require(path == path.resolve() and path.is_dir(), 'linked/missing System provider object: ' + dependency)
+                base.require(system.tree_hash(path) == objects[dependency]['tree_sha256'],
+                             'System provider object changed for account shell: ' + shell)
+                checked.add(dependency)
+            base.require(resolved.is_file() and resolved.stat().st_mode & 0o111,
+                         'System account shell is missing or not executable: ' + shell)
+            retained.append(dict(provider='nix',path=shell,resolved=guest,
+                objects={p:objects[p]['tree_sha256'] for p in sorted({source,destination})}))
+        except (OSError, ValueError) as error:
+            errors.append(str(error))
+    return dict(compatible=not errors,errors=errors,retained_system_provider_paths=retained)
+
+
 def _prepare(root,identifier,bounds,baseline):
     base.require(os.geteuid()==0,'verified Base preflight requires access to the protected rootfs')
     state,entries,raw=boot.current(root,baseline)
@@ -135,10 +185,8 @@ def _prepare(root,identifier,bounds,baseline):
     kernel_body,kernel_record=kernel.object_record(root/'kernel/installed'/kernel.identifier(old['kernel']['artifact']),old['kernel']['artifact'],verify=True)
     report=candidate_checks(body,release,selected['record'],manifest,kernel_body,bounds,facts)
     tree=base.realization_path(root,identifier)/'tree/rootfs'
-    for shell in persistent['base_shells']:
-        file=system.virtual_file(tree,shell)
-        if not file.is_file() or not file.stat().st_mode&0o111:
-            report['errors'].append('candidate Base lacks executable account shell: '+shell)
+    report['account_shells']=account_shell_check(root,tree,persistent,manifest)
+    report['errors'].extend(report['account_shells']['errors'])
     report['declared_compatible']=not report['errors']
     # Check the observed components again, not just labels, before returning one
     # coherent input snapshot. Recheck is still mandatory before future effects.

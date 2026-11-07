@@ -29,7 +29,14 @@ Persistent state is observed directly: layout marker, passwd account shell paths
 current fresh Ports profile/capabilities and the supported relative os-release
 link. System-owned account shells must remain exported by the retained System;
 Base-owned shells must exist and be executable within the candidate rootfs.
-Guest absolute symlinks are resolved within that rootfs, never on the inspector.
+Account paths inside the exact retained System provider closure are checked as
+System dependencies, including service-account nologin binaries. The current
+native System adapter checks the recorded Nix object roots and their measured
+content; this is not permission to use arbitrary installed or Ports store paths.
+Resolved symlink targets must also belong to the retained System closure and be
+executable. Base-owned paths still have to exist in the candidate Base.
+Guest absolute symlinks are resolved inside the appropriate target tree, never
+on the inspector host. No account is rewritten or shell executable invoked.
 A local regular os-release file or unsupported layout blocks this path without
 changing configuration. This is deliberately not a state migration implementation.
 
