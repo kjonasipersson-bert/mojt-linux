@@ -135,6 +135,17 @@ class PreviewTests(Fixture):
             system.install(self.root, archive, body['id'], dependency_files=[self.component_archive], dry_run=True)
         self.assertEqual(tree(self.root), {})
 
+    def test_changed_physical_target_is_refused_without_a_registry(self):
+        build = system.build_profile
+        moved = self.work / 'replaced-target'
+        def replace_target(*args):
+            result = build(*args)
+            self.root.rename(moved);self.root.mkdir()
+            return result
+        with mock.patch.object(system, 'build_profile', side_effect=replace_target), self.assertRaisesRegex(ValueError, 'target changed'):
+            self.install(dry_run=True)
+        self.assertEqual(tree(self.root), {});self.assertEqual(tree(moved), {})
+
     def test_ordinary_user_denied_before_archive_or_codec_lookup(self):
         runtime = cli.Runtime(disk=self.root)
         with mock.patch.object(cli.os, 'geteuid', return_value=1000), contextlib.redirect_stderr(io.StringIO()) as err:

@@ -109,7 +109,8 @@ measured manifest and dependency receipt IDs. These are independently versioned
 records; unknown versions/layouts fail rather than being adopted or migrated.
 
 All incoming bytes are frozen/verified and a temporary profile validated before
-target mutation. The writer then reuses the common artifact-store locking and
+target mutation. The plan binds the physical target directory and existing
+installation identity, which are rechecked after approval. The writer then reuses the common artifact-store locking and
 ordered installation lock, revalidates retained components, publishes complete
 immutable objects and finally the complete realization. A failure can retain
 complete imported components or a generation object without its realization;

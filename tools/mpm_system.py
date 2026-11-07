@@ -254,8 +254,15 @@ def _freeze(archive, work, expected=None, *, budget=artifact.MAX_CONTENT):
     return body, dict(sha256=checksum, size=size)
 
 
+def target_identity(root):
+    if not management.present(root):return None
+    info = io.directory(root)
+    return dict(device=info.st_dev, inode=info.st_ino)
+
+
 def install(root, archive, identifier, *, dependency_files=(), dry_run=False, yes=False, acquisition=None):
     io.identifier(identifier);root = target(root, write=not dry_run)
+    physical = target_identity(root)
     require(dry_run or os.geteuid() == 0, 'System realization requires an administrator')
     require(type(dependency_files) in (list, tuple) and len(dependency_files) <= 64, 'too many System dependency archives')
     marker = registry(root)
@@ -263,6 +270,8 @@ def install(root, archive, identifier, *, dependency_files=(), dry_run=False, ye
         body, receipt = object_record(root, identifier, verify=True)
         completed = realization(root, identifier, verify=True)
         if completed:
+            if not dry_run:
+                io.sync_directory(realization_path(root, identifier));io.sync_directory(realization_path(root, identifier).parent)
             return dict(changed=False, dry_run=dry_run, action='no-change', artifact=identifier, realization=completed['id'], selected='unchanged', running='unchanged')
         archive = object_path(root, identifier) / 'archive.tar.zst';acquisition = receipt['description'].get('acquisition')
     require(archive is not None, 'missing exact System archive')
@@ -283,7 +292,8 @@ def install(root, archive, identifier, *, dependency_files=(), dry_run=False, ye
             require(marker is not None and management.present(object_path(root, dep)), 'missing exact System component: ' + dep + '; supply --dependency-file')
             component, unused = object_record(root, dep, verify=True);acceptable(component, 'component');parts[dep] = (component, object_path(root, dep))
         measured = build_profile(work / 'profile', body, comp, parts)
-        plan = base.record(PLAN, dict(target=str(root), installation=base.store_info(root)['installation'] if base.store_info(root) else None,
+        require(target_identity(root) == physical, 'System target changed during preview')
+        plan = base.record(PLAN, dict(target=str(root), target_identity=physical, installation=base.store_info(root)['installation'] if base.store_info(root) else None,
             artifact=identifier, composition=comp['id'], dependencies=sorted(required), manifest=measured['id'],
             archive=encoding, configuration_changes=False, service_changes=False, selection_changes=False, running_changes=False))
         if dry_run:return dict(plan=plan, changed=False, dry_run=True, archive_verified=True, profile_validated=True)
@@ -291,7 +301,10 @@ def install(root, archive, identifier, *, dependency_files=(), dry_run=False, ye
             print(json.dumps(plan, indent=2), file=__import__('sys').stderr)
             if input('Install this exact System without changing state or boot? [y/N] ').strip().lower() not in ('y', 'yes'):
                 return dict(plan=plan, changed=False, cancelled=True)
+        require(target_identity(root) == physical, 'System target changed after preview')
         with base.locked(root, installation_lock=True) as info:
+            require(target_identity(root) == physical, 'System target changed while acquiring locks')
+            require(plan['description']['installation'] in (None, info['installation']), 'System installation identity changed after preview')
             _initialize(root, info)
             existing = realization(root, identifier, verify=True) if management.present(object_path(root, identifier)) else None
             if existing:return dict(plan=plan, changed=False, realization=existing['id'])
