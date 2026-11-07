@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import shutil
 import stat
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -79,6 +80,14 @@ class ModelTests(unittest.TestCase):
                     self.assertFalse(result['compatible'])
                     self.assertTrue(any(e.startswith(role + ':') and operation in e for e in result['errors']))
 
+    def test_action_needs_result_registry_support_even_before_first_effect(self):
+        current = management.current();d = copy.deepcopy(current['description'])
+        d['management'][0]['write'] = []
+        old = management.create(d)
+        report = management.check_transition(current, old, management.context(actions=[required_action()]))
+        self.assertFalse(report['compatible'])
+        self.assertIn('required handler output registry', report['errors'][0])
+
     def test_future_handler_phase_and_generic_contract_are_not_advertised(self):
         current = management.current()
         for changes in (dict(type='ensure-account'), dict(version=2), dict(phase='stage'), dict(contract='mojt-lifecycle-set-v1')):
@@ -135,6 +144,13 @@ class MeasuredProfileTests(ProfileFixture, unittest.TestCase):
         first = management.retained(self.candidate, self.manifest)
         self.assertEqual(first, management.produce(self.candidate / 'tools', system.MPM_FILES))
         self.assertEqual(snapshot(self.work), before)
+
+    def test_native_capability_measurement_needs_no_provider_adapter_files(self):
+        for name in ('mpm-nix-prototype', 'mpm-nix-catalog.py', 'mpm_nix_binary.py'):
+            (self.candidate / 'tools' / name).unlink()
+        measured = management.produce(self.candidate / 'tools', system.MPM_FILES)
+        self.assertEqual(set(measured['description']['implementation']['identity']['files']), set(management.CAPABILITY_FILES))
+        self.assertEqual(measured['description']['management'], defaults.MANAGEMENT_SUPPORT)
 
     def test_metadata_cannot_claim_support_absent_from_bundled_code(self):
         evidence = management.produce(self.candidate / 'tools', system.MPM_FILES)
@@ -227,6 +243,29 @@ class TargetTests(ProfileFixture, Fixture):
         self.assertEqual(snapshot(self.work), before)
         defaults.initialize(self.root, plan, yes=True, reconcile=True)
         self.assertTrue(management.check_target(self.root, self.candidate, self.manifest)['compatible'])
+
+    def test_isolated_target_inspector_reports_old_writer_without_writes_or_path_helpers(self):
+        self.initialize()
+        (self.root / 'releases').mkdir()
+        (self.root / 'releases/base-0.1.3.toml').write_text('format=1\n[base]\nversion="0.1.3"\narchitecture="' + os.uname().machine + '"\n[abi]\nlibc="glibc"\n[state]\nlayout_version=1\n')
+        manifest_path = self.candidate / 'manifest.json'
+        manifest_path.write_text(json.dumps(self.manifest))
+        command = [sys.executable, '-I', '-B', str(REPO / 'tools/mojt-system-inspect.py'),
+                   '--candidate', str(manifest_path), '--target', str(self.root), '--base', '0.1.3']
+        before = snapshot(self.work)
+        result = subprocess.run(command, text=True, capture_output=True, cwd='/', env=dict(os.environ, PATH=''))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(json.loads(result.stdout)['management']['compatible'])
+        self.assertEqual(snapshot(self.work), before)
+        helper = self.candidate / 'tools/mpm_defaults.py'
+        helper.write_text(helper.read_text().replace("'write': [1]", "'write': []"))
+        manifest_path.unlink();self.manifest = self.measure(self.candidate)
+        manifest_path.write_text(json.dumps(self.manifest))
+        before = snapshot(self.work)
+        result = subprocess.run(command, text=True, capture_output=True, cwd='/', env=dict(os.environ, PATH=''))
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertFalse(json.loads(result.stdout)['management']['compatible'])
+        self.assertEqual(snapshot(self.work), before)
 
     def test_both_preparing_and_candidate_runtimes_checked_for_required_action(self):
         required = management.context(actions=[required_action()])

@@ -20,6 +20,18 @@ CONTEXT = 'mojt-management-context-v1'
 FILENAME = 'management.json'
 LIMIT = 128
 MAX_METADATA = 1024 * 1024
+# Required output protocol of the one implemented action, even on an empty target.
+# Complete code closure for the advertised native defaults protocol. Optional
+# provider adapters are inventoried by System separately, not required here.
+CAPABILITY_FILES = (
+    'mojt-base-install', 'mojt_accounts.py', 'mojt_artifact.py', 'mojt_boot.py',
+    'mojt_native_image.py', 'mojt_system.py', 'mojt_system_manifest.py', 'mpm_base.py',
+    'mpm_catalog.py', 'mpm_defaults.py', 'mpm_deployment.py', 'mpm_kernel.py',
+    'mpm_management.py', 'mpm_native_io.py', 'mpm_selection.py', 'mpm_transaction.py',
+)
+ACTION_REGISTRIES = {
+    ('missing-default', 1, 'initialize', 'mojt-defaults-preparation-v1'): ('mpm-defaults', 1),
+}
 
 
 def require(ok, message):
@@ -178,6 +190,13 @@ def check(capabilities, observed):
     for required in facts['actions']:
         if required not in d['handlers']:
             errors.append(f"required handler unsupported: {required['type']} version {required['version']} / {required['phase']} / {required['contract']}")
+        dependency = ACTION_REGISTRIES.get(action_key(required))
+        if dependency is not None:
+            family, version = dependency
+            row = supported.get(family)
+            for operation in ('read', 'write'):
+                if row is None or version not in row[operation]:
+                    errors.append(f"required handler output registry {family} version {version} unsupported for {operation}")
     return dict(compatible=not errors, errors=errors)
 
 
@@ -208,20 +227,20 @@ def file_hash(file):
 def produce(tools, names):
     """Measure bundled code/literal support. Never import candidate Python code."""
     require(type(names) in (list, tuple) and 0 < len(names) <= LIMIT and len(set(names)) == len(names), 'invalid bundled runtime list')
-    require({'mpm_management.py', 'mpm_defaults.py', 'mojt_system.py'} <= set(names), 'incomplete management runtime')
+    require(set(CAPABILITY_FILES) <= set(names), 'incomplete native management runtime')
     for name in names:path(name);require('/' not in name, 'invalid bundled manager path')
-    hashes = {name:file_hash(tools / name) for name in sorted(names)}
+    hashes = {name:file_hash(tools / name) for name in CAPABILITY_FILES}
     description = dict(management=literal(tools / 'mpm_defaults.py', 'MANAGEMENT_SUPPORT'), state=[],
         handlers=literal(tools / 'mpm_defaults.py', 'HANDLER_SUPPORT'),
         implementation=dict(provider='mojt-manager-code', identity=dict(files=hashes)))
     result = create(description)
-    require({name:file_hash(tools / name) for name in sorted(names)} == hashes, 'bundled manager changed during measurement')
+    require({name:file_hash(tools / name) for name in CAPABILITY_FILES} == hashes, 'bundled manager changed during measurement')
     return result
 
 
 def current():
     tools = Path(__file__).parent
-    return produce(tools, literal(tools / 'mojt_system.py', 'MPM_FILES'))
+    return produce(tools, CAPABILITY_FILES)
 
 
 def retained(profile, manifest):
@@ -243,7 +262,8 @@ def retained(profile, manifest):
     files = value['description']['implementation']['identity']['files']
     names = literal(profile / 'tools/mojt_system.py', 'MPM_FILES')
     require(type(names) in (list, tuple) and len(names) <= LIMIT and all(type(n) is str for n in names), 'invalid retained runtime list')
-    require(set(files) == set(names), 'management implementation is not the complete bundled runtime')
+    require(set(files) == set(CAPABILITY_FILES) and set(files) <= set(names),
+            'management implementation is not the complete native capability runtime')
     for name, checksum in files.items():
         row = inventory.get('tools/' + name)
         require(type(row) is dict and set(row) == {'sha256', 'mode'} and type(row['mode']) is int and row['sha256'] == checksum

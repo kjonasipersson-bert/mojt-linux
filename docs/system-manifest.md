@@ -124,7 +124,7 @@ project locks, retention/GC and runtime libc work remain separate tasks.
 
 New step-3+ profiles also inventory [management capabilities](management-capabilities.md)
 in `management.json`. This independent versioned record binds the complete
-bundled MPM code and declared registry/handler support; it does not add fields
+native capability code closure and declared registry/handler support; it does not add fields
 to `mojt-system-manifest-v1`. Target inspection and native boot preflight now
 check actual defaults-registry state against both the preparing and candidate
 runtimes. The existing ABI/layout/Ports checks and the distinction between
