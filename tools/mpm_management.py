@@ -243,6 +243,13 @@ def current():
     return produce(tools, CAPABILITY_FILES)
 
 
+def present(file):
+    # Only ENOENT establishes absence. Permission/type errors remain unknown.
+    try:file.lstat()
+    except FileNotFoundError:return False
+    return True
+
+
 def retained(profile, manifest):
     """Bind declared support to the measured immutable System inventory/code."""
     from mojt_system_manifest import validate as validate_manifest
@@ -252,7 +259,7 @@ def retained(profile, manifest):
     tx.protected_directory(profile, label='System management profile')
     inventory = manifest['description']['profile'];file = profile / FILENAME
     if FILENAME not in inventory:
-        require(not os.path.lexists(file), 'unmeasured management capability file')
+        require(not present(file), 'unmeasured management capability file')
         return None
     tx.protected_directory(profile / 'tools', label='System management code')
     row = inventory[FILENAME]

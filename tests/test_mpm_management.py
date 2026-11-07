@@ -127,6 +127,12 @@ class ModelTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'ownership'):management.create(d)
         with self.assertRaises(ValueError):management.context(registries=[dict(family='x', version=True, capabilities=[], evidence='sha256:' + '3' * 64)])
 
+    def test_permission_failure_never_establishes_absence(self):
+        with mock.patch.object(Path, 'lstat', side_effect=PermissionError('unreadable state')):
+            with self.assertRaises(PermissionError):management.present(Path('/unreadable'))
+            with mock.patch.object(defaults.tx, 'protected_directory', side_effect=lambda p, **kw:Path(p)):
+                with self.assertRaises(PermissionError):defaults.inspect_registry(Path('/unreadable'))
+
     def test_missing_declaration_means_unknown_not_capable(self):
         self.assertTrue(management.check(None, management.context())['compatible'])
         self.assertFalse(management.check(None, registry_context())['compatible'])

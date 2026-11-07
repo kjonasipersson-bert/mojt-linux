@@ -381,7 +381,8 @@ def inspect_registry(root):
     root = tx.protected_directory(root, label='lifecycle target')
     lifecycle = root / 'state/var/lib/mojt/lifecycle'
     tx.protected_directory(lifecycle, label='lifecycle registry')
-    if not os.path.lexists(lifecycle):return None
+    try:lifecycle.lstat()
+    except FileNotFoundError:return None
     with directory(lifecycle):pass
     names = _names(lifecycle, 16)
     require(set(names) <= {'defaults-v1'}, 'unsupported lifecycle registry: ' + ', '.join(names))

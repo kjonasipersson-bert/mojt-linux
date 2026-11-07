@@ -9,7 +9,9 @@ SPDX-License-Identifier: GPL-2.0-only
 This limited increment describes a completed System and checks explicit
 installation requirements. It does not implement `mpm system upgrade`, change
 GRUB/next-boot selection, migrate state or modify a running System. The next
-milestone is running the existing build tools on Mojt to produce a new image.
+milestone is native System composition install/status, followed by authorized
+initialization and existing-disk activation. Image assembly and Kernel builds
+on Mojt already have separate recorded acceptance.
 
 ## Manifest
 

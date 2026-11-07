@@ -74,9 +74,7 @@ def main(argv=None):
         candidate = read(args.candidate)
         report = model.compare(candidate, read(args.running), read(args.selected))
         report.update(model.check(candidate, facts))
-        if args.target and ('management.json' in candidate['description']['profile'] or
-                            (args.target / 'state/var/lib/mojt/lifecycle').exists() or
-                            (args.target / 'state/var/lib/mojt/lifecycle').is_symlink()):
+        if args.target:
             spec = importlib.util.spec_from_file_location('mpm_management', Path(__file__).with_name('mpm_management.py'))
             management = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(management)
