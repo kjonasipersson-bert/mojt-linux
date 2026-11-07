@@ -35,8 +35,11 @@ def main(argv, *, runtime=None):
     try:
         parser = argparse.ArgumentParser(prog='mpm system')
         sub = parser.add_subparsers(dest='action', required=True)
-        install = sub.add_parser('install');install.add_argument('--from-file', type=Path, required=True)
+        install = sub.add_parser('install');origin = install.add_mutually_exclusive_group(required=True)
+        origin.add_argument('--from-file', type=Path);origin.add_argument('--source')
         install.add_argument('--expected-id', required=True)
+        for name in ('archive-sha256', 'snapshot'):install.add_argument('--' + name)
+        for name in ('sources-root', 'cache-root'):install.add_argument('--' + name, type=Path)
         install.add_argument('--dependency-file', type=Path, action='append', default=[])
         install.add_argument('--dry-run', action='store_true');install.add_argument('-y', '--yes', action='store_true')
         status = sub.add_parser('status');status.add_argument('--verify', action='store_true')
@@ -48,7 +51,15 @@ def main(argv, *, runtime=None):
         adapters = ProviderAdapters(runtime if args.disk_root is None else None)
         if runtime is not None and args.disk_root is None:base.require(os.path.ismount(root), 'running installation disk is unavailable')
         if args.action == 'install':
-            result = system.install(root, args.from_file, args.expected_id, dependency_files=args.dependency_file, dry_run=args.dry_run, yes=args.yes, adapters=adapters)
+            if args.source is not None:
+                base.require(args.archive_sha256 is not None and not args.dependency_file, '--source requires --archive-sha256 and obtains components from the same snapshot')
+                from mpm_system_source import install as acquire
+                result = acquire(root, args.sources_root or (runtime.sources if runtime else Path('/var/lib/mojt/sources')),
+                    args.cache_root or (runtime.cache if runtime else Path('/var/lib/mojt/cache')), args.source, args.expected_id,
+                    archive_sha256=args.archive_sha256, snapshot=args.snapshot, dry_run=args.dry_run, yes=args.yes, adapters=adapters)
+            else:
+                base.require(not any(v is not None for v in (args.archive_sha256, args.snapshot, args.sources_root, args.cache_root)), 'source/cache flags require --source')
+                result = system.install(root, args.from_file, args.expected_id, dependency_files=args.dependency_file, dry_run=args.dry_run, yes=args.yes, adapters=adapters)
         else:
             running = base.read(runtime.running) if runtime is not None and args.disk_root is None and runtime.running.is_file() else None
             result = system.status(root, verify=args.verify, running_record=running, adapters=adapters)

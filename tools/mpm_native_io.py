@@ -79,10 +79,10 @@ def frozen_copy(source, destination):
         os.close(fd)
 
 
-def unpack_regular(path, body, target):
+def unpack_regular(path, body, target, *, symlinks=False):
     """Second pass over our frozen verified archive; no extract/extractall calls."""
     artifact.validate_descriptor(body)
-    require(all(r["type"] in ("file", "directory") for r in body["files"]), "materialization requires regular entries")
+    require(all(r["type"] in (("file", "directory", "symlink") if symlinks else ("file", "directory")) for r in body["files"]), "materialization requires regular entries")
     kind = body["kind"]
     with tempfile.TemporaryFile() as errors:
         process = subprocess.Popen(["zstd", "-q", "-d", "-c", "--", str(path)], stdout=subprocess.PIPE, stderr=errors)
@@ -101,6 +101,11 @@ def unpack_regular(path, body, target):
                     if row["type"] == "directory":
                         require(member.isdir(), "directory type differs")
                         destination.mkdir(mode=0o700)
+                    elif row["type"] == "symlink":
+                        require(member.issym() and member.linkname == row['target'], 'link target differs')
+                        # Descriptor validation prohibits descendants of a link.
+                        # No extraction/chmod/open operation follows this entry.
+                        destination.symlink_to(row['target'])
                     else:
                         require(member.isfile() and member.size == row["size"], "file type/size differs")
                         checksum = hashlib.sha256()

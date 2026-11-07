@@ -70,12 +70,12 @@ import into or inspect the host's unrelated Nix store. Native-only offline
 install/verification is unchanged. Other providers need an explicitly supplied
 adapter; no fallback to another package manager occurs.
 
-Named-source acquisition, direct provider profile mappings, transitive native
-component import, symlink/hardlink payloads and general lifecycle execution remain
-later joins. A distributable current Nix-backed System still needs packaging of
-its generated profile with those exact runtime dependencies before owner VM
-acceptance. This increment does not turn the old step payload into a native
-package or prove ELF/libc compatibility.
+The [System packager and source/cache join](system-packaging.md) now preserve
+profile symlinks and package a completed current profile with exact dependencies.
+Named-source installation acquires the complete native bundle from one accepted
+snapshot. Direct provider profile mappings, transitive native component import,
+hardlinks and lifecycle execution remain later joins. Packaging/import does not
+prove ELF/libc compatibility or boot readiness.
 
 ## Package and runtime contracts
 
@@ -89,8 +89,8 @@ storage or cause replacement of another build with the same label.
 The supported subset of the proposed
 [composition wire](formats/draft-v1/system-composition.md) uses native leaf
 System components, role `component`, with no transitive native components or outer
-requirements. Provider dependencies must have supported exact identities. Only
-root-owned ordinary protected files/directories are accepted.
+requirements. Provider dependencies must have supported exact identities. Root-owned protected files/directories and controlled component symbolic links
+are accepted; archive links are never followed during extraction.
 Their data/modes are verified and write bits removed in storage; private source
 files remain private. No mode normalization makes private files world-readable.
 
@@ -166,8 +166,8 @@ candidate without native System format support cannot silently ignore it; an
 incomplete import must be completed/diagnosed before a transition. This does not
 select the most recently installed generation or write an upgrade wish.
 
-Next: package current System payloads with their exact runtime dependencies and
-connect named sources, then System-scoped deployment and authorized initialization/service
+Current profile packaging and named-source/cache installation are now joined.
+Next: System-scoped deployment and authorized initialization/service
 gating. Generalized boot v2 and the final joined MBT/bootstrap/build flow remain
 separate roadmap steps. No new manual A/B/A run is required for native
 content-only installation; focused VM acceptance is needed when an actual new

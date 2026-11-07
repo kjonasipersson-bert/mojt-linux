@@ -311,7 +311,7 @@ def _write_tar(stream, body, locations):
                 archive.addfile(entry)
 
 
-def pack(source, spec, output, attachments=None):
+def pack(source, spec, output, attachments=None, *, numeric_owner=None):
     spec = validate_spec(spec)
     source, output = Path(source).absolute(), Path(output).absolute()
     require(not os.path.lexists(output), "output already exists")
@@ -320,6 +320,10 @@ def pack(source, spec, output, attachments=None):
     rows, locations = inventory(source)
     check_payload(spec, source, rows)
     original = copy.deepcopy(rows)
+    if numeric_owner is not None:
+        require(type(numeric_owner) is tuple and len(numeric_owner) == 2 and
+                all(type(n) is int and n >= 0 for n in numeric_owner), 'invalid archive numeric owner')
+        for row in rows:row['uid'], row['gid'] = numeric_owner
     attachments = attachments or {}
     if attachments:
         rows.append(dict(path="provenance", type="directory", mode=0o755, uid=0, gid=0))

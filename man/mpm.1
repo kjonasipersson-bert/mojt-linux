@@ -115,6 +115,13 @@ them without activating a profile. Provider operations require the running insta
 explicit offline targets cannot use the host store. Direct provider profile mappings,
 transitive native components and links remain unsupported. No source refresh occurs.
 .PP
+.BI "system install --source " "NAME --expected-id sha256:ID --archive-sha256 SHA256"
+uses one accepted source snapshot and the common cache for the generation and
+its exact native components. Source --dry-run is metadata-only and creates no
+cache/profile; --snapshot pins accepted metadata. Controlled profile links are
+retained. Late-created privileged helpers remain unavailable runtime requirements;
+installation does not create them or establish boot readiness. See docs/system-packaging.md.
+.PP
 .B system status
 reports installed generations, retained incomplete generations, components and
 explicit running/next-boot identities separately. A matching human label does

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import copy
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import shutil
 import stat
@@ -23,7 +23,7 @@ import mpm_transaction as tx
 REGISTRY = 'mojt-system-registry-v1'
 REALIZATION = 'mojt-system-realization-v1'
 PLAN = 'mojt-system-install-plan-v1'
-MANAGEMENT_SUPPORT = [{'family': 'mpm-system', 'read': [1], 'write': [1], 'capabilities': ['exact-provider-dependencies']}]
+MANAGEMENT_SUPPORT = [{'family': 'mpm-system', 'read': [1], 'write': [1], 'capabilities': ['exact-provider-dependencies', 'profile-runtime-outputs', 'profile-symlinks']}]
 CODE = ('mpm_system.py', 'mpm_system_model.py', 'mpm_native_io.py', 'mpm_base.py',
         'mojt_artifact.py', 'mojt_system_manifest.py', 'mpm_management.py', 'mpm_transaction.py')
 require = base.require
@@ -62,12 +62,29 @@ def acceptable(body, role=None):
     require(body['kind'] == 'system' and body['platform'] == os.uname().machine + '-linux', 'System kind/platform differs')
     require(role is None or body['metadata']['system_role'] == role, 'System component/generation role differs')
     require(not body['requirements'], 'unsupported outer System requirements')
-    require(all(row['type'] in ('file', 'directory') and row['uid'] == row['gid'] == 0
-                and not row['mode'] & 0o7022 and row['mode'] & 0o400 and (row['type'] != 'directory' or row['mode'] & 0o100) for row in body['files']),
-            'System install requires protected root-owned ordinary files/directories; links need a supported adapter')
+    require(all(row['uid'] == row['gid'] == 0 and
+                (row['type'] in ('file', 'directory') and not row['mode'] & 0o7022 and row['mode'] & 0o400
+                 and (row['type'] != 'directory' or row['mode'] & 0o100)
+                 or row['type'] == 'symlink' and body['metadata']['system_role'] == 'component' and row['mode'] == 0o777)
+                for row in body['files']), 'System install requires protected root-owned files/directories or component symlinks')
     if body['metadata']['system_role'] == 'component':
         require(len(body['dependencies']) <= model.MAX_ROWS and all(r['provider'] != 'native' for r in body['dependencies']),
                 'native transitive System components are not supported yet')
+        runtime_outputs({body['id']:(body, None)})
+
+
+def runtime_outputs(parts):
+    """Declare two existing late-created helpers as unavailable runtime requirements."""
+    outputs = set()
+    for body, unused in parts.values():
+        value = body['metadata'].get('runtime_outputs')
+        if value is None:continue
+        artifact.fields(value, ('format', 'producer', 'paths'))
+        require(value['format'] == 'mojt-profile-runtime-outputs-v1' and value['producer'] == 'mojt-privileged-v1'
+                and type(value['paths']) is list and value['paths'] == sorted(set(value['paths']))
+                and set(value['paths']) <= {'/run/mojt-privileged/passwd', '/run/mojt-privileged/sudo'}, 'unsupported System runtime outputs')
+        outputs.update(value['paths'])
+    return sorted(outputs)
 
 
 def provider_references(parts):
@@ -95,11 +112,14 @@ def retained_providers(root, identifier):
 
 
 def required_capabilities(root):
+    capabilities = set()
     for name in object_names(root):
         body, unused = object_record(root, 'sha256:' + name)
         if body['metadata']['system_role'] == 'component' and body['dependencies']:
-            return ['exact-provider-dependencies']
-    return []
+            capabilities.add('exact-provider-dependencies')
+        if any(row['type'] == 'symlink' for row in body['files']):capabilities.add('profile-symlinks')
+        if runtime_outputs({body['id']:(body, None)}):capabilities.add('profile-runtime-outputs')
+    return sorted(capabilities)
 
 
 def manager():
@@ -133,8 +153,12 @@ def object_record(root, identifier, *, verify=False):
         expected = {'artifact.json', 'installed.json', 'archive.tar.zst', *(r['path'] for r in body['files'])}
         require({p.relative_to(path).as_posix() for p in path.rglob('*')} == expected, 'System object inventory differs')
         for row in body['files']:
-            file = path / row['path'];info = io.directory(file) if row['type'] == 'directory' else io.regular(file)
-            require(info.st_uid == info.st_gid == 0 and stat.S_IMODE(info.st_mode) == stored_mode(row), 'System object mode/owner differs')
+            file = path / row['path']
+            if row['type'] == 'symlink':
+                info = file.lstat()
+                require(stat.S_ISLNK(info.st_mode) and os.readlink(file) == row['target'], 'System object link differs')
+            else:info = io.directory(file) if row['type'] == 'directory' else io.regular(file)
+            require(info.st_uid == info.st_gid == 0 and stat.S_IMODE(info.st_mode) == (0o777 if row['type'] == 'symlink' else stored_mode(row)), 'System object mode/owner differs')
             if row['type'] == 'file':require(info.st_size == row['size'] and artifact.file_sha(file) == row['sha256'], 'System object bytes differ')
     return body, receipt
 
@@ -158,12 +182,56 @@ def inventory(profile):
         name = path.relative_to(profile).as_posix()
         if name == 'manifest.json':continue
         info = path.lstat()
-        require(stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode) and info.st_nlink == 1, 'non-regular System profile')
-        result[name] = dict(directory=True, mode=stat.S_IMODE(info.st_mode)) if path.is_dir() else dict(sha256=artifact.file_sha(path), mode=stat.S_IMODE(info.st_mode))
+        require(stat.S_ISLNK(info.st_mode) or stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode) and info.st_nlink == 1, 'unsupported System profile entry')
+        result[name] = (dict(link=os.readlink(path)) if path.is_symlink() else
+                       dict(directory=True, mode=stat.S_IMODE(info.st_mode)) if path.is_dir() else
+                       dict(sha256=artifact.file_sha(path), mode=stat.S_IMODE(info.st_mode)))
     return result
 
 
-def build_profile(profile, body, value, parts):
+def profile_path(profile, relative, references, adapters, outputs=()):
+    """Resolve inside the profile; authorize external links without reading host files."""
+    pending = list(PurePosixPath(relative).parts);done = [];links = 0
+    while pending:
+        part = pending.pop(0)
+        if part in ('', '.'):continue
+        if part == '..':
+            require(done, 'System profile link escapes profile');done.pop();continue
+        path = profile.joinpath(*done, part)
+        if path.is_symlink():
+            links += 1;require(links <= 40, 'System profile link loop')
+            target = os.readlink(path)
+            if target == '/run/mojt-system' or target.startswith('/run/mojt-system/'):
+                done = [];pending = list(PurePosixPath(target).parts[3:]) + pending
+            elif target in outputs:
+                require(not pending, 'runtime output is not a directory')
+                return target, 'runtime'
+            elif target.startswith('/'):
+                absolute = str(PurePosixPath(target).joinpath(*pending))
+                require(adapters is not None, 'System profile link requires a provider adapter')
+                allowed = any(hasattr(adapters[ref['provider']], 'contains') and adapters[ref['provider']].contains(copy.deepcopy(ref), absolute)
+                              for ref in references)
+                require(allowed, 'System profile link escapes declared closure: ' + absolute)
+                return absolute, True
+            else:pending = list(PurePosixPath(target).parts) + pending
+        else:
+            require(path.exists(), 'dangling System profile link/path: ' + str(path))
+            done.append(part)
+    return profile.joinpath(*done), False
+
+
+def verify_links(profile, references, adapters, outputs=()):
+    for path in profile.rglob('*'):
+        if not path.is_symlink():continue
+        target, external = profile_path(profile, path.relative_to(profile).as_posix(), references, adapters, outputs)
+        if external is True:
+            adapter, ref = next((adapters[r['provider']], r) for r in references
+                                if hasattr(adapters[r['provider']], 'contains') and adapters[r['provider']].contains(r, target))
+            require(hasattr(adapter, 'verify_path'), 'provider cannot verify profile link targets')
+            adapter.verify_path(copy.deepcopy(ref), target)
+
+
+def build_profile(profile, body, value, parts, *, adapters=None):
     d = value['description'];planned = {};total = 0
     for mapping in d['profile']:
         identifier = model.reference(mapping['source']['reference']);component, source = parts[identifier]
@@ -182,16 +250,32 @@ def build_profile(profile, body, value, parts):
             if parent == profile or profile in parent.parents:
                 parent.mkdir(exist_ok=True);modes.setdefault(parent, 0o555)
         if row['type'] == 'directory':destination.mkdir(exist_ok=True)
+        elif row['type'] == 'symlink':
+            require(source.is_symlink() and os.readlink(source) == row['target'], 'System source link changed')
+            destination.symlink_to(row['target']);continue
         else:
             require(artifact.file_sha(source) == row['sha256'], 'System source component changed')
             with source.open('rb') as origin, destination.open('xb') as output:
                 shutil.copyfileobj(origin, output, 128 * 1024);output.flush();os.fchmod(output.fileno(), stored_mode(row));os.fsync(output.fileno())
         modes[destination] = stored_mode(row)
     runtime = d['runtime']
+    references = provider_references(parts)
+    outputs = runtime_outputs(parts)
+    if outputs:
+        for name in ('privileged-inputs.json', 'privileged-setup.py', 'units/mojt-privileged.service'):
+            require((profile / name).is_file() and not (profile / name).is_symlink(), 'missing runtime-output producer declaration')
+    links = [path for path in profile.rglob('*') if path.is_symlink()]
+    if links:providers(profile, references, adapters)
+    for path in links:profile_path(profile, path.relative_to(profile).as_posix(), references, adapters, outputs)
+    exported = {path for ref in references for path in adapters[ref['provider']].describe(copy.deepcopy(ref), profile)['commands'].values()} if links else set()
+    def executable(name):
+        path, external = profile_path(profile, name, references, adapters, outputs)
+        if external == 'runtime':return False
+        return path in exported if external else path.is_file() and path.stat().st_mode & 0o001
     for name in ('interpreter', 'frontend'):
-        path = profile / runtime[name]
-        require(path.is_file() and path.stat().st_mode & 0o001, 'System runtime must be a public executable: ' + runtime[name])
-    tools = profile / runtime['module_root'];require(tools.is_dir() and modes.get(tools, 0o555) & 0o005 == 0o005, 'missing/private System management modules')
+        require(executable(runtime[name]), 'System runtime must be a public executable: ' + runtime[name])
+    require(not (profile / 'bin').is_symlink() and (profile / 'bin').is_dir(), 'System bin must be an inventoried directory')
+    tools = profile / runtime['module_root'];require(not tools.is_symlink() and tools.is_dir() and modes.get(tools, 0o555) & 0o005 == 0o005, 'missing/private System management modules')
     for name in ('interpreter', 'frontend', 'module_root'):
         for parent in (profile / runtime[name]).parents:
             if parent == profile or profile in parent.parents:
@@ -202,13 +286,17 @@ def build_profile(profile, body, value, parts):
     support = management.produce(tools, names)
     require(support['description']['management'] == d['management'] and support['description']['state'] == d['state'], 'System composition overstates bundled management/schema support')
     own = management.context(registries=[dict(family='mpm-system', version=1,
-        capabilities=['exact-provider-dependencies'] if provider_references(parts) else [], evidence=body['id'])])
+        capabilities=sorted((['exact-provider-dependencies'] if references else []) +
+            (['profile-symlinks'] if any(r['type'] == 'symlink' for component, unused in parts.values() for r in component['files']) else []) +
+            (['profile-runtime-outputs'] if outputs else [])), evidence=body['id'])])
     checked = management.check_transition(management.current(), support, own)
     require(checked['compatible'], 'System cannot manage its installed representation: ' + '; '.join(checked['errors']))
-    for service in d['services']:require((profile / 'units' / service['unit']).is_file(), 'missing declared System unit')
+    for service in d['services']:
+        path, external = profile_path(profile, 'units/' + service['unit'], references, adapters)
+        require(external is True or external is False and path.is_file(), 'missing declared System unit')
     io.write_json(profile / management.FILENAME, support)
     if os.geteuid() == 0:
-        for path in [*profile.rglob('*'), profile]:os.chown(path, 0, 0)
+        for path in [*profile.rglob('*'), profile]:os.chown(path, 0, 0, follow_symlinks=False)
     for path, mode in sorted(modes.items(), key=lambda r:len(r[0].parts), reverse=True):path.chmod(mode)
     ports = dict(read=list(management.literal(tools / 'mpm_ports_cli.py', 'SUPPORTED_STATE_FORMATS')),
                  write=list(management.literal(tools / 'mpm_ports_cli.py', 'SUPPORTED_STATE_FORMATS')),
@@ -216,12 +304,12 @@ def build_profile(profile, body, value, parts):
     measured = manifests.create(dict(label=d['label'], architecture=d['platform'].removesuffix('-linux'),
         requirements=dict(base_abi={r['name']:r['value'] for r in d['requirements']['base_abi']}, state_layout=d['requirements']['state_layout']),
         support=dict(ports=ports),
-        provides=sorted('/run/mojt-system/' + p.relative_to(profile).as_posix() for p in (profile / 'bin').iterdir() if p.is_file() and p.stat().st_mode & 0o111),
-        artifacts=dict(native=dict(components=d['components'])), provenance=dict(artifact=body['id'], composition=value['id'], assembler=manager()), profile=inventory(profile)))
+        provides=sorted('/run/mojt-system/' + p.relative_to(profile).as_posix() for p in (profile / 'bin').iterdir() if executable(p.relative_to(profile).as_posix())),
+        artifacts=dict(native=dict(components=d['components'])), provenance=dict(artifact=body['id'], composition=value['id'], assembler=manager(), runtime_outputs=outputs), profile=inventory(profile)))
     require(len(artifact.canonical(measured)) <= artifact.MAX_METADATA, 'System profile manifest exceeds metadata limit')
     # The root is private and read-only only after both generated files exist.
     profile.chmod(0o755);io.write_json(profile / 'manifest.json', measured);profile.chmod(0o555)
-    for directory in [p for p in profile.rglob('*') if p.is_dir()] + [profile]:io.sync_directory(directory)
+    for directory in [p for p in profile.rglob('*') if not p.is_symlink() and p.is_dir()] + [profile]:io.sync_directory(directory)
     return measured
 
 
@@ -266,9 +354,10 @@ def _retain(root, info, body, source, encoding, acquisition=None):
     try:
         checksum, size = io.frozen_copy(source / 'archive.tar.zst', stage / 'archive.tar.zst')
         require(dict(sha256=checksum, size=size) == encoding and artifact.verify(stage / 'archive.tar.zst', body['id']) == body, 'System import changed after preview')
-        io.unpack_regular(stage / 'archive.tar.zst', body, stage)
+        io.unpack_regular(stage / 'archive.tar.zst', body, stage, symlinks=True)
         for row in reversed(body['files']):
-            os.chown(stage / row['path'], 0, 0);(stage / row['path']).chmod(stored_mode(row))
+            os.chown(stage / row['path'], 0, 0, follow_symlinks=False)
+            if row['type'] != 'symlink':(stage / row['path']).chmod(stored_mode(row))
         receipt = base.record(base.RECEIPT, dict(installation=info['installation'], kind='system', artifact=body['id'], archive=encoding,
             representation='system-object-v1', dependencies=body['dependencies'], trust=io.acquisition_trust(acquisition, body['id'], checksum, size),
             installed_utc=datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'), uid=os.geteuid(), manager=manager(),
@@ -285,8 +374,9 @@ def _freeze(archive, work, expected=None, *, budget=artifact.MAX_CONTENT):
     work.mkdir();checksum, size = io.frozen_copy(archive, work / 'archive.tar.zst')
     body = artifact.verify(work / 'archive.tar.zst', expected);acceptable(body)
     require(sum(r.get('size', 0) for r in body['files']) <= budget, 'System dependency bundle exceeds content budget')
-    io.unpack_regular(work / 'archive.tar.zst', body, work)
-    for row in reversed(body['files']):(work / row['path']).chmod(stored_mode(row))
+    io.unpack_regular(work / 'archive.tar.zst', body, work, symlinks=True)
+    for row in reversed(body['files']):
+        if row['type'] != 'symlink':(work / row['path']).chmod(stored_mode(row))
     return body, dict(sha256=checksum, size=size)
 
 
@@ -296,17 +386,22 @@ def target_identity(root):
     return dict(device=info.st_dev, inode=info.st_ino)
 
 
-def install(root, archive, identifier, *, dependency_files=(), dry_run=False, yes=False, acquisition=None, adapters=None):
+def install(root, archive, identifier, *, dependency_files=(), dry_run=False, yes=False, acquisition=None, adapters=None, dependency_acquisition=None):
     io.identifier(identifier);root = target(root, write=not dry_run)
     physical = target_identity(root)
     require(dry_run or os.geteuid() == 0, 'System realization requires an administrator')
     require(type(dependency_files) in (list, tuple) and len(dependency_files) <= 64, 'too many System dependency archives')
     marker = registry(root)
+    dependency_acquisition = dependency_acquisition or {}
+    require(type(dependency_acquisition) is dict, 'invalid System dependency acquisition records')
     if marker and management.present(object_path(root, identifier)):
         body, receipt = object_record(root, identifier, verify=True)
         completed = realization(root, identifier, verify=True)
         if completed:
             providers(root, retained_providers(root, identifier), adapters, effect=None if dry_run else 'verify')
+            if not dry_run:
+                profile = realization_path(root, identifier) / 'profile'
+                verify_links(profile, retained_providers(root, identifier), adapters, base.read(profile / 'manifest.json')['description']['provenance'].get('runtime_outputs', []))
             if not dry_run:
                 io.sync_directory(realization_path(root, identifier));io.sync_directory(realization_path(root, identifier).parent)
             return dict(changed=False, dry_run=dry_run, action='no-change', artifact=identifier, realization=completed['id'], selected='unchanged', running='unchanged')
@@ -324,17 +419,20 @@ def install(root, archive, identifier, *, dependency_files=(), dry_run=False, ye
             remaining -= sum(r.get('size', 0) for r in component['files'])
             acceptable(component, 'component');dep = component['id']
             require(dep in required and dep not in frozen, 'unexpected/duplicate System dependency archive')
+            io.acquisition_trust(dependency_acquisition.get(dep), dep, encoded['sha256'], encoded['size'])
             frozen[dep] = work / ('part-' + str(n));encodings[dep] = encoded;parts[dep] = (component, frozen[dep])
         for dep in required - set(parts):
             require(marker is not None and management.present(object_path(root, dep)), 'missing exact System component: ' + dep + '; supply --dependency-file')
             component, unused = object_record(root, dep, verify=True);acceptable(component, 'component');parts[dep] = (component, object_path(root, dep))
-        measured = build_profile(work / 'profile', body, comp, parts)
+        measured = build_profile(work / 'profile', body, comp, parts, **({'adapters':adapters} if adapters is not None else {}))
+        require(set(dependency_acquisition) <= set(frozen), 'unbound System dependency acquisition record')
         references = provider_references(parts)
         providers(root, references, adapters)
         require(target_identity(root) == physical, 'System target changed during preview')
         plan = base.record(PLAN, dict(target=str(root), target_identity=physical, installation=base.store_info(root)['installation'] if base.store_info(root) else None,
             artifact=identifier, composition=comp['id'], dependencies=sorted(required), manifest=measured['id'],
-            archive=encoding, providers=references, configuration_changes=False, service_changes=False, selection_changes=False, running_changes=False))
+            archive=encoding, providers=references, dependency_acquisition=dependency_acquisition,
+            configuration_changes=False, service_changes=False, selection_changes=False, running_changes=False))
         if dry_run:return dict(plan=plan, changed=False, dry_run=True, archive_verified=True, profile_validated=True)
         if not yes:
             print(json.dumps(plan, indent=2), file=__import__('sys').stderr)
@@ -348,9 +446,11 @@ def install(root, archive, identifier, *, dependency_files=(), dry_run=False, ye
             existing = realization(root, identifier, verify=True) if management.present(object_path(root, identifier)) else None
             if existing:
                 providers(root, retained_providers(root, identifier), adapters, effect='verify')
+                profile = realization_path(root, identifier) / 'profile'
+                verify_links(profile, retained_providers(root, identifier), adapters, base.read(profile / 'manifest.json')['description']['provenance'].get('runtime_outputs', []))
                 return dict(plan=plan, changed=False, realization=existing['id'])
             for dep in sorted(required):
-                if dep in frozen:_retain(root, info, parts[dep][0], frozen[dep], encodings[dep])
+                if dep in frozen:_retain(root, info, parts[dep][0], frozen[dep], encodings[dep], dependency_acquisition.get(dep))
                 else:object_record(root, dep, verify=True)
             receipt = _retain(root, info, body, work / 'generation', encoding, acquisition)
             if references:
@@ -364,8 +464,9 @@ def install(root, archive, identifier, *, dependency_files=(), dry_run=False, ye
             stage = Path(tempfile.mkdtemp(prefix='.install-', dir=destination.parent))
             try:
                 retained = {dep:(object_record(root, dep, verify=True)[0], object_path(root, dep)) for dep in required}
-                actual = build_profile(stage / 'profile', body, comp, retained)
+                actual = build_profile(stage / 'profile', body, comp, retained, **({'adapters':adapters} if adapters is not None else {}))
                 require(actual == measured, 'System profile changed after preview')
+                verify_links(stage / 'profile', references, adapters, runtime_outputs(retained))
                 dependencies = {dep:object_record(root, dep, verify=True)[1]['id'] for dep in sorted(required)}
                 proof = base.record(REALIZATION, dict(installation=info['installation'], artifact=identifier, receipt=receipt['id'], composition=comp['id'], manifest=actual['id'], dependencies=dependencies))
                 io.write_json(stage / 'realization.json', proof);stage.chmod(0o555);io.sync_directory(stage)
@@ -427,6 +528,7 @@ def status(root, *, verify=False, running_record=None, adapters=None):
             value = realization(root, identifier, verify=verify)
             if value:
                 measured = manifests.validate(base.read(realization_path(root, identifier) / 'profile/manifest.json'))
+                if verify:verify_links(realization_path(root, identifier) / 'profile', retained_providers(root, identifier), adapters, measured['description']['provenance'].get('runtime_outputs', []))
                 row.update(label=measured['description']['label'], composition=value['description']['composition'],
                            manifest=measured['id'], realization=value['id'], profile=str(realization_path(root, identifier) / 'profile'))
                 installed.append(row)
