@@ -36,6 +36,15 @@ bootstrap System Python/Nix against the new disk's own `/nix`, with its actual
 registration and accepted NAR hashes. Host Nix is not used; candidates do not
 execute during staging. Only the fixed registration load is performed, not the
 bootstrap setup script or arbitrary package hooks.
+The constructor also runs as init of its own PID namespace, with matching private
+procfs. Its exit (including failure) terminates only its descendant helpers before
+the parent unmounts the store. No host Nix process is killed and no lazy/forced
+unmount is used. This prevents a helper from retaining a failed chroot/store.
+
+The provider's complete executable-basename inventory is independent of public
+Ports alias syntax. Names such as `[` and hidden wrapped executables are valid
+inventory entries; path traversal, slash and control characters remain refused.
+An inventory entry does not automatically publish a public command alias.
 
 Both native candidates preserve the bootstrap startup/services/provider closure.
 Their labels, version file, harmless tooling marker and exact artifacts differ.
@@ -129,6 +138,12 @@ Mojt shutdown: old root and backing filesystem fully unmounted
 Busy unmount errors or the exitrd ERROR/read-only fallback are not clean-shutdown
 acceptance even if the machine powers off. If a phase fails, retain its output
 and checkpoint; do not rebuild or rerun earlier phases blindly.
+If a preparation failure leaves an unpublished image whose bootstrap adapter
+code predates a fix, keep it as evidence and use a new output with the current
+checkout and the same verified inputs. Do not patch its measured System code or
+deployment records in place. A busy cleanup from an older preparer requires
+identifying any remaining process rooted in that exact private chroot before
+signalling it; broad host Nix process cleanup is not part of this test.
 
 ## Scope after acceptance
 

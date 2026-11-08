@@ -25,6 +25,17 @@ def run(*args, **kwargs):
     return subprocess.run([str(v) for v in args], check=True, **kwargs)
 
 
+def isolated(command, proc, **kwargs):
+    """PID-namespace init exit kills only this construction's descendants.
+
+    Nix can start helpers which otherwise outlive a failed constructor and pin
+    its store mount. The private proc mount also matches the child PID namespace.
+    No host process is signalled and no lazy/forced unmount is used.
+    """
+    binary = shutil.which('unshare');require(binary is not None,'host unshare unavailable')
+    return run(binary,'--pid','--fork','--kill-child','--mount-proc='+str(proc),*command,**kwargs)
+
+
 @contextmanager
 def workspace(parent):
     work = Path(tempfile.mkdtemp(prefix='.system-v2-finalize-',dir=parent))
@@ -75,12 +86,12 @@ def finalize(image, package, identifier, generation):
             for source,destination,readonly in ((target,jail/'run/mojt-disk',False),(target/'nix',jail/'nix',False),
                     (profile,jail/'run/mojt-system',True),(target/'state/etc',jail/'etc',True),(Path('/dev'),jail/'dev',False)):
                 bind(source,destination,readonly=readonly)
-            (jail/'proc').mkdir(exist_ok=True);mount('-t','proc','proc',point=jail/'proc')
+            (jail/'proc').mkdir(exist_ok=True)
             env = dict(PATH='/run/mojt-system/libexec/mpm/bin:/run/mojt-system/bin:/usr/bin:/bin',
                        LC_ALL='C',HOME='/root',PYTHONDONTWRITEBYTECODE='1')
             chroot = shutil.which('chroot');require(chroot is not None,'host chroot unavailable')
-            run(chroot,jail,'/run/mojt-system/bin/python3','-I','-B','/run/preparation/runner.py',
-                'construct','--base-artifact',identifier,env=env)
+            isolated([chroot,jail,'/run/mojt-system/bin/python3','-I','-B','/run/preparation/runner.py',
+                      'construct','--base-artifact',identifier],jail/'proc',env=env)
             evidence = target/'state/var/lib/mojt/system-boot-acceptance/state.json'
             # External builder sidecars describe the v1 bootstrap assembly;
             # expose the actual A/B identities separately and remove the old

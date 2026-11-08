@@ -6,6 +6,7 @@ import importlib.util
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -74,6 +75,25 @@ class PreparationTests(unittest.TestCase):
             self.assertEqual(transition.defaults(root,profile)['missing'],['systemd/timesyncd.conf'])
             (etc/'systemd/journald.conf').unlink();(etc/'systemd').rmdir();(etc/'systemd').symlink_to(profile/'defaults')
             with self.assertRaisesRegex(ValueError,'parent'):transition.defaults(root,profile)
+
+
+@unittest.skipUnless(os.geteuid() == 0 and shutil.which('unshare'),'requires root PID/mount namespaces')
+class NamespaceTests(unittest.TestCase):
+    def test_failed_constructor_cannot_leave_a_helper_pinning_its_store_or_output_pipe(self):
+        probe = subprocess.run(['unshare','--pid','--fork','--kill-child','--mount-proc',sys.executable,'-I','-c','pass'],
+                               capture_output=True,text=True)
+        if probe.returncode:self.skipTest('kernel namespace permissions: '+probe.stderr.strip())
+        # The child inherits stdout and holds its working directory. Without
+        # namespace teardown, capture waits for that helper instead of returning
+        # the constructor's failure. No real Nix daemon is required for this bug.
+        with tempfile.TemporaryDirectory() as temporary:
+            code = ('import subprocess,sys; subprocess.Popen([sys.executable,"-I","-c",'
+                    '"import time; time.sleep(60)"]); print("constructor failed",flush=True); sys.exit(7)')
+            with self.assertRaises(subprocess.CalledProcessError) as failure:
+                prepare.isolated([sys.executable,'-I','-c',code],Path('/proc'),
+                                 cwd=temporary,capture_output=True,text=True,timeout=10)
+            self.assertEqual(failure.exception.returncode,7)
+            self.assertEqual(failure.exception.stdout.strip(),'constructor failed')
 
 
 if __name__ == '__main__':unittest.main()

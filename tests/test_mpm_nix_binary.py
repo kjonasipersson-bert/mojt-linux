@@ -66,6 +66,20 @@ class NixAdapterTests(unittest.TestCase):
             with self.subTest(change=change),self.assertRaises(ValueError):self.adapter.describe(ref,self.root)
         self.assertEqual(self.calls,[])
 
+    def test_provider_inventory_accepts_unix_basenames_without_publishing_ports_aliases(self):
+        from mpm_ports_profile import command
+        ref = copy.deepcopy(self.ref);names = ['.wrapped-tool','[','hello']
+        ref['identity']['commands'] = names
+        self.assertEqual(self.adapter.describe(ref,self.root)['commands'],
+                         {name:self.output+'/bin/'+name for name in names})
+        self.assertEqual(self.calls,[])
+        for name in ('.wrapped-tool','['):
+            with self.assertRaisesRegex(ValueError,'unsupported command alias'):command(name)
+        for name in ('','.','..','../outside','/absolute','one/two','line\nbreak','nul\x00byte'):
+            ref['identity']['commands'] = [name]
+            with self.subTest(name=name),self.assertRaisesRegex(ValueError,'basename'):
+                self.adapter.describe(ref,self.root)
+
     def test_catalog_bundle_exports_exact_frontend_bindings_without_import(self):
         import importlib.util
         import types
