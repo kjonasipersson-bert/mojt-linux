@@ -24,6 +24,14 @@ def require(ok, message):
     if not ok:raise ValueError(message)
 
 
+def check_source(tools=None):
+    """Fail before packaging/password entry; never change checkout permissions."""
+    sys.path.insert(0,str(REPO/'tools'))
+    import mpm_management
+    import mojt_system
+    return mpm_management.produce(Path(tools) if tools is not None else REPO/'tools',mojt_system.MPM_FILES)
+
+
 def fresh_output(value, inputs):
     output = Path(value).absolute()
     require(output == output.resolve() and not os.path.lexists(output), 'output must be a new nonsymlink directory')
@@ -100,6 +108,7 @@ def main(*, profile='kernel-source', finish=None):
     require(os.geteuid() != 0, 'run as the ordinary Debian user, without sudo; only image assembly invokes sudo')
     require(sys.stdin.isatty(), 'run this file directly in an interactive terminal, not through a heredoc or pipe')
     require(sys.version_info >= (3,11), 'Python 3.11+ required')
+    check_source()
     os.environ['PATH'] = HOST_PATH
     commands = COMMANDS + (('losetup','mount','umount','unshare','chroot') if profile == 'system-v2' else ())
     missing = [name for name in commands if not shutil.which(name)]

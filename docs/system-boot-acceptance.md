@@ -16,6 +16,13 @@ actual-archive/chroot path; it does not run this Nix-backed VM journey.
 ## Inputs and isolation
 
 Run preparation as the ordinary Debian user, directly in an interactive terminal.
+Clone with `umask 077`. Measured manager source files must be regular, single-link
+and not group/other writable; a clone created under `umask 002` can contain 0664
+files even inside a private test directory. The preparer checks this before
+packaging or invoking sudo and reports the exact unsafe file/mode. It does not
+silently change permissions or relax installed-code checks. For an owner-controlled
+private clone, remove group/other write bits on its regular `tools` files while
+preserving executable bits. No content change or provider re-export is needed.
 Use the current pinned source checkout for the image/preparation tools and all
 delivered MPM code. An already retained, verified step-10 provider payload with
 GNU tar can be reused: that export contains provider binaries, not the MPM source

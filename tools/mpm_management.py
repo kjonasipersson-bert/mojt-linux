@@ -227,7 +227,10 @@ def literal(file, name):
 def file_hash(file):
     info = file.lstat()
     require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and not info.st_mode & 0o022
-            and info.st_size <= 4 * MAX_METADATA, 'unsafe/unbounded manager implementation')
+            and info.st_size <= 4 * MAX_METADATA,
+            f'unsafe/unbounded manager implementation: {file} '
+            f'(mode={stat.S_IMODE(info.st_mode):04o}, links={info.st_nlink}, bytes={info.st_size}; '
+            'require a regular single-link file without group/other write access, at most 4 MiB)')
     with file.open('rb') as stream:return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 

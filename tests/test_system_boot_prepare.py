@@ -14,12 +14,30 @@ from unittest import mock
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(REPO/'tools'))
 import mpm_system_transition as transition
+import mpm_management as management
 
 spec = importlib.util.spec_from_file_location('system_boot_preparation',REPO/'tests/prepare-system-boot.py')
 prepare = importlib.util.module_from_spec(spec);spec.loader.exec_module(prepare)
+spec = importlib.util.spec_from_file_location('source_boot_preparation',REPO/'tests/prepare-kernel-source-boot.py')
+source_prepare = importlib.util.module_from_spec(spec);spec.loader.exec_module(source_prepare)
 
 
 class PreparationTests(unittest.TestCase):
+    def test_group_writable_checkout_reports_exact_file_without_changing_source(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            tools = Path(temporary)/'tools';tools.mkdir()
+            for name in management.CAPABILITY_FILES:
+                shutil.copy2(REPO/'tools'/name,tools/name)
+            checked = source_prepare.check_source(tools)
+            helper = tools/'mpm_cli.py';before = helper.read_bytes();mode = helper.stat().st_mode & 0o777
+            helper.chmod(mode | 0o020)
+            with self.assertRaisesRegex(ValueError,r'mpm_cli\.py.*mode=0664'):
+                source_prepare.check_source(tools)
+            self.assertEqual(helper.read_bytes(),before)
+            self.assertEqual(helper.stat().st_mode & 0o777,mode | 0o020)
+            helper.chmod(mode)
+            self.assertEqual(source_prepare.check_source(tools),checked)
+
     def test_failed_offline_workspace_is_retained_instead_of_recursively_cleaning_possible_mounts(self):
         with tempfile.TemporaryDirectory() as temporary:
             parent = Path(temporary)
