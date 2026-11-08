@@ -25,7 +25,7 @@ import mpm_boot_v2 as model
 import mpm_management as management
 import mpm_system_transition as transition
 import mpm_transaction as tx
-from mpm_request_plan import record
+from mpm_boot_v2 import record
 
 FORMAT = 'mojt-system-handover-v1'
 require = artifact.require

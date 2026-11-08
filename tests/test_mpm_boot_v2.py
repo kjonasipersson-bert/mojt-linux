@@ -41,6 +41,25 @@ def bound(source, data=b'opaque constructor output', image_size=10):
 
 
 class Records(unittest.TestCase):
+    def test_boot_evidence_has_inventory_bounds_without_changing_request_policy_or_ids(self):
+        import mpm_requests as requests
+        small=dict(installation='1'*32,names=['a','b'],unicode='\u00e5',enabled=True)
+        self.assertEqual(model.record(model.INPUTS,small),record(model.INPUTS,small))
+        inventory={str(n):dict(type='file',size=1) for n in range(4097)}
+        value=model.record('fixture',dict(inventory=inventory))
+        self.assertEqual(model.envelope(value,'fixture')['inventory'],inventory)
+        with self.assertRaisesRegex(ValueError,'invalid object'):requests.canonical(inventory)
+        with mock.patch.object(model,'MAX_NODES',2),self.assertRaisesRegex(ValueError,'object limit'):
+            model.canonical(dict(a=1,b=2,c=3))
+        with mock.patch.object(artifact,'MAX_METADATA',64),self.assertRaisesRegex(ValueError,'size limit'):
+            model.record('fixture',dict(text='x'*64))
+        nested=None
+        for unused in range(66):nested=[nested]
+        for invalid in ([None]*4097,nested,{'integer':2**63},{'float':0.5},{1:'key'},{'surrogate':'\ud800'}):
+            with self.subTest(kind=type(invalid).__name__),self.assertRaises(ValueError):model.canonical(invalid)
+        altered=copy.deepcopy(value);altered['description']['inventory']['0']['size']=2
+        with self.assertRaisesRegex(ValueError,'unsupported/corrupt'):model.envelope(altered,'fixture')
+
     def test_closed_acyclic_records_and_complete_menu_are_pure(self):
         source = fixture();value = bound(source);saved = copy.deepcopy(value)
         choice = record(model.SELECTION, dict(installation=source['description']['installation'], selected=value['id'], previous=None,

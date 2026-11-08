@@ -21,7 +21,7 @@ import mpm_boot_v2_store as store
 import mpm_management as management
 import mpm_native_io as io
 import mpm_transaction as tx
-from mpm_request_plan import record
+from mpm_boot_v2 import record
 
 READY = 'mojt-boot-stage-receipt-v1'
 HOOK = b'# Mojt native-v2 boot hook v1\nconfigfile /boot/mpm/grub.cfg\n'

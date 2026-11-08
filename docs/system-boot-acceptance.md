@@ -199,6 +199,17 @@ private modes. The existing root image-input pipeline runs under 077 and checks
 these state modes before disk publication; it uses a synthetic disk writer,
 so successful execution is not guest boot acceptance.
 
+Boot evidence uses its own bounded canonical record writer, not the Ports
+request writer's 4096-entry object limit. A native Kernel or provider file map
+can legitimately exceed that request limit: boot maps use the no-follow tree
+reader's 100000-node bound. The complete metadata document remains below 16 MiB;
+depth, list, scalar, Unicode and record-identity checks remain enforced. The
+canonical encoding and IDs of previously accepted small records are unchanged.
+Ports request limits are unchanged. A real 4097-file module inventory is captured,
+saved, independently read and reverified, including a changed-module refusal.
+Preparation prints the transition, handover and constructor phase separately so
+a failure no longer reports only the enclosing System label.
+
 ## Scope after acceptance
 
 This closes the prepared-candidate boot/return proof only. Public installed

@@ -33,6 +33,13 @@ def call(*args):
     return json.loads(result.stdout)
 
 
+def constructing(phase, function, *args, **kwargs):
+    print('System preparation: '+phase+'...',flush=True)
+    try:return function(*args,**kwargs)
+    except (OSError,ValueError,KeyError,subprocess.CalledProcessError) as error:
+        raise ValueError(phase+': '+str(error)) from error
+
+
 def checkpoint(path,value):
     temporary = path.with_name('.state-'+uuid.uuid4().hex)
     try:
@@ -66,7 +73,7 @@ def construct(base_id):
     import mpm_boot_handover as handover
     import mpm_boot_v2 as model
     import mpm_deployment as deployment
-    from mpm_request_plan import record
+    from mpm_boot_v2 import record
     adapter = NixBootAdapter(RUNTIME/'bin/nix-store');adapters = {'nix':adapter}
     # This fixed bootstrap operation loads the new disk's accepted registration;
     # no System setup script, package hook, evaluator or network build is run.
@@ -106,7 +113,8 @@ def construct(base_id):
     busybox = RUNTIME/'busybox';deployments = []
     for number,(label,identifier) in enumerate(candidates):
         print('Verifying and constructing '+label+' (complete closure scans can take a while)...',flush=True)
-        plan = transition.prepare(ROOT,identifier,baseline=str(old_records[0].parent.relative_to(ROOT)),adapters=adapters)
+        plan = constructing(label+' transition preflight',transition.prepare,ROOT,identifier,
+                            baseline=str(old_records[0].parent.relative_to(ROOT)),adapters=adapters)
         require(plan['description']['checks']['compatible'],str(plan['description']['checks']['errors']))
         realized = system.realization(ROOT,identifier)
         source = record(model.INPUTS,dict(installation=base.store_info(ROOT)['installation'],platform=old['platform'],layout='native-v2',
@@ -117,9 +125,10 @@ def construct(base_id):
             firmware=[],boot=dict(root_uuid=old['boot']['root_uuid'],console='serial',profile=model.PROFILE,extra_args=['quiet']),
             constructor=constructor.constructor(runtime,busybox,handover=True),state_requirements=[],
             management_required=selection.MANAGEMENT_SUPPORT))
-        contract = handover.prepare(ROOT,source,plan,adapters=adapters,
+        contract = constructing(label+' handover preparation',handover.prepare,ROOT,source,plan,adapters=adapters,
                                      tar=RUNTIME/'libexec/mpm/bin/tar')
-        staged = selection.stage(ROOT,source,bundle,busybox,work/('construction-'+str(number)),
+        staged = constructing(label+' initramfs construction and staging',selection.stage,
+                                 ROOT,source,bundle,busybox,work/('construction-'+str(number)),
                                  bounds=bounds,adapters=adapters,contract=contract)
         deployments.append(dict(label=label,artifact=identifier,deployment=staged['deployment']))
     require((ROOT/'boot/mojt/grub.cfg').read_bytes() == before_menu,'staging changed the bootstrap menu')

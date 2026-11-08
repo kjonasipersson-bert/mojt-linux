@@ -16,7 +16,8 @@ import mpm_boot_v2_store as store
 import mpm_kernel_boot as archive
 import mpm_native_io as io
 import mpm_system as system
-from mpm_request_plan import record, reference
+from mpm_request_plan import reference
+from mpm_boot_v2 import record
 
 RESERVED = {'bin','dev','etc','proc','sys','sysroot','newroot','modules','mojt','init','modules.list','shutdown'}
 LAUNCH = "import sys\nsys.path.insert(0, '/mojt/code')\nfrom mpm_boot_early import main\nmain()\n"

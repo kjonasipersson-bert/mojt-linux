@@ -29,6 +29,26 @@ import test_mpm_boot_v2 as fixtures
 
 
 class ReaderTests(unittest.TestCase):
+    def test_large_real_module_inventory_roundtrips_through_boot_records_and_reader(self):
+        source=fixtures.fixture();d=source['description']
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            for relative in ('realizations/base/'+d['base']['artifact'][7:]+'/tree/rootfs',
+                             'realizations/system/'+d['system']['artifact'][7:]+'/profile'):
+                (root/relative).mkdir(parents=True)
+            modules=root/'kernel/installed'/d['kernel']['artifact'][7:]/'payload/lib/modules'
+            modules.mkdir(parents=True)
+            for number in range(4097):(modules/('module-'+str(number)+'.ko')).write_bytes(b'fixture')
+            with mock.patch.object(constructor.system,'retained_providers',return_value=[]):
+                proof=constructor.capture(root,source,{})
+            self.assertGreater(len(proof['description']['modules']['inventory']),4096)
+            path=root/'proof.json';path.write_bytes(artifact.canonical(proof)+b'\n')
+            saved=early.read(path);early.proof(saved,source);early.verify_content(root,source,saved)
+            self.assertEqual(saved,proof)
+            (modules/'module-4096.ko').write_bytes(b'changed')
+            with self.assertRaisesRegex(ValueError,'modules tree differs'):
+                early.verify_content(root,source,saved)
+
     def test_inventory_is_bounded_covers_links_modes_and_never_follows_a_fifo(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary);(root/'file').write_bytes(b'unchanged');os.link(root/'file',root/'hardlink')

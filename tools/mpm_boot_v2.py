@@ -3,12 +3,15 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """Closed native-v2 boot records and pure GRUB rendering. No selection authority."""
 import copy
+import hashlib
+import json
 import re
 
 import mojt_artifact as artifact
 import mojt_boot as boot
 import mpm_management as management
-from mpm_request_plan import record, reference, identity
+from mpm_request_plan import reference, identity
+from mpm_boot_inventory import MAX_NODES
 from mpm_selection import components
 
 INPUTS = 'mojt-boot-inputs-v2'
@@ -20,6 +23,38 @@ HEADER = '# Mojt native boot selection v2\n'
 MAX_BOOT = 256 * 1024 * 1024
 MAX_ENTRIES = 128
 require = artifact.require
+
+
+def canonical(value):
+    """Boot evidence permits bounded file maps, independently of Ports wishes.
+
+    The encoding is unchanged: accepted small records keep their exact IDs.
+    Inventories have the same node bound as the no-follow tree reader; the
+    complete document still fits the existing 16 MiB metadata envelope.
+    """
+    def check(item, depth=0):
+        require(depth <= 64, 'boot metadata nesting limit')
+        if type(item) is dict:
+            require(len(item) <= MAX_NODES, 'boot metadata object limit: '+str(len(item))+' entries')
+            require(all(type(k) is str for k in item), 'boot metadata keys must be strings')
+            for k,v in item.items():check(k,depth+1);check(v,depth+1)
+        elif type(item) is list:
+            require(len(item) <= 4096, 'boot metadata collection limit')
+            for v in item:check(v,depth+1)
+        elif type(item) is str:
+            require(not any(0xD800 <= ord(c) <= 0xDFFF for c in item), 'invalid boot metadata Unicode')
+        else:
+            require(item is None or type(item) in (bool,int), 'unsupported boot metadata scalar')
+            if type(item) is int:require(-(2**63) <= item < 2**63, 'boot metadata integer range')
+    check(value)
+    raw=json.dumps(value,sort_keys=True,ensure_ascii=True,separators=(',',':')).encode('ascii')
+    require(len(raw) < artifact.MAX_METADATA, 'boot metadata size limit')
+    return raw
+
+
+def record(fmt, description):
+    body=dict(format=fmt,description=description)
+    return dict(**body,id='sha256:'+hashlib.sha256(canonical(body)).hexdigest())
 
 
 def envelope(value, fmt):

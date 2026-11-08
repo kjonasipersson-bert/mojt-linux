@@ -16,7 +16,7 @@ import mpm_boot_inventory as inventory
 import mpm_boot_v2 as model
 import mpm_native_io as io
 import mpm_transaction as tx
-from mpm_request_plan import record
+from mpm_boot_v2 import record
 
 FORMAT = 'mojt-boot-base-realization-v1'
 require = artifact.require
