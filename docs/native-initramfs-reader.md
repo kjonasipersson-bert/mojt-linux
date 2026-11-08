@@ -21,9 +21,11 @@ candidate System's interpreter and does not discover an interpreter on PATH.
 
 The provider-neutral `boot_paths(reference, root)` protocol returns sorted,
 nonoverlapping relative roots. It is a projection of an already verified
-reference, not verification by itself. The Nix adapter projects the exact output
+reference, not verification by itself. The separate `NixBootAdapter` projects the exact output
 closure, refusing an offline copy that merely resembles the inspector's store.
-Other adapters must explicitly implement the same finite tree-export protocol.
+The accepted Nix runtime adapter remains unchanged, preserving the existing
+unchanged-startup review contract. Other adapters must explicitly implement the
+same finite tree-export protocol.
 The reader needs no provider executable or provider database in initramfs.
 
 The versioned `mojt-boot-python-runtime-v1` record binds the original reference,

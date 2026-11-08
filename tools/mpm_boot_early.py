@@ -3,10 +3,8 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """Trusted initramfs reader. Verification produces paths, never executes target code."""
 import json
-import os
 from pathlib import Path
 import stat
-import sys
 
 import mojt_artifact as artifact
 import mpm_base as base

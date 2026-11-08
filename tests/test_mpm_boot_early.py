@@ -38,6 +38,9 @@ class ReaderTests(unittest.TestCase):
             os.mkfifo(root/'fifo')
             with self.assertRaisesRegex(ValueError,'unsupported'):inventory.snapshot(root)
             with self.assertRaisesRegex(ValueError,'linked'):inventory.path(root,'link')
+            compressed=root/'large.ko.gz';compressed.write_bytes(gzip.compress(b'x'*4096))
+            with mock.patch.object(model,'MAX_BOOT',1024),self.assertRaisesRegex(ValueError,'modules exceed limit'):
+                constructor.decode_modules([compressed],root/'decoded')
 
     def test_early_selector_is_exact_and_provider_export_cannot_adopt_an_offline_store(self):
         value=fixtures.bound(fixtures.fixture());valid=model.cmdline(value)
@@ -45,10 +48,10 @@ class ReaderTests(unittest.TestCase):
         for bad in (valid+' mojt.deployment='+value['id'][7:], valid+' root=UUID=other',valid+' init=/evil',
                     valid.replace('console=ttyS0,115200','console=tty0'), 'BOOT_IMAGE=/elsewhere '+valid):
             with self.subTest(command=bad),self.assertRaises(ValueError):early.command_line(bad,value)
-        from mpm_nix_binary import NixBinaryAdapter
+        from mpm_nix_boot import NixBootAdapter
         path='/nix/store/'+'a'*32+'-python'
         ref=dict(provider='nix',identity=dict(format='mojt-nix-output-v1',output=path,closure=[dict(path=path,nar_hash='sha256:'+'a'*52)],commands=[]))
-        adapter=NixBinaryAdapter('/pinned/nix-store',lambda args:self.fail('no Nix execution during path projection'))
+        adapter=NixBootAdapter('/pinned/nix-store',lambda args:self.fail('no Nix execution during path projection'))
         with self.assertRaisesRegex(ValueError,'accepted live'):adapter.boot_paths(ref,Path('/nonexistent-offline-disk'))
         with self.assertRaisesRegex(ValueError,'export contract'):
             constructor.provider_paths(Path('/'),dict(provider='fixture',identity={'id':1}),{'fixture':object()})
@@ -78,7 +81,9 @@ class ConstructorTests(unittest.TestCase):
         runtime_source=work/'runtime-source';runtime_source.mkdir(mode=0o700)
         names=['usr/bin/python3',str(stdlib).lstrip('/')]
         (runtime_source/'usr/bin').mkdir(parents=True);shutil.copy2(host,runtime_source/'usr/bin/python3')
-        shutil.copytree(stdlib,runtime_source/names[1],symlinks=True,ignore=shutil.ignore_patterns('__pycache__','site-packages','dist-packages'))
+        # Normalize distro stdlib links while copying this trusted fixture; the
+        # production Nix bundle preserves and confines its actual closure links.
+        shutil.copytree(stdlib,runtime_source/names[1],symlinks=False,ignore=shutil.ignore_patterns('__pycache__','site-packages','dist-packages'))
         libraries=set()
         for executable in [host,*sorted(stdlib.rglob('*.so'))]:
             result=subprocess.run(['ldd',str(executable)],text=True,capture_output=True,check=False)

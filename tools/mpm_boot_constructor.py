@@ -5,7 +5,6 @@
 import hashlib
 import os
 from pathlib import Path
-import shutil
 
 import mojt_artifact as artifact
 import mojt_system as paths
@@ -40,7 +39,7 @@ def check_runtime_links(tree, runtime):
             if row['type'] != 'symlink':continue
             guest = '/'+name+('' if relative == '.' else '/'+relative)
             resolved = paths.virtual_file(tree,guest);suffix = resolved.relative_to(tree).as_posix()
-            require(resolved.exists() and any(suffix == p or suffix.startswith(p+'/') for p in d['trees']), 'bootstrap link escapes its measured closure')
+            require(resolved.exists() and any(suffix == p or suffix.startswith(p+'/') for p in d['trees']), 'bootstrap link escapes its measured closure: '+guest+' -> '+str(resolved))
     executable = paths.virtual_file(tree,d['interpreter'])
     require(executable.is_file() and executable.stat().st_mode & 0o001, 'bootstrap interpreter is not executable')
 
@@ -125,11 +124,39 @@ while :; do
     sleep 1
 done
 mount -t ext4 -o ro "$device" /sysroot || panic "cannot mount exact root read-only"
- /bin/busybox env -i PATH=/bin LC_ALL=C '''+python+''' -I -S -B /mojt/launch.py --root /sysroot --inputs /mojt/inputs.json --proof /mojt/trees.json \
+/bin/busybox env -i PATH=/bin LC_ALL=C '''+python+''' -I -S -B /mojt/launch.py --root /sysroot --inputs /mojt/inputs.json --proof /mojt/trees.json \
     >/mojt/verified.json || panic "exact deployment verification failed"
 cat /mojt/verified.json
 panic "verification passed; System initialization and handover are not integrated"
 '''
+
+
+def decode_modules(modules, directory):
+    """Bound output while decoding; the shared writer then sees ordinary .ko files."""
+    import gzip
+    import lzma
+    import subprocess
+    directory.mkdir();result = [];remaining = model.MAX_BOOT
+    for number,source in enumerate(modules):
+        process = None
+        if source.suffix == '.ko':stream = source.open('rb')
+        elif source.suffix == '.gz':stream = gzip.open(source,'rb')
+        elif source.suffix == '.xz':stream = lzma.open(source,'rb')
+        else:
+            require(source.suffix == '.zst', 'unsupported early module encoding')
+            process = subprocess.Popen(['zstd','-q','-d','-c','--',str(source)],stdin=subprocess.DEVNULL,
+                                       stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
+            stream = process.stdout
+        target = directory/(str(number)+'.ko')
+        try:
+            with stream, target.open('xb') as output:
+                while chunk := stream.read(min(128*1024,remaining+1)):
+                    remaining -= len(chunk);require(remaining >= 0, 'decoded early modules exceed limit');output.write(chunk)
+            if process is not None:require(process.wait() == 0, 'early module decoder failed')
+        finally:
+            if process is not None and process.poll() is None:process.kill();process.wait()
+        result.append(target)
+    return result
 
 
 def build(root, source, runtime_directory, busybox, work, *, bounds, adapters):
@@ -156,6 +183,7 @@ def build(root, source, runtime_directory, busybox, work, *, bounds, adapters):
         modules = vm.module_paths(d['kernel']['release'],payload/'lib/modules'/d['kernel']['release'],network=True)
         for module in modules:
             require(module == module.resolve() and payload/'lib/modules' in module.parents, 'early module outside exact Kernel tree')
+        modules = decode_modules(modules,work/'decoded-modules')
         def assemble(initroot):
             check_runtime_links(runtime_directory/'tree',runtime)
             for name,rows in runtime_d['trees'].items():

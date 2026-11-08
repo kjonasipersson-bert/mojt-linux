@@ -58,17 +58,6 @@ class NixBinaryAdapter:
                 and '..' not in Path(path).parts, 'noncanonical provider link')
         return any(path==r['path'] or path.startswith(r['path']+'/') for r in i['closure'])
 
-    def boot_paths(self,ref,root):
-        """Finite verified-output tree export, never an unrelated inspector store."""
-        i=self.identity(ref);names=[]
-        for row in i['closure']:
-            absolute=store_path(row['path']);relative=str(absolute).lstrip('/')
-            target=Path(root)/relative
-            require(target==target.resolve() and target.is_dir() and target.samefile(absolute),
-                    'boot export target is not the accepted live Nix object')
-            names.append(relative)
-        return sorted(names)
-
     def verify_path(self,ref,path,*,executable=False):
         require(self.contains(ref,path), 'unbound provider path')
         resolved=Path(path).resolve(strict=True)
