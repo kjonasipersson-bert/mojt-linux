@@ -27,7 +27,13 @@ def main(argv=None):
     base.add_argument("--release", type=Path, required=True)
     base.add_argument("--revision", type=int, required=True)
     base.add_argument("--attachment", action="append", default=[], metavar="NAME=FILE")
-    for command in (generic, kernel, base):
+    system = commands.add_parser("system")
+    system.add_argument("--tree", type=Path, required=True)
+    system.add_argument("--generation", required=True)
+    system.add_argument("--version", required=True)
+    system.add_argument("--revision", type=int, required=True)
+    system.add_argument("--nix-store", type=Path, required=True)
+    for command in (generic, kernel, base, system):
         command.add_argument("--output", type=Path, required=True)
     verify = commands.add_parser("verify")
     verify.add_argument("archive", type=Path)
@@ -36,6 +42,12 @@ def main(argv=None):
     try:
         if args.action == "verify":
             result = artifact.verify(args.archive, args.expected_id)
+        elif args.action == "system":
+            from mojt_system_package import package
+            from mpm_nix_binary import NixBinaryAdapter
+            artifact.require(args.nix_store.is_absolute(), 'select an absolute retained nix-store helper')
+            result = package(args.tree, args.generation, args.version, args.revision, args.output,
+                             adapter=NixBinaryAdapter(args.nix_store))
         else:
             if args.action == "kernel":
                 spec, attachments = artifact.kernel_input(args.build, args.revision)
