@@ -170,7 +170,7 @@ def _prepare(root, identifier, baseline, adapters):
         state=persistent['evidence'], checks=dict(compatible=not errors, errors=errors, base=compatibility, management=management_report,
             providers=requirements, startup=reviewed, account_shells=shell_report, defaults=observed_defaults),
         writes=False, effects=False, stage_ready=False, boot_ready=False,
-        remaining_gates=['measured native-v2 constructor and early-boot reader', 'preflight-to-native-v2-slot integration',
+        remaining_gates=['System preflight, initialization and mount handover in the native-v2 reader', 'preflight-to-native-v2-slot integration',
                          'atomic next-boot selection and focused owner System boot/return acceptance']))
     require(len(artifact.canonical(result)) <= artifact.MAX_METADATA, 'System plan exceeds metadata limit')
     return result

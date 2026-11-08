@@ -72,7 +72,7 @@ Dry-run creates no target directories, slots or locks.
 audit. `retain`, including its no-op and dry-run paths, does repeat that audit.
 Neither function certifies the initramfs contents as executable or bootable.
 
-## Gates still ahead
+## Verification constructor and remaining gates
 
 Results explicitly say `boot_ready=false` and `selection_changed=false`.
 Retention does not run the System startup/state compatibility review, prepare
@@ -81,9 +81,11 @@ replace a menu. It must not be exposed as successful `system stage` yet.
 The pure GRUB renderer/parser is available for validation; there is no v2
 selection publisher. Existing v1 boot paths are untouched.
 
-The next integration must connect a measured initramfs constructor and trusted
-early reader, verify all exact inputs before mounting them, join the existing
-System preflight and initialization gates, and publish one authoritative complete
-next-boot choice. Only then run a focused owner System boot/return test. This
+The [verification initramfs constructor and trusted reader](native-initramfs-reader.md)
+now bind measured code/runtime and check exact on-disk trees using only the
+interpreter bundled in initramfs. That constructor deliberately stops after
+verification. The next integration must join System preflight, initialization,
+Base mountpoint realization and runtime/shutdown handover, then publish one
+authoritative complete next-boot choice. Only then run a focused owner System boot/return test. This
 increment needs focused record/storage CI, not another unchanged Kernel/Base VM
 matrix or a hardware test.

@@ -110,8 +110,9 @@ The [read-only System transition plan](system-transition.md) now binds installed
 artifacts to the selected Base/Kernel and checks a bounded unchanged-startup
 contract. [Native-v2 records and immutable slot retention](native-boot-v2.md)
 now bind verified installed inputs and publish complete content without selection.
-The measured constructor/early reader, authoritative selection and broader
-initialization/service gating remain next. Reuse the accepted Base/Kernel VM
+The [diagnostic verification constructor/early reader](native-initramfs-reader.md)
+now packs a trusted private Python closure and verifies exact trees. System
+preflight/initialization, mount/shutdown handover and authoritative selection remain next. Reuse the accepted Base/Kernel VM
 evidence; request a focused owner VM test when the new System/initialization
 boundary exists. Bootstrap, build integration and final combined acceptance
 remain steps 4, 5 and 6 of the consolidation plan.
