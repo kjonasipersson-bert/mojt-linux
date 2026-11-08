@@ -25,7 +25,7 @@ require = artifact.require
 def envelope(value, fmt):
     artifact.fields(value, ('format', 'id', 'description'))
     require(value['format'] == fmt and value == record(fmt, value['description']), 'unsupported/corrupt ' + fmt)
-    require(len(artifact.canonical(value)) <= artifact.MAX_METADATA, 'unbounded boot metadata')
+    require(len(artifact.canonical(value)) < artifact.MAX_METADATA, 'unbounded boot metadata')
     return copy.deepcopy(value['description'])
 
 
@@ -168,14 +168,18 @@ def render(value, entries):
         i = actual['inputs']['description']
         require(i['installation'] == d['installation'], 'menu contains a foreign installation')
         machine = (i['platform'], i['boot']['root_uuid'], i['boot']['console'], i['boot']['profile'])
-        if policy is None:policy = machine
+        if policy is None:
+            policy = machine
+            text += 'search --no-floppy --fs-uuid --set=root ' + i['boot']['root_uuid'] + '\n'
         require(machine == policy, 'menu mixes machine boot policies')
         prefix = '/' + row['path']
         text += ("menuentry 'Mojt Base " + i['base']['release'] + ' / System ' + i['system']['generation'] +
                  ' / Linux ' + i['kernel']['release'] + ' / ' + record['id'][7:19] + "' --id 'mpm-" + record['id'][7:] + "' {\n" +
                  '    linux ' + prefix + '/vmlinuz ' + cmdline(record) + '\n' +
                  '    initrd ' + prefix + '/initramfs.cpio.gz\n}\n')
-    return text.encode('ascii')
+    raw = text.encode('ascii')
+    require(len(raw) <= artifact.MAX_METADATA, 'generated boot menu exceeds metadata limit')
+    return raw
 
 
 def parse_menu(raw, entries):

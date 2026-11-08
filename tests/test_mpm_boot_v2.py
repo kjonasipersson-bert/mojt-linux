@@ -49,6 +49,7 @@ class Records(unittest.TestCase):
         self.assertEqual(model.parse_menu(menu, entries), choice);self.assertEqual(value, saved)
         self.assertIn(('mojt.deployment='+value['id'][7:]).encode(), menu)
         self.assertNotIn(b'mojt.system=', menu)
+        self.assertIn(('search --no-floppy --fs-uuid --set=root '+source['description']['boot']['root_uuid']).encode(),menu)
         with self.assertRaises(ValueError):model.parse_menu(menu+b'# edited\n', entries)
         for edit in (lambda d:d.update(layout='native-v1'), lambda d:d.update(extra=True),
                      lambda d:d['boot'].update(extra_args=['init=/evil']), lambda d:d['boot'].update(console='local'),
