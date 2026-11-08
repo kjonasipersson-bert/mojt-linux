@@ -84,6 +84,31 @@ def save_path(path, output):
     finally:temporary.unlink(missing_ok=True)
 
 
+def publish(output, image, *, scripts, volume, record_format, base, kernel, kernel_release, path_file=None):
+    """Publish the existing completed image and its read-only acceptance input."""
+    inputs = output/'acceptance-files'; (inputs/'tests').mkdir(parents=True)
+    inventory = {}
+    for name in scripts:
+        target = inputs/'tests'/name
+        shutil.copyfile(REPO/'tests'/name,target)
+        inventory['tests/'+name] = hashlib.sha256(target.read_bytes()).hexdigest()
+    (inputs/'inventory.json').write_text(json.dumps(inventory,indent=2)+'\n')
+    data_disk = output/'acceptance-inputs.img'
+    with data_disk.open('xb') as stream:stream.truncate(32*1024**2)
+    run(['mkfs.ext4','-F','-q','-L',volume,'-d',inputs,data_disk])
+    data_disk.chmod(0o400)
+    script = launcher((image/'run-qemu.sh').read_text(), image, data_disk)
+    (output/'run-qemu.sh').write_text(script); (output/'run-qemu.sh').chmod(0o755)
+    run(['bash','-n',output/'run-qemu.sh'])
+    revision = subprocess.check_output(['git','-C',str(REPO),'rev-parse','HEAD'],text=True).strip()
+    (output/'preparation.json').write_text(json.dumps(dict(format=record_format,
+        source_revision=revision, base=base, kernel=kernel,
+        kernel_release=kernel_release, inputs=inventory),indent=2)+'\n')
+    if path_file:save_path(path_file,output)
+    print('READY:',output/'run-qemu.sh')
+    print('Fresh native VM plus separate read-only test-input disk; previous VM disks are not attached.')
+
+
 def main(*, profile='kernel-source', finish=None):
     profiles = {
         'kernel-source': ('system-source-kernel-boot', ('run-kernel-source-boot.py','run-kernel-source-acceptance.py'),
@@ -110,7 +135,7 @@ def main(*, profile='kernel-source', finish=None):
     require(sys.version_info >= (3,11), 'Python 3.11+ required')
     check_source()
     os.environ['PATH'] = HOST_PATH
-    commands = COMMANDS + (('losetup','mount','umount','unshare','chroot') if profile == 'system-v2' else ())
+    commands = COMMANDS + (('losetup','mount','umount','unshare','chroot','blkid') if profile == 'system-v2' else ())
     missing = [name for name in commands if not shutil.which(name)]
     require(not missing, 'missing host commands: '+', '.join(missing))
     for path in (args.base_release/'manifest.toml', args.base_release/'rootfs.tar.zst',
@@ -158,27 +183,9 @@ def main(*, profile='kernel-source', finish=None):
         finish(image=image, base_package=output/'base-package'/packed['archive']['file'],
                base_artifact=packed['artifact']['id'], generation=generation)
         image.rename(output/'image');image = output/'image'
-    inputs = output/'acceptance-files'; (inputs/'tests').mkdir(parents=True)
-    inventory = {}
-    for name in scripts:
-        target = inputs/'tests'/name
-        shutil.copyfile(REPO/'tests'/name,target)
-        inventory['tests/'+name] = hashlib.sha256(target.read_bytes()).hexdigest()
-    (inputs/'inventory.json').write_text(json.dumps(inventory,indent=2)+'\n')
-    data_disk = output/'acceptance-inputs.img'
-    with data_disk.open('xb') as stream:stream.truncate(32*1024**2)
-    run(['mkfs.ext4','-F','-q','-L',volume,'-d',inputs,data_disk])
-    data_disk.chmod(0o400)
-    script = launcher((image/'run-qemu.sh').read_text(), image, data_disk)
-    (output/'run-qemu.sh').write_text(script); (output/'run-qemu.sh').chmod(0o755)
-    run(['bash','-n',output/'run-qemu.sh'])
-    revision = subprocess.check_output(['git','-C',str(REPO),'rev-parse','HEAD'],text=True).strip()
-    (output/'preparation.json').write_text(json.dumps(dict(format=record_format,
-        source_revision=revision, base=packed['artifact']['id'], kernel=args.expected_kernel,
-        kernel_release=kernel['metadata']['kernel_release'], inputs=inventory),indent=2)+'\n')
-    if args.path_file:save_path(args.path_file,output)
-    print('READY:',output/'run-qemu.sh')
-    print('Fresh native VM plus separate read-only test-input disk; previous VM disks are not attached.')
+    publish(output,image,scripts=scripts,volume=volume,record_format=record_format,
+            base=packed['artifact']['id'],kernel=args.expected_kernel,
+            kernel_release=kernel['metadata']['kernel_release'],path_file=args.path_file)
 
 
 if __name__ == '__main__':

@@ -36,6 +36,9 @@ bootstrap System Python/Nix against the new disk's own `/nix`, with its actual
 registration and accepted NAR hashes. Host Nix is not used; candidates do not
 execute during staging. Only the fixed registration load is performed, not the
 bootstrap setup script or arbitrary package hooks.
+The root-only loop mapping uses the GPT's validated byte offset and length, then
+checks the ext4 UUID against the exact bootstrap deployment. It needs no
+asynchronously created `/dev/loopXp2` node, udev wait or guessed filesystem offset.
 The constructor also runs as init of its own PID namespace, with matching private
 procfs. Its exit (including failure) terminates only its descendant helpers before
 the parent unmounts the store. No host Nix process is killed and no lazy/forced
@@ -61,7 +64,8 @@ bootstrap direct-boot launcher is removed so it cannot bypass that menu.
 This is fresh-image preparation, not live v1 migration or active-v2 staging.
 The trusted bootstrap interpreter is explicitly taken from the supplied System's
 verified Python output. Its private initramfs closure does not change Base libc.
-The ordinary Nix runtime adapter is unchanged. Hashes are integrity evidence,
+Normal Nix import/closure checks are retained; executable inventory uses basename
+validation independently of public alias policy. Hashes are integrity evidence,
 not publisher authentication.
 
 ## Debian preparation
@@ -144,6 +148,27 @@ checkout and the same verified inputs. Do not patch its measured System code or
 deployment records in place. A busy cleanup from an older preparer requires
 identifying any remaining process rooted in that exact private chroot before
 signalling it; broad host Nix process cleanup is not part of this test.
+
+### Resume a failure before native construction
+
+For a failure while attaching the loop device, the completed bootstrap disk and
+its root password can be reused. As the ordinary host user, with the current
+pinned checkout:
+
+```sh
+python3 -I -B "$SOURCE/tests/prepare-system-boot.py" \
+  --resume-output "$LAB/vm-fixed" \
+  --path-file /home/jonasp/mojt-system-boot-test-path
+```
+
+The command refuses published/linked/nonprivate outputs, mismatched retained
+Base/Kernel preview, started firmware, existing loop associations, changed
+bootstrap manager code or a target where native construction has already started.
+It revalidates GPT extents, filesystem UUID and the on-disk bootstrap deployment.
+It does not edit old measured code, overwrite a finished image, repackage Base,
+reimport Kernel or ask for another VM root password. Final publication reuses the
+same acceptance-input/launcher function as a fresh preparation. This is a narrow
+pre-construction resume, not recovery of arbitrary partial native transactions.
 
 ## Scope after acceptance
 

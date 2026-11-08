@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import runpy
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -23,6 +24,40 @@ def require(ok, message):
 
 def run(*args, **kwargs):
     return subprocess.run([str(v) for v in args], check=True, **kwargs)
+
+
+def root_extent(size, table):
+    """Validate the builder's GPT, then map only its exact root byte extent."""
+    sys.path.insert(0,str(REPO/'tools'))
+    import mojt_boot
+    require(type(size) is int and size % mojt_boot.MIB == 0,'unexpected disk byte length')
+    expected = mojt_boot.layout(size//mojt_boot.MIB)
+    require(type(table) is dict and table.get('label') == 'gpt' and table.get('sectorsize') == mojt_boot.SECTOR
+            and table.get('unit','sectors') == 'sectors','unsupported disk partition table')
+    parts = table.get('partitions')
+    require(type(parts) is list and len(parts) == 2,'expected exactly the EFI and root partitions')
+    require(all(type(p) is dict and all(type(p.get(k)) is int for k in ('start','size')) for p in parts),'invalid partition extent')
+    actual = [(p['start']*mojt_boot.SECTOR,p['size']*mojt_boot.SECTOR) for p in parts]
+    require(actual == [(expected['esp_offset'],expected['esp_bytes']),(expected['root_offset'],expected['root_bytes'])],
+            'GPT extents differ from the native image layout')
+    return actual[1]
+
+
+def attach_root(disk, expected_uuid):
+    """Return a UUID-checked root-only loop mapping, without partition nodes."""
+    require(not subprocess.check_output(['losetup','--associated',str(disk)],text=True).strip(),
+            'unpublished disk already has a loop mapping; inspect it before retrying')
+    table = json.loads(subprocess.check_output(['sfdisk','--json',str(disk)],text=True))['partitiontable']
+    offset,length = root_extent(disk.stat().st_size,table)
+    loop = subprocess.check_output(['losetup','--find','--show','--offset',str(offset),
+        '--sizelimit',str(length),str(disk)],text=True).strip()
+    try:
+        require(loop.startswith('/dev/loop') and Path(loop).is_block_device(), 'root filesystem loop device unavailable: '+loop)
+        actual_uuid = subprocess.check_output(['blkid','--probe','--match-tag','UUID','--output','value',loop],text=True).strip()
+        require(actual_uuid == expected_uuid,'mapped root filesystem UUID differs from the bootstrap deployment')
+    except BaseException:
+        run('losetup','--detach',loop);raise
+    return loop
 
 
 def isolated(command, proc, **kwargs):
@@ -59,6 +94,13 @@ def finalize(image, package, identifier, generation):
     require((image/'disk.img').is_file() and not (image/'disk.img').is_symlink(), 'regular new disk required')
     require(package == package.resolve() and package.is_file(), 'regular exact Base archive required')
     require(generation == 'system-v2-bootstrap', 'unexpected bootstrap generation')
+    sys.path.insert(0,str(REPO/'tools'))
+    import mojt_artifact as artifact
+    import mpm_deployment as deployment
+    original = artifact.read_json(image/'selected-deployment.json');old = deployment.validate_deployment(original)
+    require(old['system']['generation'] == generation and old['base']['artifact'] == identifier,'fresh image inputs differ')
+    require(not (image/'OVMF_VARS.fd').exists(),'refuse an image whose firmware launcher was started')
+    disk = image/'disk.img'
     # The parent remains private; a failure never produces the public launcher.
     with workspace(image.parent) as work:
         target = work/'target';target.mkdir()
@@ -70,19 +112,23 @@ def finalize(image, package, identifier, generation):
             mount('--bind',source,point=destination)
             if readonly:run('mount','-o','remount,bind,ro',destination)
         try:
-            loop = subprocess.check_output(['losetup','--find','--show','--partscan',str(image/'disk.img')],text=True).strip()
-            require(loop.startswith('/dev/loop') and Path(loop+'p2').is_block_device(), 'partitioned loop device unavailable')
-            mount(loop+'p2',point=target)
-            old = json.loads((image/'selected-deployment.json').read_text())['description']
-            require(old['system']['generation'] == generation and old['base']['artifact'] == identifier, 'fresh image inputs differ')
+            loop = attach_root(disk,old['boot']['root_uuid'])
+            mount(loop,point=target)
             require(not (target/'boot/mpm/format').exists() and not (target/'boot/mpm/grub.cfg').exists(), 'refuse an existing managed boot registry')
+            require(not os.path.lexists(target/'artifacts') and not os.path.lexists(target/'realizations'),
+                    'native construction already started; inspect its checkpoint instead of resuming this image')
+            require(artifact.read_json(target/'boot/mojt'/generation/old['base']['release']/'deployment.json') == original,
+                    'on-disk bootstrap deployment differs')
+            import mojt_system
+            profile = target/'system'/generation
+            require(all(artifact.file_sha(profile/'tools'/name) == artifact.file_sha(REPO/'tools'/name)
+                        for name in mojt_system.MPM_FILES),'bootstrap manager code differs from the current checkout; use a fresh image')
             # A disposable execution root, separate from every measured Base.
             shutil.copytree(target/'base'/old['base']['release'],jail,symlinks=True)
             prep = jail/'run/preparation';(prep/'tools').mkdir(parents=True)
             shutil.copyfile(package,prep/'base.tar.zst')
             shutil.copyfile(REPO/'tests/run-system-boot-acceptance.py',prep/'runner.py')
             shutil.copyfile(REPO/'tools/mojt_system_package.py',prep/'tools/mojt_system_package.py')
-            profile = target/'system'/generation
             for source,destination,readonly in ((target,jail/'run/mojt-disk',False),(target/'nix',jail/'nix',False),
                     (profile,jail/'run/mojt-system',True),(target/'state/etc',jail/'etc',True),(Path('/dev'),jail/'dev',False)):
                 bind(source,destination,readonly=readonly)
@@ -97,6 +143,7 @@ def finalize(image, package, identifier, generation):
             # expose the actual A/B identities separately and remove the old
             # direct-boot launcher, which would bypass the new GRUB authority.
             shutil.copyfile(evidence,image/'native-v2-acceptance.json')
+            (image/'native-v2-acceptance.json').chmod(0o644)
             direct = image/'run-qemu-direct.sh'
             require(direct.is_file() and not direct.is_symlink(),'unexpected bootstrap direct launcher')
             direct.unlink()
@@ -115,8 +162,39 @@ def finalize(image, package, identifier, generation):
         require(clean, 'offline construction did not finish')
 
 
+def resume_inputs(output):
+    """Only a private, still unpublished pre-construction image can resume."""
+    output = Path(output).absolute()
+    require(output == output.resolve() and output.is_dir(),'resume output must be an existing nonsymlink directory')
+    info = output.stat()
+    require(info.st_uid == os.geteuid() and not stat.S_IMODE(info.st_mode) & 0o077,'resume output must be owned and private')
+    require(output != REPO and output not in REPO.parents and REPO not in output.parents,'resume output overlaps checkout')
+    for name in ('image','run-qemu.sh','preparation.json','acceptance-files','acceptance-inputs.img'):
+        require(not os.path.lexists(output/name),'publication already started; inspect '+str(output/name))
+    image = output/'.unpublished-image'
+    require(image.is_dir() and image == image.resolve(),'unpublished image missing or linked')
+    sys.path.insert(0,str(REPO/'tools'))
+    import mojt_artifact as artifact
+    import mpm_deployment as deployment
+    for file in (output/'base-package-result.json',output/'image-preview.json',image/'selected-deployment.json'):
+        require(stat.S_ISREG(file.lstat().st_mode),'regular retained preparation metadata required')
+    packed = artifact.read_json(output/'base-package-result.json');artifact.validate_descriptor(packed['artifact'])
+    require(packed['artifact']['kind'] == 'base','retained Base package required')
+    archive = packed['archive']['file'];artifact.relative(archive)
+    require('/' not in archive,'flat retained Base archive required')
+    package = output/'base-package'/archive
+    require(package == package.resolve() and package.is_file(),'retained Base archive missing or linked')
+    old = deployment.validate_deployment(artifact.read_json(image/'selected-deployment.json'))
+    preview = artifact.read_json(output/'image-preview.json')
+    require(old['system']['generation'] == 'system-v2-bootstrap' and old['base']['artifact'] == packed['artifact']['id']
+            and preview == dict(format='mojt-native-image-preview-v1',base=packed['artifact']['id'],
+                                kernel=old['kernel']['artifact'],imports=False,image_written=False),
+            'retained Base/Kernel/bootstrap preview differs')
+    return output,image,package,old
+
+
 def main():
-    if '--finalize' in sys.argv[1:]:
+    if any(v == '--finalize' or v.startswith('--finalize=') for v in sys.argv[1:]):
         parser = argparse.ArgumentParser(description='Internal unpublished-image finalizer')
         parser.add_argument('--finalize',type=Path,required=True)
         parser.add_argument('--base-package',type=Path,required=True)
@@ -130,6 +208,22 @@ def main():
         run('sudo','env','PATH='+shared['HOST_PATH'],'unshare','--mount','--propagation','private',sys.executable,'-I','-B',
             Path(__file__).resolve(),'--finalize',image,'--base-package',base_package,
             '--base-artifact',base_artifact,'--generation',generation)
+    if any(v == '--resume-output' or v.startswith('--resume-output=') for v in sys.argv[1:]):
+        parser = argparse.ArgumentParser(description='Finish an unpublished image which failed before native construction')
+        parser.add_argument('--resume-output',type=Path,required=True);parser.add_argument('--path-file',type=Path)
+        args = parser.parse_args()
+        require(os.geteuid() != 0,'resume as the ordinary Debian user; only finalization invokes sudo')
+        os.environ['PATH'] = shared['HOST_PATH'];os.umask(0o077);shared['check_source']()
+        for name in ('sudo','unshare','losetup','sfdisk','blkid','mount','umount','chroot','mkfs.ext4','bash','git'):
+            require(shutil.which(name) is not None,'missing host command: '+name)
+        output,image,package,old = resume_inputs(args.resume_output)
+        print('Resuming only native-v2 preparation; retaining the existing disk, inputs and VM root password...',flush=True)
+        finish(image=image,base_package=package,base_artifact=old['base']['artifact'],generation='system-v2-bootstrap')
+        image.rename(output/'image');image = output/'image'
+        shared['publish'](output,image,scripts=('run-system-boot-acceptance.py',),volume='MOJT_SYSTEM_BOOT',
+            record_format='mojt-system-boot-preparation-v1',base=old['base']['artifact'],kernel=old['kernel']['artifact'],
+            kernel_release=old['kernel']['release'],path_file=args.path_file)
+        return
     shared['main'](profile='system-v2',finish=finish)
 
 

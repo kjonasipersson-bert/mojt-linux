@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """Focused unpublished-image boundaries and real assembled-default paths."""
 import importlib.util
+import copy
 import os
 from pathlib import Path
 import shutil
@@ -16,6 +17,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(REPO/'tools'))
 import mpm_system_transition as transition
 import mpm_management as management
+import mojt_boot
 
 spec = importlib.util.spec_from_file_location('system_boot_preparation',REPO/'tests/prepare-system-boot.py')
 prepare = importlib.util.module_from_spec(spec);spec.loader.exec_module(prepare)
@@ -24,6 +26,25 @@ source_prepare = importlib.util.module_from_spec(spec);spec.loader.exec_module(s
 
 
 class PreparationTests(unittest.TestCase):
+    def test_exact_root_extent_ignores_partition_node_names_and_refuses_wrong_geometry(self):
+        table = dict(label='gpt',unit='sectors',sectorsize=512,partitions=[
+            dict(node='/dev/nonexistentp1',start=2048,size=262144),
+            dict(node='/dev/nonexistentp2',start=264192,size=782336)])
+        self.assertEqual(prepare.root_extent(512*1024**2,table),(129*1024**2,382*1024**2))
+        for changed in (dict(table,sectorsize=4096),dict(table,label='dos'),dict(table,partitions=table['partitions'][::-1])):
+            with self.assertRaises(ValueError):prepare.root_extent(512*1024**2,changed)
+        changed = copy.deepcopy(table);changed['partitions'][1]['start'] += 1
+        with self.assertRaisesRegex(ValueError,'extents'):prepare.root_extent(512*1024**2,changed)
+
+    def test_resume_refuses_published_output_or_linked_target_without_changes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)/'private';output.mkdir(mode=0o700)
+            (output/'image').mkdir();marker = output/'image/retain';marker.write_text('published')
+            with self.assertRaisesRegex(ValueError,'publication'):prepare.resume_inputs(output)
+            self.assertEqual(marker.read_text(),'published')
+            alias = Path(temporary)/'alias';alias.symlink_to(output,target_is_directory=True)
+            with self.assertRaisesRegex(ValueError,'nonsymlink'):prepare.resume_inputs(alias)
+
     def test_group_writable_checkout_reports_exact_file_without_changing_source(self):
         with tempfile.TemporaryDirectory() as temporary:
             tools = Path(temporary)/'tools';tools.mkdir()
@@ -79,6 +100,30 @@ class PreparationTests(unittest.TestCase):
 
 @unittest.skipUnless(os.geteuid() == 0 and shutil.which('unshare'),'requires root PID/mount namespaces')
 class NamespaceTests(unittest.TestCase):
+    @unittest.skipUnless(all(shutil.which(c) for c in ('sfdisk','mkfs.ext4','losetup','blkid','blockdev')),
+                         'requires real GPT/ext4/loop tools')
+    def test_root_only_mapping_reads_uuid_and_length_without_partition_scan_and_rejects_wrong_uuid(self):
+        probe = subprocess.run(['losetup','--find'],capture_output=True,text=True)
+        if probe.returncode:self.skipTest('loop device availability: '+probe.stderr.strip())
+        with tempfile.TemporaryDirectory() as temporary:
+            disk = Path(temporary)/'new.img';layout = mojt_boot.layout(512)
+            with disk.open('xb') as stream:stream.truncate(layout['disk_bytes'])
+            subprocess.run(['sfdisk','--no-reread','--no-tell-kernel',str(disk)],
+                input=mojt_boot.partition_script(layout),capture_output=True,text=True,check=True)
+            expected = '12345678-1234-1234-1234-123456789abc'
+            filesystem = Path(temporary)/'root.ext4'
+            with filesystem.open('xb') as stream:stream.truncate(layout['root_bytes'])
+            subprocess.run(['mkfs.ext4','-F','-q','-U',expected,str(filesystem)],check=True)
+            mojt_boot.copy_partition(filesystem,disk,layout['root_offset'],layout['root_bytes'])
+            loop = prepare.attach_root(disk,expected)
+            try:
+                length = int(subprocess.check_output(['blockdev','--getsize64',loop],text=True))
+                self.assertEqual(length,layout['root_bytes'])
+            finally:subprocess.run(['losetup','--detach',loop],check=True)
+            with self.assertRaisesRegex(ValueError,'UUID differs'):
+                prepare.attach_root(disk,'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+            self.assertEqual(subprocess.check_output(['losetup','--associated',str(disk)],text=True).strip(),'')
+
     def test_failed_constructor_cannot_leave_a_helper_pinning_its_store_or_output_pipe(self):
         probe = subprocess.run(['unshare','--pid','--fork','--kill-child','--mount-proc',sys.executable,'-I','-c','pass'],
                                capture_output=True,text=True)
