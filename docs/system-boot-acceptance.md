@@ -50,6 +50,9 @@ bootstrap setup script or arbitrary package hooks.
 The root-only loop mapping uses the GPT's validated byte offset and length, then
 checks the ext4 UUID against the exact bootstrap deployment. It needs no
 asynchronously created `/dev/loopXp2` node, udev wait or guessed filesystem offset.
+After detach, preparation waits up to five seconds for its exact mapping to
+disappear; kernel loop teardown may be deferred. Other mappings are neither
+detached nor waited for. A timeout retains evidence and refuses publication.
 The constructor also runs as init of its own PID namespace, with matching private
 procfs. Its exit (including failure) terminates only its descendant helpers before
 the parent unmounts the store. No host Nix process is killed and no lazy/forced

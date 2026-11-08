@@ -26,6 +26,18 @@ source_prepare = importlib.util.module_from_spec(spec);spec.loader.exec_module(s
 
 
 class PreparationTests(unittest.TestCase):
+    def test_deferred_detach_waits_for_only_its_own_mapping_without_detaching_other_devices(self):
+        disk = Path('/private/new.img')
+        with mock.patch.object(prepare,'run') as run, mock.patch.object(prepare.time,'sleep') as pause, \
+             mock.patch.object(prepare.subprocess,'check_output',side_effect=[
+                 '/dev/loop7: pending\n/dev/loop8: unrelated\n','/dev/loop8: unrelated\n']):
+            prepare.detach_root('/dev/loop7',disk)
+            run.assert_called_once_with('losetup','--detach','/dev/loop7')
+            pause.assert_called_once_with(0.05)
+        with mock.patch.object(prepare,'run'),mock.patch.object(prepare.time,'monotonic',side_effect=[0,6]), \
+             mock.patch.object(prepare.subprocess,'check_output',return_value='/dev/loop7: pending\n'):
+            with self.assertRaisesRegex(ValueError,'pending/in use'):prepare.detach_root('/dev/loop7',disk)
+
     def test_exact_root_extent_ignores_partition_node_names_and_refuses_wrong_geometry(self):
         table = dict(label='gpt',unit='sectors',sectorsize=512,partitions=[
             dict(node='/dev/nonexistentp1',start=2048,size=262144),
@@ -119,7 +131,7 @@ class NamespaceTests(unittest.TestCase):
             try:
                 length = int(subprocess.check_output(['blockdev','--getsize64',loop],text=True))
                 self.assertEqual(length,layout['root_bytes'])
-            finally:subprocess.run(['losetup','--detach',loop],check=True)
+            finally:prepare.detach_root(loop,disk)
             with self.assertRaisesRegex(ValueError,'UUID differs'):
                 prepare.attach_root(disk,'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
             self.assertEqual(subprocess.check_output(['losetup','--associated',str(disk)],text=True).strip(),'')

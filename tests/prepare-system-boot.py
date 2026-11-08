@@ -14,6 +14,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -56,8 +57,19 @@ def attach_root(disk, expected_uuid):
         actual_uuid = subprocess.check_output(['blkid','--probe','--match-tag','UUID','--output','value',loop],text=True).strip()
         require(actual_uuid == expected_uuid,'mapped root filesystem UUID differs from the bootstrap deployment')
     except BaseException:
-        run('losetup','--detach',loop);raise
+        detach_root(loop,disk);raise
     return loop
+
+
+def detach_root(loop, disk):
+    """Kernel loop detach is deferred; wait only for this mapping to vanish."""
+    run('losetup','--detach',loop)
+    deadline = time.monotonic()+5
+    while True:
+        rows = subprocess.check_output(['losetup','--associated',str(disk)],text=True).splitlines()
+        if not any(row.startswith(loop+':') for row in rows):return
+        require(time.monotonic() < deadline,'root loop mapping still pending/in use: '+loop+' for '+str(disk))
+        time.sleep(0.05)
 
 
 def isolated(command, proc, **kwargs):
@@ -154,8 +166,8 @@ def finalize(image, package, identifier, generation):
                 try:run('umount',point)
                 except subprocess.CalledProcessError:errors.append(str(point))
             if loop:
-                try:run('losetup','--detach',loop)
-                except subprocess.CalledProcessError:errors.append(loop)
+                try:detach_root(loop,disk)
+                except (OSError,ValueError,subprocess.CalledProcessError) as error:errors.append(loop+': '+str(error))
             # Never recursively delete through a mount whose cleanup failed.
             if errors:
                 raise RuntimeError('offline mount cleanup failed: '+', '.join(errors))
