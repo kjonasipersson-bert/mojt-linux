@@ -168,7 +168,9 @@ select the most recently installed generation or write an upgrade wish.
 
 Current profile packaging and named-source/cache installation are now joined.
 Next: System-scoped deployment and authorized initialization/service
-gating. Generalized boot v2 and the final joined MBT/bootstrap/build flow remain
+gating. The [verified System plan](system-transition.md) now binds exact inputs
+and implements the first unchanged-startup/tooling-only review, with no effects
+or boot publication. Generalized boot v2 and the final joined MBT/bootstrap/build flow remain
 separate roadmap steps. No new manual A/B/A run is required for native
 content-only installation; focused VM acceptance is needed when an actual new
 System can be selected and booted.

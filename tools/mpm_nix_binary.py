@@ -65,6 +65,25 @@ class NixBinaryAdapter:
                 'provider path escapes closure or has an unsupported type')
         require(not executable or resolved.is_file() and resolved.stat().st_mode & 0o001, 'provider export is not a public executable')
 
+    def preserves(self,refs,baseline):
+        """Pure exact closure comparison for the unchanged-startup System subset."""
+        require(type(baseline) is dict and type(baseline.get('objects')) is list, 'missing selected Nix closure facts')
+        accepted={}
+        for ref in refs:
+            for row in self.identity(ref)['closure']:
+                require(row['path'] not in accepted or accepted[row['path']]==row['nar_hash'], 'conflicting accepted Nix hashes')
+                accepted[row['path']]=row['nar_hash']
+        expected={}
+        for row in baseline['objects']:
+            store_path(row['path'])
+            require(type(row.get('nar_hash')) is str and row['nar_hash'], 'selected Nix closure lacks NAR hashes')
+            require(row['path'] not in expected, 'duplicate selected Nix object')
+            expected[row['path']]=row['nar_hash']
+        require(expected, 'empty selected Nix closure')
+        missing=sorted(path for path,value in expected.items() if accepted.get(path)!=value)
+        return dict(policy='preserve-exact-startup-closure-v1', compatible=not missing, missing_or_changed=missing,
+                    runtime_files=['tools/mpm_nix_binary.py'])
+
     def ensure(self,ref,root):
         i=self.identity(ref);directory=Path(root)/'retained/nix'
         protected_directory(directory, write=True, label='Nix retention')

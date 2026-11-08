@@ -43,14 +43,23 @@ def main(argv, *, runtime=None):
         install.add_argument('--dependency-file', type=Path, action='append', default=[])
         install.add_argument('--dry-run', action='store_true');install.add_argument('-y', '--yes', action='store_true')
         status = sub.add_parser('status');status.add_argument('--verify', action='store_true')
-        for command in (install, status):
+        plan = sub.add_parser('plan');plan.add_argument('--artifact', required=True);plan.add_argument('--baseline')
+        for command in (install, status, plan):
             command.add_argument('--disk-root', type=Path);command.add_argument('--json', action='store_true')
         args = parser.parse_args(argv)
         base.require(args.disk_root is not None or runtime is not None, 'specify --disk-root for a checkout/offline target')
         root = args.disk_root or runtime.disk
         adapters = ProviderAdapters(runtime if args.disk_root is None else None)
         if runtime is not None and args.disk_root is None:base.require(os.path.ismount(root), 'running installation disk is unavailable')
-        if args.action == 'install':
+        if args.action == 'plan':
+            from mpm_system_transition import prepare
+            baseline = args.baseline
+            if baseline is None and runtime is not None and args.disk_root is None:
+                from mpm_cli import boot_options
+                options = boot_options(['stage'], runtime)
+                baseline = options[options.index('--baseline') + 1] if '--baseline' in options else None
+            result = prepare(root, args.artifact, baseline=baseline, adapters=adapters)
+        elif args.action == 'install':
             if args.source is not None:
                 base.require(args.archive_sha256 is not None and not args.dependency_file, '--source requires --archive-sha256 and obtains components from the same snapshot')
                 from mpm_system_source import install as acquire
@@ -63,7 +72,7 @@ def main(argv, *, runtime=None):
         else:
             running = base.read(runtime.running) if runtime is not None and args.disk_root is None and runtime.running.is_file() else None
             result = system.status(root, verify=args.verify, running_record=running, adapters=adapters)
-        if args.json or args.action == 'install':print(json.dumps(result, indent=2, sort_keys=True))
+        if args.json or args.action in ('install', 'plan'):print(json.dumps(result, indent=2, sort_keys=True))
         else:
             print('System on:', result['target'])
             for title, key in (('Running', 'running'), ('Next boot', 'selected')):

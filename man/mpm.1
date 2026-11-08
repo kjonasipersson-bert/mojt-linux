@@ -122,6 +122,15 @@ cache/profile; --snapshot pins accepted metadata. Controlled profile links are
 retained. Late-created privileged helpers remain unavailable runtime requirements;
 installation does not create them or establish boot readiness. See docs/system-packaging.md.
 .PP
+.BI "system plan --artifact " "sha256:FULL_ID"
+performs verified read-only transition planning against the selected deployment.
+It binds the installed System, exact retained Base/Kernel, actual ABI/state/account
+facts and measured management support. The initial gate allows tooling changes
+while preserving startup/services/provider closures; missing defaults and service
+changes block. Administrator access is required for retained content inspection.
+It creates no slot, runs no initializer, and reports stage_ready=false and
+boot_ready=false pending native-v2 deployment. See docs/system-transition.md.
+.PP
 .B system status
 reports installed generations, retained incomplete generations, components and
 explicit running/next-boot identities separately. A matching human label does
