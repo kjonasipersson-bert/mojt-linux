@@ -1,0 +1,61 @@
+# Mojt Linux
+# Copyright (C) 2026 Jonas Persson
+# SPDX-License-Identifier: GPL-2.0-only
+"""Focused unpublished-image boundaries and real assembled-default paths."""
+import importlib.util
+import os
+from pathlib import Path
+import shutil
+import sys
+import tempfile
+import unittest
+from unittest import mock
+
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(REPO/'tools'))
+import mpm_system_transition as transition
+
+spec = importlib.util.spec_from_file_location('system_boot_preparation',REPO/'tests/prepare-system-boot.py')
+prepare = importlib.util.module_from_spec(spec);spec.loader.exec_module(prepare)
+
+
+class PreparationTests(unittest.TestCase):
+    def test_failed_offline_workspace_is_retained_instead_of_recursively_cleaning_possible_mounts(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            with self.assertRaisesRegex(OSError,'mount cleanup'):
+                with prepare.workspace(parent) as work:
+                    (work/'evidence').write_text('retain')
+                    raise OSError('mount cleanup')
+            self.assertEqual((work/'evidence').read_text(),'retain')
+            shutil.rmtree(work)
+            with prepare.workspace(parent) as successful:
+                (successful/'temporary').touch()
+            self.assertFalse(successful.exists())
+
+    def test_existing_published_image_is_refused_before_any_mount_or_loop_operation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            image = Path(temporary)/'image';image.mkdir();(image/'disk.img').write_bytes(b'unchanged')
+            with mock.patch.object(prepare.os,'geteuid',return_value=0),mock.patch.object(prepare,'run') as run:
+                with self.assertRaisesRegex(ValueError,'unpublished'):
+                    prepare.finalize(image,Path('/unrelated/base.tar.zst'),'sha256:'+'a'*64,'system-v2-bootstrap')
+                run.assert_not_called()
+            self.assertEqual((image/'disk.img').read_bytes(),b'unchanged')
+
+    def test_systemd_resources_observe_actual_persistent_paths_and_refuse_linked_parent(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary);profile = root/'profile';(profile/'defaults').mkdir(parents=True)
+            etc = root/'state/etc';(etc/'systemd').mkdir(parents=True)
+            for name in ('journald.conf','timesyncd.conf'):
+                (profile/'defaults'/name).write_text('resource')
+                (etc/'systemd'/name).symlink_to('/run/mojt-system/defaults/'+name)
+            first = transition.defaults(root,profile)
+            self.assertEqual(first['missing'],[])
+            self.assertFalse((etc/'journald.conf').exists())
+            (etc/'systemd/timesyncd.conf').unlink()
+            self.assertEqual(transition.defaults(root,profile)['missing'],['systemd/timesyncd.conf'])
+            (etc/'systemd/journald.conf').unlink();(etc/'systemd').rmdir();(etc/'systemd').symlink_to(profile/'defaults')
+            with self.assertRaisesRegex(ValueError,'parent'):transition.defaults(root,profile)
+
+
+if __name__ == '__main__':unittest.main()

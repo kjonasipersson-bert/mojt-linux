@@ -102,8 +102,9 @@ checks distinct selected/running identities. It covers stale expected selection,
 no-op, retained entries, refusal of v1 fallback and failures before/after menu
 replacement. This is not a real firmware/Kernel/System boot or owner Debian test.
 
-Next prepare one disposable VM using these manager APIs and prove System A/B/A
-with exact Base/Kernel/state retained. Then close active-v2 preflight/staging and
+The [disposable A/B/A VM preparation and checkpointed owner test](system-boot-acceptance.md)
+now use these manager APIs. Owner boot/return is pending, with exact
+Base/Kernel/state retained. Then close active-v2 preflight/staging and
 request/configuration joins before MBT bootstrap reuses the same code. Self-hosting
 still requires pinned source recipes for Base and Mojt-owned System code, plus
 the joined build/package/install/boot cycle; the new menu alone does not prove it.

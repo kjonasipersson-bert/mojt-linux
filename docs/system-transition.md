@@ -82,6 +82,11 @@ not a user flag bypassing these gates.
 
 ## Remaining deployment work
 
+The existing assembled System's flat `defaults/journald.conf` and
+`defaults/timesyncd.conf` are resources linked from `/etc/systemd`; observation
+checks those actual persistent paths, without creating unused top-level copies
+or replacing local configuration. A linked `systemd` parent is refused.
+
 Both `stage_ready` and `boot_ready` remain false. This reader observes the
 existing verified v1 layout; it does not convert it to native-v2 or alter the
 closed v1 System reference. The [native-v2 record/storage layer](native-boot-v2.md) now validates inputs,
@@ -94,7 +99,9 @@ current-state checks and a separate boot Base to runtime/shutdown handover.
 implemented. Planning/staging a new generation from an active v2 baseline and
 request-to-boot integration remain before complete administration. No backward migration is required.
 
-At that boundary, perform one focused owner VM boot/return of a real changed
+The [prepared single A/B/A owner test](system-boot-acceptance.md) now exercises the
+new-image constructor and installed selection/status frontend. Perform that
+focused owner VM boot/return of a real changed
 System with Base/Kernel/state retained. These synthetic preflight tests do not
 claim that acceptance. Three focused cases cover tooling/provider preservation,
 real root retained-content inspection without writes, and refusal of changed

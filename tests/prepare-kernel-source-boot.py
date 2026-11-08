@@ -76,12 +76,14 @@ def save_path(path, output):
     finally:temporary.unlink(missing_ok=True)
 
 
-def main(*, profile='kernel-source'):
+def main(*, profile='kernel-source', finish=None):
     profiles = {
         'kernel-source': ('system-source-kernel-boot', ('run-kernel-source-boot.py','run-kernel-source-acceptance.py'),
                           'MOJT_SOURCE_BOOT', 'mojt-kernel-source-boot-preparation-v1'),
         'base': ('system-base-boot-test', ('run-base-boot-acceptance.py',),
                  'MOJT_BASE_BOOT', 'mojt-base-boot-preparation-v1'),
+        'system-v2': ('system-v2-bootstrap', ('run-system-boot-acceptance.py',),
+                      'MOJT_SYSTEM_BOOT', 'mojt-system-boot-preparation-v1'),
     }
     require(profile in profiles, 'unknown acceptance profile')
     generation, scripts, volume, record_format = profiles[profile]
@@ -99,18 +101,20 @@ def main(*, profile='kernel-source'):
     require(sys.stdin.isatty(), 'run this file directly in an interactive terminal, not through a heredoc or pipe')
     require(sys.version_info >= (3,11), 'Python 3.11+ required')
     os.environ['PATH'] = HOST_PATH
-    missing = [name for name in COMMANDS if not shutil.which(name)]
+    commands = COMMANDS + (('losetup','mount','umount','unshare','chroot') if profile == 'system-v2' else ())
+    missing = [name for name in commands if not shutil.which(name)]
     require(not missing, 'missing host commands: '+', '.join(missing))
     for path in (args.base_release/'manifest.toml', args.base_release/'rootfs.tar.zst',
                  args.kernel_package, args.system_payload/'system.json', args.busybox,
                  Path('/usr/share/OVMF/OVMF_CODE_4M.fd'), Path('/usr/share/OVMF/OVMF_VARS_4M.fd')):
         require(path.is_file(), 'missing input: '+str(path))
-    if profile == 'base':
+    if profile in ('base','system-v2'):
         sys.path.insert(0,str(REPO/'tools'))
         import mojt_system
         payload = mojt_system.load_payload(args.system_payload)
         require('tar' in payload['packages'],
-                'Base boot test needs a freshly prepared System payload with retained GNU tar')
+                'native boot test needs a verified System payload with retained GNU tar')
+    require((profile == 'system-v2') == (finish is not None), 'System-v2 preparation requires its offline finalizer')
     output = fresh_output(args.output, (REPO,args.base_release,args.kernel_package,args.system_payload))
     # Validate the actual future registry ancestry before packaging any inputs.
     sys.path.insert(0,str(REPO/'tools'))
@@ -130,7 +134,7 @@ def main(*, profile='kernel-source'):
     kernel = json.loads((output/'kernel-registry/installed'/args.expected_kernel.split(':')[1]/'artifact.json').read_bytes())
     bounds = context(packed['artifact'], kernel, BASE_FORMAT); base_context(bounds)
     (output/'base-context.json').write_text(json.dumps(bounds,indent=2)+'\n')
-    image = output/'image'
+    image = output/('.unpublished-image' if finish is not None else 'image')
     command = [*python,REPO/'tools/mojt-native-image.py',
         '--base-package',output/'base-package'/packed['archive']['file'], '--base-artifact',packed['artifact']['id'],
         '--base-context',output/'base-context.json', '--kernel-registry',output/'kernel-registry',
@@ -141,6 +145,10 @@ def main(*, profile='kernel-source'):
     run([*command,'--dry-run'],result=output/'image-preview.json')
     print('Building the NEW image; sudo and a new VM root password may be requested...',flush=True)
     run(['sudo','env','PATH='+HOST_PATH,*command])
+    if finish is not None:
+        finish(image=image, base_package=output/'base-package'/packed['archive']['file'],
+               base_artifact=packed['artifact']['id'], generation=generation)
+        image.rename(output/'image');image = output/'image'
     inputs = output/'acceptance-files'; (inputs/'tests').mkdir(parents=True)
     inventory = {}
     for name in scripts:
