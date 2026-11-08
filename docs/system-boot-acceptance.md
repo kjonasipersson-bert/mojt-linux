@@ -37,6 +37,10 @@ initial hook/menu is published. Only after successful unmount/detach does the
 preparer rename `image` and publish its outer `run-qemu.sh` and path file. A
 failure retains private evidence and publishes no READY launcher. Do not launch
 an internal `.unpublished-image` or use the finalizer on an existing installation.
+The final image's `native-v2-acceptance.json` records the prepared A/B identities.
+Earlier external image-builder sidecars describe bootstrap assembly only;
+installed MPM and the v2 GRUB menu are the runtime/selection authority. The
+bootstrap direct-boot launcher is removed so it cannot bypass that menu.
 
 This is fresh-image preparation, not live v1 migration or active-v2 staging.
 The trusted bootstrap interpreter is explicitly taken from the supplied System's

@@ -81,6 +81,14 @@ def finalize(image, package, identifier, generation):
             chroot = shutil.which('chroot');require(chroot is not None,'host chroot unavailable')
             run(chroot,jail,'/run/mojt-system/bin/python3','-I','-B','/run/preparation/runner.py',
                 'construct','--base-artifact',identifier,env=env)
+            evidence = target/'state/var/lib/mojt/system-boot-acceptance/state.json'
+            # External builder sidecars describe the v1 bootstrap assembly;
+            # expose the actual A/B identities separately and remove the old
+            # direct-boot launcher, which would bypass the new GRUB authority.
+            shutil.copyfile(evidence,image/'native-v2-acceptance.json')
+            direct = image/'run-qemu-direct.sh'
+            require(direct.is_file() and not direct.is_symlink(),'unexpected bootstrap direct launcher')
+            direct.unlink()
             clean = True
         finally:
             errors = []
