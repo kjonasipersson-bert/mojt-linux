@@ -427,6 +427,16 @@ def unit(description, executable_path, extra="", dependencies=""):
 def install(tree, payload, record, busybox, login_mode, repo, console="serial", hardware_profile=None,
             generation=None):
     """Install only into a NEW copied VM tree. Original Base/state stay intact."""
+    # Public runtime paths must not inherit a private build workspace's umask.
+    # Private state (history, passwords, homes) keeps its explicit modes, and
+    # the caller's policy is restored even when fresh assembly fails.
+    previous = os.umask(0o022)
+    try:
+        return _install(tree,payload,record,busybox,login_mode,repo,console,hardware_profile,generation)
+    finally:os.umask(previous)
+
+
+def _install(tree, payload, record, busybox, login_mode, repo, console, hardware_profile, generation):
     step = record["step"]
     require(step < 10 or login_mode == "password", "account stage requires password login")
     require(console in ("serial", "local"), "unsupported console")
@@ -442,6 +452,12 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
     system.mkdir(parents=True)
     (tree / "system/current").symlink_to(key)
     shutil.copytree(payload / "nix", tree / "nix", symlinks=True)
+    # These are generated namespace directories, not provider output contents.
+    # Preserve every inventoried store object's own modes and bytes.
+    for name in ('nix','nix/store'):
+        namespace = tree/name
+        require(namespace.is_dir() and not namespace.is_symlink(),'unsupported copied provider namespace: '+name)
+        namespace.chmod(0o755)
     for directory, dirs, files in os.walk(tree / "nix", followlinks=False):
         os.chown(directory, 0, 0)
         for name in dirs + files:
@@ -832,6 +848,12 @@ def finalize_manifest(tree, generation, base, repo):
     # candidate code. This sidecar is an ordinary inventoried profile file, not an
     # unversioned extension to mojt-system-manifest-v1.
     if record['step'] >= 3:
+        for name in ('.','bin','tools','units','libexec/mpm/bin'):
+            point = system if name == '.' else system/name
+            info = point.lstat()
+            require(stat.S_ISDIR(info.st_mode) and stat.S_IMODE(info.st_mode) & 0o005 == 0o005
+                    and not info.st_mode & 0o022,
+                    'assembled System runtime is not public/protected: '+str(point)+f' (mode={stat.S_IMODE(info.st_mode):04o})')
         spec = importlib.util.spec_from_file_location('mpm_management', repo / 'tools/mpm_management.py')
         management = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(management)

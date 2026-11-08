@@ -29,6 +29,17 @@ GNU tar can be reused: that export contains provider binaries, not the MPM sourc
 code assembled by the current checkout. Reuse the accepted Base release and exact native Kernel package;
 neither input nor any previous VM disk is modified or attached.
 
+The fresh System assembler uses a scoped `022` creation mask for its public
+runtime and restores the caller's mask even on failure. Public module/bin/unit
+directories must be readable/searchable regardless of a private workspace's
+`077` mask. Root history, credentials and homes retain their explicit private
+modes. Copied `/nix` and `/nix/store` namespace directories become 0755, without
+changing any provider output object's inventoried modes/content. Symlinked
+namespace roots are refused. Before writing a System manifest, the assembler
+refuses private/writable runtime directories instead of publishing an unusable
+profile. Native install still rejects private management modules; it does not
+silently broaden imported component modes.
+
 The existing native image builder creates a new private `.unpublished-image` and
 asks for a new VM root password. A root helper in a private mount namespace mounts
 only that new disk. A temporary execution root runs the explicitly supplied
@@ -169,6 +180,13 @@ It does not edit old measured code, overwrite a finished image, repackage Base,
 reimport Kernel or ask for another VM root password. Final publication reuses the
 same acceptance-input/launcher function as a fresh preparation. This is a narrow
 pre-construction resume, not recovery of arbitrary partial native transactions.
+
+A bootstrap image assembled before the public-runtime permission fix needs a
+fresh build with the corrected assembler. Native construction has also started
+once Base installation creates its common store, even if a later System package
+preview fails. Such a disk does not meet the narrow resume contract. Keep it for
+inspection, reuse the same verified input payloads, and choose a new output;
+do not chmod its measured tree or alter its descriptor to bypass validation.
 
 ## Scope after acceptance
 

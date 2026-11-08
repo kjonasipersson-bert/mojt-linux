@@ -276,7 +276,9 @@ def build_profile(profile, body, value, parts, *, adapters=None):
     for name in ('interpreter', 'frontend'):
         require(executable(runtime[name]), 'System runtime must be a public executable: ' + runtime[name])
     require(not (profile / 'bin').is_symlink() and (profile / 'bin').is_dir(), 'System bin must be an inventoried directory')
-    tools = profile / runtime['module_root'];require(not tools.is_symlink() and tools.is_dir() and modes.get(tools, 0o555) & 0o005 == 0o005, 'missing/private System management modules')
+    tools = profile / runtime['module_root'];module_mode = modes.get(tools,0o555)
+    require(not tools.is_symlink() and tools.is_dir() and module_mode & 0o005 == 0o005,
+            'missing/private System management modules: '+str(tools)+f' (planned mode={module_mode:04o}; public read/search required)')
     for name in ('interpreter', 'frontend', 'module_root'):
         for parent in (profile / runtime[name]).parents:
             if parent == profile or profile in parent.parents:

@@ -86,6 +86,60 @@ class PackageFixture(Fixture):
         return dict(archive_sha256=record['sha256'])
 
 
+@unittest.skipUnless(shutil.which('zstd'),'requires real archive codec')
+class PrivateAssemblyTests(unittest.TestCase):
+    def test_077_assembly_packages_a_public_runtime_preserves_private_state_and_restores_umask(self):
+        import test_system_vm as assembled
+        from test_mpm_system_transition import Adapter as TreeAdapter
+        f = assembled.SystemVmTests();f.setUp();self.addCleanup(f.doCleanups)
+        record = f.fixture(10)
+        # A provider export may itself live behind private namespace parents.
+        # Those parents are not part of any inventoried output object.
+        (f.payload/'nix').chmod(0o700);(f.payload/'nix/store').chmod(0o700)
+        previous = os.umask(0o077)
+        try:
+            with mock.patch.object(assembled.system.os,'chown'):
+                label = assembled.system.install(f.tree,f.payload,record,f.busybox,'password',assembled.REPO)
+            self.assertEqual(os.umask(0o077),0o077)
+            profile = f.tree/'system'/label
+            for path in (profile,profile/'tools',profile/'bin',profile/'units',profile/'libexec/mpm/bin',f.tree/'nix',f.tree/'nix/store'):
+                self.assertEqual(path.stat().st_mode & 0o777,0o755,str(path))
+            self.assertEqual((profile/'version').stat().st_mode & 0o777,0o644)
+            self.assertEqual((f.tree/'state/var/lib/mojt/console').stat().st_mode & 0o777,0o700)
+            self.assertEqual((f.tree/'state/var/lib/mojt/console/root.history').stat().st_mode & 0o777,0o600)
+            for obj in record['objects']:
+                self.assertEqual(assembled.system.tree_hash(f.tree/obj['path'].lstrip('/')),obj['tree_sha256'])
+            assembled.system.write(f.tree/'releases/base-0.1.3.toml',
+                'format=1\n[base]\nversion="0.1.3"\narchitecture="'+os.uname().machine+'"\n[abi]\nlibc="glibc"\n[state]\nlayout_version=1\n')
+            assembled.system.finalize_manifest(f.tree,label,'0.1.3',assembled.REPO)
+            manifest = artifact.read_json(profile/'manifest.json')
+            ref = dict(provider='nix',identity=dict(format='fixture-v1',objects=manifest['description']['artifacts']['nix']['objects']))
+            adapter = TreeAdapter(f.tree,ref);kit = f.root/'actual-assembled-kit'
+            with mock.patch.object(package,'nix_references',return_value=[ref]):
+                result = package.package(f.tree,label,'0.2.0',1,kit,adapter=adapter)
+            component = artifact.read_json(kit/'component/artifact.json')
+            self.assertEqual(next(r['mode'] for r in component['files'] if r['path']=='payload/tools'),0o755)
+            if os.geteuid() == 0:
+                generation = artifact.read_json(kit/'generation/archive.json')
+                part = artifact.read_json(kit/'component/archive.json')
+                identifier = result['kit']['description']['generation']
+                installed = system.install(f.tree,kit/'generation'/generation['file'],identifier,
+                    dependency_files=[kit/'component'/part['file']],adapters={'nix':adapter},yes=True)
+                self.assertTrue(installed['changed'])
+                tools = system.realization_path(f.tree,identifier)/'profile/tools'
+                self.assertEqual(tools.stat().st_mode & 0o777,0o555)
+                self.assertTrue((tools/'mpm_cli.py').stat().st_mode & 0o004)
+            with mock.patch.object(assembled.system,'_install',side_effect=ValueError('injected assembly failure')):
+                with self.assertRaisesRegex(ValueError,'assembly failure'):
+                    assembled.system.install(f.tree,f.payload,record,f.busybox,'password',assembled.REPO)
+            self.assertEqual(os.umask(0o077),0o077)
+            before = (profile/'manifest.json').read_bytes();(profile/'tools').chmod(0o700)
+            with self.assertRaisesRegex(ValueError,'runtime is not public'):
+                assembled.system.finalize_manifest(f.tree,label,'0.1.3',assembled.REPO)
+            self.assertEqual((profile/'manifest.json').read_bytes(),before)
+        finally:os.umask(previous)
+
+
 @unittest.skipUnless(shutil.which('zstd'), 'requires real archive codec')
 class PackageTests(PackageFixture):
     def test_real_packages_keep_links_version_provenance_and_source_preview_is_metadata_only(self):
