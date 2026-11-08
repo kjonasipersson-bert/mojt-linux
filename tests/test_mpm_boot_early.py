@@ -149,8 +149,14 @@ class ConstructorTests(unittest.TestCase):
         from mpm_base_status import status as base_status
         from mpm_system import status as system_status
         running=dict(format='mojt-running-native-v2',deployment=value,inputs=source['id'],installation=source['description']['installation'])
-        self.assertEqual(base_status(root,running_record=running)['running']['deployment'],value['id'])
-        observed=system_status(root,running_record=running)
+        actual_uname=os.uname();reported=os.uname_result((actual_uname.sysname,actual_uname.nodename,source['description']['kernel']['release'],actual_uname.version,actual_uname.machine))
+        def forbidden(*args,**kwargs):raise AssertionError('metadata status must not scan payloads or run helpers')
+        with mock.patch.object(selection.os,'uname',return_value=reported),mock.patch.object(constructor.inventory,'snapshot',side_effect=forbidden),mock.patch.object(constructor.store,'audit_inputs',side_effect=forbidden):
+            self.assertEqual(base_status(root,running_record=running)['running']['deployment'],value['id'])
+            observed=system_status(root,running_record=running)
+            kernel_view=selection.status(root,running_record=running)
+            self.assertEqual(kernel_view['running']['deployment'],value['id']);self.assertEqual(kernel_view['selected'],other_id)
+            self.assertFalse(kernel_view['running_is_selected']);self.assertEqual(kernel_view['integrity'],'metadata-only')
         self.assertEqual(observed['running']['artifact'],source['description']['system']['artifact'])
         self.assertEqual(observed['selected']['artifact'],other)
         unchanged=f.f.f.snapshot();self.assertFalse(selection.select(root,other_id,expected_selected=other_id,yes=True)['changed'])

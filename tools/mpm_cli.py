@@ -98,6 +98,8 @@ def boot_options(args, runtime):
     from mpm_boot_selection import present
     if present(runtime.disk):
         if args[0] != 'status':raise ValueError('native-v2 Base/Kernel boot changes are not integrated; refusing v1 fallback')
+        from mpm_boot_status import read_running
+        read_running(runtime)
         path = runtime.running.with_name('native-v2.json')
         if path.is_file() and not option(args,'--running-record'):args += ['--running-record',str(path)]
         return args
