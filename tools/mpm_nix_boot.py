@@ -9,6 +9,10 @@ from mpm_ports_profile import require
 
 
 class NixBootAdapter(NixBinaryAdapter):
+    def boot_mounts(self,ref,root):
+        self.boot_paths(ref,root)
+        return [dict(source='nix',target='nix')]
+
     def boot_paths(self,ref,root):
         """Finite verified-output tree export, never an unrelated inspector store."""
         i=self.identity(ref);names=[]

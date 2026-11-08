@@ -100,7 +100,18 @@ def main():
     parser.add_argument('--root',required=True);parser.add_argument('--inputs',required=True)
     parser.add_argument('--proof',required=True);parser.add_argument('--cmdline',default='/proc/cmdline')
     parser.add_argument('--release',default='/proc/sys/kernel/osrelease')
+    parser.add_argument('--handover',help='trusted embedded System handover contract')
     args = parser.parse_args()
+    if args.handover is not None:
+        import os
+        import mpm_boot_handover as transfer
+        try:
+            transfer.enter(args.root,read(Path(args.inputs)),read(Path(args.proof)),read(Path(args.handover)),
+                           Path(args.cmdline).read_text(),Path(args.release).read_text().strip())
+        except Exception as error:
+            print('Mojt native-v2 handover: '+str(error),file=__import__('sys').stderr,flush=True)
+            os.execv('/bin/busybox',['busybox','sh'])
+        return
     result = verify(args.root,read(Path(args.inputs)),read(Path(args.proof)),
                     Path(args.cmdline).read_text(),Path(args.release).read_text().strip())
     print(json.dumps(result,sort_keys=True))

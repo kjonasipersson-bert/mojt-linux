@@ -20,6 +20,7 @@ import mojt_artifact as artifact
 import mpm_boot_constructor as constructor
 import mpm_boot_early as early
 import mpm_boot_inventory as inventory
+import mpm_boot_handover as transfer
 import mpm_boot_v2 as model
 import mpm_boot_v2_store as store
 from mpm_request_plan import record
@@ -75,6 +76,7 @@ class ConstructorTests(unittest.TestCase):
         root=f.root;work=f.f.f.fixture.work
         provider=f.f.adapter
         provider.boot_paths=lambda ref,target:sorted(r['path'].lstrip('/') for r in ref['identity']['objects'])
+        provider.boot_mounts=lambda ref,target:[dict(source='nix',target='nix')]
         # Freeze a small distro Python closure only as independent CI evidence.
         host=Path('/usr/bin/python3').resolve()
         stdlib=Path(subprocess.check_output([str(host),'-I','-S','-c','import sysconfig;print(sysconfig.get_path("stdlib"))'],text=True).strip())
@@ -98,14 +100,17 @@ class ConstructorTests(unittest.TestCase):
         runtime_adapter=PythonAdapter(ref,{p:inventory.snapshot(runtime_source/p) for p in sorted(names)})
         bundle=work/'bootstrap-python';runtime=constructor.freeze_runtime(runtime_source,ref,'/usr/bin/python3',bundle,adapters={ref['provider']:runtime_adapter})
         busybox=Path(shutil.which('busybox'));source=copy.deepcopy(f.source['description'])
-        source['constructor']=constructor.constructor(runtime,busybox);source=record(model.INPUTS,source)
+        plan=f.f.plan();source['boot']['root_uuid']=plan['description']['root_uuid']
+        source['constructor']=constructor.constructor(runtime,busybox,handover=True);source=record(model.INPUTS,source)
+        contract=transfer.prepare(root,source,plan,adapters=f.f.adapters)
         before=f.f.f.snapshot();vm=constructor.archive.vm_module()
         module=root/'kernel/installed'/source['description']['kernel']['artifact'][7:]/'payload/lib/modules'/source['description']['kernel']['release']/'kernel/example.ko'
         build=work/'v2-construction'
         with mock.patch.object(constructor.archive,'vm_module',return_value=vm),mock.patch.object(vm,'module_paths',return_value=[module]):
-            result=constructor.build(root,source,bundle,busybox,build,bounds=f.bounds,adapters=f.f.adapters)
+            result=constructor.build(root,source,bundle,busybox,build,bounds=f.bounds,adapters=f.f.adapters,handover=contract)
         self.assertEqual(before,f.f.f.snapshot());self.assertFalse(result['boot_ready'] or result['selection_changed'])
-        self.assertNotIn('switch_root',(build/'initroot/init').read_text());self.assertIn('env -i',(build/'initroot/init').read_text())
+        self.assertTrue(result['handover_enabled']);self.assertIn('--handover /mojt/handover.json',(build/'initroot/init').read_text())
+        self.assertIn('env -i',(build/'initroot/init').read_text());self.assertIn('old root and backing filesystem fully unmounted',(build/'initroot/shutdown').read_text())
         image=work/'actual-initramfs';image.write_bytes(result['archive'])
         value=model.compose(source,result['binding'],f.image.stat().st_size)
         store.retain(root,value,f.image,image,bounds=f.bounds,adapters=f.f.adapters)
@@ -120,6 +125,12 @@ class ConstructorTests(unittest.TestCase):
         self.assertEqual(checked.returncode,0,checked.stderr)
         report=json.loads(checked.stdout);self.assertTrue(report['verified']);self.assertFalse(report['handover'] or report['boot_ready'])
         self.assertEqual(report['deployment'],value['id'])
+        gates="import sys;sys.path.insert(0,'/mojt/code');from pathlib import Path;import mpm_boot_early as e;import mpm_boot_handover as h;h.check(Path('/test-target'),e.read(Path('/mojt/inputs.json')),e.read(Path('/mojt/trees.json')),e.read(Path('/mojt/handover.json')));print('PASS: isolated System handover gates')"
+        gate_args=['chroot',str(extracted),'/usr/bin/python3','-I','-S','-B','-c',gates]
+        passed=subprocess.run(gate_args,capture_output=True,text=True);self.assertEqual(passed.returncode,0,passed.stderr)
+        layout=extracted/'test-target/state/layout-version';layout.write_text('2\n')
+        denied=subprocess.run(gate_args,capture_output=True,text=True);self.assertNotEqual(denied.returncode,0);self.assertIn('state layout',denied.stderr)
+        layout.write_text('1\n')
         command.write_text(model.cmdline(value)+' root=UUID=other')
         denied=subprocess.run(args,capture_output=True,text=True);self.assertNotEqual(denied.returncode,0)
         self.assertIn('command line differs',denied.stderr);command.write_text(model.cmdline(value))

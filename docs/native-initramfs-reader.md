@@ -82,7 +82,10 @@ candidate program. Its result is a diagnostic verification receipt, not the
 running deployment status. A release-string comparison is an additional mismatch
 check, not proof of the running artifact or hardware attestation.
 
-The current init script deliberately enters a diagnostic shell after verification.
+The verification-only init script deliberately enters a diagnostic shell after verification.
+The explicitly enabled [System handover mode](native-system-handover.md) now joins
+the unchanged-startup preflight, boot Base copy, current state checks and static
+shutdown/switch-root sequence. Authoritative selection/status still remain to join.
 `boot_ready=false`, `handover=false`, and `selection_changed=false` remain explicit.
 The script neither initializes state nor invokes System start. Initializer/default
 and current-state compatibility gates, additive Base mountpoint realization,
