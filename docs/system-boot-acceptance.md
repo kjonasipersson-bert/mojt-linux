@@ -191,6 +191,14 @@ preview fails. Such a disk does not meet the narrow resume contract. Keep it for
 inspection, reuse the same verified input payloads, and choose a new output;
 do not chmod its measured tree or alter its descriptor to bypass validation.
 
+Fresh native image construction also scopes its generated defaults to umask
+022 and restores the caller's mask on every exit. The preparer intentionally
+uses 077 for its host lab; that must not make newly created guest `/etc`, `/var`
+or `/home` private. Temporary workspaces and `/root` retain their explicit
+private modes. The existing root image-input pipeline runs under 077 and checks
+these state modes before disk publication; it uses a synthetic disk writer,
+so successful execution is not guest boot acceptance.
+
 ## Scope after acceptance
 
 This closes the prepared-candidate boot/return proof only. Public installed
