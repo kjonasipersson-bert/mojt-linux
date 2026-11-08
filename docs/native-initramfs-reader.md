@@ -86,11 +86,11 @@ The verification-only init script deliberately enters a diagnostic shell after v
 The explicitly enabled [System handover mode](native-system-handover.md) now joins
 the unchanged-startup preflight, boot Base copy, current state checks and static
 shutdown/switch-root sequence. Authoritative selection/status still remain to join.
-`boot_ready=false`, `handover=false`, and `selection_changed=false` remain explicit.
-The script neither initializes state nor invokes System start. Initializer/default
-and current-state compatibility gates, additive Base mountpoint realization,
-read-only runtime mounts, static shutdown handover and authoritative boot
-selection must be joined before exposing successful `mpm system stage/select`.
+The verification receipt still reports `boot_ready=false` and `handover=false`;
+construction never changes selection. Verification-only mode does not invoke
+System start. Handover mode validates the additional contract and current-state
+gates before moving mounts and execing System start. Authoritative v2 staging,
+selection and installed status remain required before a complete user workflow.
 
 ## Focused validation
 

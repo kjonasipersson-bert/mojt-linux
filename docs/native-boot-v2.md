@@ -83,8 +83,7 @@ selection publisher. Existing v1 boot paths are untouched.
 
 The [verification initramfs constructor and trusted reader](native-initramfs-reader.md)
 now bind measured code/runtime and check exact on-disk trees using only the
-interpreter bundled in initramfs. That constructor deliberately stops after
-verification. The [bounded System handover](native-system-handover.md) now joins the preflight,
+interpreter bundled in initramfs. Verification-only mode stops after verification. The [bounded System handover](native-system-handover.md) now joins the preflight,
 current-state gates, a separate boot Base and runtime/shutdown handover.
 Authoritative native-v2 staging/selection and installed status must be joined next. Only then run a focused owner System boot/return test. This
 increment needs focused record/storage CI, not another unchanged Kernel/Base VM

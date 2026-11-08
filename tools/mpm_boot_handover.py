@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """Bounded unchanged-startup System handover; no boot selection or package hooks."""
 import copy
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -84,7 +85,7 @@ def prepare(root, source, plan, *, adapters, tar='tar'):
         tx.protected_directory(root/name,write=True);(root/name).mkdir(mode=0o755,exist_ok=True)
     locks = {root/'.artifact-store.lock',root/'artifacts/.lock',*tx.boot_lock_paths(root)}
     # Do not initialize a Ports profile just to acquire a lock. Existing writers
-    # already share the installation lock; include its Ports lock when present.
+    # are observed again by the constructor and at boot; lock existing Ports state.
     locks = {p for p in locks if p.parent.exists()}
     with tx.resource_locks(locks,modes={root/'.install-lock':0o644}):
         require(transition._prepare(root,p['candidate_system']['artifact'],p['baseline'],adapters) == plan,'System plan changed before preparation')
@@ -108,6 +109,9 @@ def prepare(root, source, plan, *, adapters, tar='tar'):
             base_facts=dict(architecture=release['base']['architecture'],base_abi=release['abi'],state_layout=release['state']['layout_version']),
             boot_base=boot_base.prepare_locked(root,i['base']['artifact'],tar=tar),mounts=[mounts[k] for k in sorted(mounts)]))
         validate(value,source);check(root,source,None,value,provider_roots=sorted(provider_roots))
+        require(hashlib.sha256(transition.boot.checked_file(root/'boot/mojt/grub.cfg')).hexdigest() == p['selection_sha256']
+                and common.state_inputs(root)['evidence'] == p['state'] and system.target_identity(root) == p['target_identity'],
+                'selection, state or target changed during preparation')
         return value
 
 
