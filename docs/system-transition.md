@@ -84,10 +84,11 @@ not a user flag bypassing these gates.
 
 Both `stage_ready` and `boot_ready` remain false. This reader observes the
 existing verified v1 layout; it does not convert it to native-v2 or alter the
-closed v1 System reference. The next implementation must construct the
-[native-v2 inputs/binding/deployment](formats/draft-v1/boot-deployment-v2.md),
-its exact early-boot reader and immutable slot, then publish one authoritative
-selection menu with recovery checks. No backward migration is required.
+closed v1 System reference. The [native-v2 record/storage layer](native-boot-v2.md) now validates inputs,
+binding and deployment, and atomically retains a complete immutable slot without
+selection. It does not yet consume this preflight as execution authorization.
+The next integration must join the measured constructor and exact early-boot
+reader, then publish one authoritative selection menu with recovery checks. No backward migration is required.
 
 At that boundary, perform one focused owner VM boot/return of a real changed
 System with Base/Kernel/state retained. These synthetic preflight tests do not

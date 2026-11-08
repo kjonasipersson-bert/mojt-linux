@@ -115,3 +115,8 @@ Progress reports must name the step, implemented behavior, validation and the
 remaining gate. Unit tests, schema checks and prior experiments do not mark a
 whole milestone complete. No new public command syntax is implied by this plan.
 
+
+Native-v2 progress within step 3: [exact records and immutable slot retention](native-boot-v2.md)
+are implemented without selecting boot. The measured constructor/early reader,
+System preflight join and authoritative next-boot publication remain the next
+integration gate before a focused changed-System VM boot/return.

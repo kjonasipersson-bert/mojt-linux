@@ -58,17 +58,18 @@ def stored_mode(row):
     return 0o555 if row["type"] == "directory" else 0o444 | row["mode"] & 0o111
 
 
-def frozen_copy(source, destination):
+def frozen_copy(source, destination, *, maximum=MAX_ARCHIVE):
+    require(type(maximum) is int and 0 < maximum <= MAX_ARCHIVE, "invalid copy size limit")
     fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     checksum = hashlib.sha256()
     try:
         info = os.fstat(fd)
-        require(stat.S_ISREG(info.st_mode) and info.st_size <= MAX_ARCHIVE, "input must be a bounded regular archive")
+        require(stat.S_ISREG(info.st_mode) and info.st_size <= maximum, "input must be a bounded regular archive")
         with os.fdopen(fd, "rb", closefd=False) as origin, destination.open("xb") as target:
             total = 0
             while chunk := origin.read(128 * 1024):
                 total += len(chunk)
-                require(total <= MAX_ARCHIVE, "input archive exceeds size limit")
+                require(total <= maximum, "input archive exceeds size limit")
                 checksum.update(chunk)
                 target.write(chunk)
             require(total == info.st_size, "input archive changed size during copying")

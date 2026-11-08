@@ -6,9 +6,12 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Generalized native boot inputs, deployment and selection v2
 
-Review draft, not a change to today's accepted updater or initrd. The
-[implemented System preflight](../../system-transition.md) binds native candidate
-inputs and unchanged-startup gates; it does not implement these v2 wire readers.
+The [record/storage subset](../../native-boot-v2.md) implements strict record
+validation, pure menu rendering and immutable slot retention. The active updater
+and initrd are unchanged; the constructor, early-boot reader and authoritative
+selection publisher remain integration gates. The
+[System preflight](../../system-transition.md) binds native candidate inputs and
+unchanged-startup gates; it is not yet joined to v2 execution.
 The [workflow schema](workflow-formats.schema.json) defines new closed v2 records.
 Existing `mojt-boot-deployment-v1`, binding v1 and generated Kernel menu v1 retain
 their original hash rules and readers. Unknown v2 is refused, not parsed as v1.

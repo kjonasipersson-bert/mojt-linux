@@ -6,7 +6,7 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Mojt development priorities
 
-Updated 2026-11-07. This records the agreed order and measured progress;
+Updated 2026-11-08. This records the agreed order and measured progress;
 future commands and policies are not claims of implemented functionality.
 The [architecture](architecture.md) defines the layer boundaries and the
 [MPM contract](mpm.md) records the accepted update semantics.
@@ -108,8 +108,10 @@ now imports exact native leaf components and realizes a profile without activati
 Exact provider runtime dependency retention is joined through adapters. Current System profile packaging and named-source acquisition are joined;
 The [read-only System transition plan](system-transition.md) now binds installed
 artifacts to the selected Base/Kernel and checks a bounded unchanged-startup
-contract. Native-v2 construction/selection and broader initialization/service
-gating remain next. Reuse the accepted Base/Kernel VM
+contract. [Native-v2 records and immutable slot retention](native-boot-v2.md)
+now bind verified installed inputs and publish complete content without selection.
+The measured constructor/early reader, authoritative selection and broader
+initialization/service gating remain next. Reuse the accepted Base/Kernel VM
 evidence; request a focused owner VM test when the new System/initialization
 boundary exists. Bootstrap, build integration and final combined acceptance
 remain steps 4, 5 and 6 of the consolidation plan.
