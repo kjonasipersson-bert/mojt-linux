@@ -106,7 +106,9 @@ including old-writer/unknown-format refusal. No generic service-schema support
 or action execution is claimed. The first [native System install/status](system-installation.md)
 now imports exact native leaf components and realizes a profile without activation.
 Exact provider runtime dependency retention is joined through adapters. Current System profile packaging and named-source acquisition are joined;
-System deployment with explicit initialization/service
+The [read-only System transition plan](system-transition.md) now binds installed
+artifacts to the selected Base/Kernel and checks a bounded unchanged-startup
+contract. Native-v2 construction/selection and broader initialization/service
 gating remain next. Reuse the accepted Base/Kernel VM
 evidence; request a focused owner VM test when the new System/initialization
 boundary exists. Bootstrap, build integration and final combined acceptance
