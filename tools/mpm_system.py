@@ -511,8 +511,8 @@ def registry_observation(root):
 
 def status(root, *, verify=False, running_record=None, adapters=None):
     root = target(root)
-    from mpm_boot_status import selected
-    from mpm_deployment import validate_deployment
+    from mpm_boot_status import selected, description, running as validate_running
+    running_record = validate_running(root,running_record)
     observed = selected(root, running_record) if root.exists() else dict(state='unknown', record=None, reason='target does not exist')
     info = base.store_info(root);marker = registry(root);installed, components, retained, incomplete = [], [], [], []
     if marker:
@@ -541,12 +541,15 @@ def status(root, *, verify=False, running_record=None, adapters=None):
             require(re.fullmatch('[0-9a-f]{64}', path.name) and any(r['artifact'] == 'sha256:' + path.name for r in installed), 'orphan/unknown System realization')
     def observation(record, reason):
         if record is None:return dict(state='unknown', artifact=None, manifest=None, label=None, deployment=None, reason=reason)
-        d = validate_deployment(record)['system']
+        d = description(record)['system']
         matched = [row for row in installed if row['manifest'] == d['manifest']]
         require(len(matched) <= 1, 'ambiguous exact System identity')
         return dict(state='known', artifact=matched[0]['artifact'] if matched else None, manifest=d['manifest'], label=d['generation'],
                     deployment=record['id'], artifact_evidence='exact installed manifest' if matched else 'native artifact unknown; label is not identity')
+    from mpm_boot_selection import present, available
+    staged = available(root)[0] if root.exists() and present(root) else {}
     return dict(format='mpm-system-status-v1', target=str(root), installation=info['installation'] if info else None,
+        staged_deployments=[dict(deployment=k,artifact=description(v['record'])['system']['artifact'],label=description(v['record'])['system']['generation']) for k,v in sorted(staged.items())],
         installed=installed, components=components, retained=retained, incomplete=sorted(incomplete),
         selected=observation(observed['record'], observed['reason']),
         running=observation(running_record, 'offline target or no authoritative running record'),

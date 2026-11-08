@@ -465,3 +465,20 @@ docs/mpm-catalog.md, docs/mpm-artifact-architecture.md and docs/roadmap.md.
 
 
 
+
+.SH NATIVE SYSTEM BOOT SELECTION
+For an initialized native-v2 image, system select --deployment ID
+--expected-selected ID changes the next boot only.
+Use --dry-run to preview or -y to apply.  system rollback
+--expected-selected ID selects the validated previous deployment.
+Both require an administrator, preserve exact Base and Kernel, retain old
+content and do not reboot or activate services live.
+.PP
+System status distinguishes installed artifacts, admitted boot deployments,
+the selected next boot and explicit running evidence.  Unknown running identity
+is not inferred from a generation label or uname.  Native-v2 selection refuses
+content-only or diagnostic slots and refuses stale expected selection.
+.PP
+Initial image assembly and constructor admission use the manager API.
+Automatic installed System staging from an active v2 baseline and boot wish
+integration remain incomplete; v1 writers cannot change a v2 boot authority.

@@ -78,13 +78,14 @@ Results explicitly say `boot_ready=false` and `selection_changed=false`.
 Retention does not run the System startup/state compatibility review, prepare
 defaults, create boot mountpoint realizations, authorize lifecycle actions, or
 replace a menu. It must not be exposed as successful `system stage` yet.
-The pure GRUB renderer/parser is available for validation; there is no v2
-selection publisher. Existing v1 boot paths are untouched.
+The [selection publisher](native-system-selection.md) now consumes admitted
+handover results. V1 boot writers refuse a native-v2 authority.
 
 The [verification initramfs constructor and trusted reader](native-initramfs-reader.md)
 now bind measured code/runtime and check exact on-disk trees using only the
 interpreter bundled in initramfs. Verification-only mode stops after verification. The [bounded System handover](native-system-handover.md) now joins the preflight,
 current-state gates, a separate boot Base and runtime/shutdown handover.
-Authoritative native-v2 staging/selection and installed status must be joined next. Only then run a focused owner System boot/return test. This
+[Admitted staging, atomic selection and explicit status](native-system-selection.md)
+now join prepared candidates. Owner boot/return and active-v2 stage/request joins remain. Only then run a focused owner System boot/return test. This
 increment needs focused record/storage CI, not another unchanged Kernel/Base VM
 matrix or a hardware test.

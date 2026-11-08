@@ -8,8 +8,9 @@ SPDX-License-Identifier: GPL-2.0-only
 
 The [record/storage subset](../../native-boot-v2.md) implements strict record
 validation, pure menu rendering and immutable slot retention. The active updater
-and initrd are unchanged; the constructor, early-boot reader and authoritative
-selection publisher remain integration gates. The
+and initrd are unchanged; the [handover constructor and admitted selection publisher](../../native-system-selection.md)
+now implement the first bounded subset. Owner boot acceptance and active-v2
+preflight/staging remain integration gates. The
 [System preflight](../../system-transition.md) binds native candidate inputs and
 unchanged-startup gates; it is not yet joined to v2 execution.
 The [workflow schema](workflow-formats.schema.json) defines new closed v2 records.

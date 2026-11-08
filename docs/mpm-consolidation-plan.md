@@ -119,9 +119,10 @@ whole milestone complete. No new public command syntax is implied by this plan.
 Native-v2 progress within step 3: [exact records and immutable slot retention](native-boot-v2.md)
 are implemented without selecting boot. The diagnostic constructor/early reader
 now runs from a private trusted Python closure. Bounded preflight/state checks and
-mount/shutdown handover now join a separate immutable boot Base. Authoritative
-v2 staging/selection/status remains the next
-integration gate before a focused changed-System VM boot/return.
+mount/shutdown handover now join a separate immutable boot Base. Admitted staging,
+atomic v2 selection and explicit runtime status now join prepared candidates.
+The focused changed-System VM boot/return is next; active-v2 preflight/staging and
+configuration/request joins remain before complete M1 and MBT bootstrap.
 
 The owner reaffirmed native self-hosting as the destination on 2026-11-08.
 Complete the joined M1 administration/bootstrap flow, then M2 source recipes for

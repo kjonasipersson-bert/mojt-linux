@@ -24,6 +24,10 @@ MAX_METADATA = 1024 * 1024
 # Complete code closure for the advertised native defaults protocol. Optional
 # provider adapters are inventoried by System separately, not required here.
 CAPABILITY_FILES = (
+    'mpm_cli.py', 'mpm_system_cli.py', 'mpm_system_transition.py',
+    'mpm_boot_base.py', 'mpm_boot_constructor.py', 'mpm_boot_early.py', 'mpm_boot_handover.py',
+    'mpm_boot_inventory.py', 'mpm_boot_v2.py', 'mpm_boot_v2_store.py', 'mpm_boot_selection.py',
+    'mpm_boot_status.py', 'mpm_request_plan.py', 'mpm_requests.py', 'mpm_ports_profile.py',
     'mojt-base-install', 'mojt_accounts.py', 'mojt_artifact.py', 'mojt_boot.py',
     'mojt_native_image.py', 'mojt_system.py', 'mojt_system_manifest.py', 'mpm_base.py',
     'mpm_catalog.py', 'mpm_defaults.py', 'mpm_deployment.py', 'mpm_kernel.py',
@@ -233,7 +237,7 @@ def produce(tools, names):
     require(set(CAPABILITY_FILES) <= set(names), 'incomplete native management runtime')
     for name in names:path(name);require('/' not in name, 'invalid bundled manager path')
     hashes = {name:file_hash(tools / name) for name in CAPABILITY_FILES}
-    supported = literal(tools / 'mpm_defaults.py', 'MANAGEMENT_SUPPORT') + literal(tools / 'mpm_system.py', 'MANAGEMENT_SUPPORT')
+    supported = literal(tools / 'mpm_defaults.py', 'MANAGEMENT_SUPPORT') + literal(tools / 'mpm_system.py', 'MANAGEMENT_SUPPORT') + literal(tools / 'mpm_boot_selection.py', 'MANAGEMENT_SUPPORT')
     supported.sort(key=lambda row:row['family'])
     description = dict(management=supported, state=[],
         handlers=literal(tools / 'mpm_defaults.py', 'HANDLER_SUPPORT'),
@@ -298,7 +302,10 @@ def observe_target(root):
     if system_state is not None:
         registries.append(dict(family='mpm-system', version=1,
             capabilities=system.required_capabilities(root), evidence=system_state['id']))
-    return context(registries=registries)
+    import mpm_boot_selection as boot
+    selected = boot.observation(root)
+    if selected is not None:registries.append(selected)
+    return context(registries=sorted(registries,key=lambda row:row['family']))
 
 
 def _check_target(root, profile, manifest, *, required=None):

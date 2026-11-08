@@ -23,6 +23,7 @@ import mpm_boot_inventory as inventory
 import mpm_boot_handover as transfer
 import mpm_boot_v2 as model
 import mpm_boot_v2_store as store
+import mpm_boot_selection as selection
 from mpm_request_plan import record
 import test_mpm_boot_v2 as fixtures
 
@@ -114,6 +115,51 @@ class ConstructorTests(unittest.TestCase):
         image=work/'actual-initramfs';image.write_bytes(result['archive'])
         value=model.compose(source,result['binding'],f.image.stat().st_size)
         store.retain(root,value,f.image,image,bounds=f.bounds,adapters=f.f.adapters)
+        receipt=selection._admit(root,value,result,adapters=f.f.adapters)
+        self.assertEqual(selection.ready(root,value['id'])['receipt'],receipt)
+        # A second native generation keeps startup/Base/Kernel unchanged. Its
+        # exact artifact/profile IDs differ, even with the same human label.
+        other=f.f.candidate();realized=constructor.system.realization(root,other)
+        next_source=copy.deepcopy(source['description'])
+        next_source['system']=dict(artifact=other,composition=realized['description']['composition'],
+            manifest=realized['description']['manifest'],generation='native-fixture')
+        next_source=record(model.INPUTS,next_source)
+        next_contract=transfer.prepare(root,next_source,f.f.plan(other),adapters=f.f.adapters)
+        with mock.patch.object(constructor.archive,'vm_module',return_value=vm),mock.patch.object(vm,'module_paths',return_value=[module]):
+            staged=selection.stage(root,next_source,bundle,busybox,work/'second-construction',
+                bounds=f.bounds,adapters=f.f.adapters,contract=next_contract)
+        other_id=staged['deployment'];old_menu=(root/'boot/mojt/grub.cfg').read_bytes()
+        self.assertNotEqual(other_id,value['id']);self.assertEqual((root/'boot/mojt/grub.cfg').read_bytes(),old_menu)
+        hook=root/'boot/mojt/grub.cfg';hook.chmod(0o644);hook.write_bytes(selection.HOOK);hook.chmod(0o444)
+        choice=selection.initialize(root,value['id']);self.assertEqual(choice['description']['selected'],value['id'])
+        before_preview=f.f.f.snapshot()
+        preview=selection.select(root,other_id,expected_selected=value['id'],dry_run=True)
+        self.assertFalse(preview['changed']);self.assertEqual(before_preview,f.f.f.snapshot())
+        publish=selection.tx.publish
+        with mock.patch.object(selection.tx,'publish',side_effect=OSError('before menu rename')):
+            with self.assertRaisesRegex(OSError,'before menu rename'):selection.select(root,other_id,expected_selected=value['id'],yes=True)
+        self.assertEqual(before_preview,f.f.f.snapshot())
+        def uncertain(src,dst):
+            def fail(path):raise OSError('injected menu flush failure')
+            publish(src,dst,sync=fail)
+        with mock.patch.object(selection.tx,'publish',side_effect=uncertain):
+            with self.assertRaises(selection.tx.PublicationUncertain):selection.select(root,other_id,expected_selected=value['id'],yes=True)
+        self.assertEqual(selection.current(root)[0]['description']['selected'],other_id)
+        from mpm_boot_status import description
+        from mpm_base_status import status as base_status
+        from mpm_system import status as system_status
+        running=dict(format='mojt-running-native-v2',deployment=value,inputs=source['id'],installation=source['description']['installation'])
+        self.assertEqual(base_status(root,running_record=running)['running']['deployment'],value['id'])
+        observed=system_status(root,running_record=running)
+        self.assertEqual(observed['running']['artifact'],source['description']['system']['artifact'])
+        self.assertEqual(observed['selected']['artifact'],other)
+        unchanged=f.f.f.snapshot();self.assertFalse(selection.select(root,other_id,expected_selected=other_id,yes=True)['changed'])
+        self.assertEqual(unchanged,f.f.f.snapshot())
+        with self.assertRaisesRegex(ValueError,'selected deployment changed'):selection.select(root,value['id'],expected_selected=value['id'],yes=True)
+        selection.select(root,expected_selected=other_id,rollback=True,yes=True)
+        self.assertEqual(selection.current(root)[0]['description']['selected'],value['id'])
+        self.assertEqual(set(selection.current(root)[1]),{value['id'],other_id})
+        with self.assertRaisesRegex(ValueError,'v1 writer'):constructor.archive.current(root,f.f.f.baseline)
         extracted=work/'independent-extraction';extracted.mkdir()
         subprocess.run(['cpio','-idm','--quiet','--no-absolute-filenames'],cwd=extracted,input=gzip.decompress(result['archive']),check=True)
         shutil.copytree(root,extracted/'test-target',symlinks=True)

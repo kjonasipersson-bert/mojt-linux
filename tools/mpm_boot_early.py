@@ -70,6 +70,16 @@ def command_line(raw, candidate):
     require(parts == model.cmdline(candidate).split(), 'Kernel command line differs from exact deployment')
 
 
+def verify_content(root, source, trees, *, cache=None):
+    """Installed tree proof only; does not pretend to observe a running Kernel."""
+    d = proof(trees,source)
+    for key in ('base','system','modules'):
+        try:inventory.verify(inventory.path(root,d[key]['path']),d[key]['inventory'],cache)
+        except ValueError as error:raise ValueError('early '+key+' tree differs: '+str(error)) from error
+    for provider in d['providers']:
+        for path,expected in provider['trees'].items():inventory.verify(inventory.path(root,path),expected,cache)
+
+
 def verify(root, source, trees, raw_cmdline, running_release):
     """Use embedded input/proof identities before selecting any on-disk tree."""
     root = Path(root).absolute();require(root == root.resolve() and root.is_dir(), 'unsafe early disk root')
@@ -82,11 +92,7 @@ def verify(root, source, trees, raw_cmdline, running_release):
     require(candidate['description']['inputs'] == source, 'slot does not bind embedded input record')
     command_line(raw_cmdline,candidate)
     require(running_release == i['kernel']['release'], 'running Kernel release differs from bound inputs')
-    for key in ('base','system','modules'):
-        require(inventory.snapshot(inventory.path(root,d[key]['path'])) == d[key]['inventory'], 'early '+key+' tree differs')
-    for provider in d['providers']:
-        for path,expected in provider['trees'].items():
-            require(inventory.snapshot(inventory.path(root,path)) == expected, 'early provider tree differs: '+path)
+    verify_content(root,source,trees)
     # This receipt is diagnostic input for the later handover, not runtime status.
     return dict(format='mojt-early-verification-v1',inputs=source['id'],deployment=candidate['id'],
                 installation=i['installation'],base=d['base']['path'],system=d['system']['path'],modules=d['modules']['path'],

@@ -16,6 +16,7 @@ import mojt_system_manifest as manifests
 import mojt_system_package as packer
 import mpm_base as base
 import mpm_nix_binary as nix
+import mpm_management as management
 import mpm_system as system
 import mpm_system_transition as transition
 
@@ -91,6 +92,9 @@ class DiskTests(unittest.TestCase):
             if unit.is_symlink():unit.unlink()
             unit.write_text('[Service]\nExecStart=/new-service-contract\n')
             with (profile / 'tools/mpm_nix_binary.py').open('a') as stream:stream.write('\n# Different provider implementation.\n')
+        # Tooling revisions now include measured boot/frontend code. Regenerate
+        # its declaration instead of keeping the previous code's support record.
+        (profile/management.FILENAME).write_bytes(artifact.canonical(management.produce(profile/'tools',legacy.MPM_FILES))+b'\n')
         d = copy.deepcopy(self.selected['description']);d['profile'] = system.inventory(profile)
         d['provides'] = sorted(set(d['provides']) | {'/run/mojt-system/bin/diagnose'})
         manifest = manifests.create(d);(profile / 'manifest.json').write_bytes(artifact.canonical(manifest))

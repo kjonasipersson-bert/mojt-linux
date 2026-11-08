@@ -79,7 +79,7 @@ def checked_file(path, maximum):
     return info
 
 
-def inspect(root, identifier, *, expected_inputs=None):
+def inspect(root, identifier, *, expected_inputs=None, verify=True):
     """Read-only slot integrity. This never reports selected, running or boot-ready."""
     root = target(root);destination = root / model.slot(identifier)
     tx.protected_directory(destination, label='native-v2 slot')
@@ -97,7 +97,7 @@ def inspect(root, identifier, *, expected_inputs=None):
     require(expected_inputs is None or values['inputs']['id'] == expected_inputs, 'unexpected boot inputs')
     for row in d['files']:
         path = destination / row['path'];info = checked_file(path, model.MAX_BOOT)
-        require(info.st_size == row['size'] and artifact.file_sha(path) == row['sha256'], 'retained boot bytes damaged')
+        require(info.st_size == row['size'] and (not verify or artifact.file_sha(path) == row['sha256']), 'retained boot bytes damaged')
     return values['deployment']
 
 

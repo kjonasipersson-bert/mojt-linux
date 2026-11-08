@@ -22,7 +22,7 @@ FORMAT = 'mojt-boot-base-realization-v1'
 require = artifact.require
 
 
-def inspect(root, value):
+def inspect(root, value, *, cache=None):
     d = model.envelope(value,FORMAT)
     artifact.fields(d,('installation','base','source_realization','inventory','scaffold','extractor','code'))
     model.installation(d['installation'])
@@ -35,7 +35,11 @@ def inspect(root, value):
     private = io.directory(folder/'tree')
     require(stat.S_IMODE(private.st_mode) == 0o500 and private.st_uid == 0, 'unprotected boot Base tree')
     tree = folder/'tree/rootfs'
-    require(artifact.digest(inventory.snapshot(tree)) == d['inventory'], 'boot Base content damaged')
+    key = str(tree)
+    if cache is None or key not in cache:
+        require(artifact.digest(inventory.snapshot(tree)) == d['inventory'], 'boot Base content damaged')
+        if cache is not None:cache[key] = d['inventory']
+    else:require(cache[key] == d['inventory'],'conflicting boot Base proofs')
     return tree
 
 

@@ -13,7 +13,54 @@ def unknown(reason):return dict(state='unknown', record=None, reason=reason)
 def observation(value):return dict(state='known', record=value, reason=None)
 
 
+def unwrap(value):
+    """Keep the real deployment format/ID; never synthesize a v1 record."""
+    base.require(type(value) is dict,'invalid running deployment record')
+    from mpm_boot_v2 import DEPLOYMENT, deployment, identity, installation
+    if value.get('format') == 'mojt-running-native-v2':
+        artifact.fields(value,('format','deployment','inputs','installation'))
+        record = value['deployment'];d = deployment(record);i = d['inputs']
+        identity(value['inputs']);installation(value['installation'])
+        base.require(value['inputs'] == i['id'] and value['installation'] == i['description']['installation'],'runtime input/installation binding differs')
+        return record
+    if value.get('format') == DEPLOYMENT:deployment(value)
+    else:
+        from mpm_deployment import validate_deployment
+        validate_deployment(value)
+    return value
+
+
+def description(value):
+    value = unwrap(value)
+    from mpm_boot_v2 import DEPLOYMENT
+    return value['description']['inputs']['description'] if value['format'] == DEPLOYMENT else value['description']
+
+
+def running(root, value, *, release=None):
+    if value is None:return None
+    record = unwrap(value);d = description(record)
+    from mpm_boot_v2 import DEPLOYMENT
+    if record['format'] == DEPLOYMENT:
+        info = base.store_info(root)
+        base.require(info is not None and info['installation'] == d['installation'],'running deployment belongs to another installation')
+    if release is not None:base.require(d['kernel']['release'] == release,'runtime record differs from running Kernel release')
+    return record
+
+
+def read_running(runtime):
+    modern = runtime.running.with_name('native-v2.json')
+    if modern == runtime.running:modern = None
+    old = runtime.running.is_file();new = modern is not None and modern.is_file()
+    base.require(not (old and new),'ambiguous v1/v2 runtime records')
+    path = modern if new else runtime.running if old else None
+    return running(runtime.disk,base.read(path),release=os.uname().release) if path else None
+
+
 def selected(root, running_record=None):
+    from mpm_boot_selection import present, current
+    if present(root):
+        value,entries,raw = current(root)
+        return observation(entries[value['description']['selected']]['record']) if value else unknown('native-v2 initial selection is incomplete')
     path=root/'boot/mojt/grub.cfg'
     if not os.path.lexists(path):return unknown('no boot selection record')
     # This is metadata inspection, not a Kernel/module integrity scrub.

@@ -112,8 +112,9 @@ contract. [Native-v2 records and immutable slot retention](native-boot-v2.md)
 now bind verified installed inputs and publish complete content without selection.
 The [diagnostic verification constructor/early reader](native-initramfs-reader.md)
 now packs a trusted private Python closure and verifies exact trees. The [System handover mode](native-system-handover.md) now joins preflight/current-state
-gates, a separate boot Base and runtime/shutdown handover. Authoritative v2
-staging/selection/status remains next. Reuse the accepted Base/Kernel VM
+gates, a separate boot Base and runtime/shutdown handover. [Admitted staging, atomic v2 selection and explicit runtime status](native-system-selection.md)
+are now joined for prepared candidates. Next is one owner VM boot/return, followed
+by active-v2 preflight/staging and configuration/request joins before MBT bootstrap. Reuse the accepted Base/Kernel VM
 evidence; request a focused owner VM test when the new System/initialization
 boundary exists. Bootstrap, build integration and final combined acceptance
 remain steps 4, 5 and 6 of the consolidation plan.

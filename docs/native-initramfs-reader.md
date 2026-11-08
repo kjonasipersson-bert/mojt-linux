@@ -85,12 +85,12 @@ check, not proof of the running artifact or hardware attestation.
 The verification-only init script deliberately enters a diagnostic shell after verification.
 The explicitly enabled [System handover mode](native-system-handover.md) now joins
 the unchanged-startup preflight, boot Base copy, current state checks and static
-shutdown/switch-root sequence. Authoritative selection/status still remain to join.
+shutdown/switch-root sequence. [Admitted selection/status](native-system-selection.md) now joins prepared candidates.
 The verification receipt still reports `boot_ready=false` and `handover=false`;
 construction never changes selection. Verification-only mode does not invoke
 System start. Handover mode validates the additional contract and current-state
-gates before moving mounts and execing System start. Authoritative v2 staging,
-selection and installed status remain required before a complete user workflow.
+gates before moving mounts and execing System start. Prepared-candidate v2 admission/selection/status is implemented; owner boot
+acceptance and the active-v2 stage/request joins remain before a complete workflow.
 
 ## Focused validation
 

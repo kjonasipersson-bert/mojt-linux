@@ -23,6 +23,13 @@ LAUNCH = "import sys\nsys.path.insert(0, '/mojt/code')\nfrom mpm_boot_early impo
 require = artifact.require
 
 
+class CompletedBuild(dict):
+    """In-process constructor result; decoded JSON is never a stage admission."""
+    def __init__(self, values, handover):
+        super().__init__(values)
+        self.handover = handover
+
+
 def provider_paths(root, ref, adapters):
     reference(ref)
     require(adapters is not None and ref['provider'] in adapters, 'trusted boot provider adapter required')
@@ -217,6 +224,6 @@ def build(root, source, runtime_directory, busybox, work, *, bounds, adapters, h
         require(inventory.snapshot(payload/'lib/modules') == trees['description']['modules']['inventory'], 'Kernel modules changed during construction')
         binding = record(model.BINDING,dict(inputs=source['id'],constructor=d['constructor'],archive=dict(sha256=hashlib.sha256(raw).hexdigest(),size=len(raw))))
         model.binding(binding,source)
-        return dict(archive=raw,binding=binding,proof=trees,boot_ready=False,selection_changed=False,handover_enabled=handover is not None,
+        return CompletedBuild(dict(archive=raw,binding=binding,proof=trees,boot_ready=False,selection_changed=False,handover_enabled=handover is not None,
                     scope='System handover enabled; authoritative selection/status and owner boot acceptance remain.' if handover is not None else
-                          'Verification initramfs only; initialization, mount handover and boot publication remain required.')
+                          'Verification initramfs only; initialization, mount handover and boot publication remain required.'),handover)

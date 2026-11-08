@@ -61,7 +61,7 @@ class ProfileFixture:
 class ModelTests(unittest.TestCase):
     def test_actual_runtime_matches_declared_bounded_handler_without_mutating_inputs(self):
         actual = management.current()
-        self.assertEqual(actual['description']['management'], defaults.MANAGEMENT_SUPPORT + native_system.MANAGEMENT_SUPPORT)
+        self.assertEqual(actual['description']['management'], [{'family':'mpm-boot-v2','read':[1],'write':[1],'capabilities':['exact-system-selection']}] + defaults.MANAGEMENT_SUPPORT + native_system.MANAGEMENT_SUPPORT)
         self.assertEqual(actual['description']['handlers'], defaults.HANDLER_SUPPORT)
         self.assertEqual(actual['description']['state'], [])
         context = management.context(actions=[required_action()]);before = copy.deepcopy((actual, context))
@@ -72,8 +72,8 @@ class ModelTests(unittest.TestCase):
         current = management.current();observed = registry_context()
         for operation in ('read', 'write'):
             changed = copy.deepcopy(current['description'])
-            changed['management'][0][operation] = []
-            if operation == 'read':changed['management'][0]['write'] = []
+            next(r for r in changed['management'] if r['family']=='mpm-defaults')[operation] = []
+            if operation == 'read':next(r for r in changed['management'] if r['family']=='mpm-defaults')['write'] = []
             old = management.create(changed)
             for preparing, candidate, role in ((old, current, 'preparing'), (current, old, 'candidate')):
                 with self.subTest(operation=operation, role=role):
@@ -83,7 +83,7 @@ class ModelTests(unittest.TestCase):
 
     def test_action_needs_result_registry_support_even_before_first_effect(self):
         current = management.current();d = copy.deepcopy(current['description'])
-        d['management'][0]['write'] = []
+        next(r for r in d['management'] if r['family']=='mpm-defaults')['write'] = []
         old = management.create(d)
         report = management.check_transition(current, old, management.context(actions=[required_action()]))
         self.assertFalse(report['compatible'])
@@ -120,7 +120,7 @@ class ModelTests(unittest.TestCase):
         for value in (dict(current, format='future'), dict(current, id='sha256:' + '0' * 64)):
             with self.assertRaises(ValueError):management.validate(value)
         for read, write in (([True], []), ([2, 1], [1]), ([1], [2]), ([1, 1], [1])):
-            d = copy.deepcopy(current['description']);d['management'][0].update(read=read, write=write)
+            d = copy.deepcopy(current['description']);next(r for r in d['management'] if r['family']=='mpm-defaults').update(read=read, write=write)
             with self.assertRaises(ValueError):management.create(d)
         d = copy.deepcopy(current['description'])
         row = dict(owner='a', namespace='var', path='lib/a', family='data', read=[1], write=[1])
@@ -157,7 +157,7 @@ class MeasuredProfileTests(ProfileFixture, unittest.TestCase):
             (self.candidate / 'tools' / name).unlink()
         measured = management.produce(self.candidate / 'tools', system.MPM_FILES)
         self.assertEqual(set(measured['description']['implementation']['identity']['files']), set(management.CAPABILITY_FILES))
-        self.assertEqual(measured['description']['management'], defaults.MANAGEMENT_SUPPORT + native_system.MANAGEMENT_SUPPORT)
+        self.assertEqual(measured['description']['management'], [{'family':'mpm-boot-v2','read':[1],'write':[1],'capabilities':['exact-system-selection']}] + defaults.MANAGEMENT_SUPPORT + native_system.MANAGEMENT_SUPPORT)
 
     def test_metadata_cannot_claim_support_absent_from_bundled_code(self):
         evidence = management.produce(self.candidate / 'tools', system.MPM_FILES)

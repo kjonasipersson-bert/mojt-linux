@@ -90,7 +90,9 @@ selection. It does not yet consume this preflight as execution authorization.
 The [diagnostic constructor/early reader](native-initramfs-reader.md) now verifies
 exact trees from its trusted private runtime. The [System handover mode](native-system-handover.md) now joins this preflight,
 current-state checks and a separate boot Base to runtime/shutdown handover.
-Authoritative v2 staging/selection/status remains the next join. No backward migration is required.
+[Prepared-candidate admission/selection/status](native-system-selection.md) is
+implemented. Planning/staging a new generation from an active v2 baseline and
+request-to-boot integration remain before complete administration. No backward migration is required.
 
 At that boundary, perform one focused owner VM boot/return of a real changed
 System with Base/Kernel/state retained. These synthetic preflight tests do not

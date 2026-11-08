@@ -14,6 +14,16 @@ MAX_NODES = 100000
 require = artifact.require
 
 
+def verify(root, expected, cache=None):
+    """One operation-local proof per immutable path; never reuse across calls."""
+    key = str(root);wanted = artifact.digest(expected)
+    if cache is not None and key in cache:
+        require(cache[key] == wanted,'conflicting immutable tree proofs')
+        return
+    require(snapshot(root) == expected,'immutable tree differs: '+key)
+    if cache is not None:cache[key] = wanted
+
+
 def path(root, relative):
     artifact.relative(relative)
     root = Path(root).absolute();target = root / relative

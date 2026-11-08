@@ -44,14 +44,23 @@ def main(argv, *, runtime=None):
         install.add_argument('--dry-run', action='store_true');install.add_argument('-y', '--yes', action='store_true')
         status = sub.add_parser('status');status.add_argument('--verify', action='store_true')
         plan = sub.add_parser('plan');plan.add_argument('--artifact', required=True);plan.add_argument('--baseline')
-        for command in (install, status, plan):
+        select = sub.add_parser('select');select.add_argument('--deployment',required=True)
+        rollback = sub.add_parser('rollback')
+        for command in (select,rollback):
+            command.add_argument('--expected-selected',required=True);command.add_argument('--dry-run',action='store_true')
+            command.add_argument('-y','--yes',action='store_true')
+        for command in (install, status, plan, select, rollback):
             command.add_argument('--disk-root', type=Path);command.add_argument('--json', action='store_true')
         args = parser.parse_args(argv)
         base.require(args.disk_root is not None or runtime is not None, 'specify --disk-root for a checkout/offline target')
         root = args.disk_root or runtime.disk
         adapters = ProviderAdapters(runtime if args.disk_root is None else None)
         if runtime is not None and args.disk_root is None:base.require(os.path.ismount(root), 'running installation disk is unavailable')
-        if args.action == 'plan':
+        if args.action in ('select','rollback'):
+            from mpm_boot_selection import select as choose
+            result = choose(root,getattr(args,'deployment',None),expected_selected=args.expected_selected,
+                            rollback=args.action=='rollback',dry_run=args.dry_run,yes=args.yes)
+        elif args.action == 'plan':
             from mpm_system_transition import prepare
             baseline = args.baseline
             if baseline is None and runtime is not None and args.disk_root is None:
@@ -70,9 +79,10 @@ def main(argv, *, runtime=None):
                 base.require(not any(v is not None for v in (args.archive_sha256, args.snapshot, args.sources_root, args.cache_root)), 'source/cache flags require --source')
                 result = system.install(root, args.from_file, args.expected_id, dependency_files=args.dependency_file, dry_run=args.dry_run, yes=args.yes, adapters=adapters)
         else:
-            running = base.read(runtime.running) if runtime is not None and args.disk_root is None and runtime.running.is_file() else None
+            from mpm_boot_status import read_running
+            running = read_running(runtime) if runtime is not None and args.disk_root is None else None
             result = system.status(root, verify=args.verify, running_record=running, adapters=adapters)
-        if args.json or args.action in ('install', 'plan'):print(json.dumps(result, indent=2, sort_keys=True))
+        if args.json or args.action in ('install', 'plan','select','rollback'):print(json.dumps(result, indent=2, sort_keys=True))
         else:
             print('System on:', result['target'])
             for title, key in (('Running', 'running'), ('Next boot', 'selected')):
@@ -83,6 +93,7 @@ def main(argv, *, runtime=None):
             if not result['installed']:print('  none')
             if result['retained']:print('Retained, not installed:', ', '.join(r['artifact'] for r in result['retained']))
             if result['incomplete']:print('Incomplete:', ', '.join(result['incomplete']))
+            for row in result.get('staged_deployments',[]):print('Prepared boot:',row['label'],'/',row['deployment'])
             print(result['compatibility'])
         return 0
     except (OSError, ValueError, KeyError, TypeError, RecursionError, EOFError, subprocess.CalledProcessError, tarfile.TarError) as error:

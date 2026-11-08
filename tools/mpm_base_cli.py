@@ -42,7 +42,9 @@ def _main(argv,*,runtime=None):
     if args.action=='status':
         from mpm_base_status import status as inspect
         running=None
-        if runtime is not None and args.disk_root is None and runtime.running.is_file():running=base.read(runtime.running)
+        if runtime is not None and args.disk_root is None:
+            from mpm_boot_status import read_running
+            running=read_running(runtime)
         result=inspect(root,verify=args.verify,running_record=running)
     elif args.action in ('stage','select','rollback'):
         baseline=args.baseline

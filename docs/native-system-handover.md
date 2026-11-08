@@ -67,9 +67,9 @@ mode is restored when possible. No forced/lazy unmount or successful-cleanup
 claim hides errors; the diagnostic shell remains the failure path.
 
 Runtime evidence is separately versioned at `/run/mojt/native-v2.json`, with the
-complete deployment/input identity. It is never forged as v1. Authoritative v2
-selection and installed status still need joining; v1-only update/status paths
-are not advertised as complete v2 administration.
+complete deployment/input identity. It is never forged as v1. [Atomic selection/status](native-system-selection.md) now consumes admitted
+constructor results and preserves the distinct runtime identity. V1 writers refuse
+a v2 authority; the complete installed stage/request workflow remains unfinished.
 
 ## Acceptance and self-hosting
 

@@ -143,9 +143,9 @@ def guest_file(root, tree, profile, provider_roots, mounts, guest):
     return actual
 
 
-def check(root, source, trees, value, *, provider_roots=None):
+def check(root, source, trees, value, *, provider_roots=None, cache=None):
     """Re-evaluate current state before writable mounts; never run a provider."""
-    d = validate(value,source);i = source['description'];tree = boot_base.inspect(root,d['boot_base'])
+    d = validate(value,source);i = source['description'];tree = boot_base.inspect(root,d['boot_base'],cache=cache)
     profile = inventory.path(root,'realizations/system/'+i['system']['artifact'][7:]+'/profile')
     candidate = manifests.validate(base.read(profile/'manifest.json'))
     require(candidate['id'] == i['system']['manifest'],'handover System manifest differs')
