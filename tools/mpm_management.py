@@ -295,7 +295,9 @@ def observe_target(root):
     registries = [] if observation is None else [dict(family='mpm-defaults', version=1, capabilities=[], evidence=observation['id'])]
     import mpm_system as system
     system_state = system.registry_observation(root)
-    if system_state is not None:registries.append(dict(family='mpm-system', version=1, capabilities=[], evidence=system_state['id']))
+    if system_state is not None:
+        registries.append(dict(family='mpm-system', version=1,
+            capabilities=system.required_capabilities(root), evidence=system_state['id']))
     return context(registries=registries)
 
 

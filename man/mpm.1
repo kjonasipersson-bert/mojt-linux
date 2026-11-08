@@ -109,8 +109,11 @@ are reused; unrelated inputs fail. --dry-run validates without target writes;
 .PP
 The first subset requires native leaf components with ordinary protected files,
 explicit Base ABI facts, the bin/python3, bin/mpm and tools runtime layout, and
-an empty lifecycle action set. Provider-backed/transitive components and links
-require later supported adapters. No source refresh or implicit fetch occurs.
+an empty lifecycle action set. Native components may bind exact provider runtime
+dependencies; the installed frontend imports/verifies Nix binary closures and retains
+them without activating a profile. Provider operations require the running installation;
+explicit offline targets cannot use the host store. Direct provider profile mappings,
+transitive native components and links remain unsupported. No source refresh occurs.
 .PP
 .B system status
 reports installed generations, retained incomplete generations, components and

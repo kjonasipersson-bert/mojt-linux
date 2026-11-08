@@ -8,7 +8,7 @@ import re
 import subprocess
 
 import mpm_requests as wishes
-from mpm_transaction import sync_directory
+from mpm_transaction import sync_directory, protected_directory
 from mpm_ports_profile import command, require
 
 
@@ -53,6 +53,7 @@ class NixBinaryAdapter:
 
     def ensure(self,ref,root):
         i=self.identity(ref);directory=Path(root)/'retained/nix'
+        protected_directory(directory, write=True, label='Nix retention')
         directory.mkdir(mode=0o700,exist_ok=True)
         require(not directory.is_symlink(),'unsafe Nix retention directory')
         gcroot=directory/store_path(i['output']).name
@@ -66,6 +67,7 @@ class NixBinaryAdapter:
 
     def verify(self,ref,root):
         i=self.identity(ref);paths=[r['path'] for r in i['closure']]
+        protected_directory(Path(root)/'retained/nix', label='Nix retention')
         gcroot=Path(root)/'retained/nix'/store_path(i['output']).name
         require(gcroot.is_symlink() and os.readlink(gcroot)==i['output'] and Path(i['output']).is_dir(),'Nix output/root missing')
         actual=sorted(self.runner([self.binary,'--query','--requisites',i['output']]).splitlines())

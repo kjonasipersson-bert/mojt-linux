@@ -45,11 +45,37 @@ network fetch, evaluation, build or package-name substitution occurs. Exact
 repeat installation verifies retained bytes and writes no new receipt/profile;
 the original input archive may have disappeared.
 
-This first join accepts local native files only. Named-source acquisition,
-Nix/other provider components, transitive component import, symlink/hardlink
-payloads and general lifecycle execution remain explicit later joins. They fail
-with a blocker; there is no fallback to another package manager. A distributable
-current Nix-backed System needs that adapter join before its owner VM test.
+The generation and its direct components are local native packages. A native
+component may now declare exact provider runtime dependencies in its descriptor.
+The core uses the same `describe`/`ensure`/`verify` adapter protocol as Ports;
+provider identities remain opaque to it. The installed frontend supplies the
+existing Nix binary adapter only on demand. Nix validates the accepted output,
+complete closure, NAR hashes and command inventory, imports binaries without
+builds, and registers roots under the installation's `retained/nix/`. It never
+changes a Nix profile or activates Ports. Expected hashes do not authenticate a
+publisher; the existing Nix signature requirement remains enabled for imports.
+
+Provider descriptions are checked before approval without downloads or retention
+writes. Actual import/verification is after approval under installation locks.
+Exact references are retained transitively by the component descriptor and its
+receipt; no second mutable provider catalog is invented. An interrupted provider
+import leaves complete native inputs retained, with no installed generation,
+and an explicit retry finishes from those inputs. Repeat installation verifies
+the retained provider dependency rather than acquiring it again. Plain status
+needs no provider; `status --verify` checks provider dependencies too.
+
+The CLI currently permits provider operations only for the running installation,
+using its retained `nix-store` helper. An explicit offline target cannot silently
+import into or inspect the host's unrelated Nix store. Native-only offline
+install/verification is unchanged. Other providers need an explicitly supplied
+adapter; no fallback to another package manager occurs.
+
+Named-source acquisition, direct provider profile mappings, transitive native
+component import, symlink/hardlink payloads and general lifecycle execution remain
+later joins. A distributable current Nix-backed System still needs packaging of
+its generated profile with those exact runtime dependencies before owner VM
+acceptance. This increment does not turn the old step payload into a native
+package or prove ELF/libc compatibility.
 
 ## Package and runtime contracts
 
@@ -62,8 +88,9 @@ storage or cause replacement of another build with the same label.
 
 The supported subset of the proposed
 [composition wire](formats/draft-v1/system-composition.md) uses native leaf
-System components, role `component`, with no unresolved dependencies or outer
-requirements. Only root-owned ordinary protected files/directories are accepted.
+System components, role `component`, with no transitive native components or outer
+requirements. Provider dependencies must have supported exact identities. Only
+root-owned ordinary protected files/directories are accepted.
 Their data/modes are verified and write bits removed in storage; private source
 files remain private. No mode normalization makes private files world-readable.
 
@@ -132,13 +159,15 @@ explicit runtime evidence/the authoritative boot menu through the same shared
 reader as Base. Only an exact installed manifest match identifies a native
 artifact. A matching label alone leaves its native identity unknown.
 
-The System registry is also observed by management compatibility checks. An old
+The System registry is also observed by management compatibility checks. Provider
+dependencies require the measured `exact-provider-dependencies` capability from
+both the preparing and candidate managers. An old
 candidate without native System format support cannot silently ignore it; an
 incomplete import must be completed/diagnosed before a transition. This does not
 select the most recently installed generation or write an upgrade wish.
 
-Next: connect supported provider acquisition/retention and current System
-payloads, then System-scoped deployment and authorized initialization/service
+Next: package current System payloads with their exact runtime dependencies and
+connect named sources, then System-scoped deployment and authorized initialization/service
 gating. Generalized boot v2 and the final joined MBT/bootstrap/build flow remain
 separate roadmap steps. No new manual A/B/A run is required for native
 content-only installation; focused VM acceptance is needed when an actual new

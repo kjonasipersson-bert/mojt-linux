@@ -7,7 +7,8 @@ SPDX-License-Identifier: GPL-2.0-only
 # System composition v1
 
 The [native content installer](../../system-installation.md) now implements a
-bounded native-leaf/ordinary-file subset with no lifecycle execution. Remaining
+bounded native/ordinary-file subset, including exact provider runtime dependencies
+of native components, with no lifecycle execution. Remaining
 provider/generalized deployment clauses below are review drafts. The [schema](system-composition.schema.json)
 defines the complete field set; [common rules](README.md) govern identity and
 encoding. [Example](examples/system-composition.json).
