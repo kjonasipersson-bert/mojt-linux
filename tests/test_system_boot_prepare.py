@@ -65,13 +65,15 @@ class PreparationTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which('zstd') and shutil.which('cpio'),'requires real package tools')
     def test_public_input_check_joins_real_inputs_without_output_sudo_or_path_changes(self):
         import test_native_image as fixtures
+        import test_system_vm as system_fixtures
         f=fixtures.NativeImageTests();f.setUp();self.addCleanup(f.doCleanups)
-        f.fixture.fixture(10)
+        provider=system_fixtures.SystemVmTests();provider.setUp();self.addCleanup(provider.doCleanups)
+        provider.fixture(10);f.args.system_payload=provider.payload
         output=f.work/'new-output';path_file=f.work/'selected-test';path_file.write_text('previous test\n')
         argv=['prepare-system-boot.py','--base-release',str(f.work/'release'),
             '--kernel-package',str(f.args.kernel_registry.parent/'kernel-package'/json.loads(
                 (f.work/'kernel-package/archive.json').read_text())['file']),
-            '--expected-kernel',f.kernel['id'],'--system-payload',str(f.fixture.payload),
+            '--expected-kernel',f.kernel['id'],'--system-payload',str(provider.payload),
             '--busybox',str(f.args.busybox),'--output',str(output),'--path-file',str(path_file),'--check-inputs']
         before=f.snapshot();finish=mock.Mock(side_effect=AssertionError('must not construct an image'))
         with mock.patch.object(sys,'argv',argv),mock.patch.object(source_prepare,'FIRMWARE',()), \
@@ -81,7 +83,7 @@ class PreparationTests(unittest.TestCase):
                 contextlib.redirect_stdout(io.StringIO()):
             result=source_prepare.main(profile='system-v2',finish=finish)
         self.assertTrue(result['verified']);self.assertFalse(result['image_written'] or result['boot_acceptance'])
-        self.assertEqual(result['system']['path'],str(f.fixture.payload.resolve()))
+        self.assertEqual(result['system']['path'],str(provider.payload.resolve()))
         self.assertIn('tar',result['system']['roles']);self.assertEqual(result['kernel']['artifact'],f.kernel['id'])
         self.assertFalse(output.exists());self.assertEqual(path_file.read_text(),'previous test\n')
         self.assertEqual(before,f.snapshot());finish.assert_not_called()
