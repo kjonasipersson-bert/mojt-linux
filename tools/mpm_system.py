@@ -276,7 +276,9 @@ def build_profile(profile, body, value, parts, *, adapters=None):
     for name in ('interpreter', 'frontend'):
         require(executable(runtime[name]), 'System runtime must be a public executable: ' + runtime[name])
     require(not (profile / 'bin').is_symlink() and (profile / 'bin').is_dir(), 'System bin must be an inventoried directory')
-    tools = profile / runtime['module_root'];require(not tools.is_symlink() and tools.is_dir() and modes.get(tools, 0o555) & 0o005 == 0o005, 'missing/private System management modules')
+    tools = profile / runtime['module_root'];module_mode = modes.get(tools,0o555)
+    require(not tools.is_symlink() and tools.is_dir() and module_mode & 0o005 == 0o005,
+            'missing/private System management modules: '+str(tools)+f' (planned mode={module_mode:04o}; public read/search required)')
     for name in ('interpreter', 'frontend', 'module_root'):
         for parent in (profile / runtime[name]).parents:
             if parent == profile or profile in parent.parents:
@@ -511,8 +513,8 @@ def registry_observation(root):
 
 def status(root, *, verify=False, running_record=None, adapters=None):
     root = target(root)
-    from mpm_boot_status import selected
-    from mpm_deployment import validate_deployment
+    from mpm_boot_status import selected, description, running as validate_running
+    running_record = validate_running(root,running_record)
     observed = selected(root, running_record) if root.exists() else dict(state='unknown', record=None, reason='target does not exist')
     info = base.store_info(root);marker = registry(root);installed, components, retained, incomplete = [], [], [], []
     if marker:
@@ -541,12 +543,15 @@ def status(root, *, verify=False, running_record=None, adapters=None):
             require(re.fullmatch('[0-9a-f]{64}', path.name) and any(r['artifact'] == 'sha256:' + path.name for r in installed), 'orphan/unknown System realization')
     def observation(record, reason):
         if record is None:return dict(state='unknown', artifact=None, manifest=None, label=None, deployment=None, reason=reason)
-        d = validate_deployment(record)['system']
+        d = description(record)['system']
         matched = [row for row in installed if row['manifest'] == d['manifest']]
         require(len(matched) <= 1, 'ambiguous exact System identity')
         return dict(state='known', artifact=matched[0]['artifact'] if matched else None, manifest=d['manifest'], label=d['generation'],
                     deployment=record['id'], artifact_evidence='exact installed manifest' if matched else 'native artifact unknown; label is not identity')
+    from mpm_boot_selection import present, available
+    staged = available(root)[0] if root.exists() and present(root) else {}
     return dict(format='mpm-system-status-v1', target=str(root), installation=info['installation'] if info else None,
+        staged_deployments=[dict(deployment=k,artifact=description(v['record'])['system']['artifact'],label=description(v['record'])['system']['generation']) for k,v in sorted(staged.items())],
         installed=installed, components=components, retained=retained, incomplete=sorted(incomplete),
         selected=observation(observed['record'], observed['reason']),
         running=observation(running_record, 'offline target or no authoritative running record'),

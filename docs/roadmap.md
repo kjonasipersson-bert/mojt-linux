@@ -6,7 +6,7 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Mojt development priorities
 
-Updated 2026-11-07. This records the agreed order and measured progress;
+Updated 2026-11-08. This records the agreed order and measured progress;
 future commands and policies are not claims of implemented functionality.
 The [architecture](architecture.md) defines the layer boundaries and the
 [MPM contract](mpm.md) records the accepted update semantics.
@@ -108,11 +108,22 @@ now imports exact native leaf components and realizes a profile without activati
 Exact provider runtime dependency retention is joined through adapters. Current System profile packaging and named-source acquisition are joined;
 The [read-only System transition plan](system-transition.md) now binds installed
 artifacts to the selected Base/Kernel and checks a bounded unchanged-startup
-contract. Native-v2 construction/selection and broader initialization/service
-gating remain next. Reuse the accepted Base/Kernel VM
-evidence; request a focused owner VM test when the new System/initialization
-boundary exists. Bootstrap, build integration and final combined acceptance
-remain steps 4, 5 and 6 of the consolidation plan.
+contract. [Native-v2 records and immutable slot retention](native-boot-v2.md)
+now bind verified installed inputs and publish complete content without selection.
+The [diagnostic verification constructor/early reader](native-initramfs-reader.md)
+now packs a trusted private Python closure and verifies exact trees. The [System handover mode](native-system-handover.md) now joins preflight/current-state
+gates, a separate boot Base and runtime/shutdown handover. [Admitted staging, atomic v2 selection and explicit runtime status](native-system-selection.md)
+are joined for prepared candidates. The [owner native-v2 A/B/A boot/return](system-boot-acceptance.md#owner-acceptance-2026-11-09)
+passed on 2026-11-09 through installed MPM, retaining exact Base/Kernel, identities,
+all four persistent mounts, Ports state and the earlier journal. Static exitrd
+reported full old-root/backing-filesystem unmount. The accepted reference is the
+c713f73 preparation; the later logo-only source fix has separate CI evidence.
+Next are public active-v2 preflight/staging and configuration/request joins
+before MBT bootstrap. Early boot took about 27 seconds before systemd; phase
+timing and measured performance work remain a separate follow-up. Reuse this
+accepted VM and Base/Kernel evidence rather than repeating an unchanged matrix.
+Bootstrap, build integration and final combined acceptance remain steps 4, 5
+and 6 of the consolidation plan.
 
 ## MPM selectors and runtime identity
 

@@ -82,15 +82,27 @@ not a user flag bypassing these gates.
 
 ## Remaining deployment work
 
+The existing assembled System's flat `defaults/journald.conf` and
+`defaults/timesyncd.conf` are resources linked from `/etc/systemd`; observation
+checks those actual persistent paths, without creating unused top-level copies
+or replacing local configuration. A linked `systemd` parent is refused.
+
 Both `stage_ready` and `boot_ready` remain false. This reader observes the
 existing verified v1 layout; it does not convert it to native-v2 or alter the
-closed v1 System reference. The next implementation must construct the
-[native-v2 inputs/binding/deployment](formats/draft-v1/boot-deployment-v2.md),
-its exact early-boot reader and immutable slot, then publish one authoritative
-selection menu with recovery checks. No backward migration is required.
+closed v1 System reference. The [native-v2 record/storage layer](native-boot-v2.md) now validates inputs,
+binding and deployment, and atomically retains a complete immutable slot without
+selection. It does not yet consume this preflight as execution authorization.
+The [diagnostic constructor/early reader](native-initramfs-reader.md) now verifies
+exact trees from its trusted private runtime. The [System handover mode](native-system-handover.md) now joins this preflight,
+current-state checks and a separate boot Base to runtime/shutdown handover.
+[Prepared-candidate admission/selection/status](native-system-selection.md) is
+implemented. Planning/staging a new generation from an active v2 baseline and
+request-to-boot integration remain before complete administration. No backward migration is required.
 
-At that boundary, perform one focused owner VM boot/return of a real changed
-System with Base/Kernel/state retained. These synthetic preflight tests do not
-claim that acceptance. Three focused cases cover tooling/provider preservation,
+The [prepared single A/B/A owner test](system-boot-acceptance.md) now exercises the
+new-image constructor and installed selection/status frontend. The owner
+completed its A/B/A boot/return and clean-shutdown acceptance on 2026-11-09 with
+exact Base/Kernel and persistent state retained. These synthetic preflight tests
+are separate from that real VM evidence. Three focused cases cover tooling/provider preservation,
 real root retained-content inspection without writes, and refusal of changed
 service/provider contracts plus stale persistent-account evidence.

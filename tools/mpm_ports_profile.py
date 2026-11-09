@@ -105,7 +105,7 @@ def current(root):
 
 
 def command(name):
-    require(type(name) is str and re.fullmatch(COMMAND,name) and len(name.encode()) <= 255, 'unsupported command alias')
+    require(type(name) is str and re.fullmatch(COMMAND,name) and len(name.encode()) <= 255, 'unsupported command alias: '+repr(name))
 
 
 def described(adapters,reference,root):

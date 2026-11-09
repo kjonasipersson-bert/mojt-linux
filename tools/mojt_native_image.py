@@ -361,6 +361,16 @@ def complete(tree, result, context, *, base, selected_system, root_uuid, console
 
 
 def build(args, vm=None):
+    # Fresh image defaults must be traversable independently of the host's
+    # private lab mask. Temporary workspaces and credentials have explicit modes.
+    previous = os.umask(0o022)
+    try:
+        return _build(args, vm)
+    finally:
+        os.umask(previous)
+
+
+def _build(args, vm=None):
     evidence = preview(args)
     if args.dry_run:
         return dict(format="mojt-native-image-preview-v1", base=evidence["base"]["id"],

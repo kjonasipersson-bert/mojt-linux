@@ -115,3 +115,18 @@ Progress reports must name the step, implemented behavior, validation and the
 remaining gate. Unit tests, schema checks and prior experiments do not mark a
 whole milestone complete. No new public command syntax is implied by this plan.
 
+
+Native-v2 progress within step 3: [exact records and immutable slot retention](native-boot-v2.md)
+are implemented without selecting boot. The diagnostic constructor/early reader
+now runs from a private trusted Python closure. Bounded preflight/state checks and
+mount/shutdown handover now join a separate immutable boot Base. Admitted staging,
+atomic v2 selection and explicit runtime status now join prepared candidates.
+The [single changed-System A/B/A VM test](system-boot-acceptance.md#owner-acceptance-2026-11-09)
+passed owner boot/return and clean-shutdown acceptance on 2026-11-09. Public
+active-v2 preflight/staging and
+configuration/request joins remain before complete M1 and MBT bootstrap.
+
+The owner reaffirmed native self-hosting as the destination on 2026-11-08.
+Complete the joined M1 administration/bootstrap flow, then M2 source recipes for
+Base and Mojt-owned System code; report imported third-party inputs separately.
+Do not relabel the existing prebuilt-input image assembly as native self-hosting.

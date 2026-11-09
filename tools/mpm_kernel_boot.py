@@ -177,6 +177,8 @@ def menu(state, entries):
 
 
 def current(root, baseline=None):
+    from mpm_boot_selection import present
+    require(not present(root),'native-v2 boot authority cannot be read or changed by a v1 writer')
     raw = checked_file(root / "boot/mojt/grub.cfg")
     if managed_menu(raw):
         lines = raw.decode("ascii").splitlines()
@@ -501,6 +503,8 @@ def select(root, identifier, *, expected_selected, baseline=None, dry_run=False,
 
 def status(root, *, baseline=None, running_record=None):
     root = disk_root(root)
+    from mpm_boot_selection import present, status as native_status
+    if present(root):return native_status(root,running_record=read(running_record) if running_record else None)
     state, entries, unused = current(root, baseline)
     all_entries, incomplete = available(root, state, entries)
     running = dict(release=os.uname().release, artifact=None, deployment=None, evidence="unknown")

@@ -63,7 +63,17 @@ def defaults(root, profile):
     require(source.is_dir() and not source.is_symlink(), 'unsupported System defaults root')
     def visit(src, dst):
         for file in sorted(src.iterdir()):
-            target = dst / file.name;relative = target.relative_to(root / 'state/etc').as_posix()
+            # The assembled System's flat defaults directory also contains
+            # these two private resources, linked from /etc/systemd. They are
+            # not requests to create unused /etc/journald.conf or timesyncd.conf.
+            directory = dst
+            if src == source and file.name in ('journald.conf','timesyncd.conf'):
+                directory = dst / 'systemd'
+                try:parent = directory.lstat()
+                except FileNotFoundError:
+                    missing.append('systemd/'+file.name);continue
+                require(stat.S_ISDIR(parent.st_mode),'unsupported System defaults parent')
+            target = directory / file.name;relative = target.relative_to(root / 'state/etc').as_posix()
             try:info = target.lstat()
             except FileNotFoundError:missing.append(relative);continue
             require(stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode), 'unsupported existing default target')
@@ -170,7 +180,7 @@ def _prepare(root, identifier, baseline, adapters):
         state=persistent['evidence'], checks=dict(compatible=not errors, errors=errors, base=compatibility, management=management_report,
             providers=requirements, startup=reviewed, account_shells=shell_report, defaults=observed_defaults),
         writes=False, effects=False, stage_ready=False, boot_ready=False,
-        remaining_gates=['native-v2 input/initramfs binding and early-boot reader', 'complete native-v2 slot publication',
+        remaining_gates=['authoritative native-v2 System staging/selection and runtime status join', 'bootstrap reuse of the same install/handover path',
                          'atomic next-boot selection and focused owner System boot/return acceptance']))
     require(len(artifact.canonical(result)) <= artifact.MAX_METADATA, 'System plan exceeds metadata limit')
     return result

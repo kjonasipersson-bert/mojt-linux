@@ -37,7 +37,7 @@ def help_text():
           "  ports                   install, activate, upgrade, update, apply, remove, reset, list, history\n"
           "                          initial/update input: --sources FILE\n"
           "  base                    install, status, stage, select, rollback; search, show, versions with --catalog FILE\n"
-          "  system                  install, status, plan; search, show, versions with --catalog FILE\n"
+          "  system                  install, status, plan, select, rollback; search, show, versions with --catalog FILE\n"
           "System install retains native content only; Base/Kernel selection changes next boot only.\n"
           "Install retains content; Kernel selection changes next boot, never the running Kernel.")
 
@@ -95,6 +95,14 @@ def boot_options(args, runtime):
     if runtime is None or option(args, "--disk-root") or "--help" in args or "-h" in args:
         return args
     args += ["--disk-root", str(runtime.disk)]
+    from mpm_boot_selection import present
+    if present(runtime.disk):
+        if args[0] != 'status':raise ValueError('native-v2 Base/Kernel boot changes are not integrated; refusing v1 fallback')
+        from mpm_boot_status import read_running
+        read_running(runtime)
+        path = runtime.running.with_name('native-v2.json')
+        if path.is_file() and not option(args,'--running-record'):args += ['--running-record',str(path)]
+        return args
     if not option(args, "--baseline"):
         import mpm_deployment as deployment
         import mpm_kernel_boot as boot
@@ -138,7 +146,7 @@ def dispatch(args, runtime):
                 action in ("search", "show", "versions") and option(command, "--catalog"))
         if not readonly:
             raise ValueError("shared installation changes require an administrator")
-    if area == 'system' and action in (None, '--help', '-h', 'install', 'status', 'plan'):
+    if area == 'system' and action in (None, '--help', '-h', 'install', 'status', 'plan','select','rollback'):
         if roots:raise ValueError('System commands use --disk-root for one installation target, not --root')
         if not (action == 'install' and option(command, '--source') and '--dry-run' in command):
             if action in ('install', 'plan') or option(command, '--verify'):require_codec(runtime, command)
@@ -165,7 +173,8 @@ def dispatch(args, runtime):
     if area == "kernel" and action in ("stage", "select", "rollback", "status"):
         boot_status = action == "status" and (option(command, "--disk-root") or
             runtime is not None and not roots and not option(command, "--root") and
-            (runtime.running.is_file() or (runtime.disk / "boot/mpm/format").is_file()))
+            (runtime.running.is_file() or runtime.running.with_name('native-v2.json').is_file() or
+             (runtime.disk / "boot/mpm/format").is_file()))
         if action != "status" or boot_status:
             if roots:
                 raise ValueError("kernel boot commands use --disk-root, not --root")

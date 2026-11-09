@@ -9,12 +9,19 @@ import subprocess
 
 import mpm_requests as wishes
 from mpm_transaction import sync_directory, protected_directory
-from mpm_ports_profile import command, require
+from mpm_ports_profile import require
 
 
 def store_path(value):
     require(type(value) is str and re.fullmatch(r'/nix/store/[0-9abcdfghijklmnpqrsvwxyz]{32}-[A-Za-z0-9+._?=-]+',value) and not value.endswith('.drv'),'not an exact Nix output path')
     return Path(value)
+
+
+def executable_name(value):
+    """An inventoried provider basename, not a requested public Ports alias."""
+    require(type(value) is str and value not in ('','.','..') and '/' not in value
+            and len(value.encode()) <= 255 and not any(ord(c) < 32 or ord(c) == 127 for c in value),
+            'invalid Nix executable basename: '+repr(value))
 
 
 class NixBinaryAdapter:
@@ -44,7 +51,7 @@ class NixBinaryAdapter:
             paths.append(row['path'])
         require(paths==sorted(set(paths)) and i['output'] in paths,'invalid closure inventory')
         require(type(i['commands']) is list and i['commands']==sorted(set(i['commands'])),'invalid command list')
-        for name in i['commands']:command(name)
+        for name in i['commands']:executable_name(name)
         return i
 
     def describe(self,ref,root):

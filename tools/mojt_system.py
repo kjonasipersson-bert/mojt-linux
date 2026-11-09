@@ -75,8 +75,8 @@ VERSION = "0.2"
 # Closed management runtime, including the boot builder's imported libraries.
 # This does not ship a source checkout or expose image/build commands.
 MPM_FILES = (
-    "mpm", "mpm-system", "mpm_cli.py", "mpm_catalog.py", "mpm_selection.py",
-    "mpm_selector_ports.py", "mpm_system.py", "mpm_system_model.py", "mpm_system_cli.py", "mpm_system_source.py", "mpm_system_transition.py", "mpm_boot_status.py", "mpm_base.py", "mpm_base_transition.py", "mpm_base_boot.py", "mpm_base_cli.py", "mpm_base_source.py", "mpm_base_status.py",
+    "mpm", "mpm-system", "mpm_cli.py", "mpm_catalog.py", "mpm_selection.py", "mpm_boot_selection.py",
+    "mpm_selector_ports.py", "mpm_system.py", "mpm_system_model.py", "mpm_system_cli.py", "mpm_system_source.py", "mpm_system_transition.py", "mpm_boot_v2.py", "mpm_boot_v2_store.py", "mpm_boot_inventory.py", "mpm_boot_early.py", "mpm_boot_constructor.py", "mpm_boot_base.py", "mpm_boot_handover.py", "mpm_nix_boot.py", "mpm_boot_status.py", "mpm_base.py", "mpm_base_transition.py", "mpm_base_boot.py", "mpm_base_cli.py", "mpm_base_source.py", "mpm_base_status.py",
     "mpm_native_io.py", "mojt-base-install", "mpm_kernel.py", "mpm_kernel_source.py", "mpm_deployment.py", "mpm_kernel_boot.py",
     "mpm_transaction.py", "mpm_defaults.py", "mpm_management.py", "mpm_requests.py", "mpm_request_plan.py", "mpm_sources.py", "mpm_sources_cli.py",
     "mpm_ports_profile.py", "mpm_ports_cli.py", "mpm_nix_binary.py", "mpm_native_cache.py", "mojt_artifact.py", "mojt_boot.py", "mojt_system.py",
@@ -314,7 +314,10 @@ def load_payload(path):
     record = json.loads(record_file.read_text())
     require(record["format"] == 1, "unsupported System payload format")
     expected = roles(record["step"])
-    require(set(record["packages"]) == set(expected), "unexpected System package roles")
+    missing = sorted(set(expected) - set(record["packages"]))
+    extra = sorted(set(record["packages"]) - set(expected))
+    require(not missing and not extra, "unexpected System package roles in "+str(record_file)+
+            ": missing="+(', '.join(missing) or 'none')+"; unexpected="+(', '.join(extra) or 'none'))
     seen = set()
     for item in record["objects"]:
         obj = store_path(item["path"])
@@ -427,6 +430,16 @@ def unit(description, executable_path, extra="", dependencies=""):
 def install(tree, payload, record, busybox, login_mode, repo, console="serial", hardware_profile=None,
             generation=None):
     """Install only into a NEW copied VM tree. Original Base/state stay intact."""
+    # Public runtime paths must not inherit a private build workspace's umask.
+    # Private state (history, passwords, homes) keeps its explicit modes, and
+    # the caller's policy is restored even when fresh assembly fails.
+    previous = os.umask(0o022)
+    try:
+        return _install(tree,payload,record,busybox,login_mode,repo,console,hardware_profile,generation)
+    finally:os.umask(previous)
+
+
+def _install(tree, payload, record, busybox, login_mode, repo, console, hardware_profile, generation):
     step = record["step"]
     require(step < 10 or login_mode == "password", "account stage requires password login")
     require(console in ("serial", "local"), "unsupported console")
@@ -442,6 +455,12 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
     system.mkdir(parents=True)
     (tree / "system/current").symlink_to(key)
     shutil.copytree(payload / "nix", tree / "nix", symlinks=True)
+    # These are generated namespace directories, not provider output contents.
+    # Preserve every inventoried store object's own modes and bytes.
+    for name in ('nix','nix/store'):
+        namespace = tree/name
+        require(namespace.is_dir() and not namespace.is_symlink(),'unsupported copied provider namespace: '+name)
+        namespace.chmod(0o755)
     for directory, dirs, files in os.walk(tree / "nix", followlinks=False):
         os.chown(directory, 0, 0)
         for name in dirs + files:
@@ -832,6 +851,12 @@ def finalize_manifest(tree, generation, base, repo):
     # candidate code. This sidecar is an ordinary inventoried profile file, not an
     # unversioned extension to mojt-system-manifest-v1.
     if record['step'] >= 3:
+        for name in ('.','bin','tools','units','libexec/mpm/bin'):
+            point = system if name == '.' else system/name
+            info = point.lstat()
+            require(stat.S_ISDIR(info.st_mode) and stat.S_IMODE(info.st_mode) & 0o005 == 0o005
+                    and not info.st_mode & 0o022,
+                    'assembled System runtime is not public/protected: '+str(point)+f' (mode={stat.S_IMODE(info.st_mode):04o})')
         spec = importlib.util.spec_from_file_location('mpm_management', repo / 'tools/mpm_management.py')
         management = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(management)

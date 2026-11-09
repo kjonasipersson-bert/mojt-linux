@@ -14,8 +14,8 @@ def unknown(reason):return dict(state='unknown',artifact=None,release=None,deplo
 
 
 def observation(value):
-    import mpm_deployment as deployment
-    d=deployment.validate_deployment(value)
+    from mpm_boot_status import description,unwrap
+    value=unwrap(value);d=description(value)
     return dict(state='known',artifact=d['base']['artifact'],release=d['base']['release'],deployment=value['id'])
 
 
@@ -27,6 +27,8 @@ def selected(root, running_record):
 
 def status(root, *, verify=False, running_record=None):
     root=base.target(root)
+    from mpm_boot_status import running as validate_running
+    running_record=validate_running(root,running_record)
     running=observation(running_record) if running_record is not None else unknown('offline target or missing authoritative running record')
     choice=selected(root,running_record) if root.exists() else unknown('target does not exist')
     info=base.store_info(root)

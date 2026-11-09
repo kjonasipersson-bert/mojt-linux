@@ -41,6 +41,22 @@ def cpio(root):
 
 class NativeModuleMountTests(unittest.TestCase):
     """Exercise generated remount arguments independently of image fixtures."""
+    def test_fresh_image_mask_is_scoped_and_restored_on_success_and_failure(self):
+        previous = os.umask(0o077)
+        try:
+            def assembling(*args):
+                self.assertEqual(os.umask(0o022), 0o022)
+                return "assembled"
+            with mock.patch.object(native, "_build", side_effect=assembling):
+                self.assertEqual(native.build(None), "assembled")
+            self.assertEqual(os.umask(0o077), 0o077)
+            with mock.patch.object(native, "_build", side_effect=ValueError("fixture failure")):
+                with self.assertRaisesRegex(ValueError, "fixture failure"):
+                    native.build(None)
+            self.assertEqual(os.umask(0o077), 0o077)
+        finally:
+            os.umask(previous)
+
     def remount(self, source, target):
         script = native.init_script(fixtures.system.init_script(fixtures.vm.INIT),
                                     "sha256:" + "1" * 64, "6.12.107-mojt1", "0.1.3", "native-fixture")
@@ -199,6 +215,9 @@ packages="packages.txt"
                 return gzip.compress(b"not newc")
             return result
         def disk(path, tree, *args, **kwargs):
+            for name in ("etc", "var", "home"):
+                self.assertEqual((tree / "state" / name).stat().st_mode & 0o777, 0o755)
+            self.assertEqual((tree / "state/root").stat().st_mode & 0o777, 0o700)
             native.boot.menu(tree, args[2], args[3], args[4])
             obj = tree / "kernel/installed" / self.kernel["id"].split(":")[1]
             kernel.object_record(obj, self.kernel["id"], verify=True)
@@ -389,7 +408,12 @@ packages="packages.txt"
         joined.install(self.registry, registry, cache, 'image-source', body['id'], archive_sha256=encoding, yes=True)
         _, installed = kernel.object_record(self.registry/'installed'/kernel.identifier(body['id']), body['id'], verify=True)
         self.kernel = body; self.args.kernel_artifact = body['id']
-        self.synthetic_build()
+        previous = os.umask(0o077)
+        try:
+            self.synthetic_build()
+            self.assertEqual(os.umask(0o077), 0o077)
+        finally:
+            os.umask(previous)
         receipt = json.loads((self.args.output/'native-build-inputs.json').read_bytes())
         self.assertEqual(receipt['format'], native.INPUTS_FORMAT)
         self.assertEqual(receipt['kernel_artifact'], body['id'])
