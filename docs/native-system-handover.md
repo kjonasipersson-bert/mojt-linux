@@ -76,9 +76,11 @@ a v2 authority; the complete installed stage/request workflow remains unfinished
 Focused CI reuses the actual-archive chroot test for exact reader and System
 state gates, including refusal of a changed layout. One additional root case
 checks Base-copy reuse, unchanged menu/state and reverse cleanup after an injected
-late mount failure. Mount/exec calls are injected: this is not a real System boot
-or shutdown acceptance. Next join v2 staging/selection/status, then run one
-changed-System VM boot/return, preserving exact Base/Kernel/state.
+late mount failure. Mount/exec calls are injected; these CI cases alone are not
+real System boot or shutdown evidence. The admitted v2 selection/status join
+subsequently passed [owner A/B/A boot/return and clean shutdown](system-boot-acceptance.md#owner-acceptance-2026-11-09)
+on 2026-11-09, preserving exact Base/Kernel and persistent state. Public active-v2
+staging and request integration remain.
 
 MBT must subsequently reuse these installation/handover APIs for bootstrap and
 the existing build environment, Kernel build and native packaging. The destination

@@ -86,6 +86,7 @@ now bind measured code/runtime and check exact on-disk trees using only the
 interpreter bundled in initramfs. Verification-only mode stops after verification. The [bounded System handover](native-system-handover.md) now joins the preflight,
 current-state gates, a separate boot Base and runtime/shutdown handover.
 [Admitted staging, atomic selection and explicit status](native-system-selection.md)
-now join prepared candidates. Owner boot/return and active-v2 stage/request joins remain. Only then run a focused owner System boot/return test. This
-increment needs focused record/storage CI, not another unchanged Kernel/Base VM
-matrix or a hardware test.
+join prepared candidates. The [owner A/B/A boot/return and clean shutdown](system-boot-acceptance.md#owner-acceptance-2026-11-09)
+passed on 2026-11-09. Public active-v2 staging and request joins remain. Reuse the
+accepted prepared-candidate and Base/Kernel evidence; do not repeat an unchanged
+VM matrix or claim hardware acceptance from these record/storage checks.

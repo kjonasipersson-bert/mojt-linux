@@ -100,9 +100,9 @@ implemented. Planning/staging a new generation from an active v2 baseline and
 request-to-boot integration remain before complete administration. No backward migration is required.
 
 The [prepared single A/B/A owner test](system-boot-acceptance.md) now exercises the
-new-image constructor and installed selection/status frontend. Perform that
-focused owner VM boot/return of a real changed
-System with Base/Kernel/state retained. These synthetic preflight tests do not
-claim that acceptance. Three focused cases cover tooling/provider preservation,
+new-image constructor and installed selection/status frontend. The owner
+completed its A/B/A boot/return and clean-shutdown acceptance on 2026-11-09 with
+exact Base/Kernel and persistent state retained. These synthetic preflight tests
+are separate from that real VM evidence. Three focused cases cover tooling/provider preservation,
 real root retained-content inspection without writes, and refusal of changed
 service/provider contracts plus stale persistent-account evidence.

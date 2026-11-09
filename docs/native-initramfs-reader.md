@@ -108,8 +108,10 @@ shutdown/switch-root sequence. [Admitted selection/status](native-system-selecti
 The verification receipt still reports `boot_ready=false` and `handover=false`;
 construction never changes selection. Verification-only mode does not invoke
 System start. Handover mode validates the additional contract and current-state
-gates before moving mounts and execing System start. Prepared-candidate v2 admission/selection/status is implemented; owner boot
-acceptance and the active-v2 stage/request joins remain before a complete workflow.
+gates before moving mounts and execing System start. Prepared-candidate v2
+admission/selection/status and [owner A/B/A boot/return](system-boot-acceptance.md#owner-acceptance-2026-11-09)
+passed on 2026-11-09. Public active-v2 staging and request joins remain before a
+complete workflow.
 
 ## Focused validation
 

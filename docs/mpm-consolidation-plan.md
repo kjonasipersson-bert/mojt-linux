@@ -121,8 +121,9 @@ are implemented without selecting boot. The diagnostic constructor/early reader
 now runs from a private trusted Python closure. Bounded preflight/state checks and
 mount/shutdown handover now join a separate immutable boot Base. Admitted staging,
 atomic v2 selection and explicit runtime status now join prepared candidates.
-The [single changed-System A/B/A VM test](system-boot-acceptance.md) is prepared;
-owner boot/return is pending. Active-v2 preflight/staging and
+The [single changed-System A/B/A VM test](system-boot-acceptance.md#owner-acceptance-2026-11-09)
+passed owner boot/return and clean-shutdown acceptance on 2026-11-09. Public
+active-v2 preflight/staging and
 configuration/request joins remain before complete M1 and MBT bootstrap.
 
 The owner reaffirmed native self-hosting as the destination on 2026-11-08.
