@@ -18,6 +18,7 @@ REPO = Path(__file__).resolve().parents[1]
 HOST_PATH = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 COMMANDS = ('git','bash','cp','du','tar','zstd','cpio','busybox','modprobe','mkfs.ext4','sfdisk',
             'mkfs.vfat','mcopy','grub-mkstandalone','grub-script-check','openssl','qemu-system-x86_64','sudo')
+FIRMWARE = (Path('/usr/share/OVMF/OVMF_CODE_4M.fd'),Path('/usr/share/OVMF/OVMF_VARS_4M.fd'))
 
 
 def require(ok, message):
@@ -52,6 +53,36 @@ def context(base, kernel, fmt):
                 platform=base['platform'], kernel_min=upstream, kernel_max=upstream)
 
 
+def input_report(args, profile, management):
+    """Read and verify the selected inputs before creating any test output."""
+    sys.path.insert(0,str(REPO/'tools'))
+    import mojt_artifact as artifact
+    import mojt_system
+    import mpm_kernel
+    record = mojt_system.load_payload(args.system_payload)
+    base_spec,_ = artifact.base_input(args.base_release,1)
+    candidate = artifact.verify(args.kernel_package,args.expected_kernel)
+    mpm_kernel.acceptable(candidate)
+    require(base_spec['platform'] == candidate['platform'] == 'x86_64-linux','Base/Kernel platforms differ')
+    require(candidate['version']['scheme'] == 'dotted-v1','test Kernel needs explicit numeric upstream metadata')
+    if profile in ('base','system-v2'):
+        require('tar' in record['packages'],'native boot test requires a current System export with retained GNU tar')
+        mojt_system.executable(args.system_payload,record,'tar','bin/tar')
+    if profile == 'system-v2':
+        require(record['step'] == 10,'native-v2 account/session acceptance requires a complete step-10 System export')
+    output = fresh_output(args.output,(REPO,args.base_release,args.kernel_package,args.system_payload))
+    mpm_kernel.root_path(output/'kernel-registry',write=True)
+    if args.path_file:check_path_file(args.path_file)
+    return dict(format='mojt-boot-test-input-check-v1',profile=profile,output=str(output),
+        source=dict(path=str(REPO),management=management['id']),
+        base=dict(path=str(args.base_release.resolve()),release=base_spec['version']['upstream'],
+                  rootfs_sha256=base_spec['provenance']['rootfs_sha256']),
+        kernel=dict(path=str(args.kernel_package.resolve()),artifact=candidate['id'],release=candidate['metadata']['kernel_release']),
+        system=dict(path=str(args.system_payload.resolve()),step=record['step'],objects=len(record['objects']),
+                    record_sha256=mojt_system.file_hash(args.system_payload/'system.json'),roles=sorted(record['packages'])),
+        verified=True,image_written=False,boot_acceptance=False)
+
+
 def launcher(original, image, inputs):
     here = 'here="$(cd -- "$(dirname -- "$0")" && pwd -P)"'
     drive = '    -drive "file=$here/disk.img,if=virtio,format=raw" \\\n'
@@ -71,11 +102,16 @@ def run(command, *, result=None):
     return value
 
 
-def save_path(path, output):
+def check_path_file(path):
     path = Path(path).absolute()
     require(path.parent.is_dir() and not path.is_symlink(), 'unsafe/missing path-file parent or linked path file')
     if path.exists():
         require(path.is_file() and path.stat().st_uid == os.geteuid(), 'path file is not owned by this user')
+    return path
+
+
+def save_path(path, output):
+    path = check_path_file(path)
     temporary = path.parent/('.'+path.name+'-'+uuid.uuid4().hex)
     try:
         with temporary.open('x') as stream:
@@ -128,33 +164,30 @@ def main(*, profile='kernel-source', finish=None):
     p.add_argument('--system-payload', type=Path, required=True)
     p.add_argument('--busybox', type=Path, default=Path('/usr/bin/busybox'))
     p.add_argument('--path-file', type=Path)
+    p.add_argument('--check-inputs',action='store_true',help='verify and print the exact local inputs; no output, sudo, import or image writes')
     args = p.parse_args()
     print('Checking host prerequisites and frozen input paths...', flush=True)
     require(os.geteuid() != 0, 'run as the ordinary Debian user, without sudo; only image assembly invokes sudo')
-    require(sys.stdin.isatty(), 'run this file directly in an interactive terminal, not through a heredoc or pipe')
+    require(args.check_inputs or sys.stdin.isatty(), 'run this file directly in an interactive terminal, not through a heredoc or pipe')
     require(sys.version_info >= (3,11), 'Python 3.11+ required')
-    check_source()
+    management = check_source()
     os.environ['PATH'] = HOST_PATH
     commands = COMMANDS + (('losetup','mount','umount','unshare','chroot','blkid') if profile == 'system-v2' else ())
     missing = [name for name in commands if not shutil.which(name)]
     require(not missing, 'missing host commands: '+', '.join(missing))
     for path in (args.base_release/'manifest.toml', args.base_release/'rootfs.tar.zst',
                  args.kernel_package, args.system_payload/'system.json', args.busybox,
-                 Path('/usr/share/OVMF/OVMF_CODE_4M.fd'), Path('/usr/share/OVMF/OVMF_VARS_4M.fd')):
+                 *FIRMWARE):
         require(path.is_file(), 'missing input: '+str(path))
-    if profile in ('base','system-v2'):
-        sys.path.insert(0,str(REPO/'tools'))
-        import mojt_system
-        payload = mojt_system.load_payload(args.system_payload)
-        require('tar' in payload['packages'],
-                'native boot test needs a verified System payload with retained GNU tar')
     require((profile == 'system-v2') == (finish is not None), 'System-v2 preparation requires its offline finalizer')
-    output = fresh_output(args.output, (REPO,args.base_release,args.kernel_package,args.system_payload))
-    # Validate the actual future registry ancestry before packaging any inputs.
-    sys.path.insert(0,str(REPO/'tools'))
-    import mpm_kernel
-    mpm_kernel.root_path(output/'kernel-registry', write=True)
+    checked = input_report(args,profile,management)
+    print(json.dumps(checked,indent=2),flush=True)
+    if args.check_inputs:
+        print('PASS: exact inputs verified; no test directory, registry, path file or VM image created',flush=True)
+        return checked
+    output = Path(checked['output'])
     os.umask(0o077); output.mkdir(mode=0o700)
+    (output/'input-check.json').write_text(json.dumps(checked,indent=2)+'\n')
     print('Test directory:', output, flush=True)
     python = [sys.executable,'-I','-B']
     print('Packaging the retained Base release; original release remains unchanged...', flush=True)

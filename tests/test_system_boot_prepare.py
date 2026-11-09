@@ -4,6 +4,9 @@
 """Focused unpublished-image boundaries and real assembled-default paths."""
 import importlib.util
 import copy
+import contextlib
+import io
+import json
 import os
 from pathlib import Path
 import shutil
@@ -18,6 +21,7 @@ sys.path.insert(0,str(REPO/'tools'))
 import mpm_system_transition as transition
 import mpm_management as management
 import mojt_boot
+import mojt_system
 
 spec = importlib.util.spec_from_file_location('system_boot_preparation',REPO/'tests/prepare-system-boot.py')
 prepare = importlib.util.module_from_spec(spec);spec.loader.exec_module(prepare)
@@ -48,14 +52,39 @@ class PreparationTests(unittest.TestCase):
         changed = copy.deepcopy(table);changed['partitions'][1]['start'] += 1
         with self.assertRaisesRegex(ValueError,'extents'):prepare.root_extent(512*1024**2,changed)
 
-    def test_resume_refuses_published_output_or_linked_target_without_changes(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            output = Path(temporary)/'private';output.mkdir(mode=0o700)
-            (output/'image').mkdir();marker = output/'image/retain';marker.write_text('published')
-            with self.assertRaisesRegex(ValueError,'publication'):prepare.resume_inputs(output)
-            self.assertEqual(marker.read_text(),'published')
-            alias = Path(temporary)/'alias';alias.symlink_to(output,target_is_directory=True)
-            with self.assertRaisesRegex(ValueError,'nonsymlink'):prepare.resume_inputs(alias)
+    def test_wrong_payload_reports_the_path_and_missing_roles_before_scanning_or_writing(self):
+        import test_system_vm as fixtures
+        fixture=fixtures.SystemVmTests();fixture.setUp();self.addCleanup(fixture.doCleanups)
+        record=fixture.fixture(10);record['packages']['old-role']=record['packages'].pop('tar')
+        (fixture.payload/'system.json').write_text(json.dumps(record))
+        with mock.patch.object(mojt_system,'tree_hash',side_effect=AssertionError('must reject roles first')):
+            with self.assertRaisesRegex(ValueError,r'system.json.*missing=tar; unexpected=old-role'):
+                mojt_system.load_payload(fixture.payload)
+        self.assertFalse((fixture.root/'new-output').exists())
+
+    @unittest.skipUnless(shutil.which('zstd') and shutil.which('cpio'),'requires real package tools')
+    def test_public_input_check_joins_real_inputs_without_output_sudo_or_path_changes(self):
+        import test_native_image as fixtures
+        f=fixtures.NativeImageTests();f.setUp();self.addCleanup(f.doCleanups)
+        f.fixture.fixture(10)
+        output=f.work/'new-output';path_file=f.work/'selected-test';path_file.write_text('previous test\n')
+        argv=['prepare-system-boot.py','--base-release',str(f.work/'release'),
+            '--kernel-package',str(f.args.kernel_registry.parent/'kernel-package'/json.loads(
+                (f.work/'kernel-package/archive.json').read_text())['file']),
+            '--expected-kernel',f.kernel['id'],'--system-payload',str(f.fixture.payload),
+            '--busybox',str(f.args.busybox),'--output',str(output),'--path-file',str(path_file),'--check-inputs']
+        before=f.snapshot();finish=mock.Mock(side_effect=AssertionError('must not construct an image'))
+        with mock.patch.object(sys,'argv',argv),mock.patch.object(source_prepare,'FIRMWARE',()), \
+                mock.patch.object(source_prepare.shutil,'which',return_value='/host-fixture/command'), \
+                mock.patch.object(source_prepare.os,'geteuid',return_value=path_file.stat().st_uid), \
+                mock.patch.object(source_prepare,'run',side_effect=AssertionError('must not invoke sudo/import')), \
+                contextlib.redirect_stdout(io.StringIO()):
+            result=source_prepare.main(profile='system-v2',finish=finish)
+        self.assertTrue(result['verified']);self.assertFalse(result['image_written'] or result['boot_acceptance'])
+        self.assertEqual(result['system']['path'],str(f.fixture.payload.resolve()))
+        self.assertIn('tar',result['system']['roles']);self.assertEqual(result['kernel']['artifact'],f.kernel['id'])
+        self.assertFalse(output.exists());self.assertEqual(path_file.read_text(),'previous test\n')
+        self.assertEqual(before,f.snapshot());finish.assert_not_called()
 
     def test_group_writable_checkout_reports_exact_file_without_changing_source(self):
         with tempfile.TemporaryDirectory() as temporary:

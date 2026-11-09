@@ -10,7 +10,6 @@ import os
 from pathlib import Path
 import runpy
 import shutil
-import stat
 import subprocess
 import sys
 import tempfile
@@ -174,36 +173,6 @@ def finalize(image, package, identifier, generation):
         require(clean, 'offline construction did not finish')
 
 
-def resume_inputs(output):
-    """Only a private, still unpublished pre-construction image can resume."""
-    output = Path(output).absolute()
-    require(output == output.resolve() and output.is_dir(),'resume output must be an existing nonsymlink directory')
-    info = output.stat()
-    require(info.st_uid == os.geteuid() and not stat.S_IMODE(info.st_mode) & 0o077,'resume output must be owned and private')
-    require(output != REPO and output not in REPO.parents and REPO not in output.parents,'resume output overlaps checkout')
-    for name in ('image','run-qemu.sh','preparation.json','acceptance-files','acceptance-inputs.img'):
-        require(not os.path.lexists(output/name),'publication already started; inspect '+str(output/name))
-    image = output/'.unpublished-image'
-    require(image.is_dir() and image == image.resolve(),'unpublished image missing or linked')
-    sys.path.insert(0,str(REPO/'tools'))
-    import mojt_artifact as artifact
-    import mpm_deployment as deployment
-    for file in (output/'base-package-result.json',output/'image-preview.json',image/'selected-deployment.json'):
-        require(stat.S_ISREG(file.lstat().st_mode),'regular retained preparation metadata required')
-    packed = artifact.read_json(output/'base-package-result.json');artifact.validate_descriptor(packed['artifact'])
-    require(packed['artifact']['kind'] == 'base','retained Base package required')
-    archive = packed['archive']['file'];artifact.relative(archive)
-    require('/' not in archive,'flat retained Base archive required')
-    package = output/'base-package'/archive
-    require(package == package.resolve() and package.is_file(),'retained Base archive missing or linked')
-    old = deployment.validate_deployment(artifact.read_json(image/'selected-deployment.json'))
-    preview = artifact.read_json(output/'image-preview.json')
-    require(old['system']['generation'] == 'system-v2-bootstrap' and old['base']['artifact'] == packed['artifact']['id']
-            and preview == dict(format='mojt-native-image-preview-v1',base=packed['artifact']['id'],
-                                kernel=old['kernel']['artifact'],imports=False,image_written=False),
-            'retained Base/Kernel/bootstrap preview differs')
-    return output,image,package,old
-
 
 def main():
     if any(v == '--finalize' or v.startswith('--finalize=') for v in sys.argv[1:]):
@@ -212,6 +181,9 @@ def main():
         parser.add_argument('--base-package',type=Path,required=True)
         parser.add_argument('--base-artifact',required=True);parser.add_argument('--generation',required=True)
         args = parser.parse_args()
+        # This is a disposable helper process: do not inherit host sudo policy
+        # when creating the new guest's public runtime and boot directories.
+        os.umask(0o022)
         finalize(args.finalize,args.base_package,args.base_artifact,args.generation)
         return
     shared = runpy.run_path(str(REPO/'tests/prepare-kernel-source-boot.py'))
@@ -220,22 +192,6 @@ def main():
         run('sudo','env','PATH='+shared['HOST_PATH'],'unshare','--mount','--propagation','private',sys.executable,'-I','-B',
             Path(__file__).resolve(),'--finalize',image,'--base-package',base_package,
             '--base-artifact',base_artifact,'--generation',generation)
-    if any(v == '--resume-output' or v.startswith('--resume-output=') for v in sys.argv[1:]):
-        parser = argparse.ArgumentParser(description='Finish an unpublished image which failed before native construction')
-        parser.add_argument('--resume-output',type=Path,required=True);parser.add_argument('--path-file',type=Path)
-        args = parser.parse_args()
-        require(os.geteuid() != 0,'resume as the ordinary Debian user; only finalization invokes sudo')
-        os.environ['PATH'] = shared['HOST_PATH'];os.umask(0o077);shared['check_source']()
-        for name in ('sudo','unshare','losetup','sfdisk','blkid','mount','umount','chroot','mkfs.ext4','bash','git'):
-            require(shutil.which(name) is not None,'missing host command: '+name)
-        output,image,package,old = resume_inputs(args.resume_output)
-        print('Resuming only native-v2 preparation; retaining the existing disk, inputs and VM root password...',flush=True)
-        finish(image=image,base_package=package,base_artifact=old['base']['artifact'],generation='system-v2-bootstrap')
-        image.rename(output/'image');image = output/'image'
-        shared['publish'](output,image,scripts=('run-system-boot-acceptance.py',),volume='MOJT_SYSTEM_BOOT',
-            record_format='mojt-system-boot-preparation-v1',base=old['base']['artifact'],kernel=old['kernel']['artifact'],
-            kernel_release=old['kernel']['release'],path_file=args.path_file)
-        return
     shared['main'](profile='system-v2',finish=finish)
 
 
@@ -243,5 +199,5 @@ if __name__ == '__main__':
     try:main()
     except (OSError,ValueError,KeyError,RuntimeError,subprocess.CalledProcessError) as error:
         print('System boot preparation:',error,file=sys.stderr)
-        print('No READY launcher published; inspect the private output before retrying.',file=sys.stderr)
+        print('No READY launcher published. Failed preparations cannot resume; use a new output directory.',file=sys.stderr)
         sys.exit(1)

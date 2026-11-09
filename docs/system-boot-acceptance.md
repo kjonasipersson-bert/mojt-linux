@@ -88,19 +88,34 @@ The host needs the same native-image prerequisites as the earlier Base test,
 plus `losetup`, `mount`, `umount`, `unshare` and `chroot`. Nix is needed only when
 preparing the System payload (the existing Distrobox route is sufficient).
 
-```sh
-python3 -I -B "$SOURCE/tests/prepare-system-boot.py" \
-  --base-release /home/jonasp/mojt-lab/releases/base-0.1.3-x86_64 \
-  --kernel-package /home/jonasp/mojt-kernel-package.MMLKo3/package/kernel-linux-6.12.107-r1-x86_64-linux-eed451b5497d.tar.zst \
-  --expected-kernel sha256:eed451b5497d078b8de4c098539cf63a4551aa0a46864fe7550b59066fe26250 \
-  --system-payload /home/jonasp/mojt-lab/mpm-nix-home/mojt-base-deployment.k3eJaO/system-step10 \
-  --output "$LAB/vm" \
-  --path-file /home/jonasp/mojt-system-boot-test-path
+```bash
+PREPARE=(python3 -I -B "$SOURCE/tests/prepare-system-boot.py"
+  --base-release /home/jonasp/mojt-lab/releases/base-0.1.3-x86_64
+  --kernel-package /home/jonasp/mojt-kernel-package.MMLKo3/package/kernel-linux-6.12.107-r1-x86_64-linux-eed451b5497d.tar.zst
+  --expected-kernel sha256:eed451b5497d078b8de4c098539cf63a4551aa0a46864fe7550b59066fe26250
+  --system-payload /home/jonasp/mojt-lab/mpm-nix-home/mojt-base-deployment.k3eJaO/system-step10
+  --output "$LAB/vm-reviewed"
+  --path-file /home/jonasp/mojt-system-boot-test-path)
+"${PREPARE[@]}" --check-inputs
 ```
 
 `SOURCE` is the pinned checkout and `LAB` its separate new private test directory;
-the payload is the retained result of `mojt-system-prepare.py --step 10`. Re-export
-only if it is unavailable or lacks GNU tar. Preparation can
+the payload is the retained result of `mojt-system-prepare.py --step 10`. The
+older `mpm-system-test/system-step10` export is not interchangeable: it predates
+the retained `tar` role. The closed role check reports its full metadata path,
+missing and unexpected roles before scanning its store. Do not edit that
+descriptor or borrow host tar; use the current export above or re-export it.
+
+`--check-inputs` performs the same input/source/host checks as a build, verifies
+the Base manifest/hash and exact Kernel archive, and scans the System closure.
+It prints full selected paths, content identities and roles. It invokes no sudo,
+imports or image builder, creates no output/registry and leaves an existing path
+file unchanged. It does not authorize boot or replace owner acceptance. After
+the check succeeds, execute `"${PREPARE[@]}"` in the same interactive terminal;
+the build rechecks the inputs instead of trusting a stale report. This uses one
+argument array for both operations, avoiding a different payload path on retry.
+Only the build writes `input-check.json` into its new private output directory.
+Preparation can
 take several minutes because complete provider trees are verified and two real
 initramfs archives are built. Progress messages identify these phases. Do not
 retry into the same output or interrupt just because hashing is quiet.
@@ -154,42 +169,18 @@ Mojt shutdown: old root and backing filesystem fully unmounted
 ```
 
 Busy unmount errors or the exitrd ERROR/read-only fallback are not clean-shutdown
-acceptance even if the machine powers off. If a phase fails, retain its output
-and checkpoint; do not rebuild or rerun earlier phases blindly.
-If a preparation failure leaves an unpublished image whose bootstrap adapter
-code predates a fix, keep it as evidence and use a new output with the current
-checkout and the same verified inputs. Do not patch its measured System code or
-deployment records in place. A busy cleanup from an older preparer requires
+acceptance even if the machine powers off. Runtime A/B/A actions use their
+checkpoint and the same successfully prepared disk. Offline preparation has a
+different rule: a failed preparation is discarded as a build attempt and must
+not be resumed. A busy cleanup from an older preparer requires
 identifying any remaining process rooted in that exact private chroot before
 signalling it; broad host Nix process cleanup is not part of this test.
 
-### Resume a failure before native construction
-
-For a failure while attaching the loop device, the completed bootstrap disk and
-its root password can be reused. As the ordinary host user, with the current
-pinned checkout:
-
-```sh
-python3 -I -B "$SOURCE/tests/prepare-system-boot.py" \
-  --resume-output "$LAB/vm-fixed" \
-  --path-file /home/jonasp/mojt-system-boot-test-path
-```
-
-The command refuses published/linked/nonprivate outputs, mismatched retained
-Base/Kernel preview, started firmware, existing loop associations, changed
-bootstrap manager code or a target where native construction has already started.
-It revalidates GPT extents, filesystem UUID and the on-disk bootstrap deployment.
-It does not edit old measured code, overwrite a finished image, repackage Base,
-reimport Kernel or ask for another VM root password. Final publication reuses the
-same acceptance-input/launcher function as a fresh preparation. This is a narrow
-pre-construction resume, not recovery of arbitrary partial native transactions.
-
-A bootstrap image assembled before the public-runtime permission fix needs a
-fresh build with the corrected assembler. Native construction has also started
-once Base installation creates its common store, even if a later System package
-preview fails. Such a disk does not meet the narrow resume contract. Keep it for
-inspection, reuse the same verified input payloads, and choose a new output;
-do not chmod its measured tree or alter its descriptor to bypass validation.
+Preparation is fresh-only. There is no resume option. A failed preparation is
+never a candidate for another attempt: choose a new output directory and reuse
+only the original verified release inputs. Do not patch a measured System or
+descriptor in place. Cleanup still refuses to delete through a failed mount;
+abandoned files are not opened or attached by the next build.
 
 Fresh native image construction also scopes its generated defaults to umask
 022 and restores the caller's mask on every exit. The preparer intentionally

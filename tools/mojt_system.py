@@ -314,7 +314,10 @@ def load_payload(path):
     record = json.loads(record_file.read_text())
     require(record["format"] == 1, "unsupported System payload format")
     expected = roles(record["step"])
-    require(set(record["packages"]) == set(expected), "unexpected System package roles")
+    missing = sorted(set(expected) - set(record["packages"]))
+    extra = sorted(set(record["packages"]) - set(expected))
+    require(not missing and not extra, "unexpected System package roles in "+str(record_file)+
+            ": missing="+(', '.join(missing) or 'none')+"; unexpected="+(', '.join(extra) or 'none'))
     seen = set()
     for item in record["objects"]:
         obj = store_path(item["path"])
