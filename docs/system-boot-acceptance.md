@@ -211,6 +211,23 @@ boot acceptance. Record-size diagnostics identify the format and actual bytes.
 Preparation prints the transition, handover and constructor phase separately so
 a failure no longer reports only the enclosing System label.
 
+## Owner progress, 2026-11-09
+
+The c713f73ec1e589f9a80436d265e40b59f1407091 preparation completed in
+`mojt-system-v2.DJnNvG/vm-proof-v2`: both Systems were admitted and initial A
+selected. Real A baseline and B boot/check passed, including exact selected/
+running identities, Base/Kernel, read-only mounts, all four persistent state
+mounts, account/machine/Ports state, A journal and no failed units. Return to A
+and final shutdown-console acceptance remain pending.
+
+The owner observed about 27 seconds before systemd started on A. Early boot
+performs full immutable-tree and boot-file verification; per-phase timings are
+still needed to attribute and improve that delay after the A/B/A journey.
+The initial v2 greeting also omitted the established logo. The source now
+restores its exact ANSI artwork, aligned identity labels and experimental notice.
+The already measured test image is not patched or rebuilt for this presentation
+fix; it remains the current A/B/A acceptance subject.
+
 ## Scope after acceptance
 
 This closes the prepared-candidate boot/return proof only. Public installed

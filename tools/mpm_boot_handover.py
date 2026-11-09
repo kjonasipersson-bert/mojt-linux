@@ -196,6 +196,24 @@ def enter(root, source, trees, value, cmdline, release, *, runner=None, execute=
     return _enter(Path(root),context,verified,runner=runner,execute=execute)
 
 
+def login_motd(source):
+    """Keep the established Mojt greeting with exact native-v2 identities."""
+    i = model.inputs(source)
+    logo = (
+        "\033[1;36m       |  |  |\n"
+        "\033[1;37m   +---+--+--+---+\n"
+        "\033[1;30m --\033[1;37m|             |\033[1;30m--\n"
+        "\033[1;30m --\033[1;37m|   .-----.   |\033[1;30m--\n"
+        "\033[1;30m --\033[1;37m|  (  \033[38;5;214m@@@\033[1;37m  )  |\033[1;30m--\n"
+        "\033[1;37m   |   '-----'   |\n"
+        "\033[1;37m   |   \033[1;36m|||||||\033[1;37m   |\n"
+        "\033[1;37m   +---+--+--+---+\n"
+        "\033[1;36m       |  |  |\n\033[0m\n")
+    return (logo+'Welcome to Mojt Linux\n\nSystem:       '+i['system']['generation']+
+            '\nBase:         '+i['base']['release']+'\nKernel:       '+i['kernel']['release']+
+            '\n\nMojt Linux is an experimental distribution.\n')
+
+
 def _enter(root, context, verified, *, runner=None, execute=None, newroot=Path('/newroot'), runtime=Path('/')):
     """Only enter() authorizes this operation. Injected functions support CI."""
     runner = runner or (lambda args:subprocess.run(['/bin/busybox',*map(str,args)],check=True))
@@ -236,7 +254,7 @@ def _enter(root, context, verified, *, runner=None, execute=None, newroot=Path('
         for name,key in (('native-kernel-artifact','kernel'),('native-base-artifact','base'),('native-system-artifact','system')):
             (identity/name).write_text(i[key]['artifact']+'\n')
         (identity/'issue').write_text('Mojt Linux '+i['system']['generation']+'/'+i['base']['release']+' (x86_64)\n\n')
-        (identity/'motd').write_text('Welcome to Mojt Linux\n\nSystem: '+i['system']['generation']+'\nBase: '+i['base']['release']+'\nKernel: '+i['kernel']['release']+'\n')
+        (identity/'motd').write_text(login_motd(context['source']))
         runner(['hostname',context['hostname']])
         for name in ('dev','proc','sys'):
             runner(['mount','--move',runtime/name,newroot/name]);moved.append((runtime/name,newroot/name))
