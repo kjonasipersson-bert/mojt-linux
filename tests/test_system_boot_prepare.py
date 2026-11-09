@@ -75,7 +75,8 @@ class PreparationTests(unittest.TestCase):
                 (f.work/'kernel-package/archive.json').read_text())['file']),
             '--expected-kernel',f.kernel['id'],'--system-payload',str(provider.payload),
             '--busybox',str(f.args.busybox),'--output',str(output),'--path-file',str(path_file),'--check-inputs']
-        before=f.snapshot();finish=mock.Mock(side_effect=AssertionError('must not construct an image'))
+        before=f.snapshot();provider_before=mojt_system.tree_hash(provider.payload)
+        finish=mock.Mock(side_effect=AssertionError('must not construct an image'))
         with mock.patch.object(sys,'argv',argv),mock.patch.object(source_prepare,'FIRMWARE',()), \
                 mock.patch.object(source_prepare.shutil,'which',return_value='/host-fixture/command'), \
                 mock.patch.object(source_prepare.os,'geteuid',return_value=path_file.stat().st_uid), \
@@ -86,7 +87,8 @@ class PreparationTests(unittest.TestCase):
         self.assertEqual(result['system']['path'],str(provider.payload.resolve()))
         self.assertIn('tar',result['system']['roles']);self.assertEqual(result['kernel']['artifact'],f.kernel['id'])
         self.assertFalse(output.exists());self.assertEqual(path_file.read_text(),'previous test\n')
-        self.assertEqual(before,f.snapshot());finish.assert_not_called()
+        self.assertEqual(before,f.snapshot());self.assertEqual(provider_before,mojt_system.tree_hash(provider.payload))
+        finish.assert_not_called()
 
     def test_group_writable_checkout_reports_exact_file_without_changing_source(self):
         with tempfile.TemporaryDirectory() as temporary:
