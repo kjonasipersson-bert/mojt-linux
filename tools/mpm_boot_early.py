@@ -13,7 +13,7 @@ import mpm_boot_v2 as model
 import mpm_boot_v2_store as store
 from mpm_request_plan import reference
 
-PROOF = 'mojt-boot-tree-proof-v1'
+PROOF = 'mojt-boot-tree-proof-v2'
 RUNTIME = 'mojt-boot-python-runtime-v1'
 require = artifact.require
 
@@ -52,12 +52,14 @@ def proof(value, source):
                     system='realizations/system/'+i['system']['artifact'][7:]+'/profile',
                     modules='kernel/installed/'+i['kernel']['artifact'][7:]+'/payload/lib/modules')
     for key,path in expected.items():
-        artifact.fields(d[key],('path','inventory'));require(d[key]['path'] == path and type(d[key]['inventory']) is dict, 'foreign boot tree path/evidence')
+        artifact.fields(d[key],('path','measurement'));require(d[key]['path'] == path, 'foreign boot tree path/evidence')
+        inventory.measurement(d[key]['measurement'])
     require(type(d['providers']) is list and len(d['providers']) <= 128, 'unbounded boot provider evidence')
     names = []
     for row in d['providers']:
         artifact.fields(row,('reference','trees'));reference(row['reference']);require(type(row['trees']) is dict, 'missing provider trees')
         roots(sorted(row['trees']));names.extend(row['trees'])
+        for measured in row['trees'].values():inventory.measurement(measured)
     if names:roots(sorted(names))
     return d
 
@@ -74,7 +76,7 @@ def verify_content(root, source, trees, *, cache=None):
     """Installed tree proof only; does not pretend to observe a running Kernel."""
     d = proof(trees,source)
     for key in ('base','system','modules'):
-        try:inventory.verify(inventory.path(root,d[key]['path']),d[key]['inventory'],cache)
+        try:inventory.verify(inventory.path(root,d[key]['path']),d[key]['measurement'],cache)
         except ValueError as error:raise ValueError('early '+key+' tree differs: '+str(error)) from error
     for provider in d['providers']:
         for path,expected in provider['trees'].items():inventory.verify(inventory.path(root,path),expected,cache)

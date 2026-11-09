@@ -11,16 +11,18 @@ import mojt_artifact as artifact
 import mpm_native_io as io
 
 MAX_NODES = 100000
+MEASUREMENT = 'mojt-boot-tree-measurement-v1'
 require = artifact.require
 
 
 def verify(root, expected, cache=None):
     """One operation-local proof per immutable path; never reuse across calls."""
+    measurement(expected)
     key = str(root);wanted = artifact.digest(expected)
     if cache is not None and key in cache:
         require(cache[key] == wanted,'conflicting immutable tree proofs')
         return
-    require(snapshot(root) == expected,'immutable tree differs: '+key)
+    require(measure(root) == expected,'immutable tree differs: '+key)
     if cache is not None:cache[key] = wanted
 
 
@@ -31,12 +33,12 @@ def path(root, relative):
     return target
 
 
-def snapshot(root, *, maximum=artifact.MAX_CONTENT):
-    """Include modes, owners, xattrs and within-tree hardlinks, not timestamps."""
-    rows = {};links = {};total = 0
+def _entries(root, maximum):
+    """Deterministic depth-first entries; include all existing integrity facts."""
+    links = {};total = 0;nodes = 0
     def visit(node, name):
-        nonlocal total
-        require(len(rows) < MAX_NODES, 'boot inventory node limit')
+        nonlocal total,nodes
+        require(nodes < MAX_NODES, 'boot inventory node limit');nodes += 1
         before = node.lstat()
         row = dict(mode=stat.S_IMODE(before.st_mode), uid=before.st_uid, gid=before.st_gid,
                    xattrs={n:os.getxattr(node,n,follow_symlinks=False).hex() for n in sorted(os.listxattr(node,follow_symlinks=False))})
@@ -63,16 +65,41 @@ def snapshot(root, *, maximum=artifact.MAX_CONTENT):
             key = (before.st_dev,before.st_ino)
             if key in links:row['hardlink_to'] = links[key]
             else:links[key] = name
-        rows[name] = row
+        yield name,row
         if row['type'] == 'directory':
             children = []
             with os.scandir(node) as entries:
                 for child in entries:
-                    require(len(rows)+len(children) < MAX_NODES, 'boot inventory node limit');children.append(child.name)
-            for child in sorted(children):visit(node/child, child if name == '.' else name+'/'+child)
-    visit(Path(root), '.')
+                    require(nodes+len(children) < MAX_NODES, 'boot inventory node limit');children.append(child.name)
+            for child in sorted(children):yield from visit(node/child, child if name == '.' else name+'/'+child)
+    yield from visit(Path(root), '.')
+
+
+def snapshot(root, *, maximum=artifact.MAX_CONTENT):
+    """Full bounded map for callers that need individual entries."""
+    rows = dict(_entries(root,maximum))
     require(len(artifact.canonical(rows)) < artifact.MAX_METADATA, 'boot inventory metadata limit')
     return rows
+
+
+def measurement(value):
+    artifact.fields(value,('format','digest','nodes','content_bytes'))
+    require(value['format'] == MEASUREMENT,'unsupported boot tree measurement')
+    io.identifier(value['digest'])
+    require(type(value['nodes']) is int and 0 < value['nodes'] <= MAX_NODES,'boot tree node count limit')
+    require(type(value['content_bytes']) is int and 0 <= value['content_bytes'] <= artifact.MAX_CONTENT,
+            'boot tree content size limit')
+    return value
+
+
+def measure(root, *, maximum=artifact.MAX_CONTENT):
+    """Stream framed entries; proof size is independent of file-list length."""
+    checksum = hashlib.sha256((MEASUREMENT+'\n').encode('ascii'));nodes = 0;total = 0
+    for name,row in _entries(root,maximum):
+        raw = artifact.canonical([name,row])+b'\n'
+        require(len(raw) < artifact.MAX_METADATA,'boot inventory entry size limit')
+        checksum.update(raw);nodes += 1;total += row.get('size',0)
+    return measurement(dict(format=MEASUREMENT,digest='sha256:'+checksum.hexdigest(),nodes=nodes,content_bytes=total))
 
 
 def clone_runtime(source, destination, expected):

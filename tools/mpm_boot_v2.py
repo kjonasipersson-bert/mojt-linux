@@ -48,13 +48,16 @@ def canonical(value):
             if type(item) is int:require(-(2**63) <= item < 2**63, 'boot metadata integer range')
     check(value)
     raw=json.dumps(value,sort_keys=True,ensure_ascii=True,separators=(',',':')).encode('ascii')
-    require(len(raw) < artifact.MAX_METADATA, 'boot metadata size limit')
+    require(len(raw) < artifact.MAX_METADATA, 'boot metadata size limit: '+str(len(raw))+
+            ' bytes (must be below '+str(artifact.MAX_METADATA)+')')
     return raw
 
 
 def record(fmt, description):
     body=dict(format=fmt,description=description)
-    return dict(**body,id='sha256:'+hashlib.sha256(canonical(body)).hexdigest())
+    try:raw=canonical(body)
+    except ValueError as error:raise ValueError('boot record '+fmt+': '+str(error)) from error
+    return dict(**body,id='sha256:'+hashlib.sha256(raw).hexdigest())
 
 
 def envelope(value, fmt):

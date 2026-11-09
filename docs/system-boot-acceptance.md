@@ -192,12 +192,22 @@ so successful execution is not guest boot acceptance.
 
 Boot evidence uses its own bounded canonical record writer, not the Ports
 request writer's 4096-entry object limit. A native Kernel or provider file map
-can legitimately exceed that request limit: boot maps use the no-follow tree
-reader's 100000-node bound. The complete metadata document remains below 16 MiB;
+can legitimately exceed that request limit. Installed tree proofs now use
+version-2 compact measurements rather than embedded full maps, so the number
+of files does not expand the combined proof beyond its metadata budget. Every
+file and metadata field is still scanned and hashed at construction and boot;
+the no-follow tree reader's 100000-node bound remains. The complete metadata
+document remains below 16 MiB;
 depth, list, scalar, Unicode and record-identity checks remain enforced. The
-canonical encoding and IDs of previously accepted small records are unchanged.
-Ports request limits are unchanged. A real 4097-file module inventory is captured,
-saved, independently read and reverified, including a changed-module refusal.
+canonical encoding of unchanged envelope formats is unchanged; proof v2 has
+its own closed shape and identity, and proof v1 is refused.
+Ports request limits are unchanged. The scale regression has 4097 real module
+files and nine provider trees with 27000 real files. Their old JSON maps exceed
+16 MiB and reproduce the former failure; the combined compact proof is below
+64 KiB. It is saved, independently read and reverified, and changes to provider
+or module content are refused. Root CI also exercises the same proof format in
+the extracted initramfs reader. This is synthetic provider data, not owner VM
+boot acceptance. Record-size diagnostics identify the format and actual bytes.
 Preparation prints the transition, handover and constructor phase separately so
 a failure no longer reports only the enclosing System label.
 

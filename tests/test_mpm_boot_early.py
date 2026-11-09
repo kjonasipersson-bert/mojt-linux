@@ -29,7 +29,7 @@ import test_mpm_boot_v2 as fixtures
 
 
 class ReaderTests(unittest.TestCase):
-    def test_large_real_module_inventory_roundtrips_through_boot_records_and_reader(self):
+    def test_real_provider_graph_above_metadata_budget_roundtrips_and_rejects_changes(self):
         source=fixtures.fixture();d=source['description']
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary)
@@ -39,12 +39,32 @@ class ReaderTests(unittest.TestCase):
             modules=root/'kernel/installed'/d['kernel']['artifact'][7:]/'payload/lib/modules'
             modules.mkdir(parents=True)
             for number in range(4097):(modules/('module-'+str(number)+'.ko')).write_bytes(b'fixture')
-            with mock.patch.object(constructor.system,'retained_providers',return_value=[]):
-                proof=constructor.capture(root,source,{})
-            self.assertGreater(len(proof['description']['modules']['inventory']),4096)
+            names=['nix/store/provider-'+str(n) for n in range(9)]
+            legacy={}
+            for name in names:
+                directory=root/name;directory.mkdir(parents=True)
+                for number in range(3000):(directory/('node-%04d-'%number+'\u00e5'*90)).write_bytes(b'')
+                legacy[name]=inventory.snapshot(directory)
+            self.assertGreater(len(artifact.canonical(legacy)),artifact.MAX_METADATA)
+            with self.assertRaisesRegex(ValueError,'boot metadata size limit'):
+                model.record('oversized-legacy-proof',dict(trees=legacy))
+            del legacy
+            ref=dict(provider='fixture',identity=dict(roots=names))
+            class Adapter:
+                def boot_paths(self,ref,target):return names
+            with mock.patch.object(constructor.system,'retained_providers',return_value=[ref]):
+                proof=constructor.capture(root,source,{'fixture':Adapter()})
+            self.assertGreater(proof['description']['modules']['measurement']['nodes'],4096)
+            self.assertLess(len(artifact.canonical(proof)),64*1024)
             path=root/'proof.json';path.write_bytes(artifact.canonical(proof)+b'\n')
             saved=early.read(path);early.proof(saved,source);early.verify_content(root,source,saved)
             self.assertEqual(saved,proof)
+            legacy=model.record('mojt-boot-tree-proof-v1',saved['description'])
+            with self.assertRaisesRegex(ValueError,'unsupported/corrupt'):early.proof(legacy,source)
+            changed=root/names[0]/('node-0000-'+'\u00e5'*90);changed.write_bytes(b'provider changed')
+            with self.assertRaisesRegex(ValueError,'immutable tree differs'):
+                early.verify_content(root,source,saved)
+            changed.write_bytes(b'')
             (modules/'module-4096.ko').write_bytes(b'changed')
             with self.assertRaisesRegex(ValueError,'modules tree differs'):
                 early.verify_content(root,source,saved)
@@ -55,10 +75,29 @@ class ReaderTests(unittest.TestCase):
             (root/'link').symlink_to('/unrelated/host/path')
             before=inventory.snapshot(root)
             self.assertEqual(before['hardlink']['hardlink_to'],'file');self.assertEqual(before['link']['target'],'/unrelated/host/path')
+            measured=inventory.measure(root)
+            framed=(inventory.MEASUREMENT+'\n').encode()+b''.join(artifact.canonical([n,r])+b'\n' for n,r in before.items())
+            self.assertEqual(measured['digest'],'sha256:'+__import__('hashlib').sha256(framed).hexdigest())
+            self.assertEqual(measured['nodes'],len(before));self.assertEqual(measured['content_bytes'],18)
+            self.assertEqual(inventory.measure(root),measured)
+            with mock.patch.object(inventory,'MAX_NODES',2),self.assertRaisesRegex(ValueError,'node limit'):
+                inventory.measure(root)
+            with mock.patch.object(artifact,'MAX_METADATA',256):
+                with self.assertRaisesRegex(ValueError,'metadata limit'):inventory.snapshot(root)
+                self.assertEqual(inventory.measure(root),measured)
+            for changes in ({'nodes':True},{'nodes':inventory.MAX_NODES+1},{'content_bytes':-1},
+                            {'digest':'invalid'},{'format':'unknown'},{'extra':True}):
+                with self.subTest(changes=changes),self.assertRaises(ValueError):inventory.measurement(dict(measured,**changes))
+            (root/'hardlink').unlink();(root/'hardlink').write_bytes(b'unchanged')
+            self.assertNotEqual(inventory.measure(root),measured)
+            (root/'hardlink').unlink();os.link(root/'file',root/'hardlink')
             with self.assertRaisesRegex(ValueError,'limit|unbounded'):inventory.snapshot(root,maximum=1)
+            with self.assertRaisesRegex(ValueError,'limit|unbounded'):inventory.measure(root,maximum=1)
             (root/'file').chmod(0o600);self.assertNotEqual(inventory.snapshot(root),before)
+            self.assertNotEqual(inventory.measure(root),measured)
             os.mkfifo(root/'fifo')
             with self.assertRaisesRegex(ValueError,'unsupported'):inventory.snapshot(root)
+            with self.assertRaisesRegex(ValueError,'unsupported'):inventory.measure(root)
             with self.assertRaisesRegex(ValueError,'linked'):inventory.path(root,'link')
             compressed=root/'large.ko.gz';compressed.write_bytes(gzip.compress(b'x'*4096))
             with mock.patch.object(model,'MAX_BOOT',1024),self.assertRaisesRegex(ValueError,'modules exceed limit'):
@@ -206,8 +245,8 @@ class ConstructorTests(unittest.TestCase):
         command.write_text(model.cmdline(value)+' root=UUID=other')
         denied=subprocess.run(args,capture_output=True,text=True);self.assertNotEqual(denied.returncode,0)
         self.assertIn('command line differs',denied.stderr);command.write_text(model.cmdline(value))
-        proof=result['proof']['description']['base'];name=next(n for n,r in proof['inventory'].items() if r['type']=='file')
-        changed=extracted/'test-target'/proof['path']/name;changed.chmod(0o600);changed.write_bytes(b'tampered Base')
+        proof=result['proof']['description']['base']
+        changed=extracted/'test-target'/proof['path']/'usr/lib/os-release';changed.chmod(0o600);changed.write_bytes(b'tampered Base')
         denied=subprocess.run(args,capture_output=True,text=True);self.assertNotEqual(denied.returncode,0)
         self.assertIn('early base tree differs',denied.stderr)
 

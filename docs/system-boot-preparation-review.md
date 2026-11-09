@@ -35,9 +35,16 @@ or QEMU acceptance. A second case uses an older-role metadata fixture and checks
 the precise error before any store scan. Existing namespace, package, isolated
 reader and publication checks cover their own boundaries.
 
-The recent large-inventory regression covers more than 4096 actual files and
-rejects changed content. Root CI also runs the bundled reader in an independently
-extracted initramfs. These checks do not execute the owner's complete Nix-backed
+The first scale regression exceeded 4096 entries but did not exceed the combined
+16 MiB proof budget. Owner construction then passed preflight and handover but
+failed on that aggregate size limit. The corrected proof format is v2: compact
+streamed measurements include all former file/metadata integrity facts while
+retaining the 16 MiB record limit. The replacement scale case has 4097 real
+modules and 27000 files across nine synthetic provider trees, explicitly checks
+that the old maps exceed the real size limit, and verifies that the compact
+proof stays below 64 KiB and refuses changed content. Root CI also runs the
+bundled reader in an independently extracted initramfs. These checks do not
+execute the owner's complete Nix-backed
 preparation or firmware/PID1/shutdown journey. That integration remains pending.
 
 The next owner action is **only the read-only input check** in

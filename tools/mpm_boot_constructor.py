@@ -88,12 +88,12 @@ def constructor(runtime, busybox, *, handover=False):
 
 def capture(root, source, adapters):
     d = model.inputs(source)
-    def tree(relative):return dict(path=relative,inventory=inventory.snapshot(inventory.path(root,relative)))
+    def tree(relative):return dict(path=relative,measurement=inventory.measure(inventory.path(root,relative)))
     providers = [];seen = set()
     for ref in system.retained_providers(root,d['system']['artifact']):
         names = provider_paths(root,ref,adapters)
         fresh = [p for p in names if p not in seen];seen.update(names)
-        if fresh:providers.append(dict(reference=ref,trees={p:inventory.snapshot(inventory.path(root,p)) for p in fresh}))
+        if fresh:providers.append(dict(reference=ref,trees={p:inventory.measure(inventory.path(root,p)) for p in fresh}))
     value = record(early.PROOF,dict(inputs=source['id'],constructor=d['constructor'],
         base=tree('realizations/base/'+d['base']['artifact'][7:]+'/tree/rootfs'),
         system=tree('realizations/system/'+d['system']['artifact'][7:]+'/profile'),
@@ -222,7 +222,7 @@ def build(root, source, runtime_directory, busybox, work, *, bounds, adapters, h
         raw = vm.make_initramfs(work/'initroot',frozen_busybox,modules,script(source,runtime_d['interpreter'],handover=handover is not None),
                                paths.SHUTDOWN if handover is not None else None,extra_applets=extra,archive_writer=assemble)
         # The frozen original module inventory is rechecked after decompression.
-        require(inventory.snapshot(payload/'lib/modules') == trees['description']['modules']['inventory'], 'Kernel modules changed during construction')
+        require(inventory.measure(payload/'lib/modules') == trees['description']['modules']['measurement'], 'Kernel modules changed during construction')
         binding = record(model.BINDING,dict(inputs=source['id'],constructor=d['constructor'],archive=dict(sha256=hashlib.sha256(raw).hexdigest(),size=len(raw))))
         model.binding(binding,source)
         return CompletedBuild(dict(archive=raw,binding=binding,proof=trees,boot_ready=False,selection_changed=False,handover_enabled=handover is not None,

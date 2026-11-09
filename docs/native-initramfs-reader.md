@@ -49,11 +49,30 @@ exists before boot inputs and is checked against their exact `constructor` field
 No package-supplied constructor is executed.
 
 The constructor audits installed input content with the existing native-v2
-store checks. Its `mojt-boot-tree-proof-v1` record binds the input ID and complete
-Base realization, System profile, native module and provider tree inventories.
-Inventories include type, owner/group, mode, file size/hash, xattrs and within-tree
-hardlink relationships. They are bounded and do not follow directory symlinks or
-open special files. Shared provider roots are measured once.
+store checks. Its `mojt-boot-tree-proof-v2` record binds the input ID and a
+`mojt-boot-tree-measurement-v1` for each exact Base realization, System profile,
+native module and provider tree. A measurement has the closed fields `format`,
+`digest`, `nodes` and `content_bytes`; the digest includes every relative name,
+type, owner/group, mode, file size/hash, xattr and within-tree hardlink relation.
+The reader scans every tree and compares the complete measurement. Full file
+lists are not copied into the proof or stage receipt. Shared provider roots are
+measured once; no provider or candidate executable is invoked to measure them.
+
+The SHA256 stream starts with ASCII `mojt-boot-tree-measurement-v1` and LF. Each
+following frame is canonical ASCII JSON `[relative_path, entry]` plus LF, in
+depth-first order with child names sorted by code point; `.` is the first entry.
+Entry fields and no-follow file checks are shared with the existing snapshot
+reader. `nodes` includes directories and links; `content_bytes` sums file sizes
+per path, including hardlink aliases. Timestamps and raw inode numbers are not
+content identities. Limits remain 100000 nodes and 64 GiB per installed tree,
+with bounded individual frames. Complete boot records remain below 16 MiB and
+the archive remains bounded. Proof v1 is rejected; no implicit conversion or
+fallback is provided.
+
+Full bounded snapshots remain available for the explicitly trusted bootstrap
+runtime copy and the existing Base realization checks. Runtime cloning retains
+the individual entries it needs. Installed tree proofs are measured as streams
+and do not accumulate all provider file maps in JSON.
 
 The proof, inputs, trusted code and runtime are embedded in a real bounded
 gzip/newc archive, using the existing writer and independent archive inventory
