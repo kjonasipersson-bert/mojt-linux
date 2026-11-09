@@ -113,11 +113,17 @@ now bind verified installed inputs and publish complete content without selectio
 The [diagnostic verification constructor/early reader](native-initramfs-reader.md)
 now packs a trusted private Python closure and verifies exact trees. The [System handover mode](native-system-handover.md) now joins preflight/current-state
 gates, a separate boot Base and runtime/shutdown handover. [Admitted staging, atomic v2 selection and explicit runtime status](native-system-selection.md)
-are now joined for prepared candidates. Next is one owner VM boot/return, followed
-by active-v2 preflight/staging and configuration/request joins before MBT bootstrap. Reuse the accepted Base/Kernel VM
-evidence; request a focused owner VM test when the new System/initialization
-boundary exists. Bootstrap, build integration and final combined acceptance
-remain steps 4, 5 and 6 of the consolidation plan.
+are joined for prepared candidates. The [owner native-v2 A/B/A boot/return](system-boot-acceptance.md#owner-acceptance-2026-11-09)
+passed on 2026-11-09 through installed MPM, retaining exact Base/Kernel, identities,
+all four persistent mounts, Ports state and the earlier journal. Static exitrd
+reported full old-root/backing-filesystem unmount. The accepted reference is the
+c713f73 preparation; the later logo-only source fix has separate CI evidence.
+Next are public active-v2 preflight/staging and configuration/request joins
+before MBT bootstrap. Early boot took about 27 seconds before systemd; phase
+timing and measured performance work remain a separate follow-up. Reuse this
+accepted VM and Base/Kernel evidence rather than repeating an unchanged matrix.
+Bootstrap, build integration and final combined acceptance remain steps 4, 5
+and 6 of the consolidation plan.
 
 ## MPM selectors and runtime identity
 

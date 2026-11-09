@@ -43,11 +43,15 @@ retaining the 16 MiB record limit. The replacement scale case has 4097 real
 modules and 27000 files across nine synthetic provider trees, explicitly checks
 that the old maps exceed the real size limit, and verifies that the compact
 proof stays below 64 KiB and refuses changed content. Root CI also runs the
-bundled reader in an independently extracted initramfs. These checks do not
-execute the owner's complete Nix-backed
-preparation or firmware/PID1/shutdown journey. That integration remains pending.
+bundled reader in an independently extracted initramfs. These CI checks are separate
+from owner firmware/PID1/shutdown evidence. The owner subsequently completed
+Nix-backed preparation and the A/B/A boot/return journey on c713f73, including
+clean static-exitrd shutdown; see the
+[recorded acceptance](system-boot-acceptance.md#owner-acceptance-2026-11-09).
 
-The next owner action is **only the read-only input check** in
-[system-boot-acceptance.md](system-boot-acceptance.md). A successful report confirms
-which original inputs will be used; it is not a boot-ready claim. Only afterward
-should the same argument array build a new image. No old attempt is salvaged.
+The read-only input check remains the first operation for a new preparation,
+not a replacement for boot acceptance. The accepted image was freshly built
+from original verified inputs; no failed image was salvaged. Remaining gates
+are public active-v2 staging and configuration/request/MBT joins. Early-boot
+phase timing is still open. The later restored login artwork has separate
+local/CI checks and did not require repeating the owner A/B/A journey.

@@ -8,7 +8,9 @@ SPDX-License-Identifier: GPL-2.0-only
 
 This joins the [handover constructor](native-system-handover.md) to one atomic
 next-boot authority. It remains consolidation step 3, on the path to M1 joined
-administration and M2 native self-hosting. No owner v2 boot acceptance is claimed.
+administration and M2 native self-hosting. Prepared-candidate owner A/B/A boot,
+return and clean static-exitrd shutdown passed on 2026-11-09; see the
+[recorded acceptance](system-boot-acceptance.md#owner-acceptance-2026-11-09).
 
 ## Retained content is not a selectable System
 
@@ -103,8 +105,9 @@ no-op, retained entries, refusal of v1 fallback and failures before/after menu
 replacement. This is not a real firmware/Kernel/System boot or owner Debian test.
 
 The [disposable A/B/A VM preparation and checkpointed owner test](system-boot-acceptance.md)
-now use these manager APIs. Owner boot/return is pending, with exact
-Base/Kernel/state retained. Then close active-v2 preflight/staging and
+use these manager APIs. Owner boot/return passed with exact Base/Kernel/state,
+selected/running identities and the previous journal retained. Next close
+active-v2 preflight/staging and
 request/configuration joins before MBT bootstrap reuses the same code. Self-hosting
 still requires pinned source recipes for Base and Mojt-owned System code, plus
 the joined build/package/install/boot cycle; the new menu alone does not prove it.

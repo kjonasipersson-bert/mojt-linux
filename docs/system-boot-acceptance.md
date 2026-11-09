@@ -9,9 +9,10 @@ SPDX-License-Identifier: GPL-2.0-only
 This is the next acceptance gate for [System selection](native-system-selection.md),
 not another Base/Kernel combination matrix. It proves a real firmware/Kernel/PID1
 handover to a changed exact System, installed-MPM selection and return, persistent
-state and the static shutdown exitrd. Preparation is implemented; owner boot
-acceptance is pending. CI checks preparation boundaries, records and the existing
-actual-archive/chroot path; it does not run this Nix-backed VM journey.
+state and the static shutdown exitrd. Owner preparation and A/B/A boot/return
+acceptance passed on 2026-11-09; see the recorded evidence below. CI checks
+preparation boundaries, records and the actual-archive/chroot path separately;
+the owner performed the Nix-backed VM journey.
 
 ## Inputs and isolation
 
@@ -211,22 +212,36 @@ boot acceptance. Record-size diagnostics identify the format and actual bytes.
 Preparation prints the transition, handover and constructor phase separately so
 a failure no longer reports only the enclosing System label.
 
-## Owner progress, 2026-11-09
+## Owner acceptance, 2026-11-09
 
 The c713f73ec1e589f9a80436d265e40b59f1407091 preparation completed in
 `mojt-system-v2.DJnNvG/vm-proof-v2`: both Systems were admitted and initial A
-selected. Real A baseline and B boot/check passed, including exact selected/
-running identities, Base/Kernel, read-only mounts, all four persistent state
-mounts, account/machine/Ports state, A journal and no failed units. Return to A
-and final shutdown-console acceptance remain pending.
+selected. The owner completed real A baseline, installed-MPM selection to B,
+B boot/check, installed-MPM rollback, and return-to-A check-old. Both B and the
+returned A passed exact selected/running identity checks, retained Base 0.1.3
+and Kernel 6.12.107-mojt1, read-only mounts, all four persistent state mounts,
+account/machine/Ports state, the A journal and no failed units.
+
+The owner also reported the shutdown console reaching both static-exitrd lines:
+
+```text
+Mojt shutdown: entered static exitrd
+Mojt shutdown: old root and backing filesystem fully unmounted
+```
+
+The final result was `PASS: native-v2 System A/B/A boot and return acceptance`.
+This is owner-reported real Debian/KVM evidence at the pinned preparation
+revision above, not a claim that the assistant ran commands on that host.
 
 The owner observed about 27 seconds before systemd started on A. Early boot
 performs full immutable-tree and boot-file verification; per-phase timings are
 still needed to attribute and improve that delay after the A/B/A journey.
 The initial v2 greeting also omitted the established logo. The source now
 restores its exact ANSI artwork, aligned identity labels and experimental notice.
-The already measured test image is not patched or rebuilt for this presentation
-fix; it remains the current A/B/A acceptance subject.
+The accepted image was not patched or rebuilt for this presentation fix.
+The logo follow-up d81eead89b331273ae48c2940c5fc12aace893fb passed focused CI
+(run 42627956207), and its rendered ANSI artwork was locally compared byte for
+byte with the established greeting. No extra owner VM cycle was requested.
 
 ## Scope after acceptance
 
