@@ -10,6 +10,7 @@ import re
 import shutil
 import stat
 import subprocess
+import time
 import tomllib
 
 import mojt_artifact as artifact
@@ -139,13 +140,13 @@ def guest_file(root, tree, profile, provider_roots, mounts, guest):
         else:
             require(not pending or stat.S_ISDIR(info.st_mode),'guest path traverses a nondirectory');done.append(part)
     require(done and allowed and stat.S_ISREG(actual.lstat().st_mode) and actual.stat().st_mode & 0o001,
-            'guest executable is not supplied by verified immutable content: '+guest)
+            'guest executable is not supplied by retained immutable content: '+guest)
     return actual
 
 
-def check(root, source, trees, value, *, provider_roots=None, cache=None):
+def check(root, source, trees, value, *, provider_roots=None, cache=None, verify_content=True):
     """Re-evaluate current state before writable mounts; never run a provider."""
-    d = validate(value,source);i = source['description'];tree = boot_base.inspect(root,d['boot_base'],cache=cache)
+    d = validate(value,source);i = source['description'];tree = boot_base.inspect(root,d['boot_base'],cache=cache,verify=verify_content)
     profile = inventory.path(root,'realizations/system/'+i['system']['artifact'][7:]+'/profile')
     candidate = manifests.validate(base.read(profile/'manifest.json'))
     require(candidate['id'] == i['system']['manifest'],'handover System manifest differs')
@@ -188,12 +189,17 @@ def unit_name(path):
     return (result or '-')+'.mount'
 
 
-def enter(root, source, trees, value, cmdline, release, *, runner=None, execute=None):
-    verified = early.verify(root,source,trees,cmdline,release)
-    context = check(Path(root),source,trees,value)
-    context['deployment'] = early.read(Path(root)/model.slot(verified['deployment'])/'deployment.json')
-    require(context['deployment']['id'] == verified['deployment'],'deployment changed before handover')
-    return _enter(Path(root),context,verified,runner=runner,execute=execute)
+def enter(root, source, trees, value, cmdline, release, *, runner=None, execute=None, verify_content=False):
+    start = time.monotonic()
+    checked = (early.verify if verify_content else early.inspect)(root,source,trees,cmdline,release)
+    after_reader = time.monotonic()
+    context = check(Path(root),source,trees,value,verify_content=verify_content)
+    context['deployment'] = early.read(Path(root)/model.slot(checked['deployment'])/'deployment.json')
+    require(context['deployment']['id'] == checked['deployment'],'deployment changed before handover')
+    context['boot_checks'] = dict(format='mojt-boot-checks-v1',deployment=checked['deployment'],
+        mode='full-audit' if verify_content else 'normal',content_verified=verify_content,
+        reader_ms=round((after_reader-start)*1000),state_gates_ms=round((time.monotonic()-after_reader)*1000))
+    return _enter(Path(root),context,checked,runner=runner,execute=execute)
 
 
 def login_motd(source):
@@ -251,6 +257,8 @@ def _enter(root, context, verified, *, runner=None, execute=None, newroot=Path('
         running = dict(format='mojt-running-native-v2',deployment=context['deployment'],inputs=context['source']['id'],
                        installation=i['installation'])
         (identity/'native-v2.json').write_bytes(artifact.canonical(running)+b'\n')
+        if 'boot_checks' in context:
+            (identity/'boot-checks.json').write_bytes(artifact.canonical(context['boot_checks'])+b'\n')
         for name,key in (('native-kernel-artifact','kernel'),('native-base-artifact','base'),('native-system-artifact','system')):
             (identity/name).write_text(i[key]['artifact']+'\n')
         (identity/'issue').write_text('Mojt Linux '+i['system']['generation']+'/'+i['base']['release']+' (x86_64)\n\n')

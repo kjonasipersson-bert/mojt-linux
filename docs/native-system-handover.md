@@ -9,7 +9,7 @@ SPDX-License-Identifier: GPL-2.0-only
 This extends the [trusted initramfs reader](native-initramfs-reader.md) within
 consolidation step 3. The explicitly enabled System constructor joins the
 unchanged-startup preflight, prepares an immutable boot Base, rechecks current
-state, attaches runtime mounts and transfers PID 1 to the verified System start.
+state, attaches runtime mounts and transfers PID 1 to the retained System start.
 It publishes no boot choice or new CLI. Verification-only mode remains available.
 
 ## Preparation and formats
@@ -39,20 +39,22 @@ identity distinguishes verification-only and System-handover purposes.
 
 ## Current-state and runtime gates
 
-After exact input/tree verification, the handover reader checks the boot Base
-inventory, candidate manifest and unchanged-startup review. It observes current
+Normal handover checks exact input/slot metadata and required roots without a
+full content scan. It checks boot Base metadata/containment, candidate manifest
+and unchanged-startup review. Preparation and explicit full-audit mode additionally
+verify every retained tree and the boot Base inventory. It observes current
 state layout, Ports format/capabilities, management registry compatibility for
 preparing/candidate/recovery code, and already-present defaults. Unsupported
 migrations or missing defaults block before writable mounts. Historical passwd
 contents are not required: compatible local account/configuration edits persist.
 Account shells and System start resolve in the future guest namespace, never
-against host files, and must belong to verified immutable content. Mutable-state
+against host files, and must belong to retained immutable content. Mutable-state
 executables cannot qualify. Required mountpoints must be real empty directories.
 
 After these checks the backing filesystem becomes writable. Base, System and
 native modules bind read-only; `/etc`, `/var`, `/home` and `/root` bind persistent
 state. `/run` and `/tmp` are tmpfs. Provider namespaces remain writable for later
-imports, but each verified System dependency gets a read-only bind. The separate
+imports, but each retained System dependency gets a read-only bind. The separate
 Nix boot adapter projects today's `nix` namespace; core handover uses declared
 paths. New namespaces require supported empty mountpoints and cannot cover
 Base/state/runtime paths.
@@ -70,6 +72,11 @@ Runtime evidence is separately versioned at `/run/mojt/native-v2.json`, with the
 complete deployment/input identity. It is never forged as v1. [Atomic selection/status](native-system-selection.md) now consumes admitted
 constructor results and preserves the distinct runtime identity. V1 writers refuse
 a v2 authority; the complete installed stage/request workflow remains unfinished.
+
+`/run/mojt/boot-checks.json` separately records normal/full-audit mode and the
+metadata-reader/current-state durations. Normal mode reports
+`content_verified=false`: the runtime identity is not a new payload integrity
+attestation. It does not write verification results into persistent state.
 
 ## Acceptance and self-hosting
 

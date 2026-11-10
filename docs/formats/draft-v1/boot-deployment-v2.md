@@ -66,7 +66,8 @@ The layout is explicitly new. Verified runtime trees are prepared under full-ID
 paths: `realizations/base/BASE_ARTIFACT_HEX`,
 `realizations/system/SYSTEM_MANIFEST_HEX`, and
 `realizations/kernel/KERNEL_ARTIFACT_HEX`. They are realizations of retained
-verified content, not aliases named only by version. Check complete inventory,
+verified content, not aliases named only by version. At installation/staging,
+check complete inventory,
 ownership/modes, source/extractor/assembler identity and target compatibility;
 do not treat an arbitrary copied directory as a valid realization. M1 reuses
 the reviewed Base extractor/System manifest/native module inventory policies;
@@ -80,6 +81,15 @@ No following mutable `base/current` or `system/current`. Mount immutable content
 and the exact module tree read-only, persistent state separately, validate required
 management/state gates, then initialize supported lifecycle actions before their
 dependent services. Failures enter the retained diagnostic/recovery path.
+
+Normal boot validates those metadata bindings and required paths without
+rehashing the Kernel/initramfs, Base/System/modules/provider contents, or boot
+Base copy. Full content verification is an explicit diagnostic operation and
+remains required during installation/staging and admission/selection. A normal
+runtime record identifies accepted content; it does not attest that all bytes
+were freshly checked during that boot. The implementation/constructor identity
+binds the reader behavior; no digest/slot format change or saved-hash shortcut
+is needed to distinguish inspection from a full scan.
 
 Expose exact running deployment/native artifact identities only after those
 checks; matching uname or labels remains insufficient. First implementation is

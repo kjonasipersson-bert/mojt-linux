@@ -22,7 +22,7 @@ FORMAT = 'mojt-boot-base-realization-v1'
 require = artifact.require
 
 
-def inspect(root, value, *, cache=None):
+def inspect(root, value, *, cache=None, verify=True):
     d = model.envelope(value,FORMAT)
     artifact.fields(d,('installation','base','source_realization','inventory','scaffold','extractor','code'))
     model.installation(d['installation'])
@@ -35,7 +35,9 @@ def inspect(root, value, *, cache=None):
     private = io.directory(folder/'tree')
     require(stat.S_IMODE(private.st_mode) == 0o500 and private.st_uid == 0, 'unprotected boot Base tree')
     tree = folder/'tree/rootfs'
+    require(tree == tree.resolve(),'linked boot Base root');io.directory(tree)
     key = str(tree)
+    if not verify:return tree  # Metadata/path inspection does not populate a verified-content cache.
     if cache is None or key not in cache:
         require(artifact.digest(inventory.snapshot(tree)) == d['inventory'], 'boot Base content damaged')
         if cache is not None:cache[key] = d['inventory']

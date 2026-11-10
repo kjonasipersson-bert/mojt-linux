@@ -83,21 +83,37 @@ Construction writes only its new private work directory and leaves installation
 content, boot selection and persistent state unchanged. Failed work may remain
 for diagnosis; it is never returned as completed or selected.
 
-## Early verification and present boundary
+## Normal boot and explicit content verification
 
 Static BusyBox loads the prepared modules, finds the embedded root UUID and
 mounts that filesystem read-only. The bundled reader validates:
 
 - One exact deployment selector and the complete derived command line, including
   reserved arguments. Optional GRUB `BOOT_IMAGE` must identify that same slot.
-- Canonical v2 sidecars, full deployment/input identities, the installation ID,
-  Kernel/initramfs file bytes and expected running Kernel release.
-- Full inventories of the exact Base, System, native module and provider trees
-  before returning their paths. Paths derive from full artifact identities;
-  mutable generation labels/current pointers are not used for lookup.
+- Canonical v2 sidecars, deployment/input identities, the installation ID,
+  retained boot-file types/modes/sizes and expected running Kernel release.
+- Canonical containment and presence of required Base, System, native module
+  and provider roots. Paths derive from full artifact identities; mutable
+  generation labels/current pointers are not used for lookup.
+
+Normal handover uses `mpm_boot_early.inspect`: it does **not** rehash the retained
+Kernel/initramfs, walk package/module/provider files, or snapshot the boot Base.
+It relies on content accepted during installation/staging, checks metadata and
+required paths, then applies the current-state and mount gates. Its diagnostic
+receipt is `mojt-early-inspection-v1` with `metadata_checked=true` and
+`content_verified=false`; it does not claim fresh content integrity.
+
+`mpm_boot_early.verify` remains the explicit full audit: it hashes boot files
+and verifies every exact tree measurement. Verification-only diagnostic images
+still use it. The early-reader CLI's explicit `--verify-content` also requests
+that audit before handover, including the boot Base snapshot. Installation,
+construction, stage admission and selection keep their full checks. There is no
+persistent checksum cache standing in for verification. Normal boot trusts the
+accepted on-disk content; detecting later arbitrary file damage/tampering needs
+an explicit audit or a future separately designed authenticated-storage mechanism.
 
 It imports no target Python modules, runs no provider executable and executes no
-candidate program. Its result is a diagnostic verification receipt, not the
+candidate program. Its result is a diagnostic inspection/verification receipt, not the
 running deployment status. A release-string comparison is an additional mismatch
 check, not proof of the running artifact or hardware attestation.
 
@@ -108,7 +124,12 @@ shutdown/switch-root sequence. [Admitted selection/status](native-system-selecti
 The verification receipt still reports `boot_ready=false` and `handover=false`;
 construction never changes selection. Verification-only mode does not invoke
 System start. Handover mode validates the additional contract and current-state
-gates before moving mounts and execing System start. Prepared-candidate v2
+gates before moving mounts and execing System start. The volatile
+`/run/mojt/boot-checks.json` record (`mojt-boot-checks-v1`) reports deployment,
+`mode` (`normal` or `full-audit`), `content_verified`, and integer `reader_ms` /
+`state_gates_ms`. These timings exclude Kernel/initramfs startup and mount/exec
+time. Existing initramfs archives keep their bundled behavior until rebuilt.
+Prepared-candidate v2
 admission/selection/status and [owner A/B/A boot/return](system-boot-acceptance.md#owner-acceptance-2026-11-09)
 passed on 2026-11-09. Public active-v2 staging and request joins remain before a
 complete workflow.
@@ -120,7 +141,10 @@ refusal, exact command-line policy and provider projection boundaries. One root
 CI case builds the actual archive with a deliberately small trusted distro Python
 fixture, extracts it independently with GNU cpio, and runs the embedded reader
 in chroot without host Python/libraries. It checks exact content and refusal of
-changed boot arguments and Base files. Installed target content remains unchanged
+changed boot arguments and Base files. The same isolated archive also checks
+normal metadata/state gates with all full-scan functions forbidden. Normal boot
+does not claim to detect modified payload bytes, while explicit audit refuses
+them. Installed target content remains unchanged
 during construction. This exercises runtime isolation and reader execution; it
 does not claim a v2 Kernel boot, System service health or arbitrary libc/desktop
 compatibility. The production provider remains Nix; the distro runtime adapter

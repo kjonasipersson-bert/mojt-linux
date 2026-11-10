@@ -29,6 +29,83 @@ import test_mpm_boot_v2 as fixtures
 
 
 class ReaderTests(unittest.TestCase):
+    def test_normal_boot_checks_exact_metadata_and_roots_without_scanning_content(self):
+        source=fixtures.fixture();i=source['description'];value=fixtures.bound(source)
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            paths=dict(base='realizations/base/'+i['base']['artifact'][7:]+'/tree/rootfs',
+                system='realizations/system/'+i['system']['artifact'][7:]+'/profile',
+                modules='kernel/installed/'+i['kernel']['artifact'][7:]+'/payload/lib/modules')
+            for path in paths.values():(root/path).mkdir(parents=True)
+            file=root/paths['base']/'file';file.write_bytes(b'original')
+            trees=record(early.PROOF,dict(inputs=source['id'],constructor=i['constructor'],providers=[],
+                **{key:dict(path=path,measurement=inventory.measure(root/path)) for key,path in paths.items()}))
+            cmdline=model.cmdline(value);release=i['kernel']['release']
+            with mock.patch.object(store,'inspect',return_value=value) as inspect:
+                with mock.patch.object(inventory,'measure',side_effect=AssertionError('normal boot scanned tree')),\
+                     mock.patch.object(inventory,'snapshot',side_effect=AssertionError('normal boot scanned tree')),\
+                     mock.patch.object(artifact,'file_sha',side_effect=AssertionError('normal boot hashed boot files')):
+                    result=early.inspect(root,source,trees,cmdline,release)
+                    self.assertTrue(result['metadata_checked']);self.assertFalse(result['content_verified'])
+                    inspect.assert_called_once_with(root,value['id'],expected_inputs=source['id'],verify=False)
+                    with self.assertRaisesRegex(ValueError,'command line differs'):
+                        early.inspect(root,source,trees,cmdline+' init=/evil',release)
+                    with self.assertRaisesRegex(ValueError,'Kernel release differs'):
+                        early.inspect(root,source,trees,cmdline,'wrong')
+                    file.write_bytes(b'changed')
+                    self.assertFalse(early.inspect(root,source,trees,cmdline,release)['content_verified'])
+                with self.assertRaisesRegex(ValueError,'early base tree differs'):
+                    early.verify(root,source,trees,cmdline,release)
+                self.assertTrue(inspect.call_args.kwargs['verify'])
+                (root/paths['modules']).rmdir()
+                with self.assertRaisesRegex(ValueError,'required boot tree missing'):
+                    early.inspect(root,source,trees,cmdline,release)
+                (root/paths['modules']).symlink_to(root/paths['system'])
+                with self.assertRaisesRegex(ValueError,'linked boot inventory root'):
+                    early.inspect(root,source,trees,cmdline,release)
+
+    def test_inventory_frames_keep_unicode_order_xattrs_and_block_boundary_file_bytes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);(root/'a').mkdir()
+            for name,size in (('a/z',128*1024+3),('a/\u00e5',128*1024),('b',0)):
+                (root/name).write_bytes(b'x'*size)
+            os.link(root/'a/z',root/'hardlink');(root/'link').symlink_to('/outside/not-followed')
+            raw_name=os.fsencode(root)+b'/invalid-\xff';fd=os.open(raw_name,os.O_CREAT|os.O_WRONLY,0o600);os.close(fd)
+            xattrs={}
+            try:os.setxattr(root/'b','user.mojt',b'\x00\xff');xattrs={'user.mojt':'00ff'}
+            except OSError:pass  # The filesystem may lack user xattrs.
+            rows=inventory.snapshot(root)
+            self.assertEqual(list(rows),['.','a','a/z','a/\u00e5','b','hardlink','invalid-\udcff','link'])
+            self.assertEqual(rows['b']['xattrs'],xattrs)
+            self.assertEqual(rows['hardlink']['hardlink_to'],'a/z')
+            self.assertEqual(rows['link']['target'],'/outside/not-followed')
+            framed=(inventory.MEASUREMENT+'\n').encode()+b''.join(artifact.canonical([n,r])+b'\n' for n,r in rows.items())
+            measured=inventory.measure(root)
+            self.assertEqual(measured['digest'],'sha256:'+__import__('hashlib').sha256(framed).hexdigest())
+            self.assertEqual(measured['content_bytes'],3*128*1024+6)
+            if xattrs:
+                os.setxattr(root/'b','user.mojt',b'changed');self.assertNotEqual(inventory.measure(root),measured)
+
+    def test_inventory_still_refuses_replaced_and_growing_open_files(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);file=root/'file';file.write_bytes(b'original')
+            original_open=os.open;original_read=os.read
+            def replaced(path,*args,**kwargs):
+                file.rename(root/'old');file.write_bytes(b'original')
+                return original_open(path,*args,**kwargs)
+            with mock.patch.object(os,'open',side_effect=replaced),self.assertRaisesRegex(ValueError,'before reading'):
+                inventory.measure(root)
+            (root/'old').unlink();grew=False
+            def growing(fd,size):
+                nonlocal grew
+                result=original_read(fd,size)
+                if not grew:
+                    with file.open('ab') as stream:stream.write(b'growth')
+                    grew=True
+                return result
+            with mock.patch.object(os,'read',side_effect=growing),self.assertRaisesRegex(ValueError,'grew while reading'):
+                inventory.measure(root)
+
     def test_real_provider_graph_above_metadata_budget_roundtrips_and_rejects_changes(self):
         source=fixtures.fixture();d=source['description']
         with tempfile.TemporaryDirectory() as temporary:
@@ -239,8 +316,15 @@ class ConstructorTests(unittest.TestCase):
         gates="import sys;sys.path.insert(0,'/mojt/code');from pathlib import Path;import mpm_boot_early as e;import mpm_boot_handover as h;h.check(Path('/test-target'),e.read(Path('/mojt/inputs.json')),e.read(Path('/mojt/trees.json')),e.read(Path('/mojt/handover.json')));print('PASS: isolated System handover gates')"
         gate_args=['chroot',str(extracted),'/usr/bin/python3','-I','-S','-B','-c',gates]
         passed=subprocess.run(gate_args,capture_output=True,text=True);self.assertEqual(passed.returncode,0,passed.stderr)
+        normal="import sys;sys.path.insert(0,'/mojt/code');from pathlib import Path;import mpm_boot_early as e;import mpm_boot_handover as h;import mpm_boot_inventory as inv;import mojt_artifact as a\n" \
+            "def forbidden(*args,**kwargs):raise AssertionError('normal boot performed a content scrub')\n" \
+            "inv.measure=inv.snapshot=a.file_sha=forbidden\n" \
+            "r=Path('/test-target');s=e.read(Path('/mojt/inputs.json'));p=e.read(Path('/mojt/trees.json'));v=e.inspect(r,s,p,Path('/mojt/test-cmdline').read_text(),Path('/mojt/test-release').read_text());assert v['metadata_checked'] and not v['content_verified'];h.check(r,s,p,e.read(Path('/mojt/handover.json')),verify_content=False);print('PASS: isolated normal boot gates without content scans')"
+        normal_args=['chroot',str(extracted),'/usr/bin/python3','-I','-S','-B','-c',normal]
+        passed=subprocess.run(normal_args,capture_output=True,text=True);self.assertEqual(passed.returncode,0,passed.stderr)
         layout=extracted/'test-target/state/layout-version';layout.write_text('2\n')
         denied=subprocess.run(gate_args,capture_output=True,text=True);self.assertNotEqual(denied.returncode,0);self.assertIn('state layout',denied.stderr)
+        denied=subprocess.run(normal_args,capture_output=True,text=True);self.assertNotEqual(denied.returncode,0);self.assertIn('state layout',denied.stderr)
         layout.write_text('1\n')
         command.write_text(model.cmdline(value)+' root=UUID=other')
         denied=subprocess.run(args,capture_output=True,text=True);self.assertNotEqual(denied.returncode,0)
@@ -249,6 +333,9 @@ class ConstructorTests(unittest.TestCase):
         changed=extracted/'test-target'/proof['path']/'usr/lib/os-release';changed.chmod(0o600);changed.write_bytes(b'tampered Base')
         denied=subprocess.run(args,capture_output=True,text=True);self.assertNotEqual(denied.returncode,0)
         self.assertIn('early base tree differs',denied.stderr)
+        # Normal boot does not claim a content-integrity scrub. Explicit audit
+        # above still detects the damage; metadata/state inspection alone does not.
+        passed=subprocess.run(normal_args,capture_output=True,text=True);self.assertEqual(passed.returncode,0,passed.stderr)
 
 
 if __name__=='__main__':unittest.main()
