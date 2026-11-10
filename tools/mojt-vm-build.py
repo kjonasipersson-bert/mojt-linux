@@ -693,7 +693,7 @@ def additional_pairs(entries, *, tree, work, target, first_base, support, args,
         generations.scaffold(candidate / "base" / base, require_directory)
         support.install(candidate, payload, record, args.busybox, args.login_mode,
                         Path(__file__).resolve().parents[1], console=console,
-                        hardware_profile=physical, generation=selected)
+                        hardware_profile=physical, generation=selected, with_build_tools=getattr(args,"with_build_tools",False))
         (candidate / "system" / selected / "assembled-at-utc").write_text(assembled_at + "\n")
         script = support.init_script(INIT)
         if physical:
@@ -846,7 +846,8 @@ def build(args):
                     path.mkdir(exist_ok=True)
                 system_version = support.install(
                     tree, payload, record, busybox, args.login_mode, Path(__file__).resolve().parents[1],
-                    console=console, hardware_profile=physical, generation=explicit_system)
+                    console=console, hardware_profile=physical, generation=explicit_system,
+                    with_build_tools=getattr(args,"with_build_tools",False))
                 assembled_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 (tree / "system" / system_version / "assembled-at-utc").write_text(assembled_at + "\n")
                 init_script = support.init_script(INIT)
@@ -982,6 +983,7 @@ def main():
     parser.add_argument("--system-generation", help="UEFI: explicit immutable System label in the NEW image")
     parser.add_argument("--additional-generations", type=Path,
                         help="UEFI: TOML plan of additional explicit Base/System boot pairs")
+    parser.add_argument('--with-build-tools',action='store_true',help='include experimental MBT; compiler environments remain separate')
     parser.add_argument("--hardware-profile", choices=(hardware.PROFILE,),
                         help="USB/SATA boot, full modules/firmware and local console; requires UEFI/password/step 6")
     parser.add_argument("--firmware-root", type=Path,

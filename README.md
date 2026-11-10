@@ -33,7 +33,10 @@ its first [implementation](docs/base-installation.md) merged in PR #40.
 [Exact Base staging/selection/return](docs/base-boot-staging.md) is implemented
 in PR #41 with [owner boot/return acceptance](docs/base-boot-acceptance.md#recorded-owner-acceptance-2026-11-07)
 passed on 2026-11-07.
-Moving Base upgrades and MBT public command spellings remain subsequent work.
+Exact native-v2 Base/System/Kernel activation and upgrade are joined through
+MPM in merged PR #50. Moving-policy boot-area upgrades remain future work.
+A small [experimental MBT frontend](docs/mbt-minimal.md) now proposes the first
+environment/build/package interface; its syntax is under review.
 
 The accepted update model keeps Base as complete releases, System as coherent
 generations, and Ports as parallel program versions with active selections

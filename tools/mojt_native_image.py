@@ -417,7 +417,7 @@ def _build(args, vm=None):
             copied["metadata"]["kernel_release"], busybox=busybox, boot_mode="uefi", hardware_profile=None,
             firmware_root=None, system_payload=payload, disk_size_mib=args.disk_size_mib, login_mode=args.login_mode,
             root_shell="/run/mojt-system/bin/bash", base_generation=base, system_generation=args.system_generation,
-            additional_generations=None, native_context=context)
+            additional_generations=None, native_context=context, with_build_tools=getattr(args,"with_build_tools",False))
         vm.build(options)
         # Re-run the portable planner on the output files before publishing any result.
         checked = deployment.plan(options.output / "kernel-plan-request.json", registry)
@@ -437,6 +437,7 @@ def main(argv=None):
     parser.add_argument("--busybox", type=Path, default=Path("/usr/bin/busybox"))
     parser.add_argument("--disk-size-mib", type=int, default=8192)
     parser.add_argument("--login-mode", choices=("password", "development"), default="password")
+    parser.add_argument('--with-build-tools',action='store_true',help='include experimental MBT entrypoints in the new System')
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
     try:

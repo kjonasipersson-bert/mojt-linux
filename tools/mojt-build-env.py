@@ -291,8 +291,8 @@ def prepare(args, nix=None):
         raise
 
 
-def main(argv=None):
-    p=argparse.ArgumentParser(description=__doc__)
+def main(argv=None, *, prog=None):
+    p=argparse.ArgumentParser(prog=prog,description=__doc__)
     p.add_argument("--profile", choices=("image", "kernel"), default="image")
     p.add_argument("--source-manifest",type=Path,required=True)
     p.add_argument("--output",type=Path,required=True)

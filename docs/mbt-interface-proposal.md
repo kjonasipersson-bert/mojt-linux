@@ -6,6 +6,11 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # MBT interface: concrete proposal for discussion
 
+For the current small implementation proposal, see [minimal MBT](mbt-minimal.md).
+The broader Draft 2 below is historical design input, not the implementation
+checklist for reaching the first physical installation. Named registries and
+saved plans are not prerequisites for that delivery.
+
 Draft 2, 2026-11-06. Proposed commands, not implemented or approved syntax.
 Existing MPM syntax remains unchanged. D1/D5 in the
 [decision register](distribution-decisions.md) remain open until interfaces and

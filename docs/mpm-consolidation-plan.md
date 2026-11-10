@@ -159,6 +159,20 @@ Normal boot stays free of full content scans. The first System policy still
 requires unchanged startup/service dependencies; unsupported service transitions
 are reported as blocked, not silently accepted.
 
+PR #50 merged after all three full CI jobs passed at
+`b4f3c7885590ec3a8367d1ad3cd398379b397e13` (merge
+`e24e3bfd10a92c734af48c09552cd842fbd6d584`). No additional owner component matrix
+was required before merge. The joined VM acceptance remains part of completing
+MBT/bootstrap before physical rollout.
+
+Step 2 has started with [minimal MBT](mbt-minimal.md): an experimental thin
+frontend over the existing environment, Kernel build and packager, optional
+builder System delivery and its manual. This draft does not settle all command
+spellings or complete new-target bootstrap. The next work stays in the same
+delivery: public native-v2 bootstrap and one physical profile, then the joined
+VM acceptance. Do not substitute an old-format image or call source assembly of
+prebuilt inputs a complete source rebuild.
+
 The owner reaffirmed native self-hosting as the destination on 2026-11-08.
 Complete the joined M1 administration/bootstrap flow, then M2 source recipes for
 Base and Mojt-owned System code; report imported third-party inputs separately.

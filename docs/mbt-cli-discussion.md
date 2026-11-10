@@ -6,6 +6,12 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # MBT command syntax: discussion before implementation
 
+The [minimal frontend prototype](mbt-minimal.md), started after merged #50,
+provides a concrete smaller interface for review: `mbt env`, `mbt build kernel`
+and `mbt package`. It delegates to existing tools and is optionally delivered by
+builder System assemblies. This is provisional syntax, not adoption of the older
+four-object proposal below. No separate public `plan` operation is introduced.
+
 The owner clarified that the requested syntax discussion concerns **mbt**, the
 Mojt Build/Bootstrap Tool. The existing MPM syntax is satisfactory and remains
 in place. The earlier spelling `mpt` was not a request to rename MPM or create

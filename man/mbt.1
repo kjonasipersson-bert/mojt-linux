@@ -1,0 +1,52 @@
+.\" Mojt Linux
+.\" Copyright (C) 2026 Jonas Persson
+.\" SPDX-License-Identifier: GPL-2.0-only
+.TH MBT 1 "2026-11-10" "Mojt Linux" "User Commands"
+.SH NAME
+mbt \- prepare private build tools and create Mojt build/package results
+.SH SYNOPSIS
+.B mbt env
+[--profile image|kernel] --source-manifest FILE --output DIRECTORY [--dry-run] [-y]
+.PP
+.B mbt build kernel
+--plan FILE --config FILE --config-sha256 SHA256 --environment DIRECTORY
+--output DIRECTORY [--source DIRECTORY] [--resume] [--jobs N] [--dry-run] [-y]
+.PP
+.B mbt package
+{kernel|base|system|pack|verify} ...
+.SH DESCRIPTION
+Experimental interface for review. MBT delegates to the existing environment,
+Kernel build and native artifact tools. Use each command's --help for its flags.
+No command installs a package, changes an active Ports profile, selects next
+boot, replaces Base libc or changes a global compiler.
+.SH COMMANDS
+.TP
+.B env
+Create a new private environment with pinned binary tools. The initial provider
+is Nix; the tool inventory and library closure are retained beside the environment.
+--dry-run previews without writing the environment or GC roots. No registry of
+names or separate plan command is needed. Keep a created environment in place.
+.TP
+.B build kernel
+Compile a separate versioned Kernel and matching modules as an ordinary user.
+Source, configuration hash, policy and private environment remain explicit.
+--dry-run validates inputs without fetching sources, compiling or writing output.
+--resume requires the same verified inputs and an eligible incomplete workspace;
+it does not repair arbitrary failed output. No automatic privilege escalation.
+.TP
+.B package
+Create and independently verify a native archive from a complete build or
+retained release. Packaging revision and original build provenance are distinct.
+verify checks an existing archive without installing it. Packaging has no
+--dry-run option in this initial interface; it writes a new explicit output.
+.SH DELIVERY
+Builder-enabled System images include the Python frontend, existing helper code,
+this manual and a pinned Kernel recipe example. Compilers are acquired separately
+in private environments. Ordinary System compositions need not carry MBT.
+.SH LIMITS
+Bootstrap, new-target image assembly and physical disk provisioning are not yet
+joined to this frontend. There are no arbitrary recipes/hooks, saved-plan executor,
+named-environment registry, GC or source rebuild of the entire distribution.
+Runtime closure checks are not a universal libc/plugin compatibility guarantee.
+.SH SEE ALSO
+.BR mpm (1)
