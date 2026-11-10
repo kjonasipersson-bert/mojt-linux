@@ -161,9 +161,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install firmware boot probe tools and a matching kernel/module set
+        timeout-minutes: 10
         run: |
-          sudo apt-get update
-          sudo apt-get install -y linux-image-generic build-essential systemd e2fsprogs \
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=1 \
+            -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=1 \
+            -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y linux-image-generic build-essential systemd e2fsprogs \
             busybox-static cpio kmod zstd grub-common grub-efi-amd64-bin \
             fdisk dosfstools mtools ovmf qemu-system-x86 qemu-utils
       - name: Boot the hardware profile with SATA and USB disks
