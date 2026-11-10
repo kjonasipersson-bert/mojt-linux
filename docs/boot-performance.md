@@ -8,8 +8,9 @@ SPDX-License-Identifier: GPL-2.0-only
 
 The accepted System A/B/A VM showed roughly 24 seconds between the early Kernel
 messages and backing-filesystem remount, before systemd started. This identifies
-the early-boot interval, not its cause. Performance acceptance remains open;
-the successful functional boot/return acceptance is not a latency measurement.
+the early-boot interval, not its cause. The normal-boot policy and focused
+owner acceptance below close this specific follow-up; the earlier functional
+boot/return acceptance alone was not a latency measurement.
 
 ## Measure the existing graph first
 
@@ -57,15 +58,15 @@ an explicit diagnostic action. Its previous timing results are therefore not
 predictions for the new normal boot path. The faster inventory remains useful
 for install/stage/select and diagnostics.
 
-One fresh boot with the updated constructor remains the owner check: inspect
+The focused owner check is one fresh boot with the updated constructor: inspect
 `/run/mojt/boot-checks.json`, which must report `mode=normal` and
 `content_verified=false`, then confirm the exact deployment and healthy units.
 The versioned `mojt-boot-checks-v1` report includes integer `reader_ms` and
 `state_gates_ms`; these exclude Kernel/initramfs startup and mount/exec time.
 Existing images keep their embedded reader, so another warm scan of the old VM
 cannot test the new boot path. Another A/B/A matrix is unnecessary for this
-inspection-only change. Keep the performance follow-up open until that boot is
-measured, without requiring more inventory microbenchmarks from the owner.
+inspection-only change. The acceptance below completes that check without
+requiring more inventory microbenchmarks from the owner.
 
 ## Owner measurement and first optimization (2026-11-10)
 
@@ -133,7 +134,41 @@ run. This is roughly a two-second improvement to explicit auditing; it is not a
 cold-boot acceptance result. The owner policy above removes that audit from
 normal boot entirely, rather than relying on a faster mandatory scan.
 
-Status: owner comparison passed; normal inspection and explicit audit are
-separated in code/docs, with focused tests that forbid any content scan on the
-normal path. One fresh normal boot remains pending; no further warm comparison
-or repeated A/B/A acceptance is requested.
+## Fresh normal-boot acceptance (2026-11-10)
+
+The owner built a new image from code revision
+`ac8b4c6b77ed4ca9ac64dc12cc2dd066bf22d227` and reported a fast boot to
+`system-native-A`, Base `0.1.3`, Kernel `6.12.107-mojt1`. The Mojt login
+logo was present. The volatile timing report contained:
+
+```json
+{
+  "content_verified": false,
+  "deployment": "sha256:f8bcb395225120ded74e7ae85fc75c7ac1d4f8513c565e448a4360846e35803d",
+  "format": "mojt-boot-checks-v1",
+  "mode": "normal",
+  "reader_ms": 33,
+  "state_gates_ms": 311
+}
+```
+
+`systemctl --failed --no-pager` listed zero failed units. The two measured
+control phases totalled 344 ms; this is **not** a measurement of complete boot
+time. The owner observed that boot was fast, but supplied no separate
+Kernel-to-login wall-clock time. Do not compare the 344 ms directly with the
+earlier running-system full audit as though both performed the same work.
+
+The owner also observed reduced kernel console output. This fixture explicitly
+includes `quiet` in its bound Kernel arguments, and the existing
+`mojt-console-quiet.service` sets the console printk threshold to 4. A quieter
+console does not disable kernel logging; `journalctl -b -k --no-pager` reads
+the boot's retained kernel messages. Faster handover may also apply the existing
+console threshold earlier; that timing explanation is an inference, not a
+separately measured result.
+
+Status: the normal-boot performance follow-up is accepted. Normal boot performs
+metadata/path/current-state gates without a full content scan; complete audits
+remain explicit and part of administrative installation/staging/selection.
+Focused code CI (run 42783712392, including real archive/root/chroot cases)
+passed on the tested code revision. This documentation-only acceptance update
+changes no executable code. No further owner profiling or A/B/A round is needed.
