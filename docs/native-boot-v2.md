@@ -82,8 +82,10 @@ The [selection publisher](native-system-selection.md) now consumes admitted
 handover results. V1 boot writers refuse a native-v2 authority.
 
 The [verification initramfs constructor and trusted reader](native-initramfs-reader.md)
-now bind measured code/runtime and check exact on-disk trees using only the
-interpreter bundled in initramfs. Verification-only mode stops after verification. The [bounded System handover](native-system-handover.md) now joins the preflight,
+bind measured code/runtime and can audit exact on-disk trees using only the
+interpreter bundled in initramfs. Normal boot uses metadata/path inspection;
+complete file scans are explicit diagnostics and remain part of installation
+and staging. Verification-only mode stops after verification. The [bounded System handover](native-system-handover.md) joins the preflight,
 current-state gates, a separate boot Base and runtime/shutdown handover.
 [Admitted staging, atomic selection and explicit status](native-system-selection.md)
 join prepared candidates. The [owner A/B/A boot/return and clean shutdown](system-boot-acceptance.md#owner-acceptance-2026-11-09)

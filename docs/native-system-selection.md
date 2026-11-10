@@ -79,6 +79,10 @@ reports uncertainty and keeps the new menu plus both deployments. A repeated
 selection is a no-op. Operation-local tree proofs avoid hashing a shared immutable
 dependency once per menu entry; they never persist across independent operations.
 State can change after selection; the early handover checks it again at boot.
+Normal boot rechecks exact metadata, paths and current state, not complete
+package/boot-file inventories. Full integrity scans belong to installation,
+staging/selection and explicit diagnostics; runtime identity does not assert a
+fresh payload audit. See [normal boot policy](native-initramfs-reader.md#normal-boot-and-explicit-content-verification).
 
 ## Installed, selected and running
 

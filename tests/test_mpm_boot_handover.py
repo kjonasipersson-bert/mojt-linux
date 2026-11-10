@@ -8,6 +8,7 @@ from pathlib import Path
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 
 import test_mpm_boot_v2 as fixtures
 import mojt_artifact as artifact
@@ -17,6 +18,28 @@ from mpm_request_plan import record
 
 
 class NamespaceTests(unittest.TestCase):
+    def test_normal_entry_uses_inspection_and_explicit_audit_keeps_full_verification(self):
+        for full in (False,True):
+            checked=dict(deployment='sha256:'+'0'*64)
+            with mock.patch.object(handover.early,'inspect',return_value=checked) as inspect,\
+                 mock.patch.object(handover.early,'verify',return_value=checked) as verify,\
+                 mock.patch.object(handover,'check',return_value={}) as check,\
+                 mock.patch.object(handover.early,'read',return_value=dict(id=checked['deployment'])),\
+                 mock.patch.object(handover,'_enter',return_value='entered') as enter:
+                options={'verify_content':True} if full else {}
+                self.assertEqual(handover.enter('/target',{},None,{},'cmdline','release',**options),'entered')
+                self.assertEqual(inspect.call_count,not full);self.assertEqual(verify.call_count,full)
+                self.assertEqual(check.call_args.kwargs['verify_content'],full)
+                report=enter.call_args.args[1]['boot_checks']
+                self.assertEqual(report['mode'],'full-audit' if full else 'normal')
+                self.assertEqual(report['content_verified'],full)
+        with mock.patch.object(handover.early,'inspect',return_value=checked),\
+             mock.patch.object(handover,'check',side_effect=ValueError('state incompatible')),\
+             mock.patch.object(handover,'_enter') as enter:
+            with self.assertRaisesRegex(ValueError,'state incompatible'):
+                handover.enter('/target',{},None,{},'cmdline','release')
+            enter.assert_not_called()
+
     def test_mount_unit_escaping_and_guest_resolution_do_not_read_host_paths(self):
         self.assertEqual(handover.unit_name('/run/mojt-system'),'run-mojt\\x2dsystem.mount')
         self.assertEqual(handover.unit_name('/nix/store/hash-a+b'),'nix-store-hash\\x2da\\x2bb.mount')
@@ -29,7 +52,7 @@ class NamespaceTests(unittest.TestCase):
             (profile/'bin/sh').unlink();(profile/'bin/sh').symlink_to('/etc/passwd')
             (root/'state/etc').mkdir(parents=True);(root/'state/etc/passwd').write_text('untrusted state executable')
             (root/'state/etc/passwd').chmod(0o755)
-            with self.assertRaisesRegex(ValueError,'verified immutable'):handover.guest_file(root,tree,profile,[],[],'/run/mojt-system/bin/sh')
+            with self.assertRaisesRegex(ValueError,'retained immutable'):handover.guest_file(root,tree,profile,[],[],'/run/mojt-system/bin/sh')
 
 
 @unittest.skipUnless(os.geteuid()==0 and all(shutil.which(c) for c in ('zstd','cpio','tar')),'requires root and archive tools')
@@ -45,8 +68,16 @@ class PreparationTests(unittest.TestCase):
         snapshot=f.f.f.snapshot();self.assertEqual(handover.prepare(root,source,plan,adapters=f.f.adapters),contract)
         self.assertEqual(snapshot,f.f.f.snapshot())
         proof=constructor.capture(root,source,f.f.adapters);context=handover.check(root,source,proof,contract)
+        with mock.patch.object(constructor.inventory,'snapshot',side_effect=AssertionError('normal boot scanned boot Base')),\
+             mock.patch.object(constructor.inventory,'measure',side_effect=AssertionError('normal boot scanned content')):
+            normal=handover.check(root,source,proof,contract,verify_content=False)
+            self.assertEqual(normal['tree'],context['tree'])
+            cache={}
+            handover.boot_base.inspect(root,contract['description']['boot_base'],cache=cache,verify=False)
+            self.assertEqual(cache,{})
         layout=root/'state/layout-version';original=layout.read_bytes();layout.write_bytes(b'2\n')
         with self.assertRaisesRegex(ValueError,'state layout'):handover.check(root,source,proof,contract)
+        with self.assertRaisesRegex(ValueError,'state layout'):handover.check(root,source,proof,contract,verify_content=False)
         layout.write_bytes(original)
         work=f.f.f.fixture.work;newroot=work/'failure-newroot';newroot.mkdir()
         runtime=work/'fake-exitrd';(runtime/'bin').mkdir(parents=True)

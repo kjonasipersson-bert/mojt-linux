@@ -40,19 +40,32 @@ and switch-root. Timer wrappers add small observer overhead. If its phases do
 not explain the observed delay, instrument the actual initramfs boundaries next;
 do not conclude that a fast warm scan explains a slow cold boot.
 
-## Fix and close the follow-up
+## Normal boot policy
 
-Use the measured dominant work to choose one focused change. Preserve content,
-metadata, link/mode/owner/xattr checks, exact identities and current-state gates.
-Do not substitute a persistent cached checksum for reading mutable backing
-storage. Distinct Base realization/scaffold trees are distinct verification
-inputs, even when much of their content is equal.
+The owner clarified that a normal Mojt boot must not run these complete content
+audits. Integrity verification belongs at installation/staging and in explicit
+diagnostics. Normal boot checks the exact deployment/installation metadata,
+Kernel command line/release, required paths, current state and safe mount layout.
+It does not rehash boot files, walk Base/System/module/provider trees, or snapshot
+the boot Base. There is no persistent cached checksum pretending to be a fresh
+verification. Current-state compatibility gates and read-only mounts remain.
 
-Compare before/after on the same graph with cache conditions stated. Then time
-one fresh boot with the updated constructor, proving that it reaches the same
-exact deployment and clean runtime. Another A/B/A matrix is unnecessary unless
-the change affects staging, selection, mounts or return behavior. Record phase
-times and the remaining cost before closing the performance follow-up.
+The reader separates `inspect` (normal) from `verify` (full audit). Handover uses
+inspection by default; an explicit `--verify-content` selects a full audit.
+The existing profiling tool still measures a full audit because invoking it is
+an explicit diagnostic action. Its previous timing results are therefore not
+predictions for the new normal boot path. The faster inventory remains useful
+for install/stage/select and diagnostics.
+
+One fresh boot with the updated constructor remains the owner check: inspect
+`/run/mojt/boot-checks.json`, which must report `mode=normal` and
+`content_verified=false`, then confirm the exact deployment and healthy units.
+The versioned `mojt-boot-checks-v1` report includes integer `reader_ms` and
+`state_gates_ms`; these exclude Kernel/initramfs startup and mount/exec time.
+Existing images keep their embedded reader, so another warm scan of the old VM
+cannot test the new boot path. Another A/B/A matrix is unnecessary for this
+inspection-only change. Keep the performance follow-up open until that boot is
+measured, without requiring more inventory microbenchmarks from the owner.
 
 ## Owner measurement and first optimization (2026-11-10)
 
@@ -78,7 +91,7 @@ cold-boot phase times; nested rows overlap.
 The legacy System exporter explicitly adds the pinned nixpkgs source to its
 outputs at step 3 and later. The System packager retains that source as an
 explicit provider dependency for later Ports evaluation. Its many small files
-therefore legitimately appear in this graph. This change does **not** silently
+therefore appear in the explicit full-audit graph. This change does **not** silently
 drop that dependency from verification. Separating optional catalog/build data
 from startup dependencies requires an explicit composition/storage contract.
 
@@ -106,6 +119,21 @@ replaced. The final installed run supplies a warm baseline; do not attribute
 cache warming in the first run to the optimization. The report format is
 `mojt-boot-profile-comparison-v1` (`--json` includes each complete run).
 
-Status: owner baseline recorded; optimization and diagnostic comparison
-implemented. Owner comparison and one actual optimized boot remain pending;
-the performance follow-up is not yet closed.
+The owner's installed/candidate/installed comparison on the same deployment
+passed both implementations against the retained proofs and current-state gates:
+
+| Implementation | Early full audit (s) | Current-state gates (s) |
+| --- | ---: | ---: |
+| Installed before | 13.549 | 0.547 |
+| Candidate | 11.616 | 0.568 |
+| Installed after | 13.878 | 0.573 |
+
+nixpkgs took 7.287 seconds with the candidate versus 8.637 in the final installed
+run. This is roughly a two-second improvement to explicit auditing; it is not a
+cold-boot acceptance result. The owner policy above removes that audit from
+normal boot entirely, rather than relying on a faster mandatory scan.
+
+Status: owner comparison passed; normal inspection and explicit audit are
+separated in code/docs, with focused tests that forbid any content scan on the
+normal path. One fresh normal boot remains pending; no further warm comparison
+or repeated A/B/A acceptance is requested.

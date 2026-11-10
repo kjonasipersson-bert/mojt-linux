@@ -82,18 +82,36 @@ def verify_content(root, source, trees, *, cache=None):
         for path,expected in provider['trees'].items():inventory.verify(inventory.path(root,path),expected,cache)
 
 
-def verify(root, source, trees, raw_cmdline, running_release):
-    """Use embedded input/proof identities before selecting any on-disk tree."""
+def _candidate(root, source, trees, raw_cmdline, running_release, *, verify_files):
+    """Bound metadata and path checks shared by normal boot and full audit."""
     root = Path(root).absolute();require(root == root.resolve() and root.is_dir(), 'unsafe early disk root')
     i = model.inputs(source);d = proof(trees,source)
     require(type(raw_cmdline) is str and len(raw_cmdline) <= 8192, 'unbounded Kernel command line')
     selectors = [v for v in raw_cmdline.split() if v.startswith('mojt.deployment=')]
     require(len(selectors) == 1, 'exactly one deployment selector required')
     identifier = 'sha256:'+selectors[0].split('=',1)[1];model.identity(identifier)
-    candidate = store.inspect(root,identifier,expected_inputs=source['id'])
+    candidate = store.inspect(root,identifier,expected_inputs=source['id'],verify=verify_files)
     require(candidate['description']['inputs'] == source, 'slot does not bind embedded input record')
     command_line(raw_cmdline,candidate)
     require(running_release == i['kernel']['release'], 'running Kernel release differs from bound inputs')
+    return root,i,d,candidate
+
+
+def inspect(root, source, trees, raw_cmdline, running_release):
+    """Normal boot: exact metadata, selectors and roots, without a content scrub."""
+    root,i,d,candidate = _candidate(root,source,trees,raw_cmdline,running_release,verify_files=False)
+    paths = [d[key]['path'] for key in ('base','system','modules')]
+    providers = [p for row in d['providers'] for p in row['trees']]
+    for path in [*paths,*providers]:
+        require(inventory.path(root,path).is_dir(),'required boot tree missing: '+path)
+    return dict(format='mojt-early-inspection-v1',inputs=source['id'],deployment=candidate['id'],
+                installation=i['installation'],metadata_checked=True,content_verified=False,
+                handover=False,scope='Exact boot metadata and required roots checked; content not rescanned.')
+
+
+def verify(root, source, trees, raw_cmdline, running_release):
+    """Explicit full audit, also used by verification-only diagnostic images."""
+    root,i,d,candidate = _candidate(root,source,trees,raw_cmdline,running_release,verify_files=True)
     verify_content(root,source,trees)
     # This receipt is diagnostic input for the later handover, not runtime status.
     return dict(format='mojt-early-verification-v1',inputs=source['id'],deployment=candidate['id'],
@@ -109,13 +127,14 @@ def main():
     parser.add_argument('--proof',required=True);parser.add_argument('--cmdline',default='/proc/cmdline')
     parser.add_argument('--release',default='/proc/sys/kernel/osrelease')
     parser.add_argument('--handover',help='trusted embedded System handover contract')
+    parser.add_argument('--verify-content',action='store_true',help='explicit full audit before handover; normal boot does not scrub content')
     args = parser.parse_args()
     if args.handover is not None:
         import os
         import mpm_boot_handover as transfer
         try:
             transfer.enter(args.root,read(Path(args.inputs)),read(Path(args.proof)),read(Path(args.handover)),
-                           Path(args.cmdline).read_text(),Path(args.release).read_text().strip())
+                           Path(args.cmdline).read_text(),Path(args.release).read_text().strip(),verify_content=args.verify_content)
         except Exception as error:
             print('Mojt native-v2 handover: '+str(error),file=__import__('sys').stderr,flush=True)
             os.execv('/bin/busybox',['busybox','sh'])
