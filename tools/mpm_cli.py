@@ -33,11 +33,11 @@ def help_text():
           "  source                  add, update, list, show (explicit local metadata)\n"
           "  cache                   fetch (exact native archive; no installation)\n"
           "  catalog                 explicit local catalog discovery\n"
-          "  kernel                  install, status, plan, stage, select, rollback, resolve\n"
+          "  kernel                  install, status, activate, upgrade, stage, select, rollback, resolve\n"
           "  ports                   install, activate, upgrade, update, apply, remove, reset, list, history\n"
           "                          initial/update input: --sources FILE\n"
-          "  base                    install, status, stage, select, rollback; search, show, versions with --catalog FILE\n"
-          "  system                  install, status, plan, select, rollback; search, show, versions with --catalog FILE\n"
+          "  base                    install, status, activate, upgrade, stage, select, rollback; search, show, versions with --catalog FILE\n"
+          "  system                  install, status, activate, upgrade, stage, select, rollback; search, show, versions with --catalog FILE\n"
           "System install retains native content only; Base/Kernel selection changes next boot only.\n"
           "Install retains content; Kernel selection changes next boot, never the running Kernel.")
 
@@ -133,10 +133,13 @@ def dispatch(args, runtime):
     command = args[offset:]
     area = command[0] if command else None
     action = command[1] if len(command) > 1 else None
+    if area in ('base','system') and action in (None,'--help','-h'):
+        print('usage: mpm '+area+' {install,status,activate,upgrade,stage,select,rollback,search,show,versions} ...')
+        print('install retains content; activate/upgrade --artifact ID selects next boot; --dry-run previews.')
+        return 0
     if runtime is not None and os.geteuid() != 0:
         readonly = (command[2:] in (["--help"], ["-h"]) or
             area in ("base", "system") and action in (None,"status","--help","-h") or
-            area == 'system' and action == 'plan' or
             area == "source" and action in (None, "list", "show", "--help", "-h") or
             area == "cache" and action in (None, "--help", "-h") or
             area == "catalog" and action in ("search", "show", "versions", "resolve-kernel", "--help", "-h") or
@@ -146,10 +149,22 @@ def dispatch(args, runtime):
                 action in ("search", "show", "versions") and option(command, "--catalog"))
         if not readonly:
             raise ValueError("shared installation changes require an administrator")
-    if area == 'system' and action in (None, '--help', '-h', 'install', 'status', 'plan','select','rollback'):
+    if area in ('base','system','kernel') and action in ('activate','upgrade','stage','select','rollback'):
+        if roots:raise ValueError('boot operations use --disk-root, not --root')
+        from mpm_boot_selection import present
+        target = None
+        for index,arg in enumerate(command):
+            if arg == '--disk-root' and index+1 < len(command):target = Path(command[index+1])
+            elif arg.startswith('--disk-root='):target = Path(arg.split('=',1)[1])
+        target = target if target is not None else runtime.disk if runtime else None
+        if action in ('activate','upgrade') or area == 'system' and action == 'stage' or target is not None and present(target):
+            require_codec(runtime,command)
+            from mpm_boot_update import main
+            return main(area,command[1:],runtime=runtime)
+    if area == 'system' and action in (None, '--help', '-h', 'install', 'status','select','rollback'):
         if roots:raise ValueError('System commands use --disk-root for one installation target, not --root')
         if not (action == 'install' and option(command, '--source') and '--dry-run' in command):
-            if action in ('install', 'plan') or option(command, '--verify'):require_codec(runtime, command)
+            if action == 'install' or option(command, '--verify'):require_codec(runtime, command)
         from mpm_system_cli import main
         return main(command[1:] or ['--help'], runtime=runtime)
     if area == "base" and action in (None,"--help","-h","install","stage","select","rollback","status"):

@@ -122,20 +122,27 @@ cache/profile; --snapshot pins accepted metadata. Controlled profile links are
 retained. Late-created privileged helpers remain unavailable runtime requirements;
 installation does not create them or establish boot readiness. See docs/system-packaging.md.
 .PP
-.BI "system plan --artifact " "sha256:FULL_ID"
-performs verified read-only transition planning against the selected deployment.
-It binds the installed System, exact retained Base/Kernel, actual ABI/state/account
-facts and measured management support. The initial gate allows tooling changes
-while preserving startup/services/provider closures; missing defaults and service
-changes block. Administrator access is required for retained content inspection.
-It creates no slot, runs no initializer, and reports stage_ready=false and
-boot_ready=false pending the active-v2 staging join. Native-v2 planning uses
-the authoritative selected slot and returns mojt-system-transition-preflight-v2;
-it does not use the running label or accept a v1 --baseline override. Fresh v1
-image planning retains its explicit baseline and v1 result. External startup
-dependencies remain provider-owned and must be preserved, including existing
-service libc dependencies. No service/libc migration is inferred.
-See docs/system-transition.md.
+.BI "{base,system,kernel} activate --artifact " "sha256:FULL_ID"
+prepares an installed exact candidate and atomically selects its complete
+native-v2 deployment for next boot. upgrade --artifact ID uses the same path
+with an explicitly chosen update target. --dry-run previews without writing
+runtime bundles, slots, boot trees or selection. There is no system plan command.
+Base requires --base-context FILE declaring Kernel bounds for this exact Base.
+The other two areas, running system and persistent state are preserved.
+No source refresh, moving-policy resolution, automatic reboot or migration occurs.
+.PP
+stage --artifact ID prepares without selecting. select --deployment ID
+--expected-selected ID chooses an admitted deployment. rollback
+--expected-selected ID returns to the previous compatible selection within the
+specified area. These lower-level operations remain available.
+.PP
+The first System update policy preserves startup/services and their existing
+provider dependencies, including service libc closures. Tooling changes and
+added admin commands are supported; service changes, missing defaults and
+unsupported migrations block. Base ABI, Kernel bounds, account shells and
+management readers are checked. Preflight is an internal implementation step.
+Construction uses the running manager's retained Python and static BusyBox;
+candidate code is not executed. See docs/system-transition.md.
 .PP
 .B system status
 reports installed generations, retained incomplete generations, components and
@@ -332,13 +339,13 @@ There is no general undo, physical GC, full power-loss recovery or implicit
 reconciliation of direct Nix changes. Content verification still runs on an
 unchanged apply; an unchanged plan creates no new profile or history event.
 .SH RELATION TO SYSTEM UPGRADE
-mpm system upgrade is accepted design, not an implemented command. It must
-plan against the selected deployment, distinguish selected from running
-content, and publish a new immutable System generation for next boot.
+mpm system upgrade --artifact ID selects an exact installed immutable generation
+through the shared native-v2 update path. Its baseline is the selected deployment,
+which may differ from the running one. Moving-policy resolution is not implemented.
 Ports upgrade changes the current shared application profile immediately.
 Neither operation may silently change the other area's requests, catalog or
 activation, nor Base or Kernel selections. Sharing immutable Nix objects
-does not merge those policies. A future System updater must check whether
+does not merge those policies. The updater checks whether
 its bundled MPM can read/write the selected persistent metadata format;
 mutable account, home and application state is not automatically rolled back.
 .SH LOCAL DISCOVERY PROTOTYPE
@@ -346,8 +353,7 @@ The repository frontend supports catalog search, show and versions with an
 explicit local --catalog discovery envelope. Area-scoped forms include
 ports search, ports show and ports versions with that option. Ordinary Ports
 search without a discovery catalog retains its existing Nix source semantics.
-The current installed System launcher still invokes the Nix prototype;
-run local discovery through python3 -B tools/mpm in a checkout.
+The installed System launcher delivers the same frontend and discovery reader.
 .PP
 Discovery search matches literal names and declared aliases, case-insensitively.
 Use --exact for a whole name/alias, --description to additionally search

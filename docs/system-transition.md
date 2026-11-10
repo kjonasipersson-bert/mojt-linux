@@ -4,35 +4,50 @@ Copyright (C) 2026 Jonas Persson
 SPDX-License-Identifier: GPL-2.0-only
 -->
 
-# Exact System transition preflight
+# Exact installed boot updates
 
-`mpm system plan` is a verified read-only preflight for an **already installed**
-native System generation. It binds the candidate artifact/composition/profile to
-the authoritative selected deployment, preserving its exact Base and Kernel.
-It neither stages/selects boot content nor runs initialization or services.
+`mpm system activate --artifact sha256:FULL_ID` prepares an already installed
+System and selects it for the **next boot**. `mpm system upgrade --artifact ID`
+uses the same path with an explicit exact update target. `--dry-run` performs
+verified preflight without writing a runtime bundle, boot tree, slot or menu.
+Preflight is internal; there is no public `mpm system plan` operation.
 
 ```sh
-mpm system plan --artifact sha256:FULL_SYSTEM_ARTIFACT --json
+mpm system install --from-file SYSTEM.tar.zst --expected-id sha256:FULL_ID -y
+mpm system upgrade --artifact sha256:FULL_ID --dry-run
+mpm system upgrade --artifact sha256:FULL_ID -y
+mpm system status
+# Reboot deliberately, then inspect status again.
 ```
 
-Installed commands use the mounted installation. Checkout/offline inspection
-requires `--disk-root /TARGET`. An initialized native-v2 installation uses its
-authoritative `boot/mpm/grub.cfg` selection and admitted exact slot; no baseline
-argument or running-label inference is needed. A fresh v1 image additionally
-needs `--baseline boot/mojt/GENERATION/BASE`, derived by the installed frontend
-only from its bound fresh v1 runtime record. Explicit `--baseline` is refused
-under v2 authority. Selected and running may differ; the selected deployment is
-always the planning baseline. A damaged v2 authority never falls back to v1.
+System installation still takes the generation's exact component archives via
+`--dependency-file`, or obtains them from the same accepted named source snapshot.
+Base and Kernel use the same `activate`/`upgrade` path on native-v2. Base updates
+require `--base-context FILE` with Kernel bounds bound to that exact candidate.
+`install` retains content only; it never selects next boot. `stage`, `select` and
+`rollback` remain lower-level operations for explicitly separated preparation and
+selection. Selection requires `--expected-selected ID` when invoked directly.
 
-Verified planning requires administrator access, the selected System's retained
-codec and any necessary provider adapter. Explicit offline provider targets
-retain the existing refusal to use the inspector host's unrelated store. The
-selected Base must also have a verified native installation/realization; merely
-having a legacy `base/VERSION` directory is insufficient.
+The installed command uses the mounted installation, its delivered Python, static
+BusyBox and helpers. It freezes a private copy of the running manager's retained
+interpreter closure for initramfs construction; candidate Python is never run.
+Core requests opaque provider proofs; the Nix adapter interprets Nix references.
+An explicit offline target cannot borrow the host's unrelated store/runtime.
+
+The authoritative native-v2 selection is the baseline, even when another
+combination is still running. Exactly one of Base/System/Kernel changes; the
+other two and the machine's boot policy stay fixed. Previous deployments remain
+retained. No existing installation is reformatted, and no reboot is performed.
+Damaged native-v2 metadata never falls back to the old image-preparation format.
+
+This first joined updater accepts **explicit exact installed candidates**. It
+does not refresh sources, select a moving release policy or create new tracking
+wishes implicitly. Catalog-driven moving Base/System/Kernel upgrades remain
+future work. Existing Ports request/upgrade semantics are unchanged.
 
 ## Evidence and gates
 
-The `mojt-system-transition-preflight-v1` result records:
+Internal preflight records bind:
 
 - Physical target/installation identity, selected deployment, root UUID and full
   menu checksum. Existing shared read locks are used without creating locks.
@@ -53,7 +68,7 @@ effects. No wishes, configuration, cache, registry, slot or boot pointer changes
 
 ## Planning from an active native-v2 installation
 
-The same command now supports a selected native-v2 baseline. Its result uses
+Internal System preflight supports a selected native-v2 baseline. Its result uses
 `mojt-system-transition-preflight-v2`; the fresh-image v1 result is unchanged.
 V2 plans additionally bind `baseline_format`, `baseline_entry`, `selected_inputs`
 and `selected_system` (exact artifact/composition/manifest/generation plus receipt
@@ -81,10 +96,19 @@ selected path/NAR-hash union, rejects conflicting hashes, and allows additional
 candidate dependencies while preserving the selected closure. This also preserves
 existing service libc dependencies; it does not infer plugin/desktop ABI safety.
 
-V2 plans remain **read-only**, with `stage_ready=false` and `boot_ready=false`.
-The existing v1-only handover preparer cannot consume a v2 plan. The next bounded
-increment joins the v2 constructor/stager and installed command; planning does
-not authorize initialization, service activation, selection or reboot.
+The joined updater uses `mojt-boot-transition-preflight-v1`, recording the exact
+baseline inputs, candidate boot Base/System/Kernel and one permitted area. The
+same handover, constructor, immutable slot store, readiness receipt and atomic
+menu publisher used by image preparation consume this result. A saved preflight
+is never an executable authorization: the constructor/admission boundary repeats
+it under locks and refuses changed selection, target or persistent state.
+
+A failed construction may leave retained verified content, but does not select
+it. Repeating staging reuses only a complete admitted deployment with matching
+exact inputs and constructor. Repeating activation of the selected candidate is
+a no-op. The menu is the next-boot commit point; post-publication durability
+errors remain explicit and do not delete the published result. Normal boot keeps
+its metadata/state checks and does not run full content scans.
 
 ## First initialization/service contract
 
