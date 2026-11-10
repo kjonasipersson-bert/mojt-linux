@@ -21,6 +21,7 @@ sys.path.insert(0,str(REPO/'tools'))
 import mpm_system_transition as transition
 import mpm_management as management
 import mojt_boot
+import mojt_bootstrap
 import mojt_system
 
 spec = importlib.util.spec_from_file_location('system_boot_preparation',REPO/'tests/prepare-system-boot.py')
@@ -180,7 +181,7 @@ class NamespaceTests(unittest.TestCase):
             code = ('import subprocess,sys; subprocess.Popen([sys.executable,"-I","-c",'
                     '"import time; time.sleep(60)"]); print("constructor failed",flush=True); sys.exit(7)')
             with self.assertRaises(subprocess.CalledProcessError) as failure:
-                prepare.isolated([sys.executable,'-I','-c',code],Path('/proc'),
+                mojt_bootstrap.isolated([sys.executable,'-I','-c',code],Path('/proc'),
                                  cwd=temporary,capture_output=True,text=True,timeout=10)
             self.assertEqual(failure.exception.returncode,7)
             self.assertEqual(failure.exception.stdout.strip(),'constructor failed')

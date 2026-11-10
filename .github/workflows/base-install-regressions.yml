@@ -89,7 +89,9 @@ jobs:
       - name: Check installed MPM dispatch and native runtime without a checkout or provider
         run: sudo python3 -m unittest discover -s tests -p 'test_mpm_cli.py' -v
       - name: Check minimal MBT, private Kernel preview and optional installed delivery
-        run: python3 -B -m unittest discover -s tests -p 'test_mbt.py' -v
+        run: |
+          python3 -B -m unittest discover -s tests -p 'test_mbt*.py' -v
+          sudo env PYTHONPATH=tests python3 -B -m unittest discover -s tests -p 'test_mbt_bootstrap.py' -v
       - name: Check System management runtime delivery
         run: python3 -m unittest discover -s tests -p 'test_system_vm.py' -v
 

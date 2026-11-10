@@ -14,11 +14,18 @@ mbt \- prepare private build tools and create Mojt build/package results
 .PP
 .B mbt package
 {kernel|base|system|pack|verify} ...
+.PP
+.B mbt bootstrap
+--base-package FILE --base-artifact ID --base-context FILE
+--kernel-registry DIRECTORY --kernel-artifact ID --system-payload DIRECTORY
+--system-generation NAME --output DIRECTORY [--system-version VERSION]
+[--system-revision N] [--with-build-tools] [--dry-run]
 .SH DESCRIPTION
 Experimental interface for review. MBT delegates to the existing environment,
-Kernel build and native artifact tools. Use each command's --help for its flags.
-No command installs a package, changes an active Ports profile, selects next
-boot, replaces Base libc or changes a global compiler.
+Kernel build, native artifact and image tools. Use each command's --help for flags.
+Building and packaging do not install or activate their result. Bootstrap uses
+MPM installation/deployment libraries on a new image. Existing-system updates
+belong to MPM. No command implicitly reboots or changes a global compiler.
 .SH COMMANDS
 .TP
 .B env
@@ -39,13 +46,30 @@ Create and independently verify a native archive from a complete build or
 retained release. Packaging revision and original build provenance are distinct.
 verify checks an existing archive without installing it. Packaging has no
 --dry-run option in this initial interface; it writes a new explicit output.
+.TP
+.B bootstrap
+Create a NEW regular UEFI/GPT native-v2 image with serial console and VirtIO.
+Requires verified exact Base/Kernel inputs, explicit Base compatibility bounds
+and an account-enabled step-10 System payload. --dry-run validates inputs without
+creating an image or registry. Actual creation requires root and an interactive
+terminal to set the new guest password. No automatic sudo or password flags.
+.PP
+Installs Base/System and stages/selects the initial exact deployment through
+MPM libraries in a private directory before mkfs. Fixed manager code runs using
+the accepted System Python/Nix in private mount/PID namespaces. No archive hooks,
+host Nix database mutation or loop mapping is used. Result/selection and boot-file
+hashes must agree before publication; no direct-boot bypass is exposed.
+An existing image/installation cannot be adopted or a failed preparation resumed.
+This assembles prebuilt inputs; it does not rebuild the entire distribution.
 .SH DELIVERY
 Builder-enabled System images include the Python frontend, existing helper code,
-this manual and a pinned Kernel recipe example. Compilers are acquired separately
+this manual, fixed assembly assets and a pinned Kernel recipe example. The
+installed builder can assemble its successor without a checkout. Compilers are acquired separately
 in private environments. Ordinary System compositions need not carry MBT.
 .SH LIMITS
-Bootstrap, new-target image assembly and physical disk provisioning are not yet
-joined to this frontend. There are no arbitrary recipes/hooks, saved-plan executor,
+Physical disk provisioning and hardware profiles are not joined yet. The low-level
+image helper retains its legacy default; use mbt bootstrap for native-v2.
+There are no arbitrary recipes/hooks, saved-plan executor,
 named-environment registry, GC or source rebuild of the entire distribution.
 Runtime closure checks are not a universal libc/plugin compatibility guarantee.
 .SH SEE ALSO

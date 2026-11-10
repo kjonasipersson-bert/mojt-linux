@@ -167,9 +167,13 @@ MBT/bootstrap before physical rollout.
 
 Step 2 has started with [minimal MBT](mbt-minimal.md): an experimental thin
 frontend over the existing environment, Kernel build and packager, optional
-builder System delivery and its manual. This draft does not settle all command
-spellings or complete new-target bootstrap. The next work stays in the same
-delivery: public native-v2 bootstrap and one physical profile, then the joined
+builder System delivery and its manual. It now includes fresh serial UEFI/VirtIO
+native-v2 image bootstrap through the same MPM install/stage/select libraries,
+with directory construction before mkfs and no loop-device finalization. An
+installed builder carries the fixed code/assets needed to assemble its successor.
+This draft does not settle all command spellings or complete physical provisioning;
+the bootstrap has automated fixture coverage, not owner VM acceptance yet.
+The next work stays in the same delivery: one physical profile, then the joined
 VM acceptance. Do not substitute an old-format image or call source assembly of
 prebuilt inputs a complete source rebuild.
 

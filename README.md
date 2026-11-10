@@ -63,7 +63,10 @@ Kernel install/stage/select/rollback on an existing managed VM disk is now
 accepted, including a source-installed exact Kernel boot with origin retained
 through PR #39. Generalized Base/System updates on an existing disk and the
 complete bootstrap/build integration remain work; see the
-[six-step consolidation plan](docs/mpm-consolidation-plan.md).
+[six-step consolidation plan](docs/mpm-consolidation-plan.md). The experimental
+[minimal MBT](docs/mbt-minimal.md) joins private tool environments, Kernel builds,
+packaging and fresh native-v2 image bootstrap. Its joined VM and physical-profile
+acceptance remain pending; imported prebuilt inputs are not a full source rebuild.
 
 ## Requirements on the build/test host
 

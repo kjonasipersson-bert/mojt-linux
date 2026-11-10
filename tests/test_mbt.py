@@ -26,7 +26,7 @@ class FrontendTests(unittest.TestCase):
             for args in ([],['--help'],['build','--help']):
                 with contextlib.redirect_stdout(io.StringIO()):self.assertEqual(mbt.main(args),0)
             with contextlib.redirect_stderr(io.StringIO()):
-                for args in (['plan'],['bootstrap'],['build','other']):self.assertEqual(mbt.main(args),1)
+                for args in (['plan'],['unknown'],['build','other']):self.assertEqual(mbt.main(args),1)
                 with mock.patch.object(mbt.os,'geteuid',return_value=0):
                     self.assertEqual(mbt.main(['build','kernel','--output','/absent']),1)
 
@@ -52,7 +52,7 @@ class FrontendTests(unittest.TestCase):
             self.assertFalse(output.exists())
 
     def test_each_helper_has_scoped_help_without_loading_a_provider(self):
-        for args,usage in ((['env','--help'],'mbt env'),(['build','kernel','--help'],'mbt build kernel'),
+        for args,usage in ((['env','--help'],'mbt env'),(['bootstrap','--help'],'mbt bootstrap'),(['build','kernel','--help'],'mbt build kernel'),
                            (['package','--help'],'mbt package')):
             with self.subTest(args=args):
                 result=subprocess.run([sys.executable,'-I','-B',str(REPO/'tools/mbt'),*args],capture_output=True,text=True,
@@ -64,7 +64,8 @@ class BuilderDeliveryTests(unittest.TestCase):
     def test_optional_system_delivery_is_complete_and_packages_without_a_checkout(self):
         import test_system_vm as fixtures
         fixture=fixtures.SystemVmTests();fixture.setUp();self.addCleanup(fixture.doCleanups)
-        model=fixtures.system;record=fixture.fixture(9)
+        model=fixtures.system;record=fixture.fixture(10)
+        successor=fixture.root/'successor';shutil.copytree(fixture.tree,successor,symlinks=True)
         with mock.patch.object(model.os,'chown'):
             key=model.install(fixture.tree,fixture.payload,record,fixture.busybox,'password',REPO,with_build_tools=True)
         profile=fixture.tree/'system'/key;self.assertTrue(key.endswith('-builder'))
@@ -73,7 +74,16 @@ class BuilderDeliveryTests(unittest.TestCase):
         self.assertNotIn('/var/lib/mojt/ports',wrapper)
         runtime=json.loads((profile/'mbt-runtime.json').read_text())
         self.assertEqual(runtime['files'],list(model.MBT_FILES))
+        self.assertEqual(runtime['source_files'],list(model.MBT_SOURCE_FILES))
         for name in model.MBT_FILES:self.assertEqual((profile/'tools'/name).read_bytes(),(REPO/'tools'/name).read_bytes())
+        for name in model.MBT_SOURCE_FILES:self.assertEqual((profile/name).read_bytes(),(REPO/name).read_bytes())
+        # Consume the installed builder's code and fixed assembly assets, not the
+        # original repository. The successor must be able to do the same again.
+        installed_model=fixtures.module('installed_builder',str(profile/'tools/mojt_system.py'))
+        with mock.patch.object(installed_model.os,'chown'):
+            following=installed_model.install(successor,fixture.payload,record,fixture.busybox,'password',profile,with_build_tools=True)
+        for name in (*model.MBT_SOURCE_FILES,*(str(Path('tools')/name) for name in model.MBT_FILES)):
+            self.assertEqual((successor/'system'/following/name).read_bytes(),(profile/name).read_bytes())
         self.assertTrue((profile/'share/man/man1/mbt.1').is_file())
         self.assertTrue((profile/'share/mbt/kernel-first-build.json').is_file())
         installed=[sys.executable,'-I','-B',str(profile/'tools/mbt')]

@@ -87,7 +87,11 @@ MPM_FILES = (
 # Optional builder entrypoints. Compilers remain in separately pinned private
 # environments; this code list is inventoried as part of the System profile.
 MBT_FILES = ('mbt','mbt_cli.py','mojt-build-env.py','mojt-kernel-build.py',
-             'mojt-artifact-pack.py','mojt_system_package.py')
+             'mojt-artifact-pack.py','mojt_system_package.py','mojt_bootstrap.py','mojt-privileged-setup.py')
+# Fixed assembly inputs at their repository-relative paths, so an installed
+# builder can assemble its successor without carrying a checkout.
+MBT_SOURCE_FILES = ('tests/check-mojt-system.sh','manifests/mpm-release-example.json',
+                    'manifests/kernel-first-build.json','man/mpm.1','man/mbt.1')
 
 BASH_RC = r'''# Mojt System interactive Bash defaults; user startup files may override these.
 case $- in *i*) ;; *) return 0 ;; esac
@@ -626,11 +630,13 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
         if with_build_tools:
             for name in MBT_FILES:
                 write(system / 'tools' / name,(repo / 'tools' / name).read_text(),0o644)
+            for name in MBT_SOURCE_FILES:
+                write(system / name,(repo / name).read_text(),0o644)
             write(system / 'bin/mbt','#!/bin/sh\n'
                   'PATH=/run/mojt-system/libexec/mpm/bin:/run/mojt-system/bin:/usr/bin:/bin\nexport PATH\nexec '+python+
                   ' -I -B /run/mojt-system/tools/mbt "$@"\n',0o755)
             write(system / 'mbt-runtime.json',json.dumps(dict(format='mojt-mbt-runtime-v1',python=python,
-                  files=list(MBT_FILES),syntax='experimental',scope='environment, Kernel build and packaging; bootstrap not integrated'),indent=2)+'\n')
+                  files=list(MBT_FILES),source_files=list(MBT_SOURCE_FILES),syntax='experimental',scope='environment, Kernel build, packaging and fresh native-v2 image bootstrap'),indent=2)+'\n')
             write(system / 'share/mbt/kernel-first-build.json',(repo / 'manifests/kernel-first-build.json').read_text())
         helper = retained_command(payload, record, "zstd")
         tar_helper = retained_command(payload, record, "tar")

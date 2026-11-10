@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 
 # Files are selected by manager-owned constants, never user paths or PATH.
-HELPERS = {'env':'mojt-build-env.py','kernel':'mojt-kernel-build.py','package':'mojt-artifact-pack.py'}
+HELPERS = {'env':'mojt-build-env.py','kernel':'mojt-kernel-build.py','package':'mojt-artifact-pack.py','bootstrap':'mojt_bootstrap.py'}
 
 
 def helper(name):
@@ -21,13 +21,14 @@ def helper(name):
 
 
 def usage():
-    print('usage: mbt {env,build,package} ...\n'
+    print('usage: mbt {env,build,package,bootstrap} ...\n'
           '  env             create a private pinned image/kernel tool environment\n'
           '  build kernel    compile a separate Kernel and matching modules\n'
           '  package         package kernel/base/system inputs, or verify an archive\n'
+          '  bootstrap       create a NEW serial UEFI native-v2 image\n'
           'Use mbt COMMAND --help for options; build accepts mbt build kernel --help.\n'
           'Experimental syntax. Builds/packages do not install or select next boot.\n'
-          'Bootstrap and physical target creation are not integrated yet.')
+          'Physical disk provisioning is not integrated yet.')
 
 
 def dispatch(args):
@@ -35,6 +36,7 @@ def dispatch(args):
     command,rest = args[0],args[1:]
     if command == 'env':name,prog = 'env','mbt env'
     elif command == 'package':name,prog = 'package','mbt package'
+    elif command == 'bootstrap':name,prog = 'bootstrap','mbt bootstrap'
     elif command == 'build':
         if not rest or rest in (['--help'],['-h']):
             print('usage: mbt build kernel ...\nUse --dry-run to preview; --resume reuses a verified incomplete workspace.')

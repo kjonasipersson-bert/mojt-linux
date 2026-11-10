@@ -360,17 +360,17 @@ def complete(tree, result, context, *, base, selected_system, root_uuid, console
     (result / "kernel-plan-request.json").write_bytes(artifact.canonical(request) + b"\n")
 
 
-def build(args, vm=None):
+def build(args, vm=None, *, finalize_tree=None):
     # Fresh image defaults must be traversable independently of the host's
     # private lab mask. Temporary workspaces and credentials have explicit modes.
     previous = os.umask(0o022)
     try:
-        return _build(args, vm)
+        return _build(args, vm) if finalize_tree is None else _build(args,vm,finalize_tree=finalize_tree)
     finally:
         os.umask(previous)
 
 
-def _build(args, vm=None):
+def _build(args, vm=None, *, finalize_tree=None):
     evidence = preview(args)
     if args.dry_run:
         return dict(format="mojt-native-image-preview-v1", base=evidence["base"]["id"],
@@ -418,18 +418,25 @@ def _build(args, vm=None):
             firmware_root=None, system_payload=payload, disk_size_mib=args.disk_size_mib, login_mode=args.login_mode,
             root_shell="/run/mojt-system/bin/bash", base_generation=base, system_generation=args.system_generation,
             additional_generations=None, native_context=context, with_build_tools=getattr(args,"with_build_tools",False))
-        vm.build(options)
+        if finalize_tree is None:vm.build(options)
+        else:
+            def finish(**values):return finalize_tree(base_package=frozen,**values)
+            vm.build(options,finalize_tree=finish)
         # Re-run the portable planner on the output files before publishing any result.
-        checked = deployment.plan(options.output / "kernel-plan-request.json", registry)
-        require(checked["no_change"] and not checked["boot_ready"], "native image plan differs")
+        if finalize_tree is None:
+            checked = deployment.plan(options.output / "kernel-plan-request.json", registry)
+            require(checked["no_change"] and not checked["boot_ready"], "native image plan differs")
+        else:
+            from mojt_bootstrap import inspect_result
+            inspect_result(options.output,base_artifact=args.base_artifact,kernel_artifact=args.kernel_artifact)
         require(not os.path.lexists(output), "output appeared during build; not overwriting")
         options.output.rename(output)
     return dict(format="mojt-native-image-result-v1", output=str(output), base=evidence["base"]["id"],
                 kernel=evidence["kernel"]["id"], status="fresh image built; owner boot acceptance pending")
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+def parser(prog=None):
+    parser = argparse.ArgumentParser(prog=prog,description=__doc__)
     for name in ("base-package", "base-context", "kernel-registry", "system-payload", "output"):
         parser.add_argument("--" + name, type=Path, required=True)
     for name in ("base-artifact", "kernel-artifact", "system-generation"):
@@ -439,7 +446,11 @@ def main(argv=None):
     parser.add_argument("--login-mode", choices=("password", "development"), default="password")
     parser.add_argument('--with-build-tools',action='store_true',help='include experimental MBT entrypoints in the new System')
     parser.add_argument("--dry-run", action="store_true")
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv=None):
+    args = parser().parse_args(argv)
     try:
         print(json.dumps(build(args), indent=2, sort_keys=True))
     except (OSError, ValueError, KeyError, TypeError, RecursionError, EOFError, tarfile.TarError, subprocess.CalledProcessError) as error:

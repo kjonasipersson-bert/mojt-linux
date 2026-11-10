@@ -207,7 +207,7 @@ def copy_partition(source, destination, offset, length):
                 outgoing.seek(len(block), 1)
 
 
-def build_disk(disk, tree, work, size_mib, root_uuid, system, base, console="serial"):
+def build_disk(disk, tree, work, size_mib, root_uuid, system, base, console="serial", native_selection=None):
     """Create a NEW regular GPT disk, with standalone GRUB in the EFI fallback path."""
     parts = layout(size_mib)
     fs_uuid(root_uuid)
@@ -216,7 +216,15 @@ def build_disk(disk, tree, work, size_mib, root_uuid, system, base, console="ser
         raise ValueError("disk image must not be a symlink")
     with disk.open("xb") as stream:
         stream.truncate(parts["disk_bytes"])
-    menu(tree, root_uuid, system, base, console)
+    if native_selection is None:menu(tree, root_uuid, system, base, console)
+    else:
+        from mpm_boot_selection import current
+        choice,entries,unused = current(tree,verify=True)
+        if choice != native_selection:raise ValueError('native-v2 selection changed before disk construction')
+        inputs = entries[choice['description']['selected']]['record']['description']['inputs']['description']
+        if (inputs['boot']['root_uuid'] != root_uuid or inputs['boot']['console'] != console
+                or inputs['system']['generation'] != system or inputs['base']['release'] != base):
+            raise ValueError('native-v2 boot scope differs from filesystem image')
     subprocess.run(["sfdisk", "--no-reread", "--no-tell-kernel", str(disk)],
                    input=partition_script(parts), text=True, check=True, capture_output=True)
     actual = json.loads(subprocess.run(["sfdisk", "--json", str(disk)],
