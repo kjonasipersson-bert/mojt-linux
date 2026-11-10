@@ -129,7 +129,13 @@ facts and measured management support. The initial gate allows tooling changes
 while preserving startup/services/provider closures; missing defaults and service
 changes block. Administrator access is required for retained content inspection.
 It creates no slot, runs no initializer, and reports stage_ready=false and
-boot_ready=false pending native-v2 deployment. See docs/system-transition.md.
+boot_ready=false pending the active-v2 staging join. Native-v2 planning uses
+the authoritative selected slot and returns mojt-system-transition-preflight-v2;
+it does not use the running label or accept a v1 --baseline override. Fresh v1
+image planning retains its explicit baseline and v1 result. External startup
+dependencies remain provider-owned and must be preserved, including existing
+service libc dependencies. No service/libc migration is inferred.
+See docs/system-transition.md.
 .PP
 .B system status
 reports installed generations, retained incomplete generations, components and

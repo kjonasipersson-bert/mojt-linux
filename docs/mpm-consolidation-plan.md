@@ -126,6 +126,21 @@ passed owner boot/return and clean-shutdown acceptance on 2026-11-09. Public
 active-v2 preflight/staging and
 configuration/request joins remain before complete M1 and MBT bootstrap.
 
+The boot-performance follow-up in #49 is owner-accepted: normal native-v2 boot
+checks metadata/paths/current state without full payload scans. Its measured
+reader and state gates totalled 344 ms (not total boot time), with no failed
+units. Full content verification remains an administrative/explicit operation;
+see [recorded evidence](boot-performance.md#fresh-normal-boot-acceptance-2026-11-10).
+
+The next bounded step-3 integration implements **read-only planning from active
+native-v2 selection** using `mpm system plan` and a versioned v2 preflight.
+It binds the selected native Base/Kernel/System and candidate realization,
+preserves external startup dependencies through provider-owned comparisons, and
+refuses stale selection/state without writes. It does not stage/select or create
+upgrade wishes. The next gate is the installed active-v2 constructor/stager join,
+then request/configuration-to-boot integration. No new owner VM matrix is needed
+for this read-only planning increment; use the existing root/archive CI journey.
+
 The owner reaffirmed native self-hosting as the destination on 2026-11-08.
 Complete the joined M1 administration/bootstrap flow, then M2 source recipes for
 Base and Mojt-owned System code; report imported third-party inputs separately.

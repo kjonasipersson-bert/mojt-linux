@@ -16,10 +16,13 @@ mpm system plan --artifact sha256:FULL_SYSTEM_ARTIFACT --json
 ```
 
 Installed commands use the mounted installation. Checkout/offline inspection
-requires `--disk-root /TARGET`; a fresh v1 baseline additionally needs the exact
-`--baseline boot/mojt/GENERATION/BASE` entry. The installed frontend derives this
-only from the already bound fresh runtime record; managed menus remain the
-authority even when running and selected differ. Labels/uname are not selection.
+requires `--disk-root /TARGET`. An initialized native-v2 installation uses its
+authoritative `boot/mpm/grub.cfg` selection and admitted exact slot; no baseline
+argument or running-label inference is needed. A fresh v1 image additionally
+needs `--baseline boot/mojt/GENERATION/BASE`, derived by the installed frontend
+only from its bound fresh v1 runtime record. Explicit `--baseline` is refused
+under v2 authority. Selected and running may differ; the selected deployment is
+always the planning baseline. A damaged v2 authority never falls back to v1.
 
 Verified planning requires administrator access, the selected System's retained
 codec and any necessary provider adapter. Explicit offline provider targets
@@ -47,6 +50,41 @@ Current menu, target identity and observed state are checked again before the
 result is returned. The internal `recheck` recomputes the complete plan and
 refuses changed inputs. A saved result is information, not permission to execute
 effects. No wishes, configuration, cache, registry, slot or boot pointer changes.
+
+## Planning from an active native-v2 installation
+
+The same command now supports a selected native-v2 baseline. Its result uses
+`mojt-system-transition-preflight-v2`; the fresh-image v1 result is unchanged.
+V2 plans additionally bind `baseline_format`, `baseline_entry`, `selected_inputs`
+and `selected_system` (exact artifact/composition/manifest/generation plus receipt
+and realization IDs). Base/Kernel references retain their complete native input
+fields, including the explicit upstream Kernel version and Base bounds evidence.
+No synthetic v1 deployment is created.
+
+Planning checks the selected slot bytes, installed selected System profile,
+candidate profile/provider content, native Base and Kernel against their exact
+records. Base ABI facts come from the installed Base's verified release manifest;
+Kernel bounds must reproduce the selected input's bound policy digest. The whole
+menu/hook, target identity and observed persistent state are checked again under
+existing read locks. `recheck` accepts the two explicit plan formats and recomputes
+the appropriate plan, refusing changed selection or account/configuration state.
+No lock, profile, request or installation record is created by planning.
+
+Native selected profiles name components, so their external startup dependencies
+come from `retained_providers`, not from legacy Nix-specific manifest fields.
+Core passes each provider a closed `mojt-system-provider-baseline-v1` description
+with fields `format` and `references`. Those references stay opaque to core; the
+manager-owned adapter's pure `preserves` comparison interprets them and declares
+which delivered adapter files must stay unchanged. The Nix boot adapter projects
+native references and delegates to the unchanged runtime adapter. Nix compares the complete
+selected path/NAR-hash union, rejects conflicting hashes, and allows additional
+candidate dependencies while preserving the selected closure. This also preserves
+existing service libc dependencies; it does not infer plugin/desktop ABI safety.
+
+V2 plans remain **read-only**, with `stage_ready=false` and `boot_ready=false`.
+The existing v1-only handover preparer cannot consume a v2 plan. The next bounded
+increment joins the v2 constructor/stager and installed command; planning does
+not authorize initialization, service activation, selection or reboot.
 
 ## First initialization/service contract
 
@@ -88,16 +126,17 @@ checks those actual persistent paths, without creating unused top-level copies
 or replacing local configuration. A linked `systemd` parent is refused.
 
 Both `stage_ready` and `boot_ready` remain false. This reader observes the
-existing verified v1 layout; it does not convert it to native-v2 or alter the
-closed v1 System reference. The [native-v2 record/storage layer](native-boot-v2.md) now validates inputs,
+existing verified v1 layout and the active native-v2 selection through separate
+explicit result formats; it does not convert either record format. The [native-v2 record/storage layer](native-boot-v2.md) validates inputs,
 binding and deployment, and atomically retains a complete immutable slot without
 selection. It does not yet consume this preflight as execution authorization.
 The [diagnostic constructor/early reader](native-initramfs-reader.md) now verifies
 exact trees from its trusted private runtime. The [System handover mode](native-system-handover.md) now joins this preflight,
 current-state checks and a separate boot Base to runtime/shutdown handover.
 [Prepared-candidate admission/selection/status](native-system-selection.md) is
-implemented. Planning/staging a new generation from an active v2 baseline and
-request-to-boot integration remain before complete administration. No backward migration is required.
+implemented. Active-v2 planning is implemented; staging a new generation from
+that plan and request-to-boot integration remain before complete administration.
+No backward migration is required.
 
 The [prepared single A/B/A owner test](system-boot-acceptance.md) now exercises the
 new-image constructor and installed selection/status frontend. The owner

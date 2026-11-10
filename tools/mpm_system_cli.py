@@ -22,11 +22,11 @@ class ProviderAdapters(dict):
     def __missing__(self, name):
         base.require(name == 'nix', 'unsupported System provider: ' + name)
         base.require(self.runtime is not None, 'System provider operations require the running installation; offline provider import/verification is unavailable')
-        try:from mpm_nix_binary import NixBinaryAdapter
+        try:from mpm_nix_boot import NixBootAdapter
         except ImportError as error:raise ValueError('selected System has no Nix binary adapter') from error
         binary = self.runtime.system_bin / 'nix-store'
         base.require(binary.is_file() and os.access(binary, os.X_OK), 'selected System has no retained nix-store helper')
-        adapter = NixBinaryAdapter(binary)
+        adapter = NixBootAdapter(binary)
         self[name] = adapter
         return adapter
 
@@ -63,7 +63,8 @@ def main(argv, *, runtime=None):
         elif args.action == 'plan':
             from mpm_system_transition import prepare
             baseline = args.baseline
-            if baseline is None and runtime is not None and args.disk_root is None:
+            from mpm_boot_selection import present
+            if baseline is None and runtime is not None and args.disk_root is None and not present(root):
                 from mpm_cli import boot_options
                 options = boot_options(['stage'], runtime)
                 baseline = options[options.index('--baseline') + 1] if '--baseline' in options else None

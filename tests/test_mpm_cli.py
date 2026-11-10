@@ -21,6 +21,20 @@ import mpm_cli as cli
 
 
 class DispatchTests(unittest.TestCase):
+    def test_system_plan_uses_native_selection_without_legacy_boot_defaults(self):
+        import mpm_system_cli as system_cli
+        import mpm_system_transition as transition
+        import mpm_boot_selection as selection
+        runtime=cli.Runtime()
+        with mock.patch.object(selection,'present',return_value=True),\
+             mock.patch.object(system_cli.os.path,'ismount',return_value=True),\
+             mock.patch.object(cli,'boot_options',side_effect=AssertionError('v1 defaults used')),\
+             mock.patch.object(transition,'prepare',return_value={'writes':False}) as prepare,\
+             contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(system_cli.main(['plan','--artifact','sha256:'+'a'*64],runtime=runtime),0)
+        self.assertEqual(prepare.call_args.args,(runtime.disk,'sha256:'+'a'*64))
+        self.assertIsNone(prepare.call_args.kwargs['baseline'])
+
     def test_help_and_unsupported_system_mutations_never_load_a_provider(self):
         with mock.patch.object(cli.runpy, "run_path", side_effect=AssertionError("provider loaded")):
             for args in ([], ["--help"], ["kernel", "--help"]):

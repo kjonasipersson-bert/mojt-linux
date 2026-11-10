@@ -268,6 +268,24 @@ class ConstructorTests(unittest.TestCase):
         self.assertNotEqual(other_id,value['id']);self.assertEqual((root/'boot/mojt/grub.cfg').read_bytes(),old_menu)
         hook=root/'boot/mojt/grub.cfg';hook.chmod(0o644);hook.write_bytes(selection.HOOK);hook.chmod(0o444)
         choice=selection.initialize(root,value['id']);self.assertEqual(choice['description']['selected'],value['id'])
+        # Installed planning now reads the selected native-v2 generation, not
+        # a v1 facade or the caller's currently running System label.
+        import mpm_system_transition as transition
+        before_plan=f.f.f.snapshot()
+        with mock.patch.object(transition.boot,'current',side_effect=AssertionError('native plan used v1 selection')):
+            plan=transition.prepare(root,other,adapters=f.f.adapters)
+            self.assertEqual(transition.recheck(root,plan,adapters=f.f.adapters),plan)
+        d=base.envelope(plan,transition.NATIVE_FORMAT)
+        self.assertTrue(d['checks']['compatible'],d['checks']['errors'])
+        self.assertEqual(d['selected'],value['id']);self.assertEqual(d['selected_inputs'],source['id'])
+        self.assertEqual(d['selected_system']['artifact'],source['description']['system']['artifact'])
+        self.assertEqual(d['retained_kernel'],source['description']['kernel'])
+        self.assertEqual(d['retained_base']['artifact'],source['description']['base']['artifact'])
+        self.assertEqual(d['candidate_system']['artifact'],other)
+        self.assertFalse(d['writes'] or d['effects'] or d['stage_ready'] or d['boot_ready'])
+        self.assertEqual(f.f.f.snapshot(),before_plan)
+        with self.assertRaisesRegex(ValueError,'--baseline is only'):
+            transition.prepare(root,other,baseline=f.f.f.baseline,adapters=f.f.adapters)
         before_preview=f.f.f.snapshot()
         preview=selection.select(root,other_id,expected_selected=value['id'],dry_run=True)
         self.assertFalse(preview['changed']);self.assertEqual(before_preview,f.f.f.snapshot())
@@ -281,6 +299,8 @@ class ConstructorTests(unittest.TestCase):
         with mock.patch.object(selection.tx,'publish',side_effect=uncertain):
             with self.assertRaises(selection.tx.PublicationUncertain):selection.select(root,other_id,expected_selected=value['id'],yes=True)
         self.assertEqual(selection.current(root)[0]['description']['selected'],other_id)
+        with self.assertRaisesRegex(ValueError,'inputs changed'):
+            transition.recheck(root,plan,adapters=f.f.adapters)
         from mpm_boot_status import description
         from mpm_base_status import status as base_status
         from mpm_system import status as system_status
