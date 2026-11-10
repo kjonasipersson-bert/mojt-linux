@@ -4,6 +4,7 @@
 """Timing must preserve real inventory results, refusals and installed code."""
 from contextlib import redirect_stderr
 import importlib.util
+import hashlib
 import io
 from pathlib import Path
 import sys
@@ -21,6 +22,33 @@ profile = importlib.util.module_from_spec(spec);spec.loader.exec_module(profile)
 
 
 class ProfileTests(unittest.TestCase):
+    def test_candidate_checksum_checked_before_code_and_same_proof_still_required(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);candidate=root/'candidate.py';marker=root/'executed'
+            candidate.write_text('from pathlib import Path\nPath('+repr(str(marker))+').touch()\n')
+            with self.assertRaisesRegex(ValueError,'checksum differs'):profile.load_candidate(candidate,'0'*64)
+            self.assertFalse(marker.exists())
+            source=TOOLS/'mpm_boot_inventory.py'
+            namespace=profile.load_candidate(source,hashlib.sha256(source.read_bytes()).hexdigest())
+            tree=root/'tree';tree.mkdir();(tree/'file').write_text('original')
+            expected=inventory.measure(tree);measure=inventory.measure;snapshot=inventory.snapshot
+            with self.assertRaisesRegex(ValueError,'immutable tree differs'):
+                with profile.temporary_inventory(inventory,namespace):
+                    inventory.verify(tree,expected)
+                    (tree/'file').write_text('changed');inventory.verify(tree,expected)
+            self.assertIs(inventory.measure,measure);self.assertIs(inventory.snapshot,snapshot)
+
+    def test_comparison_brackets_candidate_and_refuses_changed_coverage(self):
+        report=dict(deployment='same',kernel='same',trees=[dict(operation='measure',path='tree',nodes=2,content_bytes=1)])
+        candidate={'fixture':True}
+        with mock.patch.object(profile,'measure_boot',return_value=report) as measure,redirect_stderr(io.StringIO()):
+            value=profile.compare(candidate,'checksum')
+        self.assertEqual([call.kwargs['candidate'] for call in measure.call_args_list],[None,candidate,None])
+        self.assertEqual(value['format'],profile.COMPARISON)
+        changed=dict(report,trees=[dict(operation='measure',path='other',nodes=2,content_bytes=1)])
+        with mock.patch.object(profile,'measure_boot',side_effect=[report,changed,report]),redirect_stderr(io.StringIO()):
+            with self.assertRaisesRegex(ValueError,'covered trees'):profile.compare(candidate,'checksum')
+
     def test_probe_joins_running_receipt_and_checks_without_entering_handover(self):
         import mpm_boot_early as early
         import mpm_boot_handover as handover

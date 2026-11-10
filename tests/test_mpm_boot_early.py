@@ -29,6 +29,48 @@ import test_mpm_boot_v2 as fixtures
 
 
 class ReaderTests(unittest.TestCase):
+    def test_inventory_frames_keep_unicode_order_xattrs_and_block_boundary_file_bytes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);(root/'a').mkdir()
+            for name,size in (('a/z',128*1024+3),('a/\u00e5',128*1024),('b',0)):
+                (root/name).write_bytes(b'x'*size)
+            os.link(root/'a/z',root/'hardlink');(root/'link').symlink_to('/outside/not-followed')
+            raw_name=os.fsencode(root)+b'/invalid-\xff';fd=os.open(raw_name,os.O_CREAT|os.O_WRONLY,0o600);os.close(fd)
+            xattrs={}
+            try:os.setxattr(root/'b','user.mojt',b'\x00\xff');xattrs={'user.mojt':'00ff'}
+            except OSError:pass  # The filesystem may lack user xattrs.
+            rows=inventory.snapshot(root)
+            self.assertEqual(list(rows),['.','a','a/z','a/\u00e5','b','hardlink','invalid-\udcff','link'])
+            self.assertEqual(rows['b']['xattrs'],xattrs)
+            self.assertEqual(rows['hardlink']['hardlink_to'],'a/z')
+            self.assertEqual(rows['link']['target'],'/outside/not-followed')
+            framed=(inventory.MEASUREMENT+'\n').encode()+b''.join(artifact.canonical([n,r])+b'\n' for n,r in rows.items())
+            measured=inventory.measure(root)
+            self.assertEqual(measured['digest'],'sha256:'+__import__('hashlib').sha256(framed).hexdigest())
+            self.assertEqual(measured['content_bytes'],3*128*1024+6)
+            if xattrs:
+                os.setxattr(root/'b','user.mojt',b'changed');self.assertNotEqual(inventory.measure(root),measured)
+
+    def test_inventory_still_refuses_replaced_and_growing_open_files(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);file=root/'file';file.write_bytes(b'original')
+            original_open=os.open;original_read=os.read
+            def replaced(path,*args,**kwargs):
+                file.rename(root/'old');file.write_bytes(b'original')
+                return original_open(path,*args,**kwargs)
+            with mock.patch.object(os,'open',side_effect=replaced),self.assertRaisesRegex(ValueError,'before reading'):
+                inventory.measure(root)
+            (root/'old').unlink();grew=False
+            def growing(fd,size):
+                nonlocal grew
+                result=original_read(fd,size)
+                if not grew:
+                    with file.open('ab') as stream:stream.write(b'growth')
+                    grew=True
+                return result
+            with mock.patch.object(os,'read',side_effect=growing),self.assertRaisesRegex(ValueError,'grew while reading'):
+                inventory.measure(root)
+
     def test_real_provider_graph_above_metadata_budget_roundtrips_and_rejects_changes(self):
         source=fixtures.fixture();d=source['description']
         with tempfile.TemporaryDirectory() as temporary:

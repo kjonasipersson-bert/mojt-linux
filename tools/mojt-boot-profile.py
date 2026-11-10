@@ -11,6 +11,7 @@ Running-system caches and interpreter differ from the actual early boot.
 import argparse
 from contextlib import contextmanager, ExitStack
 import functools
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -19,6 +20,7 @@ import sys
 import time
 
 FORMAT = 'mojt-boot-profile-v1'
+COMPARISON = 'mojt-boot-profile-comparison-v1'
 
 
 class Timings:
@@ -74,7 +76,36 @@ def installed_tools():
     return directory
 
 
-def measure_boot():
+@contextmanager
+def temporary_inventory(module, candidate):
+    """Process-local diagnostic substitution, never edit the installed files."""
+    saved = {name:getattr(module,name) for name in ('measure','snapshot')}
+    try:
+        for name in saved:setattr(module,name,candidate[name])
+        yield
+    finally:
+        for name,value in saved.items():setattr(module,name,value)
+
+
+def load_candidate(path, expected):
+    """Explicit reviewed code for comparison, read/hash once before compiling."""
+    if len(expected) != 64 or any(c not in '0123456789abcdef' for c in expected):
+        raise ValueError('candidate requires its exact SHA256')
+    fd = os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+    with os.fdopen(fd,'rb') as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_size > 64*1024:raise ValueError('unsafe/unbounded candidate')
+        raw = stream.read(64*1024+1)
+    if len(raw) > 64*1024 or hashlib.sha256(raw).hexdigest() != expected:
+        raise ValueError('candidate checksum differs; no code loaded')
+    namespace = dict(__name__='mojt_boot_inventory_candidate',__file__=str(path))
+    exec(compile(raw,str(path),'exec'),namespace)
+    if not all(callable(namespace.get(n)) for n in ('measure','snapshot')):
+        raise ValueError('candidate lacks inventory entry points')
+    return namespace
+
+
+def measure_boot(*, candidate=None):
     if os.geteuid() != 0:raise ValueError('run as root in the existing native-v2 VM')
     directory = installed_tools();sys.path.insert(0,str(directory))
     timings = Timings()
@@ -96,6 +127,7 @@ def measure_boot():
         receipt = selection.ready(root,running['id'],verify=False)['receipt']['description']
         cmdline = Path('/proc/cmdline').read_text();release = os.uname().release
     with ExitStack() as stack:
+        if candidate is not None:stack.enter_context(temporary_inventory(inventory,candidate))
         for module,name,detail in ((inventory,'measure',timings.trees),(inventory,'snapshot',timings.trees),
                                    (artifact,'file_sha',timings.files),(artifact,'canonical',None),
                                    (store,'inspect',None),(handover,'validate',None)):
@@ -108,6 +140,38 @@ def measure_boot():
     result.update(deployment=running['id'],kernel=release,tools=str(directory),
                   verified=verified['verified'],handover_executed=False)
     return result
+
+
+def compare(candidate, checksum):
+    # Bracket the candidate with the installed implementation: the last scan
+    # gives a warm baseline rather than crediting cache warming to the change.
+    runs = []
+    for name,code in (('installed before',None),('candidate',candidate),('installed after',None)):
+        print('\nMojt boot profile: '+name,file=sys.stderr,flush=True)
+        runs.append(dict(name=name,report=measure_boot(candidate=code)))
+    identities = {(r['report']['deployment'],r['report']['kernel']) for r in runs}
+    covered = [sorted((t['operation'],t['path'],t.get('nodes'),t.get('content_bytes')) for t in r['report']['trees']) for r in runs]
+    if len(identities) != 1 or any(c != covered[0] for c in covered):
+        raise ValueError('comparison changed deployment or covered trees')
+    return dict(format=COMPARISON,scope='running-system installed/candidate/installed; not cold boot',
+                candidate_sha256=checksum,runs=runs,handover_executed=False)
+
+
+def comparison_summary(report):
+    print('Running deployment: '+report['runs'][0]['report']['deployment'])
+    print('Candidate SHA256: '+report['candidate_sha256'])
+    print('Warm rechecks; installed baseline brackets the process-local candidate.')
+    print('                         early verification    current-state gates')
+    for run in report['runs']:
+        phases = {r['name']:r['seconds'] for r in run['report']['phases']}
+        print('%-22s %12.3f s %19.3f s'%(run['name'],phases['exact early verification'],phases['current-state and boot-Base gates']))
+    candidate = report['runs'][1]['report'];baseline = report['runs'][2]['report']
+    by_path = {(r['operation'],r['path']):r['seconds'] for r in baseline['trees']}
+    print('\nSlowest candidate trees:       installed-after -> candidate')
+    for row in sorted(candidate['trees'],key=lambda row:row['seconds'],reverse=True)[:8]:
+        print('%8.3f -> %8.3f s  %s'%(by_path[(row['operation'],row['path'])],row['seconds'],row['path']))
+    print('\nPASS: both implementations passed the same exact proofs and current-state gates')
+    print('Installed implementation restored; no file replacement, handover or publication performed.')
 
 
 def summary(report):
@@ -132,10 +196,20 @@ def summary(report):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--json',action='store_true',help='full versioned report on stdout')
+    parser.add_argument('--compare-inventory',type=Path,help='explicit reviewed candidate code; process-local comparison only')
+    parser.add_argument('--expected-sha256',help='required exact checksum of candidate code')
     args = parser.parse_args()
     try:
-        result = measure_boot()
+        if bool(args.compare_inventory) != bool(args.expected_sha256):raise ValueError('supply candidate and checksum together')
+        if args.compare_inventory is not None:
+            if os.geteuid() != 0:raise ValueError('run as root in the existing native-v2 VM')
+            # Select the installed dependencies before importing candidate code.
+            sys.path.insert(0,str(installed_tools()))
+            candidate = load_candidate(args.compare_inventory,args.expected_sha256)
+            result = compare(candidate,args.expected_sha256)
+        else:result = measure_boot()
         if args.json:print(json.dumps(result,sort_keys=True,indent=2))
+        elif args.compare_inventory is not None:comparison_summary(result)
         else:summary(result)
     except (OSError,ValueError) as error:
         print('Mojt boot profile: '+str(error),file=sys.stderr)

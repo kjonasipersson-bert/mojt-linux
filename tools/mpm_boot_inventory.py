@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """Bounded, no-follow boot inventories; neither import nor execute target code."""
 import hashlib
+import json
 import os
 from pathlib import Path
 import stat
@@ -36,10 +37,12 @@ def path(root, relative):
 def _entries(root, maximum):
     """Deterministic depth-first entries; include all existing integrity facts."""
     links = {};total = 0;nodes = 0
-    def visit(node, name):
+    def visit(node, name, entry=None):
         nonlocal total,nodes
         require(nodes < MAX_NODES, 'boot inventory node limit');nodes += 1
-        before = node.lstat()
+        # scandir already carries the child's path. Stat only when visiting it;
+        # do not pre-cache metadata while collecting its siblings.
+        before = os.lstat(node) if entry is None else entry.stat(follow_symlinks=False)
         row = dict(mode=stat.S_IMODE(before.st_mode), uid=before.st_uid, gid=before.st_gid,
                    xattrs={n:os.getxattr(node,n,follow_symlinks=False).hex() for n in sorted(os.listxattr(node,follow_symlinks=False))})
         if stat.S_ISLNK(before.st_mode):
@@ -53,10 +56,9 @@ def _entries(root, maximum):
             try:
                 opened = os.fstat(fd)
                 require((opened.st_dev,opened.st_ino,opened.st_size) == (before.st_dev,before.st_ino,before.st_size), 'boot file changed before reading')
-                with os.fdopen(fd,'rb',closefd=False) as stream:
-                    checksum = hashlib.sha256();size = 0
-                    while chunk := stream.read(128*1024):
-                        size += len(chunk);require(size <= before.st_size, 'boot file grew while reading');checksum.update(chunk)
+                checksum = hashlib.sha256();size = 0
+                while chunk := os.read(fd,128*1024):
+                    size += len(chunk);require(size <= before.st_size, 'boot file grew while reading');checksum.update(chunk)
                 after = os.fstat(fd)
                 require(size == before.st_size and (after.st_size,after.st_mtime_ns,after.st_ctime_ns) ==
                         (before.st_size,before.st_mtime_ns,before.st_ctime_ns), 'boot file changed while reading')
@@ -70,9 +72,10 @@ def _entries(root, maximum):
             children = []
             with os.scandir(node) as entries:
                 for child in entries:
-                    require(nodes+len(children) < MAX_NODES, 'boot inventory node limit');children.append(child.name)
-            for child in sorted(children):yield from visit(node/child, child if name == '.' else name+'/'+child)
-    yield from visit(Path(root), '.')
+                    require(nodes+len(children) < MAX_NODES, 'boot inventory node limit');children.append(child)
+            for child in sorted(children,key=lambda child:child.name):
+                yield from visit(child.path,child.name if name == '.' else name+'/'+child.name,child)
+    yield from visit(os.fsdecode(os.fspath(root)), '.')
 
 
 def snapshot(root, *, maximum=artifact.MAX_CONTENT):
@@ -95,8 +98,12 @@ def measurement(value):
 def measure(root, *, maximum=artifact.MAX_CONTENT):
     """Stream framed entries; proof size is independent of file-list length."""
     checksum = hashlib.sha256((MEASUREMENT+'\n').encode('ascii'));nodes = 0;total = 0
+    # _entries constructs only strings/integers/maps. Keep the exact canonical
+    # bytes without recursively validating these internal rows a second time.
+    # External metadata still goes through artifact.canonical/parse_json.
+    encoder = json.JSONEncoder(sort_keys=True,separators=(',',':'),ensure_ascii=True,allow_nan=False)
     for name,row in _entries(root,maximum):
-        raw = artifact.canonical([name,row])+b'\n'
+        raw = encoder.encode([name,row]).encode('ascii')+b'\n'
         require(len(raw) < artifact.MAX_METADATA,'boot inventory entry size limit')
         checksum.update(raw);nodes += 1;total += row.get('size',0)
     return measurement(dict(format=MEASUREMENT,digest='sha256:'+checksum.hexdigest(),nodes=nodes,content_bytes=total))
