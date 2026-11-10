@@ -38,7 +38,11 @@ Filesystem paths name environments and workspaces. No global environment-name
 registry, automatic compiler activation or saved-plan execution is needed.
 Compilation through MBT requires an ordinary user; root may preview, but the
 frontend does not silently run a build through sudo or change workspace ownership.
-A private environment is not a security sandbox.
+A private environment is not a security sandbox. Tool acquisition uses the
+provider's store permissions: on Mojt's current root-owned single-user Nix store,
+an administrator imports the tools into a directory traversable/readable by the
+builder, and the ordinary user then compiles with it. MBT does not grant ordinary
+users shared-store write access or silently start a provider daemon.
 
 ## Concrete journey
 
@@ -102,7 +106,7 @@ environment nor MBT changes Base libc or claims arbitrary plugin ABI safety.
 
 ## Fresh native-v2 bootstrap
 
-The first public profile is x86-64, serial console, UEFI/GPT and VirtIO. It requires
+The default profile is x86-64, serial console, UEFI/GPT and VirtIO. Bootstrap requires
 an account-enabled step-10 System payload and interactive password login. It
 creates a new regular disk image; it accepts no physical target device and cannot
 adopt an existing installation or resume a failed preparation.
@@ -150,11 +154,46 @@ rebuild of Base, the Kernel or third-party System packages. A resulting builder
 can separately acquire a private compiler environment, build/package a Kernel,
 and install/activate it with MPM.
 
+### ThinkPad image profile
+
+`--hardware-profile thinkpad-x1-carbon-3 --firmware-root EXTRACTED_FIRMWARE_ROOT`
+selects the existing ThinkPad X1 Carbon 3 hardware policy: UEFI, local `tty1`
+password login, USB/SATA/ext4 and keyboard modules in the initramfs, and explicit
+runtime graphics/Ethernet/Wi-Fi drivers. It uses the same native-v2 bootstrap;
+it does not turn the output path into a physical disk target.
+
+The selected native Kernel artifact supplies the complete module tree. It is not
+duplicated inside System. Firmware and upstream licenses are packaged into the
+native System component, inventoried with that profile and mounted read-only at
+the resolved `/lib/firmware` before drivers start. `hardware.json` version 2 records
+the extraction/build provenance and declares `modules_location=native-kernel`;
+the deployment remains the authority for the active Kernel's exact identity.
+The native-v2 `firmware` list stays empty because there is no independently
+installed firmware artifact in this profile.
+
+The firmware input is the extracted Debian root described in
+[the ThinkPad guide](thinkpad-usb-boot.md#2-prepare-debian-trixie-kernel-and-firmware-inputs).
+Its Intel 7265 firmware, signed regulatory database and required upstream licenses
+must be present. Bootstrap freezes only those firmware/license trees and their
+provenance, not an unrelated extracted distribution kernel. Source and copied
+input identities are checked before use. Plain hashes are not authentication.
+
+The boot record binds local console and `thinkpad-x1-carbon-3-v1`. Menus cannot
+mix it with the VM profile. MPM updates preserve that machine policy; each new
+Kernel construction resolves both early and runtime driver dependencies. Normal
+boot checks paths and small hardware metadata without scanning firmware content.
+Firmware is covered by the System content proof for explicit full verification.
+Its mount remains until the existing static exitrd teardown. General service or
+firmware changes through System upgrade still need a supported transition policy;
+the unchanged-startup gate is not bypassed by this profile.
+
+The local-console launcher offers SATA or USB emulation via `QEMU_DISK_BUS`.
+Use `QEMU_MEMORY_MIB=4096 QEMU_CPUS=8` for a builder VM instead of editing its
+launcher. These affect QEMU resources, not the build recipe's explicit job count.
+
 ## What is deliberately still open
 
 - Approve/refine this small syntax before treating it as the stable user contract.
-- Carry one physical hardware profile's console, storage modules and firmware
-  through that same bootstrap path. Do not introduce a generic partitioner first.
 - Run one bounded VM journey with the delivered MPM/MBT, then a dedicated physical
   disk installation, update, Kernel build/boot and return.
 
@@ -170,7 +209,32 @@ System delivery and real native packaging/verification through the copied
 installed frontend and successor System assembly without a source checkout.
 Bootstrap tests cover read-only exact-input preview, namespace boundaries,
 failure before disk creation/publication, and one shared synthetic native
-install/stage/select fixture, including result/boot-file agreement. Existing build-environment, Kernel
+install/stage/select fixture, including result/boot-file agreement. A joined
+hardware-image fixture also covers account-enabled builder assembly, firmware
+freezing, exact package installation, construction, selection and final output.
+Injected mount checks cover read-only firmware and exitrd ordering. Existing build-environment, Kernel
 and System assembly tests continue to own their implementation checks. This is
 not a new real compiler or VM boot acceptance run. A joined real VM acceptance
 remains before physical rollout.
+
+## One joined acceptance journey
+
+After CI/review, create one **new** sufficiently sized builder image (for example
+`--disk-size-mib 32768`) from retained exact inputs using this public command.
+For the hardware profile, boot that image once with USB emulation in QEMU on the
+Debian desktop. Check native-v2 selected/running agreement, no failed units,
+accounts, network and the installed `mpm`/`mbt` manuals. Confirm modules and
+firmware are read-only and `/home`, `/root`, `/etc`, `/var` are persistent.
+
+Inside that installation, acquire a pinned Kernel environment with the store's
+required permissions and run its existing compiler/libelf/OpenSSL/loader probe.
+Keep the tool environment readable by the builder; compile and package one
+versioned Kernel through MBT as an ordinary user. As administrator, install that exact package
+with MPM, preview its activation, activate it and reboot the same image. Check
+the new exact running artifact, modules, identities and one persistent marker;
+then return to the retained prior deployment. Exercise one Ports install/use.
+Do not repeat every old component/version cross-product.
+
+That proves the joined VM workflow, not real hardware. Then use a separately
+identified dedicated physical disk for the same profile. Choosing and writing
+that destination is a separate explicit operation, outside `mbt bootstrap`.

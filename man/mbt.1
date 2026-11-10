@@ -20,6 +20,7 @@ mbt \- prepare private build tools and create Mojt build/package results
 --kernel-registry DIRECTORY --kernel-artifact ID --system-payload DIRECTORY
 --system-generation NAME --output DIRECTORY [--system-version VERSION]
 [--system-revision N] [--with-build-tools] [--dry-run]
+[--hardware-profile thinkpad-x1-carbon-3 --firmware-root DIRECTORY]
 .SH DESCRIPTION
 Experimental interface for review. MBT delegates to the existing environment,
 Kernel build, native artifact and image tools. Use each command's --help for flags.
@@ -33,6 +34,9 @@ Create a new private environment with pinned binary tools. The initial provider
 is Nix; the tool inventory and library closure are retained beside the environment.
 --dry-run previews without writing the environment or GC roots. No registry of
 names or separate plan command is needed. Keep a created environment in place.
+Acquisition follows provider-store permissions. Mojt's root-owned store currently
+needs an administrator to import tools; make that pinned environment readable by
+the ordinary builder. MBT does not grant store writes or start a provider daemon.
 .TP
 .B build kernel
 Compile a separate versioned Kernel and matching modules as an ordinary user.
@@ -54,6 +58,15 @@ and an account-enabled step-10 System payload. --dry-run validates inputs withou
 creating an image or registry. Actual creation requires root and an interactive
 terminal to set the new guest password. No automatic sudo or password flags.
 .PP
+The optional thinkpad-x1-carbon-3 profile selects local password login, USB/SATA
+storage and keyboard support, and graphics/network drivers. --firmware-root names
+an extracted Debian firmware root with Intel 7265 firmware, regulatory database
+and upstream licenses. Firmware/licenses become inventoried System content;
+complete modules remain in the exact native Kernel artifact. Both mounts are
+read-only. Existing-system updates preserve the bound hardware/console policy.
+Normal boot does not scan firmware content. Independent firmware artifacts and
+general firmware/service upgrade transitions are not implemented.
+.PP
 Installs Base/System and stages/selects the initial exact deployment through
 MPM libraries in a private directory before mkfs. Fixed manager code runs using
 the accepted System Python/Nix in private mount/PID namespaces. No archive hooks,
@@ -67,7 +80,7 @@ this manual, fixed assembly assets and a pinned Kernel recipe example. The
 installed builder can assemble its successor without a checkout. Compilers are acquired separately
 in private environments. Ordinary System compositions need not carry MBT.
 .SH LIMITS
-Physical disk provisioning and hardware profiles are not joined yet. The low-level
+Writing an image to a physical disk remains a separate explicit operation. The low-level
 image helper retains its legacy default; use mbt bootstrap for native-v2.
 There are no arbitrary recipes/hooks, saved-plan executor,
 named-environment registry, GC or source rebuild of the entire distribution.

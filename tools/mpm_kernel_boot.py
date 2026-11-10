@@ -78,7 +78,7 @@ def inspect_entry(root, relative):
     path = entry_path(root, relative)
     record = read(path / "deployment.json")
     d = deployment.validate_deployment(record)
-    require(d["boot"]["console"] == "serial", "first existing-disk increment supports serial UEFI only")
+    require(d["boot"]["console"] in ('serial','local'), "unsupported UEFI console")
     image = checked_file(path / "vmlinuz", native.MAX_INITRAMFS)
     initramfs = checked_file(path / "initramfs.cpio.gz", native.MAX_INITRAMFS)
     require(hashlib.sha256(image).hexdigest() == d["kernel"]["image_sha256"], "deployment Kernel image differs")
@@ -153,7 +153,7 @@ def menu(state, entries):
     d = entries[state["selected"]]["record"]["description"]
     header = HEADER if state["format"] == FORMAT else BASE_HEADER
     raw = header + "# " + artifact.canonical(state).decode("ascii") + "\n"
-    raw += boot.terminal("serial") + "set timeout=10\nset default='mpm-" + kernel.identifier(state["selected"]) + "'\n"
+    raw += boot.terminal(d['boot']['console']) + "set timeout=10\nset default='mpm-" + kernel.identifier(state["selected"]) + "'\n"
     for identifier in [state["selected"], *sorted(set(entries) - {state["selected"]})]:
         entry = entries[identifier]
         candidate = entry["record"]["description"]
@@ -193,7 +193,8 @@ def current(root, baseline=None):
         require(baseline is not None, "unmanaged boot menu; specify the exact native --baseline directory")
         entry = inspect_entry(root, baseline)
         d = entry["record"]["description"]
-        expected = boot.terminal("serial") + "set timeout=10\nset default=0\n"
+        console = d['boot']['console']
+        expected = boot.terminal(console) + ('set gfxpayload=keep\n' if console == 'local' else '') + "set timeout=10\nset default=0\n"
         expected += (f"menuentry 'Mojt Base {d['base']['release']} / System {d['system']['generation']} "
                      f"(Linux {d['kernel']['release']})' {{\n"
                      f"    linux /{baseline}/vmlinuz {d['boot']['cmdline']}\n"

@@ -171,10 +171,13 @@ builder System delivery and its manual. It now includes fresh serial UEFI/VirtIO
 native-v2 image bootstrap through the same MPM install/stage/select libraries,
 with directory construction before mkfs and no loop-device finalization. An
 installed builder carries the fixed code/assets needed to assemble its successor.
-This draft does not settle all command spellings or complete physical provisioning;
-the bootstrap has automated fixture coverage, not owner VM acceptance yet.
-The next work stays in the same delivery: one physical profile, then the joined
-VM acceptance. Do not substitute an old-format image or call source assembly of
+The ThinkPad X1 Carbon 3 image profile now joins local console, USB/SATA/keyboard
+modules, System-owned firmware/licenses and the independently retained native
+Kernel. Its policy is preserved by MPM updates; firmware is read-only and normal
+boot adds no content scans. This draft does not settle all command spellings or
+write a physical disk; bootstrap/profile have automated fixture coverage, not
+owner VM acceptance yet. The next work stays in the same delivery: one joined
+VM acceptance, then the dedicated physical disk. Do not substitute an old-format image or call source assembly of
 prebuilt inputs a complete source rebuild.
 
 The owner reaffirmed native self-hosting as the destination on 2026-11-08.

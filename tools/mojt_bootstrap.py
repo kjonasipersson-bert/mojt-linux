@@ -37,7 +37,7 @@ def request(value):
     artifact.fields(d,('tree','result','tree_identity','creator_mount_namespace','seed','archive','system_version','system_revision','code'))
     from mpm_deployment import validate_deployment
     old = validate_deployment(d['seed'])
-    require(old['platform'] == 'x86_64-linux' and old['boot']['console'] == 'serial','unsupported bootstrap platform/console')
+    require(old['platform'] == 'x86_64-linux' and old['boot']['console'] in ('serial','local'),'unsupported bootstrap platform/console')
     for key in ('tree','result'):require(type(d[key]) is str and Path(d[key]).is_absolute(),'absolute private bootstrap path required')
     require(type(d['tree_identity']) is list and len(d['tree_identity']) == 2 and all(type(n) is int for n in d['tree_identity']), 'invalid bootstrap directory identity')
     require(type(d['creator_mount_namespace']) is str and d['creator_mount_namespace'].startswith('mnt:['),'missing creator mount namespace')
@@ -130,17 +130,7 @@ def finalize_child(tree, result, base_package):
         (jail/'proc').mkdir(exist_ok=True)
         environment = dict(PATH='/run/mojt-system/libexec/mpm/bin:/run/mojt-system/bin:/usr/bin:/bin',LC_ALL='C',HOME='/root')
         isolated(['chroot',jail,'/run/mojt-system/bin/python3','-I','-B','/run/preparation/construct.py'],jail/'proc',env=environment)
-        outcome = base.read(prep/'result.json');model.envelope(outcome,RESULT)
-        details = outcome['description']
-        for name,body in (('bootstrap.json',outcome),('selected-deployment.json',details['deployment']),
-                          ('deployment.json',details['deployment']),('initramfs-binding.json',details['deployment']['description']['initramfs'])):
-            base.io.write_json(result/name,body) if not (result/name).exists() else (result/name).write_bytes(artifact.canonical(body)+b'\n')
-        selected = details['deployment']['description']['inputs']['description']
-        shutil.copyfile(tree/'realizations/system'/selected['system']['artifact'][7:]/'profile/manifest.json',result/'system-manifest.json')
-        # Sidecars must describe the selected v2 deployment, never the transient
-        # assembly seed. Its provenance is retained in bootstrap-request.json.
-        for name in ('kernel-plan-request.json','kernel-plan.json','system-context.json','native-build-inputs.json'):
-            (result/name).unlink()
+        record_result(tree,result,base.read(prep/'result.json'))
     finally:
         errors = []
         for point in reversed(mounted):
@@ -148,6 +138,20 @@ def finalize_child(tree, result, base_package):
             except (OSError,subprocess.CalledProcessError) as error:errors.append(str(point)+': '+str(error))
         require(not errors,'bootstrap namespace cleanup failed: '+'; '.join(errors))
     shutil.rmtree(work)
+
+
+def record_result(tree, result, outcome):
+    model.envelope(outcome,RESULT)
+    details = outcome['description']
+    for name,body in (('bootstrap.json',outcome),('selected-deployment.json',details['deployment']),
+                      ('deployment.json',details['deployment']),('initramfs-binding.json',details['deployment']['description']['initramfs'])):
+        base.io.write_json(result/name,body) if not (result/name).exists() else (result/name).write_bytes(artifact.canonical(body)+b'\n')
+    selected = details['deployment']['description']['inputs']['description']
+    shutil.copyfile(tree/'realizations/system'/selected['system']['artifact'][7:]/'profile/manifest.json',result/'system-manifest.json')
+    # Sidecars must describe the selected v2 deployment, never the transient
+    # assembly seed. Its provenance is retained in bootstrap-request.json.
+    for name in ('kernel-plan-request.json','kernel-plan.json','system-context.json','native-build-inputs.json'):
+        (result/name).unlink()
 
 
 def mountpoint(path):
@@ -207,7 +211,8 @@ def construct(root, runtime, value, work, *, adapter=None):
                   kernel_max=bounds['kernel_max'],bounds_evidence=artifact.digest(bounds)),
         system=dict(artifact=identifier,composition=realized['description']['composition'],manifest=realized['description']['manifest'],generation=old['system']['generation']),
         kernel=dict(deployment.kernel_identity(kernel_body),upstream=kernel_body['version']['upstream']),firmware=[],
-        boot=dict(root_uuid=old['boot']['root_uuid'],console='serial',profile=model.PROFILE,extra_args=['quiet']),
+        boot=dict(root_uuid=old['boot']['root_uuid'],console=old['boot']['console'],
+                  profile=model.HARDWARE_PROFILE if old['boot']['console'] == 'local' else model.PROFILE,extra_args=['quiet']),
         constructor=constructor.constructor(python,runtime/'busybox',handover=True),state_requirements=[],management_required=selection.MANAGEMENT_SUPPORT))
     contract = handover.prepare(root,source,plan,adapters=adapters,tar=str(runtime/'libexec/mpm/bin/tar'))
     staged = selection.stage(root,source,bundle,runtime/'busybox',work/'construction',bounds=bounds,adapters=adapters,contract=contract)
@@ -249,12 +254,14 @@ def build(args):
         require(preview['system_record']['step'] >= 10,'first native-v2 bootstrap requires account-enabled System step 10')
         return dict(format='mojt-bootstrap-preview-v1',layout='native-v2',base=preview['base']['id'],kernel=preview['kernel']['id'],
             system_payload=artifact.digest(preview['system_record']),system_version=artifact.version(version),
+            boot_profile=model.HARDWARE_PROFILE if preview['hardware'] is not None else model.PROFILE,hardware_inputs=preview['hardware'],
             output=str(Path(args.output).absolute()),image_written=False,boot_acceptance=False)
     require(paths.load_payload(args.system_payload)['step'] >= 10,'first native-v2 bootstrap requires account-enabled System step 10')
     def finish(**values):return finalize(system_version=args.system_version,system_revision=args.system_revision,**values)
     image = native.build(args,finalize_tree=finish)
     details = inspect_result(Path(image['output']),base_artifact=args.base_artifact,kernel_artifact=args.kernel_artifact)
     return dict(format='mojt-bootstrap-image-v1',output=image['output'],layout='native-v2',
+                boot_profile=details['deployment']['description']['inputs']['description']['boot']['profile'],
                 deployment=details['deployment']['id'],base=details['base'],system=details['system'],kernel=details['kernel'],boot_acceptance=False)
 
 

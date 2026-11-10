@@ -25,10 +25,10 @@ def usage():
           '  env             create a private pinned image/kernel tool environment\n'
           '  build kernel    compile a separate Kernel and matching modules\n'
           '  package         package kernel/base/system inputs, or verify an archive\n'
-          '  bootstrap       create a NEW serial UEFI native-v2 image\n'
+          '  bootstrap       create a NEW UEFI native-v2 image (VM or ThinkPad profile)\n'
           'Use mbt COMMAND --help for options; build accepts mbt build kernel --help.\n'
           'Experimental syntax. Builds/packages do not install or select next boot.\n'
-          'Physical disk provisioning is not integrated yet.')
+          'Writing an image to a physical disk is a separate explicit operation.')
 
 
 def dispatch(args):

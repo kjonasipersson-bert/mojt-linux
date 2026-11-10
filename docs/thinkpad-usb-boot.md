@@ -6,6 +6,13 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # ThinkPad X1 Carbon 3rd generation: first USB boot
 
+For the current joined MPM/MBT route, use
+[`mbt bootstrap --hardware-profile thinkpad-x1-carbon-3`](mbt-minimal.md#thinkpad-image-profile).
+That native-v2 path keeps Kernel/modules in the separate exact Kernel artifact
+and firmware/licenses in System. The older source-checkout commands below retain
+their original experimental layout; the firmware input preparation remains
+applicable. The new path still needs joined VM and physical owner acceptance.
+
 Target: Lenovo 20BTS0SK02, Intel i7-5600U, UEFI, HD Graphics 5500
 (`i915`), Intel I218-LM (`e1000e`), Intel Wireless 7265 (`iwlwifi`),
 Intel xHCI/EHCI USB and AHCI SATA. The owner supplied PCI IDs and the active

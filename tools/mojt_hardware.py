@@ -65,15 +65,64 @@ def firmware_inputs(root):
     return firmware, docs
 
 
-def stage(tree, system, modules_dir, release, firmware_root, support):
+def input_identity(root, release, support):
+    firmware, docs = firmware_inputs(root)
+    trees = {'firmware':support.tree_hash(firmware)}
+    for name in (*LICENSE_PACKAGES, 'linux-image-' + release):
+        if name in LICENSE_PACKAGES or (docs/name).is_dir():
+            checked_tree(docs/name);trees[name] = support.tree_hash(docs/name)
+    provenance = {}
+    for name in ('packages.txt','SHA256SUMS'):
+        point = root/name
+        if os.path.lexists(point):
+            if point.is_symlink() or not point.is_file():raise ValueError('unsafe hardware provenance: '+name)
+            provenance[name] = support.file_hash(point)
+    return dict(trees=trees,provenance=provenance)
+
+
+def freeze_inputs(root, destination, release, support, expected):
+    """Copy only profile firmware/licenses; Kernel bytes come from its artifact."""
+    if input_identity(root,release,support) != expected:raise ValueError('hardware inputs changed after preview')
+    firmware,docs = firmware_inputs(root)
+    (destination/'usr/lib').mkdir(parents=True)
+    shutil.copytree(firmware,destination/'usr/lib/firmware',symlinks=True)
+    for name in expected['trees']:
+        if name != 'firmware':shutil.copytree(docs/name,destination/'usr/share/doc'/name,symlinks=True)
+    for name in expected['provenance']:shutil.copyfile(root/name,destination/name)
+    if input_identity(root,release,support) != expected or input_identity(destination,release,support) != expected:
+        raise ValueError('hardware input copy differs')
+
+
+def native_firmware(profile):
+    """Bounded path/metadata check; full bytes are covered by the System proof."""
+    point = profile/'hardware.json'
+    if point.is_symlink() or not point.is_file() or point.stat().st_size > 65536:
+        raise ValueError('missing/bounded native hardware declaration required')
+    row = json.loads(point.read_bytes())
+    fields = {'format','profile','kernel_release','modules_tree_sha256','firmware_tree_sha256','licenses_tree_sha256',
+              'early_modules','runtime_modules','modules_location'}
+    if (type(row) is not dict or set(row) != fields or row.get('format') != 2 or row.get('profile') != PROFILE
+            or row.get('modules_location') != 'native-kernel'
+            or row.get('early_modules') != list(EARLY_MODULES) or row.get('runtime_modules') != list(RUNTIME_MODULES)):
+        raise ValueError('native hardware declaration differs')
+    firmware = profile/'kernel/lib/firmware'
+    if firmware.is_symlink() or not firmware.is_dir():raise ValueError('missing native System firmware')
+    for package in LICENSE_PACKAGES:
+        point = profile/'kernel/licenses'/package/'copyright'
+        if point.is_symlink() or not point.is_file():raise ValueError('missing native firmware license: '+package)
+    return firmware
+
+
+def stage(tree, system, modules_dir, release, firmware_root, support, *, native_kernel=False):
     """Retain complete versioned modules, firmware, licenses and transfer hashes."""
     modules = checked_tree(modules_dir, ignore=("build", "source"))
     firmware, docs = firmware_inputs(firmware_root)
     profile = tree / "system" / system
     kernel = profile / "kernel"
     destination = kernel / "lib/modules" / release
-    destination.parent.mkdir(parents=True)
-    shutil.copytree(modules, destination, symlinks=True,
+    if not native_kernel:
+        destination.parent.mkdir(parents=True)
+        shutil.copytree(modules, destination, symlinks=True,
                     ignore=lambda path, names: {"build", "source"} if Path(path) == modules else set())
     shutil.copytree(firmware, kernel / "lib/firmware", symlinks=True)
     # dpkg-deb extraction does not run update-alternatives. Select Debian's
@@ -114,13 +163,14 @@ def stage(tree, system, modules_dir, release, firmware_root, support):
         "Requires=mojt-setup.service\nAfter=mojt-setup.service\n"
         "Before=NetworkManager.service mojt-console.service\n"))
     wants = profile / "units/mojt.target.wants"
-    wants.mkdir()
+    wants.mkdir(exist_ok=True)
     (wants / "mojt-hardware.service").symlink_to("../mojt-hardware.service")
-    metadata = dict(format=1, profile=PROFILE, kernel_release=release,
-                    modules_tree_sha256=support.tree_hash(destination),
+    metadata = dict(format=2 if native_kernel else 1, profile=PROFILE, kernel_release=release,
+                    modules_tree_sha256=support.tree_hash(modules if native_kernel else destination),
                     firmware_tree_sha256=support.tree_hash(kernel / "lib/firmware"),
                     licenses_tree_sha256=support.tree_hash(kernel / "licenses"),
                     early_modules=list(EARLY_MODULES), runtime_modules=list(RUNTIME_MODULES))
+    if native_kernel:metadata['modules_location'] = 'native-kernel'
     support.write(profile / "hardware.json", json.dumps(metadata, indent=2) + "\n")
     return metadata
 

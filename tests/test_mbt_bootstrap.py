@@ -88,6 +88,54 @@ class BoundaryTests(unittest.TestCase):
 
 @unittest.skipUnless(os.geteuid()==0 and all(shutil.which(p) for p in ('zstd','cpio','tar')),'requires root/native archive fixture tools')
 class ConstructionTests(unittest.TestCase):
+    def test_hardware_image_joins_accounts_firmware_and_exact_native_selection_before_publication(self):
+        import test_native_image as fixtures
+        import test_system_vm as system_fixtures
+        import test_hardware_boot as hardware_fixtures
+        import test_mpm_system_transition as provider_fixture
+        import mojt_system_package as packer
+        import mpm_boot_constructor as constructor
+        f=fixtures.NativeImageTests();f.account_base=True;f.setUp();self.addCleanup(f.doCleanups)
+        source=system_fixtures.SystemVmTests();source.setUp();self.addCleanup(source.doCleanups);source.fixture(10)
+        hw=hardware_fixtures.HardwareTests();hw.setUp();self.addCleanup(hw.doCleanups)
+        f.args.system_payload=source.payload;f.args.login_mode='password'
+        f.args.hardware_profile=bootstrap.native.hardware.PROFILE
+        f.args.firmware_root=hw.firmware();f.args.with_build_tools=True
+        firmware_before=bootstrap.paths.tree_hash(f.args.firmware_root)
+        real_run=subprocess.run;which=shutil.which;tar=which('tar');seen=[]
+        def finish(*,tree,result,base_package):
+            runtime=tree/'system/native-fixture';manifest=base.read(runtime/'manifest.json')
+            python_output=manifest['description']['artifacts']['nix']['packages']['python']['output']
+            ref=dict(provider='nix',identity=dict(format='fixture-v1',output=python_output,objects=manifest['description']['artifacts']['nix']['objects']))
+            adapter=provider_fixture.Adapter(tree,ref);adapter.binary=adapter.executable='/accepted/nix-store'
+            adapter.boot_paths=lambda ref,target:sorted(r['path'].lstrip('/') for r in ref['identity']['objects'])
+            adapter.boot_mounts=lambda ref,target:[dict(source='nix',target='nix')]
+            prep=f.work/'preparation';prep.mkdir();archive=prep/'base.tar.zst';shutil.copyfile(base_package,archive)
+            seed=base.read(result/'selected-deployment.json');value=request(tree,result,seed,archive)
+            def run(args,**kwargs):
+                if '--load-db' in args:return subprocess.CompletedProcess(args,0)
+                return real_run(args,**kwargs)
+            with mock.patch.object(bootstrap,'mountpoint',return_value=True),\
+                 mock.patch.object(shutil,'which',side_effect=lambda name,*a,**kw:tar if str(name)==str(runtime/'libexec/mpm/bin/tar') else which(name,*a,**kw)),\
+                 mock.patch.object(bootstrap.subprocess,'run',side_effect=run),\
+                 mock.patch.object(packer,'nix_references',return_value=[ref]),\
+                 mock.patch.object(constructor.archive,'vm_module',return_value=fixtures.fixtures.vm):
+                outcome=bootstrap.construct(tree,runtime,value,prep/'work',adapter=adapter)
+            bootstrap.record_result(tree,result,outcome);d=outcome['description'];seen.append(d)
+            profile=tree/'realizations/system'/d['system'][7:]/'profile'
+            self.assertTrue((profile/'units/mojt-console.service').is_file())
+            self.assertEqual(bootstrap.native.hardware.native_firmware(profile),profile/'kernel/lib/firmware')
+            self.assertFalse((profile/'kernel/lib/modules').exists())
+            return d
+        with mock.patch.object(fixtures.fixtures.vm,'password_hash_from_terminal',return_value='$6$synthetic$not-a-real-password'):
+            built=f.synthetic_build(finalize_tree=finish)
+        image=Path(built['output']);d=seen[0]
+        self.assertEqual(bootstrap.inspect_result(image,base_artifact=f.base['id'],kernel_artifact=f.kernel['id']),d)
+        self.assertEqual(d['deployment']['description']['inputs']['description']['boot']['profile'],model.HARDWARE_PROFILE)
+        self.assertEqual(base.read(image/'build.json')['boot_layout'],'native-v2')
+        self.assertFalse((image/'run-qemu-direct.sh').exists())
+        self.assertEqual(bootstrap.paths.tree_hash(f.args.firmware_root),firmware_before)
+
     def test_initial_native_install_stage_select_and_result_are_joined_without_state_changes(self):
         import test_kernel_boot as fixtures
         import test_mpm_system_transition as provider_fixture

@@ -741,12 +741,12 @@ def build(args, *, finalize_tree=None):
         fail("explicit boot generations require --boot-mode uefi")
     entries = generations.plan(plan_path, boot.generation)
     native = getattr(args, "native_context", None)
-    if finalize_tree is not None and (native is None or not uefi or entries or physical):
-        fail('native-v2 bootstrap requires one fresh serial native UEFI generation')
+    if finalize_tree is not None and (native is None or not uefi or entries):
+        fail('native-v2 bootstrap requires one fresh native UEFI generation')
     native_support = None
     if native is not None:
-        if not uefi or physical or entries or not explicit_system or not explicit_base:
-            fail("native image mode requires one explicit serial UEFI Base/System pair")
+        if not uefi or physical and finalize_tree is None or entries or not explicit_system or not explicit_base:
+            fail("native image mode requires one explicit UEFI Base/System pair; hardware requires mbt bootstrap")
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         import mojt_native_image as native_support
     if entries and not explicit_system:
@@ -861,8 +861,8 @@ def build(args, *, finalize_tree=None):
                 hardware_record = None
                 if physical:
                     hardware_record = hardware.stage(tree, system_version, modules_dir, release,
-                                                     args.firmware_root, support)
-                    init_script = hardware.init_script(init_script)
+                                                     args.firmware_root, support,native_kernel=native is not None)
+                    if native is None:init_script = hardware.init_script(init_script)
             else:
                 assembled_at = install_system_init(tree, busybox, args.login_mode)
                 system_version = SYSTEM_VERSION

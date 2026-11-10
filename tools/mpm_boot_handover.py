@@ -15,6 +15,7 @@ import tomllib
 
 import mojt_artifact as artifact
 import mojt_system as paths
+import mojt_hardware as hardware
 import mojt_system_manifest as manifests
 import mpm_base as base
 import mpm_base_boot as base_boot
@@ -173,6 +174,12 @@ def check(root, source, trees, value, *, provider_roots=None, cache=None, verify
     for name in ('dev','proc','sys','etc','var','home','root','run','tmp','lib/modules',*[m['target'] for m in d['mounts']]):
         point = paths.virtual_file(tree,'/'+name)
         require(point.is_dir() and not any(point.iterdir()),'boot mountpoint must be an empty directory: '+name)
+    firmware = None
+    if i['boot']['profile'] == model.HARDWARE_PROFILE:
+        firmware = hardware.native_firmware(profile)
+        point = paths.virtual_file(tree,'/lib/firmware')
+        require(point.is_dir() and not any(point.iterdir()),'boot firmware mountpoint must be empty')
+    else:require(not (profile/'hardware.json').exists(),'hardware System requires its native boot profile')
     for mount in d['mounts']:require(inventory.path(root,mount['source']).is_dir(),'provider mount source missing')
     for name in ('etc','var','home','root'):inventory.path(root,'state/'+name)
     for shell in [*persistent['base_shells'],*persistent['system_shells']]:guest_file(root,tree,profile,provider_roots,d['mounts'],shell)
@@ -180,7 +187,7 @@ def check(root, source, trees, value, *, provider_roots=None, cache=None, verify
     hostname = common.checked_bytes(root/'state/etc/hostname').decode().strip()
     require(re.fullmatch('[A-Za-z0-9][A-Za-z0-9.-]{0,252}',hostname),'invalid persistent hostname')
     return dict(tree=tree,profile=profile,modules=inventory.path(root,'kernel/installed/'+i['kernel']['artifact'][7:]+'/payload/lib/modules'),
-                provider_roots=provider_roots,mounts=d['mounts'],hostname=hostname,source=source)
+                provider_roots=provider_roots,mounts=d['mounts'],hostname=hostname,source=source,firmware=firmware)
 
 
 def unit_name(path):
@@ -244,12 +251,17 @@ def _enter(root, context, verified, *, runner=None, execute=None, newroot=Path('
             destination = newroot/name;bind(root/name,destination,True);immutable.append('/'+name)
         module_point = paths.virtual_file(context['tree'],'/lib/modules').relative_to(context['tree'])
         bind(context['modules'],newroot/module_point,True)
+        firmware_point = None
+        if context.get('firmware') is not None:
+            firmware_point = paths.virtual_file(context['tree'],'/lib/firmware').relative_to(context['tree'])
+            bind(context['firmware'],newroot/firmware_point,True)
         runner(['mount','-t','tmpfs','-o','mode=1777,nodev,nosuid','tmpfs',newroot/'tmp']);mounted.append(newroot/'tmp')
         shutil.copyfile(runtime/'bin/busybox',newroot/'run/initramfs/bin/busybox');(newroot/'run/initramfs/bin/busybox').chmod(0o755)
         (newroot/'run/initramfs/bin/sh').symlink_to('busybox')
         shutil.copyfile(runtime/'shutdown',newroot/'run/initramfs/shutdown');(newroot/'run/initramfs/shutdown').chmod(0o755)
         protected = ['/etc','/var','/home','/root','/run/mojt-system','/run/mojt-disk','/'+str(module_point),
                      *['/'+m['target'] for m in context['mounts']],*immutable]
+        if firmware_point is not None:protected.append('/'+str(firmware_point))
         for path in protected:
             directory = newroot/'run/systemd/system'/(unit_name(path)+'.d');directory.mkdir(parents=True,exist_ok=True)
             (directory/'10-mojt-exitrd.conf').write_text('[Unit]\nDefaultDependencies=no\n')

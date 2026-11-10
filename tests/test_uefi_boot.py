@@ -136,12 +136,15 @@ class UefiTests(unittest.TestCase):
                         "Path(os.environ['CAPTURE']).write_text(json.dumps(sys.argv[1:]))\n")
         fake.chmod(0o755)
         env = {**os.environ, "PATH": str(commands) + ":" + os.environ["PATH"],
-               "OVMF_CODE": str(code), "OVMF_VARS_TEMPLATE": str(template), "CAPTURE": str(capture)}
+               "OVMF_CODE": str(code), "OVMF_VARS_TEMPLATE": str(template), "CAPTURE": str(capture),
+               'QEMU_MEMORY_MIB':'4096','QEMU_CPUS':'8'}
         subprocess.run(["bash", str(script)], env=env, check=True)
         variables = directory / "OVMF_VARS.fd"
         self.assertEqual(variables.read_text(), "fresh variables")
         self.assertEqual(variables.stat().st_mode & 0o777, 0o600)
         self.assertIn("user,model=virtio-net-pci", json.loads(capture.read_text()))
+        args=json.loads(capture.read_text())
+        self.assertEqual(args[args.index('-m')+1],'4096');self.assertEqual(args[args.index('-smp')+1],'8')
         variables.write_text("retained firmware state")
         subprocess.run(["bash", str(script)], env=env, check=True)
         self.assertEqual(variables.read_text(), "retained firmware state")

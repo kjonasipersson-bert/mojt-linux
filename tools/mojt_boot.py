@@ -280,7 +280,7 @@ if [[ ! -e "$here/OVMF_VARS.fd" ]]; then
 fi
 exec qemu-system-x86_64 \\
     -machine q35,accel=kvm:tcg \\
-    -m 1024 -smp 2 \\
+    -m "${QEMU_MEMORY_MIB:-1024}" -smp "${QEMU_CPUS:-2}" \\
     -drive "if=pflash,format=raw,readonly=on,file=$OVMF_CODE" \\
     -drive "if=pflash,format=raw,file=$here/OVMF_VARS.fd" \\
     -drive "file=$here/disk.img,if=virtio,format=raw" \\

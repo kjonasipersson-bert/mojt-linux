@@ -137,6 +137,8 @@ class NativeImageTests(unittest.TestCase):
         (root / "usr/etc/passwd").write_text("root:x:0:0:root:/root:/bin/sh\n")
         (root / "usr/etc/group").write_text("root:x:0:\n")
         (root / "usr/etc/hostname").write_text("mojt\n")
+        if getattr(self,'account_base',False):
+            (root/'usr/etc/nsswitch.conf').write_text('passwd: files\ngroup: files\nshadow: files\nhosts: files dns\n')
         release = self.work / "release"
         release.mkdir()
         def owner(info):
@@ -218,10 +220,13 @@ packages="packages.txt"
             for name in ("etc", "var", "home"):
                 self.assertEqual((tree / "state" / name).stat().st_mode & 0o777, 0o755)
             self.assertEqual((tree / "state/root").stat().st_mode & 0o777, 0o700)
-            native.boot.menu(tree, args[2], args[3], args[4])
+            if kwargs.get('native_selection') is None:native.boot.menu(tree, args[2], args[3], args[4])
+            else:
+                import mpm_boot_selection as selection
+                self.assertEqual(selection.current(tree,verify=True)[0],kwargs['native_selection'])
             obj = tree / "kernel/installed" / self.kernel["id"].split(":")[1]
             kernel.object_record(obj, self.kernel["id"], verify=True)
-            self.assertFalse((tree / "system/native-fixture/kernel").exists())
+            self.assertFalse((tree / "system/native-fixture/kernel/lib/modules").exists())
             path.write_bytes(b"synthetic disk; not guest boot acceptance")
             return {"synthetic": True}
         with mock.patch.object(vm, "static_x86_64_elf", return_value=True), \
