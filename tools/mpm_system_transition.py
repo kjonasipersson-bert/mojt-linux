@@ -93,7 +93,7 @@ def providers(manifest, candidate, refs, adapters, *, baseline_refs=None):
         name:dict(format='mojt-system-provider-baseline-v1',references=[copy.deepcopy(r) for r in baseline_refs if r['provider'] == name])
         for name in sorted({r['provider'] for r in baseline_refs})}
     for name, record in sorted(baselines.items()):
-        if name == 'native':continue
+        if baseline_refs is None and name == 'native':continue
         try:
             require(adapters is not None, 'provider adapter required for startup preservation: ' + name)
             adapter = adapters[name]

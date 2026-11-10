@@ -58,6 +58,8 @@ class ReviewTests(unittest.TestCase):
             d=copy.deepcopy(value['description']);d['profile']['tools/mpm_nix_binary.py']={'sha256':'e'*64,'mode':0o444}
             return manifests.create(d)
         self.assertTrue(transition.providers(delivered(old),delivered(candidate),[ref],{'nix':adapter},baseline_refs=[ref])['compatible'])
+        unknown=dict(ref,provider='native')
+        self.assertFalse(transition.providers(old,candidate,[unknown],{},baseline_refs=[unknown])['compatible'])
 
 
 class Adapter:
