@@ -17,6 +17,7 @@ from unittest import mock
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'tools'))
 import mojt_artifact as artifact
+import mpm_base as base
 import mpm_boot_constructor as constructor
 import mpm_boot_early as early
 import mpm_boot_inventory as inventory
