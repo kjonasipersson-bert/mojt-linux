@@ -17,9 +17,12 @@ import mpm_catalog as catalog
 import mpm_deployment as deployment
 import mpm_kernel_boot as boot
 import mpm_management as management
+import mpm_kernel as kernel
 import mpm_system as system
 
 FORMAT = 'mojt-system-transition-preflight-v1'
+NATIVE_FORMAT = 'mojt-system-transition-preflight-v2'
+BOOT_FORMAT = 'mojt-boot-transition-preflight-v1'
 REVIEW = 'mojt-system-startup-review-v1'
 require = base.require
 
@@ -84,11 +87,14 @@ def defaults(root, profile):
     return dict(policy='existing-defaults-only-v1', missing=missing, observed=artifact.digest(observed))
 
 
-def providers(manifest, candidate, refs, adapters):
+def providers(manifest, candidate, refs, adapters, *, baseline_refs=None):
     """Provider-specific preservation facts stay in the manager-owned adapter."""
     reports = [];errors = []
-    for name, record in sorted(manifest['description']['artifacts'].items()):
-        if name == 'native':continue
+    baselines = manifest['description']['artifacts'] if baseline_refs is None else {
+        name:dict(format='mojt-system-provider-baseline-v1',references=[copy.deepcopy(r) for r in baseline_refs if r['provider'] == name])
+        for name in sorted({r['provider'] for r in baseline_refs})}
+    for name, record in sorted(baselines.items()):
+        if baseline_refs is None and name == 'native':continue
         try:
             require(adapters is not None, 'provider adapter required for startup preservation: ' + name)
             adapter = adapters[name]
@@ -123,12 +129,70 @@ def shells(root, tree, state, candidate, refs, adapters):
     return dict(compatible=not errors, errors=errors)
 
 
-def _prepare(root, identifier, baseline, adapters):
+def selected_context(root, baseline):
+    """Read the actual selection format; never cast a native-v2 record to v1."""
+    import mpm_boot_selection as selection
+    if not selection.present(root):
+        state,entries,menu = boot.current(root,baseline);entry = entries[state['selected']]
+        old = deployment.validate_deployment(entry['record'])
+        selected,_,_ = boot.live_context(root,entry)
+        return dict(native=False,selected=state['selected'],old=old,manifest=selected,menu=menu,
+                    bounds=catalog.base_context(boot.read(entry['path']/'base-context.json')),kernel=entry['body'])
+    require(baseline is None,'native-v2 selection is authoritative; --baseline is only for a fresh v1 image')
+    from mpm_boot_v2 import inputs, slot, DEPLOYMENT
+    from mpm_boot_v2_store import inspect
+    state,entries,menu = selection.current(root)
+    require(state is not None,'native-v2 initial selection is incomplete')
+    selected_id = state['description']['selected'];value = entries[selected_id]['record']
+    require(inspect(root,selected_id) == value,'selected native-v2 slot changed')
+    source = value['description']['inputs'];old = inputs(source)
+    body,receipt = system.object_record(root,old['system']['artifact'])
+    realized = system.realization(root,body['id'],verify=True)
+    require(realized is not None,'selected native System is not installed')
+    require(all(realized['description'][key] == old['system'][key] for key in ('composition','manifest')),
+            'selected native System realization differs from deployment')
+    profile = system.realization_path(root,body['id'])/'profile'
+    manifest = manifests.validate(base.read(profile/'manifest.json'))
+    require(manifest['id'] == old['system']['manifest'] and manifest['description']['label'] == old['system']['generation']
+            and body['platform'] == old['platform'],'selected native System identity differs')
+    kernel_body,_ = kernel.object_record(root/'kernel/installed'/kernel.identifier(old['kernel']['artifact']),old['kernel']['artifact'],verify=True)
+    require(dict(deployment.kernel_identity(kernel_body),upstream=kernel_body['version']['upstream']) == old['kernel'],
+            'selected native Kernel identity differs')
+    bounds = catalog.base_context(dict(format=catalog.BASE_FORMAT,platform=old['platform'],
+        base={key:old['base'][key] for key in ('artifact','release')},
+        kernel_min=old['base']['kernel_min'],kernel_max=old['base']['kernel_max']))
+    require(artifact.digest(bounds) == old['base']['bounds_evidence'],'selected native Base bounds differ')
+    return dict(native=True,selected=selected_id,old=old,manifest=manifest,menu=menu,bounds=bounds,kernel=kernel_body,
+                baseline_format=DEPLOYMENT,baseline_entry=slot(selected_id),selected_inputs=source['id'],baseline_inputs=source,
+                provider_references=system.retained_providers(root,body['id']),
+                selected_system=dict(old['system'],receipt=receipt['id'],realization=realized['id']))
+
+
+def _prepare(root, identifier, baseline, adapters, *, area='system', bounds=None, joined=False):
     require(os.geteuid() == 0, 'verified System planning requires administrator access to retained content')
     physical = system.target_identity(root)
-    state, entries, menu = boot.current(root, baseline);entry = entries[state['selected']]
-    old = deployment.validate_deployment(entry['record'])
-    selected, _, _ = boot.live_context(root, entry)
+    context = selected_context(root,baseline)
+    old,selected,menu = context['old'],context['manifest'],context['menu']
+    if joined:
+        require(context['native'] and area in ('base','system','kernel'), 'joined updates require native-v2 selection')
+        old = copy.deepcopy(old)
+        if area == 'base':
+            body,receipt = base.object_record(root,identifier,verify=True)
+            realized = base.realization(root,identifier,receipt,verify=True)
+            require(realized is not None,'candidate Base is not installed')
+            bounds = catalog.base_context(bounds if bounds is not None else context['bounds'])
+            require(bounds['base'] == dict(artifact=identifier,release=body['version']['upstream'])
+                    and bounds['platform'] == body['platform'], 'Kernel bounds do not bind candidate Base')
+            old['base'] = dict(bounds['base'],rootfs_sha256=realized['description']['rootfs_sha256'],
+                kernel_min=bounds['kernel_min'],kernel_max=bounds['kernel_max'],bounds_evidence=artifact.digest(bounds))
+            context['bounds'] = bounds
+        elif area == 'kernel':
+            body,_ = kernel.object_record(root/'kernel/installed'/kernel.identifier(identifier),identifier,verify=True)
+            require(body['platform'] == old['platform'] and not body['requirements'] and not body['dependencies'],
+                    'unsupported candidate Kernel platform/requirements')
+            old['kernel'] = dict(deployment.kernel_identity(body),upstream=body['version']['upstream'])
+            context['kernel'] = body
+        if area != 'system':identifier = old['system']['artifact']
     persistent = common.state_inputs(root)
     info = base.store_info(root);require(info is not None, 'native installation store required')
     body, receipt = system.object_record(root, identifier)
@@ -145,34 +209,46 @@ def _prepare(root, identifier, baseline, adapters):
     require(base_body['version']['upstream'] == old['base']['release'], 'installed Base differs from selected exact Base')
     base_realized = base.realization(root, base_body['id'], base_receipt, verify=True)
     require(base_realized is not None, 'selected Base needs an installed native realization')
+    if context['native']:
+        require(base_realized['description']['rootfs_sha256'] == old['base']['rootfs_sha256'],
+                'selected native Base realization differs from deployment')
     release = tomllib.loads(common.checked_bytes(base.object_path(root, base_body['id']) / 'payload/manifest.toml').decode())
     require(type(release.get('abi')) is dict and release['abi'], 'selected Base needs explicit ABI facts')
+    require(release['base']['version'] == old['base']['release'] and release['state']['layout_version'] == persistent['layout'],
+            'candidate Base release/state layout differs')
     facts = dict(format=manifests.CONTEXT, architecture=release['base']['architecture'], base_abi=release['abi'],
         state_layout=persistent['layout'], ports=persistent['ports'], required_system_paths=persistent['system_shells'])
     compatibility = manifests.check(candidate, facts)
     require(base_body['platform'] == body['platform'] == old['platform'], 'System/Base/deployment platform differs')
-    bounds = catalog.base_context(boot.read(entry['path'] / 'base-context.json'))
-    require(bounds['base'] == old['base'] and bounds['platform'] == old['platform'], 'retained Kernel bounds do not bind selected Base')
-    upstream = entry['body']['version']
+    bounds = context['bounds']
+    require(bounds['base'] == {key:old['base'][key] for key in ('artifact','release')} and bounds['platform'] == old['platform'], 'retained Kernel bounds do not bind selected Base')
+    upstream = context['kernel']['version']
     require(upstream['scheme'] == 'dotted-v1' and catalog.compare_versions(bounds['kernel_min'], upstream['upstream']) <= 0
             and catalog.compare_versions(upstream['upstream'], bounds['kernel_max']) <= 0, 'preserved Kernel is outside selected Base bounds')
     reviewed = tooling_review(selected, candidate)
-    requirements = providers(selected, candidate, refs, adapters)
+    requirements = providers(selected, candidate, refs, adapters,baseline_refs=context.get('provider_references'))
     management_report = management.check_target(root, profile, candidate)
     tree = base.realization_path(root, base_body['id']) / 'tree/rootfs'
     shell_report = shells(root, tree, persistent, candidate, refs, adapters)
     observed_defaults = defaults(root, profile)
+    from mpm_base_boot import defaults_check
+    base_defaults = defaults_check(root,tree)
     errors = list(compatibility['errors']) + list(requirements['errors']) + list(shell_report['errors'])
     if body['metadata'].get('deployment_contract') != dict(format='mojt-system-content-only-v1', initialization='profile-services-not-reviewed'):
         errors.append('candidate has no supported System initialization review contract')
     if not reviewed['description']['compatible']:errors.append('startup/service changes require a supported initialization contract: ' + ', '.join(reviewed['description']['blockers']))
     if not management_report['compatible']:errors.extend(management_report['errors'])
     if observed_defaults['missing']:errors.append('missing System defaults need explicit preparation: ' + ', '.join(observed_defaults['missing']))
+    if base_defaults['missing']:errors.append('missing Base defaults need explicit preparation: ' + ', '.join(base_defaults['missing']))
     # Bind actual persistent/selection facts, not the running System label.
-    require(boot.checked_file(root / 'boot/mojt/grub.cfg') == menu and system.target_identity(root) == physical, 'selection or target changed during System planning')
+    if context['native']:
+        from mpm_boot_selection import current
+        unchanged = current(root)[2] == menu
+    else:unchanged = boot.checked_file(root/'boot/mojt/grub.cfg') == menu
+    require(unchanged and system.target_identity(root) == physical, 'selection or target changed during System planning')
     require(common.state_inputs(root) == persistent and defaults(root, profile) == observed_defaults, 'persistent state changed during System planning')
-    result = base.record(FORMAT, dict(target=str(root), target_identity=physical, installation=info['installation'], baseline=baseline,
-        selected=state['selected'], selection_sha256=hashlib.sha256(menu).hexdigest(), root_uuid=old['boot']['root_uuid'],
+    details = dict(target=str(root), target_identity=physical, installation=info['installation'], baseline=baseline,
+        selected=context['selected'], selection_sha256=hashlib.sha256(menu).hexdigest(), root_uuid=old['boot']['root_uuid'],
         operation='system', retained_base=dict(old['base'], receipt=base_receipt['id'], realization=base_realized['id']),
         retained_kernel=copy.deepcopy(old['kernel']), kernel_bounds=bounds,
         candidate_system=dict(artifact=identifier, receipt=receipt['id'], realization=realized['id'], composition=realized['description']['composition'],
@@ -181,9 +257,48 @@ def _prepare(root, identifier, baseline, adapters):
             providers=requirements, startup=reviewed, account_shells=shell_report, defaults=observed_defaults),
         writes=False, effects=False, stage_ready=False, boot_ready=False,
         remaining_gates=['authoritative native-v2 System staging/selection and runtime status join', 'bootstrap reuse of the same install/handover path',
-                         'atomic next-boot selection and focused owner System boot/return acceptance']))
+                         'atomic next-boot selection and focused owner System boot/return acceptance'])
+    if context['native']:
+        details.update({key:context[key] for key in ('baseline_format','baseline_entry','selected_inputs','selected_system')})
+        details['remaining_gates'] = ['active-v2 constructor/stage join', 'request/configuration-to-boot join',
+                                     'bootstrap reuse of the same installation/staging APIs']
+    fmt = NATIVE_FORMAT if context['native'] else FORMAT
+    if joined:
+        details.update(operation=area,baseline_inputs=context['baseline_inputs'],
+                       boot_base=details.pop('retained_base'),boot_kernel=details.pop('retained_kernel'),
+                       boot_system=details.pop('candidate_system'))
+        details['remaining_gates'] = ['construct and admit exact deployment', 'explicit next-boot publication and owner boot acceptance']
+        fmt = BOOT_FORMAT
+    result = base.record(fmt,details)
     require(len(artifact.canonical(result)) <= artifact.MAX_METADATA, 'System plan exceeds metadata limit')
     return result
+
+
+def boot_fields(value):
+    """One candidate projection for legacy bootstrap and joined native updates."""
+    require(type(value) is dict and value.get('format') in (FORMAT,NATIVE_FORMAT,BOOT_FORMAT),'unsupported boot preflight')
+    d = base.envelope(value,value['format'])
+    if value['format'] == BOOT_FORMAT:
+        import mpm_boot_v2 as model
+        before = model.inputs(d['baseline_inputs'])
+        require(d['operation'] in ('base','system','kernel') and d['selected_inputs'] == d['baseline_inputs']['id'],
+                'invalid boot transition area/baseline')
+        result = {area:d['boot_'+area] for area in ('base','system','kernel')}
+        for area in result:
+            if area != d['operation']:
+                require(all(result[area].get(k) == v for k,v in before[area].items()), 'boot transition changed another area: '+area)
+        return result
+    require(d['operation'] == 'system','unsupported legacy boot operation')
+    return dict(base=d['retained_base'],kernel=d['retained_kernel'],system=d['candidate_system'])
+
+
+def repeat(root, value, adapters):
+    """Recompute under the caller's locks; a saved document never authorizes writes."""
+    boot_fields(value);d = value['description']
+    if value['format'] == BOOT_FORMAT:
+        return _prepare(root,boot_fields(value)[d['operation']]['artifact'],None,adapters,
+                        area=d['operation'],bounds=d['kernel_bounds'],joined=True)
+    return _prepare(root,d['candidate_system']['artifact'],d['baseline'],adapters)
 
 
 def prepare(root, identifier, *, baseline=None, adapters=None):
@@ -192,8 +307,9 @@ def prepare(root, identifier, *, baseline=None, adapters=None):
 
 
 def recheck(root, plan, *, adapters=None):
-    d = base.envelope(plan, FORMAT)
+    boot_fields(plan)
+    d = base.envelope(plan,plan['format'])
     require(str(system.target(root)) == d['target'], 'System plan belongs to another target')
-    actual = prepare(root, d['candidate_system']['artifact'], baseline=d['baseline'], adapters=adapters)
+    with common.read_locks(system.target(root)):actual = repeat(system.target(root),plan,adapters)
     require(actual == plan, 'System transition inputs changed; prepare a fresh plan')
     return actual

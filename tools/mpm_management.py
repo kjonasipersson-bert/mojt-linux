@@ -27,7 +27,7 @@ CAPABILITY_FILES = (
     'mpm_cli.py', 'mpm_system_cli.py', 'mpm_system_transition.py',
     'mpm_boot_base.py', 'mpm_boot_constructor.py', 'mpm_boot_early.py', 'mpm_boot_handover.py',
     'mpm_boot_inventory.py', 'mpm_boot_v2.py', 'mpm_boot_v2_store.py', 'mpm_boot_selection.py',
-    'mpm_boot_status.py', 'mpm_request_plan.py', 'mpm_requests.py', 'mpm_ports_profile.py',
+    'mpm_boot_update.py', 'mpm_boot_status.py', 'mpm_request_plan.py', 'mpm_requests.py', 'mpm_ports_profile.py',
     'mojt-base-install', 'mojt_accounts.py', 'mojt_artifact.py', 'mojt_boot.py',
     'mojt_native_image.py', 'mojt_system.py', 'mojt_system_manifest.py', 'mpm_base.py',
     'mpm_catalog.py', 'mpm_defaults.py', 'mpm_deployment.py', 'mpm_kernel.py',

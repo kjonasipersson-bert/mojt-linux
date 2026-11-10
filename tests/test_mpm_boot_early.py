@@ -17,6 +17,7 @@ from unittest import mock
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'tools'))
 import mojt_artifact as artifact
+import mpm_base as base
 import mpm_boot_constructor as constructor
 import mpm_boot_early as early
 import mpm_boot_inventory as inventory
@@ -209,6 +210,11 @@ class PythonAdapter:
                      'requires root and real archive/runtime tools')
 class ConstructorTests(unittest.TestCase):
     def test_actual_archive_runs_its_reader_in_chroot_and_refuses_tampered_content(self):
+        # Exercise the complete real archive/chroot path without spending CI
+        # time maximizing compression of the same stdlib for each scoped update.
+        compress=gzip.compress
+        self.enterContext(mock.patch.object(gzip,'compress',side_effect=lambda data,compresslevel=9,*,mtime=None:
+                                           compress(data,compresslevel=1,mtime=mtime)))
         f=fixtures.Retention();f.setUp();self.addCleanup(f.doCleanups)
         root=f.root;work=f.f.f.fixture.work
         provider=f.f.adapter
@@ -260,14 +266,49 @@ class ConstructorTests(unittest.TestCase):
         next_source['system']=dict(artifact=other,composition=realized['description']['composition'],
             manifest=realized['description']['manifest'],generation='native-fixture')
         next_source=record(model.INPUTS,next_source)
-        next_contract=transfer.prepare(root,next_source,f.f.plan(other),adapters=f.f.adapters)
-        with mock.patch.object(constructor.archive,'vm_module',return_value=vm),mock.patch.object(vm,'module_paths',return_value=[module]):
-            staged=selection.stage(root,next_source,bundle,busybox,work/'second-construction',
-                bounds=f.bounds,adapters=f.f.adapters,contract=next_contract)
-        other_id=staged['deployment'];old_menu=(root/'boot/mojt/grub.cfg').read_bytes()
-        self.assertNotEqual(other_id,value['id']);self.assertEqual((root/'boot/mojt/grub.cfg').read_bytes(),old_menu)
+        old_menu=(root/'boot/mojt/grub.cfg').read_bytes()
         hook=root/'boot/mojt/grub.cfg';hook.chmod(0o644);hook.write_bytes(selection.HOOK);hook.chmod(0o444)
         choice=selection.initialize(root,value['id']);self.assertEqual(choice['description']['selected'],value['id'])
+        # Construct the changed System from an active native-v2 selection,
+        # rather than borrowing a deployment prepared by the offline builder.
+        import mpm_boot_update as update
+        options=dict(adapters=f.f.adapters,runtime_directory=bundle,busybox=busybox)
+        snapshot=f.f.f.snapshot()
+        preview=update.stage(root,'system',other,dry_run=True,**options)
+        self.assertFalse(preview['changed']);self.assertEqual(snapshot,f.f.f.snapshot())
+        approved=update.prepare(root,'system',other,adapters=f.f.adapters)
+        changed=copy.deepcopy(approved['description']);changed['state']['ports']='sha256:'+'0'*64
+        changed=base.record(approved['format'],changed)
+        with mock.patch.object(update,'prepare',side_effect=[approved,changed]), \
+             mock.patch.object(constructor,'freeze_runtime',side_effect=AssertionError('stale approval wrote runtime')):
+            with self.assertRaisesRegex(ValueError,'changed after approval'):
+                update.activate(root,'system',other,yes=True,**options)
+        self.assertEqual(snapshot,f.f.f.snapshot())
+        with mock.patch.object(constructor.archive,'vm_module',return_value=vm),mock.patch.object(vm,'module_paths',return_value=[module]):
+            staged=update.stage(root,'system',other,yes=True,**options)
+        other_id=staged['deployment'];self.assertNotEqual(other_id,value['id'])
+        snapshot=f.f.f.snapshot()
+        self.assertFalse(update.stage(root,'system',other,yes=True,**options)['changed'])
+        self.assertEqual(snapshot,f.f.f.snapshot())
+        self.assertEqual(selection.current(root)[0]['description']['selected'],value['id'])
+        # Installed planning now reads the selected native-v2 generation, not
+        # a v1 facade or the caller's currently running System label.
+        import mpm_system_transition as transition
+        before_plan=f.f.f.snapshot()
+        with mock.patch.object(transition.boot,'current',side_effect=AssertionError('native plan used v1 selection')):
+            plan=transition.prepare(root,other,adapters=f.f.adapters)
+            self.assertEqual(transition.recheck(root,plan,adapters=f.f.adapters),plan)
+        d=base.envelope(plan,transition.NATIVE_FORMAT)
+        self.assertTrue(d['checks']['compatible'],d['checks']['errors'])
+        self.assertEqual(d['selected'],value['id']);self.assertEqual(d['selected_inputs'],source['id'])
+        self.assertEqual(d['selected_system']['artifact'],source['description']['system']['artifact'])
+        self.assertEqual(d['retained_kernel'],source['description']['kernel'])
+        self.assertEqual(d['retained_base']['artifact'],source['description']['base']['artifact'])
+        self.assertEqual(d['candidate_system']['artifact'],other)
+        self.assertFalse(d['writes'] or d['effects'] or d['stage_ready'] or d['boot_ready'])
+        self.assertEqual(f.f.f.snapshot(),before_plan)
+        with self.assertRaisesRegex(ValueError,'--baseline is only'):
+            transition.prepare(root,other,baseline=f.f.f.baseline,adapters=f.f.adapters)
         before_preview=f.f.f.snapshot()
         preview=selection.select(root,other_id,expected_selected=value['id'],dry_run=True)
         self.assertFalse(preview['changed']);self.assertEqual(before_preview,f.f.f.snapshot())
@@ -281,6 +322,8 @@ class ConstructorTests(unittest.TestCase):
         with mock.patch.object(selection.tx,'publish',side_effect=uncertain):
             with self.assertRaises(selection.tx.PublicationUncertain):selection.select(root,other_id,expected_selected=value['id'],yes=True)
         self.assertEqual(selection.current(root)[0]['description']['selected'],other_id)
+        with self.assertRaisesRegex(ValueError,'inputs changed'):
+            transition.recheck(root,plan,adapters=f.f.adapters)
         from mpm_boot_status import description
         from mpm_base_status import status as base_status
         from mpm_system import status as system_status
@@ -302,6 +345,37 @@ class ConstructorTests(unittest.TestCase):
         self.assertEqual(selection.current(root)[0]['description']['selected'],value['id'])
         self.assertEqual(set(selection.current(root)[1]),{value['id'],other_id})
         with self.assertRaisesRegex(ValueError,'v1 writer'):constructor.archive.current(root,f.f.f.baseline)
+        # Same engine, independently scoped Base and Kernel candidates.
+        # Repack the retained Base with a new revision; source bytes stay fixed.
+        original_base=source['description']['base']['artifact']
+        body,_=base.object_record(root,original_base)
+        spec={k:copy.deepcopy(body[k]) for k in ('kind','name','platform','dependencies','requirements','provides','provenance','metadata')}
+        spec.update(format=artifact.SPEC_FORMAT,version=dict(upstream=body['version']['upstream'],scheme='dotted-v1',revision=2))
+        packed=artifact.pack(base.object_path(root,original_base)/'payload',spec,work/'next-base-package')
+        base.install(root,work/'next-base-package'/packed['archive']['file'],packed['artifact']['id'],yes=True)
+        bounds=copy.deepcopy(f.bounds);bounds['base']['artifact']=packed['artifact']['id']
+        initial_state={k:v for k,v in f.f.f.snapshot().items() if k.startswith('state/')}
+        for area,identifier,extra in (('base',packed['artifact']['id'],dict(bounds=bounds)),
+                                      ('kernel',f.f.f.candidate['id'],{})):
+            with self.subTest(area=area):
+                before=f.f.f.snapshot()
+                preview=update.activate(root,area,identifier,dry_run=True,**options,**extra)
+                self.assertFalse(preview['changed']);self.assertEqual(before,f.f.f.snapshot())
+                with mock.patch.object(constructor.archive,'vm_module',return_value=vm), \
+                     mock.patch.object(vm,'module_paths',side_effect=lambda release,p,**kw:[p/'kernel/example.ko']):
+                    changed=update.activate(root,area,identifier,yes=True,**options,**extra)
+                self.assertTrue(changed['selection_changed']);current=selection.current(root)[1][changed['selected']]['record']
+                self.assertEqual(current['description']['inputs']['description'][area]['artifact'],identifier)
+                other_area='kernel' if area=='base' else 'base'
+                self.assertEqual(current['description']['inputs']['description'][other_area],source['description'][other_area])
+                before=f.f.f.snapshot()
+                self.assertFalse(update.activate(root,area,identifier,yes=True,**options,**extra)['changed'])
+                self.assertEqual(before,f.f.f.snapshot())
+                with self.assertRaisesRegex(ValueError,'preserve other areas'):
+                    selection.select(root,value['id'],expected_selected=changed['selected'],area='system',yes=True)
+                selection.select(root,expected_selected=changed['selected'],area=area,rollback=True,yes=True)
+                self.assertEqual(selection.current(root)[0]['description']['selected'],value['id'])
+                self.assertEqual(initial_state,{k:v for k,v in f.f.f.snapshot().items() if k.startswith('state/')})
         extracted=work/'independent-extraction';extracted.mkdir()
         subprocess.run(['cpio','-idm','--quiet','--no-absolute-filenames'],cwd=extracted,input=gzip.decompress(result['archive']),check=True)
         shutil.copytree(root,extracted/'test-target',symlinks=True)

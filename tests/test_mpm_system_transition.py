@@ -16,6 +16,7 @@ import mojt_system_manifest as manifests
 import mojt_system_package as packer
 import mpm_base as base
 import mpm_nix_binary as nix
+from mpm_nix_boot import NixBootAdapter
 import mpm_management as management
 import mpm_system as system
 import mpm_system_transition as transition
@@ -39,11 +40,26 @@ class ReviewTests(unittest.TestCase):
         row = dict(path=output,nar_hash='sha256:'+'a'*52)
         ref = dict(provider='nix', identity=dict(format='mojt-nix-output-v1', output=output, closure=[row], commands=[]))
         def forbidden(args):raise AssertionError('no provider command allowed during pure preservation comparison')
-        adapter = nix.NixBinaryAdapter('/pinned/nix-store', forbidden)
+        adapter = NixBootAdapter('/pinned/nix-store', forbidden)
         self.assertTrue(adapter.preserves([ref], {'objects':[row]})['compatible'])
+        native=dict(format='mojt-system-provider-baseline-v1',references=[ref,ref])
+        self.assertTrue(adapter.preserves([ref],native)['compatible'])
+        self.assertFalse(adapter.preserves([],native)['compatible'])
         self.assertFalse(adapter.preserves([], {'objects':[row]})['compatible'])
         changed = copy.deepcopy(ref);changed['identity']['closure'][0]['nar_hash'] = 'sha256:'+'b'*52
         self.assertFalse(adapter.preserves([changed], {'objects':[row]})['compatible'])
+        self.assertFalse(adapter.preserves([changed],native)['compatible'])
+        with self.assertRaisesRegex(ValueError,'conflicting selected'):
+            adapter.preserves([ref],dict(native,references=[ref,changed]))
+        denied=transition.providers(old,candidate,[ref],{'nix':adapter},baseline_refs=[ref])
+        self.assertFalse(denied['compatible'])
+        self.assertTrue(any('provider runtime change' in e for e in denied['errors']))
+        def delivered(value):
+            d=copy.deepcopy(value['description']);d['profile']['tools/mpm_nix_binary.py']={'sha256':'e'*64,'mode':0o444}
+            return manifests.create(d)
+        self.assertTrue(transition.providers(delivered(old),delivered(candidate),[ref],{'nix':adapter},baseline_refs=[ref])['compatible'])
+        unknown=dict(ref,provider='native')
+        self.assertFalse(transition.providers(old,candidate,[unknown],{},baseline_refs=[unknown])['compatible'])
 
 
 class Adapter:
@@ -65,6 +81,8 @@ class Adapter:
         path = legacy.virtual_file(self.root, value)
         if not path.exists() or executable and (not path.is_file() or not path.stat().st_mode & 1):raise ValueError('fixture path unavailable')
     def preserves(self, refs, baseline):
+        if baseline.get('format') == 'mojt-system-provider-baseline-v1':
+            baseline={'objects':baseline['references'][0]['identity']['objects']}
         return dict(compatible=refs == [self.reference] and baseline['objects'] == self.reference['identity']['objects'],
                     policy='fixture-exact', runtime_files=['tools/mpm_nix_binary.py'])
 

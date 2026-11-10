@@ -16,6 +16,24 @@ import mpm_system_cli as cli
 
 
 class Boundaries(unittest.TestCase):
+    def test_update_keeps_existing_management_requirements_and_other_area_inputs(self):
+        import mpm_boot_update as update
+        source=fixtures.fixture();before=source['description']
+        requirement=dict(family='application-state',read=[1],write=[1],capabilities=['read-settings'])
+        before['management_required']=[requirement]
+        source=selection.model.record(selection.model.INPUTS,before)
+        candidate=copy.deepcopy(before['system']);candidate['artifact']='sha256:'+'9'*64
+        fields=dict(base=before['base'],system=candidate,kernel=before['kernel'])
+        plan=dict(description=dict(baseline_inputs=source))
+        with mock.patch.object(update.transition,'boot_fields',return_value=fields), \
+             mock.patch.object(constructor,'constructor',return_value=before['constructor']):
+            result=update.source_for(plan,{},Path('/fixture/busybox'))['description']
+        self.assertEqual(result['base'],before['base']);self.assertEqual(result['kernel'],before['kernel'])
+        self.assertEqual(result['system'],candidate)
+        self.assertIn(requirement,result['management_required'])
+        self.assertIn(selection.MANAGEMENT_SUPPORT[0],result['management_required'])
+        self.assertEqual(source['description']['management_required'],[requirement])
+
     def test_json_and_diagnostic_results_cannot_authorize_selection_or_create_a_registry(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary)/'absent'

@@ -21,18 +21,35 @@ import mpm_cli as cli
 
 
 class DispatchTests(unittest.TestCase):
+    def test_native_boot_operations_share_dispatch_and_public_plan_is_absent(self):
+        import mpm_boot_update as update
+        import mpm_boot_selection as selection
+        runtime=cli.Runtime()
+        with mock.patch.object(cli.os,'geteuid',return_value=0), \
+             mock.patch.object(cli,'require_codec'), \
+             mock.patch.object(selection,'present',return_value=True), \
+             mock.patch.object(cli,'boot_options',side_effect=AssertionError('v1 defaults used')), \
+             mock.patch.object(update,'main',return_value=0) as run:
+            for area in ('base','system','kernel'):
+                for action in ('activate','upgrade','stage','select','rollback'):
+                    self.assertEqual(cli.main([area,action,'--dry-run'],runtime=runtime),0)
+                    self.assertEqual(run.call_args.args,(area,[action,'--dry-run']))
+                    self.assertEqual(run.call_args.kwargs,dict(runtime=runtime))
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(cli.main(['system','plan']),1)
+
     def test_help_and_unsupported_system_mutations_never_load_a_provider(self):
         with mock.patch.object(cli.runpy, "run_path", side_effect=AssertionError("provider loaded")):
             for args in ([], ["--help"], ["kernel", "--help"]):
                 with contextlib.redirect_stdout(io.StringIO()):
                     self.assertEqual(cli.main(args), 0)
             with contextlib.redirect_stderr(io.StringIO()):
-                self.assertEqual(cli.main(["system", "upgrade"]), 1)
+                self.assertEqual(cli.main(["system", "upgrade", "--artifact", "sha256:"+"a"*64, "--disk-root", "/absent"]), 1)
 
     def test_installed_ports_defaults_use_fresh_frontend_and_preserve_explicit_root(self):
         import mpm_ports_cli as ports
         runtime = cli.Runtime()
-        with mock.patch.object(ports, "main", return_value=0) as adapter, \
+        with mock.patch.object(cli.os,"geteuid",return_value=0), mock.patch.object(ports, "main", return_value=0) as adapter, \
                 mock.patch.object(cli.runpy, "run_path", side_effect=AssertionError("prototype loaded")):
             self.assertEqual(cli.main(["ports", "update", "--sources", "/snapshot", "--dry-run"], runtime=runtime), 0)
             self.assertEqual(adapter.call_args.args[0], ["update", "--sources", "/snapshot", "--dry-run"])
@@ -63,7 +80,7 @@ class DispatchTests(unittest.TestCase):
             root = Path(temporary)
             runtime = dataclasses.replace(cli.Runtime(), disk=root / "absent", helpers=root / "no-tools")
             error = io.StringIO()
-            with contextlib.redirect_stderr(error):
+            with mock.patch.object(cli.os,"geteuid",return_value=0), contextlib.redirect_stderr(error):
                 self.assertEqual(cli.main(["kernel", "install", "--from-file", "/absent",
                     "--expected-id", "sha256:" + "0" * 64, "--dry-run"], runtime=runtime), 1)
             self.assertIn("retained zstd", error.getvalue())
@@ -74,6 +91,7 @@ class DispatchTests(unittest.TestCase):
                 mock.patch.object(cli.runpy, "run_path", side_effect=AssertionError("provider loaded")):
             for args in (["ports", "install", "hello", "-y"], ["kernel", "install"],
                          ["kernel", "stage"], ["kernel", "select"], ["kernel", "rollback"],
+                         *[[area,action] for area in ("base","system","kernel") for action in ("activate","upgrade")],
                          ["ports", "metadata"], ["--root=/private", "ports", "upgrade"]):
                 with self.subTest(args=args), contextlib.redirect_stderr(io.StringIO()) as errors:
                     self.assertEqual(cli.main(args, runtime=cli.Runtime()), 1)

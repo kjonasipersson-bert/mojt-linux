@@ -126,6 +126,39 @@ passed owner boot/return and clean-shutdown acceptance on 2026-11-09. Public
 active-v2 preflight/staging and
 configuration/request joins remain before complete M1 and MBT bootstrap.
 
+The boot-performance follow-up in #49 is owner-accepted: normal native-v2 boot
+checks metadata/paths/current state without full payload scans. Its measured
+reader and state gates totalled 344 ms (not total boot time), with no failed
+units. Full content verification remains an administrative/explicit operation;
+see [recorded evidence](boot-performance.md#fresh-normal-boot-acceptance-2026-11-10).
+
+## Short route to physical installation (owner direction, 2026-11-10)
+
+Finish two coherent deliveries, then run one joined physical acceptance journey:
+
+1. Join installed MPM's exact Base/System/Kernel update path on native-v2; retain
+   Ports, shared transaction rules and independent installed/selected/running
+   status. Preview belongs to the real operation's `--dry-run`, not a public
+   `mpm system plan` command. PR #50 now joins the internal preflight to handover,
+   constructor/stage and atomic selection. Explicit exact installed targets are
+   supported first; moving policies and generalized lifecycle work are deferred.
+2. Deliver a thin usable MBT around the working environment, Kernel build,
+   packager and image tools, plus one supported physical machine profile. Agree
+   on its minimal public spelling before implementing it. New-target bootstrap
+   reuses MPM installation/deployment code; updates never reformat the target.
+3. Accept a dedicated physical disk: boot, use Ports, update the installation,
+   compile/package/install/boot a Kernel and return to retained boot content.
+   Fix observed blockers rather than repeating all old component cross-products.
+
+The focused root/archive CI journey reuses one disk/runtime fixture to exercise
+System, Base and Kernel changes. A bounded real VM journey remains before physical
+rollout; these automated archive/chroot checks are not a real Kernel boot.
+No further read-only planning PR, generic migration framework, native Ports
+backend, GC or complete third-party source rebuild is required for this milestone.
+Normal boot stays free of full content scans. The first System policy still
+requires unchanged startup/service dependencies; unsupported service transitions
+are reported as blocked, not silently accepted.
+
 The owner reaffirmed native self-hosting as the destination on 2026-11-08.
 Complete the joined M1 administration/bootstrap flow, then M2 source recipes for
 Base and Mojt-owned System code; report imported third-party inputs separately.

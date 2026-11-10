@@ -52,12 +52,10 @@ def check_runtime_links(tree, runtime):
     require(executable.is_file() and executable.stat().st_mode & 0o001, 'bootstrap interpreter is not executable')
 
 
-def freeze_runtime(root, ref, interpreter, output, *, adapters):
-    """Explicit trusted runtime, independent of Base and the candidate interpreter."""
+def describe_runtime(root, ref, interpreter, *, adapters):
+    """Measure an explicitly retained runtime without copying it or creating state."""
     require(os.geteuid() == 0, 'bootstrap runtime preparation requires an administrator')
     root = Path(root).absolute();require(root == root.resolve(), 'linked bootstrap runtime source')
-    output = Path(output).absolute();require(output == output.resolve() and not os.path.lexists(output), 'bootstrap output must be new')
-    require(output != root and root not in output.parents and output not in root.parents, 'bootstrap output overlaps source')
     reference(ref);require(adapters is not None and ref['provider'] in adapters, 'trusted runtime adapter required')
     adapter = adapters[ref['provider']];adapter.verify(ref,root)
     trees = {}
@@ -65,6 +63,16 @@ def freeze_runtime(root, ref, interpreter, output, *, adapters):
         require(name.split('/')[0] not in RESERVED, 'bootstrap provider overlaps initramfs controls')
         trees[name] = inventory.snapshot(inventory.path(root,name),maximum=model.MAX_BOOT)
     value = record(early.RUNTIME,dict(reference=reference(ref),interpreter=interpreter,trees=trees));early.runtime(value)
+    check_runtime_links(root,value)
+    return value
+
+
+def freeze_runtime(root, ref, interpreter, output, *, adapters):
+    """Explicit trusted runtime, independent of Base and the candidate interpreter."""
+    root = Path(root).absolute()
+    output = Path(output).absolute();require(output == output.resolve() and not os.path.lexists(output), 'bootstrap output must be new')
+    require(output != root and root not in output.parents and output not in root.parents, 'bootstrap output overlaps source')
+    value = describe_runtime(root,ref,interpreter,adapters=adapters);trees = value['description']['trees']
     output.mkdir(mode=0o700);(output/'tree').mkdir(mode=0o700)
     try:
         for name,rows in trees.items():

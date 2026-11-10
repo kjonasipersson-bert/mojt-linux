@@ -36,12 +36,12 @@ def validate(value, source):
     d = model.envelope(value,FORMAT);i = model.inputs(source)
     artifact.fields(d,('inputs','preflight','baseline_manifest','baseline_support','base_facts','boot_base','mounts'))
     require(d['inputs'] == source['id'],'handover inputs differ')
-    plan = base.envelope(d['preflight'],transition.FORMAT)
-    require(plan['operation'] == 'system' and plan['checks']['compatible'] and
+    candidate = transition.boot_fields(d['preflight']);plan = d['preflight']['description']
+    require(plan['checks']['compatible'] and
             plan['installation'] == i['installation'] and plan['root_uuid'] == i['boot']['root_uuid'], 'handover preflight is incompatible/foreign')
-    require(all(plan['retained_base'][k] == i['base'][k] for k in ('artifact','release')) and
-            all(plan['retained_kernel'][k] == i['kernel'][k] for k in plan['retained_kernel']) and
-            all(plan['candidate_system'][k] == i['system'][k] for k in ('artifact','composition','manifest','generation')), 'handover differs from planned exact scope')
+    require(all(candidate['base'][k] == i['base'][k] for k in ('artifact','release')) and
+            all(candidate['kernel'][k] == i['kernel'][k] for k in candidate['kernel']) and
+            all(candidate['system'][k] == i['system'][k] for k in ('artifact','composition','manifest','generation')), 'handover differs from planned exact scope')
     baseline = manifests.validate(d['baseline_manifest'])
     require(baseline['id'] == plan['checks']['startup']['description']['selected'],'handover baseline differs')
     if d['baseline_support'] is not None:management.validate(d['baseline_support'])
@@ -50,7 +50,7 @@ def validate(value, source):
             and type(facts['base_abi']) is dict and facts['base_abi'],'invalid handover Base ABI/layout')
     b = model.envelope(d['boot_base'],boot_base.FORMAT)
     require(b['base'] == i['base']['artifact'] and b['installation'] == i['installation']
-            and b['source_realization'] == plan['retained_base']['realization'],'boot Base does not realize planned Base')
+            and b['source_realization'] == candidate['base']['realization'],'boot Base does not realize planned Base')
     require(type(d['mounts']) is list and len(d['mounts']) <= 64,'unbounded provider mounts')
     names = []
     for mount in d['mounts']:
@@ -66,7 +66,7 @@ def validate(value, source):
 def recheck_locked(root, value, source, adapters):
     d = validate(value,source);saved = d['preflight'];p = saved['description']
     require(str(root) == p['target'],'handover plan belongs to another target')
-    require(transition._prepare(root,p['candidate_system']['artifact'],p['baseline'],adapters) == saved,
+    require(transition.repeat(root,saved,adapters) == saved,
             'System handover inputs changed; prepare again')
     boot_base.inspect(root,d['boot_base'])
 
@@ -74,14 +74,14 @@ def recheck_locked(root, value, source, adapters):
 def prepare(root, source, plan, *, adapters, tar='tar'):
     """Join the existing preflight to a new immutable boot-only Base realization."""
     require(os.geteuid() == 0,'System handover preparation requires an administrator')
-    root = base.target(root,write=True);p = base.envelope(plan,transition.FORMAT)
+    root = base.target(root,write=True);candidate = transition.boot_fields(plan);p = plan['description']
     require(p['checks']['compatible'],'System preflight blocks handover')
     # Check exact scope before any coordination directory or realization write.
     i = model.inputs(source)
     require(str(root) == p['target'] and p['installation'] == i['installation'] and p['root_uuid'] == i['boot']['root_uuid']
-            and all(p['candidate_system'][k] == i['system'][k] for k in ('artifact','composition','manifest','generation'))
-            and all(p['retained_base'][k] == i['base'][k] for k in ('artifact','release'))
-            and all(p['retained_kernel'][k] == i['kernel'][k] for k in p['retained_kernel']), 'handover scope differs')
+            and all(candidate['system'][k] == i['system'][k] for k in ('artifact','composition','manifest','generation'))
+            and all(candidate['base'][k] == i['base'][k] for k in ('artifact','release'))
+            and all(candidate['kernel'][k] == i['kernel'][k] for k in candidate['kernel']), 'handover scope differs')
     for name in ('boot','boot/mpm'):
         tx.protected_directory(root/name,write=True);(root/name).mkdir(mode=0o755,exist_ok=True)
     locks = {root/'.artifact-store.lock',root/'artifacts/.lock',*tx.boot_lock_paths(root)}
@@ -89,10 +89,10 @@ def prepare(root, source, plan, *, adapters, tar='tar'):
     # are observed again by the constructor and at boot; lock existing Ports state.
     locks = {p for p in locks if p.parent.exists()}
     with tx.resource_locks(locks,modes={root/'.install-lock':0o644}):
-        require(transition._prepare(root,p['candidate_system']['artifact'],p['baseline'],adapters) == plan,'System plan changed before preparation')
-        state,entries,menu = transition.boot.current(root,p['baseline'])
-        old,unused,unused = transition.boot.live_context(root,entries[state['selected']])
-        profile = root/'system'/old['description']['label']
+        require(transition.repeat(root,plan,adapters) == plan,'boot inputs changed before preparation')
+        context = transition.selected_context(root,p['baseline']);old = context['manifest']
+        profile = (root/'realizations/system'/context['old']['system']['artifact'][7:]/'profile' if context['native']
+                   else root/'system'/old['description']['label'])
         support = management.retained(profile,old)
         release = tomllib.loads(common.checked_bytes(base.object_path(root,i['base']['artifact'])/'payload/manifest.toml').decode())
         mounts = {};provider_roots = set()
@@ -110,7 +110,9 @@ def prepare(root, source, plan, *, adapters, tar='tar'):
             base_facts=dict(architecture=release['base']['architecture'],base_abi=release['abi'],state_layout=release['state']['layout_version']),
             boot_base=boot_base.prepare_locked(root,i['base']['artifact'],tar=tar),mounts=[mounts[k] for k in sorted(mounts)]))
         validate(value,source);check(root,source,None,value,provider_roots=sorted(provider_roots))
-        require(hashlib.sha256(transition.boot.checked_file(root/'boot/mojt/grub.cfg')).hexdigest() == p['selection_sha256']
+        from mpm_boot_selection import current
+        menu = current(root)[2] if context['native'] else transition.boot.checked_file(root/'boot/mojt/grub.cfg')
+        require(hashlib.sha256(menu).hexdigest() == p['selection_sha256']
                 and common.state_inputs(root)['evidence'] == p['state'] and system.target_identity(root) == p['target_identity'],
                 'selection, state or target changed during preparation')
         return value

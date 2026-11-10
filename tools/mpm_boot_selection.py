@@ -174,8 +174,9 @@ def initialize(root, identifier):
         _publish(root,value,entries,raw);return value
 
 
-def select(root, identifier=None, *, expected_selected, rollback=False, dry_run=False, yes=False):
+def select(root, identifier=None, *, expected_selected, rollback=False, dry_run=False, yes=False, area='system'):
     require(os.geteuid() == 0,'boot selection requires an administrator');model.identity(expected_selected)
+    require(area in ('base','system','kernel'),'unsupported boot selection area')
     root = store.target(root)
     from mpm_base_transition import read_locks
     def prepare():
@@ -185,7 +186,8 @@ def select(root, identifier=None, *, expected_selected, rollback=False, dry_run=
         entries[wanted] = ready(root,wanted)
         before = entries[d['selected']]['record']['description']['inputs']['description']
         after = entries[wanted]['record']['description']['inputs']['description']
-        require(all(before[k] == after[k] for k in ('base','kernel','platform','boot')),'System-only selection must preserve exact Base/Kernel/boot policy')
+        preserved = [k for k in ('base','system','kernel','platform','boot','firmware','state_requirements') if k != area]
+        require(all(before[k] == after[k] for k in preserved),area+'-only selection must preserve other areas and boot policy')
         _gates(root,entries)
         if wanted == d['selected']:return old,entries,raw
         next_d = copy.deepcopy(d);next_d.update(selected=wanted,previous=d['selected'],entries=[dict(deployment=k,path=model.slot(k)) for k in sorted(entries)])
@@ -195,7 +197,7 @@ def select(root, identifier=None, *, expected_selected, rollback=False, dry_run=
     report = dict(selected=value['description']['selected'],previous=value['description']['previous'],changed=changed and not dry_run,
                   dry_run=dry_run,running_changed=False,requests_changed=False,owner_boot_acceptance='pending')
     if dry_run:return report
-    if changed and not yes:require(input('Select this exact System for next boot? [y/N] ').strip().lower() in ('y','yes'),'selection cancelled')
+    if changed and not yes:require(input('Select this exact '+area+' deployment for next boot? [y/N] ').strip().lower() in ('y','yes'),'selection cancelled')
     with locked(root):
         fresh,entries,actual = prepare();require(fresh == value and actual == raw,'selection inputs changed; repeat preview')
         _publish(root,value,entries,raw)

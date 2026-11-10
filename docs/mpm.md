@@ -707,6 +707,16 @@ and [NixOS's separate package/service integration](https://nixos.org/manual/nixo
 
 ## 6. Implementation status
 
+PR #50 joins exact installed Base/System/Kernel candidates to native-v2 through
+`activate --artifact ID` and `upgrade --artifact ID`, with `--dry-run` preview.
+Install remains content-only. The updater reuses handover/construction/admission
+and atomic selection; status separates selected and running. Base candidates
+need exact Kernel bounds; System currently permits unchanged-startup/tooling
+changes. Moving-policy boot-area upgrades remain unimplemented. There is no
+public System `plan` operation. See [the joined workflow](system-transition.md).
+The table below retains the earlier component milestone history.
+
+
 Current as of 2026-11-07: merged PR #40 plus Base deployment integration in PR #41 (bounded owner boot/return acceptance passed; final review/CI remains). The ordinary System frontend
 and the separately invoked earlier prototypes must not be confused.
 
