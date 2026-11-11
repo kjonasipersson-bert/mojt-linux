@@ -215,7 +215,9 @@ class ConstructionTests(unittest.TestCase):
         self.assertEqual(events,['verify','verify','handoff']);self.assertEqual(built['bootstrap'],d)
         self.assertEqual(artifact.parse_json((image/'bootstrap.json').read_bytes())['description'],d)
         self.assertEqual((image/'bootstrap.json').stat().st_uid,int(os.environ.get('SUDO_UID','0')))
-        self.assertEqual(base.read(image/'builder-runtime.json'),execution)
+        # Handoff has made this caller-owned evidence, not privileged Base
+        # metadata. Verification above deliberately precedes that boundary.
+        self.assertEqual(artifact.parse_json((image/'builder-runtime.json').read_bytes()),execution)
         self.assertEqual(d['deployment']['description']['inputs']['description']['boot']['profile'],model.HARDWARE_PROFILE)
         self.assertEqual(json.loads((image/'build.json').read_bytes())['boot_layout'],'native-v2')
         self.assertFalse((image/'run-qemu-direct.sh').exists())

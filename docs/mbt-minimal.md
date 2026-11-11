@@ -259,13 +259,13 @@ Injected mount checks cover read-only firmware and exitrd ordering. Existing bui
 and System assembly tests continue to own their implementation checks. This is
 not a new real compiler or VM boot acceptance run. A joined real VM acceptance
 remains before physical rollout. The public preview does not substitute for a
-complete public bootstrap using the retained real System export. Owner rebuild
-attempts remain paused until that construction boundary is established; #51
-remains draft.
+complete public bootstrap using the retained real System export. The next
+acceptance is one explicitly authorized fresh public bootstrap with those
+retained inputs, followed by guest boot. #51 remains draft until it passes.
 
 ## One joined acceptance journey
 
-After the public construction gate above and CI/review, create one **new** sufficiently sized builder image (for example
+After focused CI/review, exercise public construction by creating one **new** sufficiently sized builder image (for example
 `--disk-size-mib 32768`) from retained exact inputs using this public command.
 For the hardware profile, boot that image once with USB emulation in QEMU on the
 Debian desktop. Check native-v2 selected/running agreement, no failed units,
