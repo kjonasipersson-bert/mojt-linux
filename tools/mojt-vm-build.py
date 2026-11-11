@@ -718,6 +718,16 @@ def additional_pairs(entries, *, tree, work, target, first_base, support, args,
     return records, network
 
 
+def handoff_result(result):
+    """Last step: give the completed private image to the invoking sudo user."""
+    uid = int(os.environ.get('SUDO_UID','0'));gid = int(os.environ.get('SUDO_GID','0'))
+    os.chown(result,uid,gid);result.chmod(0o700)
+    for item in result.iterdir():
+        os.chown(item,uid,gid)
+        item.chmod(0o600 if item.name == 'disk.img' else
+                   0o755 if item.name in ('run-qemu.sh','run-qemu-direct.sh') else 0o644)
+
+
 def build(args, *, finalize_tree=None):
     if os.geteuid() != 0:
         fail("run as root (sudo) to preserve Base ownership and create /dev nodes")
@@ -953,15 +963,9 @@ def build(args, *, finalize_tree=None):
                             "login_mode": args.login_mode}, indent=2) + "\n",
                 encoding="ascii",
             )
-            # The disk contains persistent state; keep it private to the caller.
-            uid = int(os.environ.get("SUDO_UID", "0"))
-            gid = int(os.environ.get("SUDO_GID", "0"))
-            os.chown(result, uid, gid)
-            result.chmod(0o700)
-            for item in result.iterdir():
-                os.chown(item, uid, gid)
-                item.chmod(0o600 if item.name == "disk.img" else
-                           0o755 if item.name in ("run-qemu.sh", "run-qemu-direct.sh") else 0o644)
+            # Native-v2 still has privileged final verification in its caller.
+            # Keep ownership until it finishes; caller performs the handoff last.
+            if finalize_tree is None:handoff_result(result)
             if output.exists() or output.is_symlink():
                 fail(f"VM output appeared during build; not overwriting: {output}")
             result.rename(output)

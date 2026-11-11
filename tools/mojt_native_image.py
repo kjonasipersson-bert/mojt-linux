@@ -445,11 +445,14 @@ def _build(args, vm=None, *, finalize_tree=None):
             require(checked["no_change"] and not checked["boot_ready"], "native image plan differs")
         else:
             from mojt_bootstrap import inspect_result
-            inspect_result(options.output,base_artifact=args.base_artifact,kernel_artifact=args.kernel_artifact)
+            checked = inspect_result(options.output,base_artifact=args.base_artifact,kernel_artifact=args.kernel_artifact)
         require(not os.path.lexists(output), "output appeared during build; not overwriting")
+        if finalize_tree is not None:vm.handoff_result(options.output)
         options.output.rename(output)
-    return dict(format="mojt-native-image-result-v1", output=str(output), base=evidence["base"]["id"],
+    result = dict(format="mojt-native-image-result-v1", output=str(output), base=evidence["base"]["id"],
                 kernel=evidence["kernel"]["id"], status="fresh image built; owner boot acceptance pending")
+    if finalize_tree is not None:result['bootstrap'] = checked
+    return result
 
 
 def parser(prog=None):

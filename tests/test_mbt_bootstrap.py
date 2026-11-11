@@ -127,12 +127,22 @@ class ConstructionTests(unittest.TestCase):
             self.assertEqual(bootstrap.native.hardware.native_firmware(profile),profile/'kernel/lib/firmware')
             self.assertFalse((profile/'kernel/lib/modules').exists())
             return d
-        with mock.patch.object(fixtures.fixtures.vm,'password_hash_from_terminal',return_value='$6$synthetic$not-a-real-password'):
+        events=[];inspect=bootstrap.inspect_result;handoff=fixtures.fixtures.vm.handoff_result
+        def inspect_owned(directory,**kwargs):
+            events.append('verify');self.assertEqual((Path(directory)/'bootstrap.json').stat().st_uid,os.geteuid())
+            return inspect(directory,**kwargs)
+        def give_to_caller(directory):
+            events.append('handoff');return handoff(directory)
+        with mock.patch.object(fixtures.fixtures.vm,'password_hash_from_terminal',return_value='$6$synthetic$not-a-real-password'),\
+             mock.patch.object(bootstrap,'inspect_result',side_effect=inspect_owned),\
+             mock.patch.object(fixtures.fixtures.vm,'handoff_result',side_effect=give_to_caller):
             built=f.synthetic_build(finalize_tree=finish)
         image=Path(built['output']);d=seen[0]
-        self.assertEqual(bootstrap.inspect_result(image,base_artifact=f.base['id'],kernel_artifact=f.kernel['id']),d)
+        self.assertEqual(events,['verify','handoff']);self.assertEqual(built['bootstrap'],d)
+        self.assertEqual(artifact.parse_json((image/'bootstrap.json').read_bytes())['description'],d)
+        self.assertEqual((image/'bootstrap.json').stat().st_uid,int(os.environ.get('SUDO_UID','0')))
         self.assertEqual(d['deployment']['description']['inputs']['description']['boot']['profile'],model.HARDWARE_PROFILE)
-        self.assertEqual(base.read(image/'build.json')['boot_layout'],'native-v2')
+        self.assertEqual(json.loads((image/'build.json').read_bytes())['boot_layout'],'native-v2')
         self.assertFalse((image/'run-qemu-direct.sh').exists())
         self.assertEqual(bootstrap.paths.tree_hash(f.args.firmware_root),firmware_before)
 

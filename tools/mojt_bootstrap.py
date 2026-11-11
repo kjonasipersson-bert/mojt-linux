@@ -259,7 +259,9 @@ def build(args):
     require(paths.load_payload(args.system_payload)['step'] >= 10,'first native-v2 bootstrap requires account-enabled System step 10')
     def finish(**values):return finalize(system_version=args.system_version,system_revision=args.system_revision,**values)
     image = native.build(args,finalize_tree=finish)
-    details = inspect_result(Path(image['output']),base_artifact=args.base_artifact,kernel_artifact=args.kernel_artifact)
+    # Native assembly verified this while root still owned the private output.
+    # Do not read caller-owned metadata again after the final ownership handoff.
+    details = image['bootstrap']
     return dict(format='mojt-bootstrap-image-v1',output=image['output'],layout='native-v2',
                 boot_profile=details['deployment']['description']['inputs']['description']['boot']['profile'],
                 deployment=details['deployment']['id'],base=details['base'],system=details['system'],kernel=details['kernel'],boot_acceptance=False)
