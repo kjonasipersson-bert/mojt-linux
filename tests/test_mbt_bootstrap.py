@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """Fresh bootstrap publication boundaries and one shared install/stage fixture."""
 import copy
+import contextlib
 import errno
 import json
 import os
@@ -86,16 +87,23 @@ class BoundaryTests(unittest.TestCase):
                     bootstrap.finalize_child(tree,result,archive)
             self.assertFalse((tree/'artifacts').exists());self.assertEqual(archive.read_bytes(),b'fixture')
 
-    @unittest.skipUnless(shutil.which('zstd') and shutil.which('cpio'),'requires native fixture codecs')
+    @unittest.skipUnless(shutil.which('zstd') and shutil.which('cpio') and shutil.which('busybox'),'requires native fixture codecs and static BusyBox')
     def test_real_input_preview_is_read_only_and_the_payload_must_support_accounts(self):
         import test_native_image as fixtures
         import test_system_vm as system_fixtures
         f=fixtures.NativeImageTests();f.setUp();self.addCleanup(f.doCleanups)
         source=system_fixtures.SystemVmTests();source.setUp();self.addCleanup(source.doCleanups)
         source.fixture(10);f.args.system_payload=source.payload
+        f.args.busybox=Path(shutil.which('busybox'))
         f.args.login_mode='password';f.args.dry_run=True;f.args.system_version='0.2';f.args.system_revision=1
         before=f.snapshot();payload_before=bootstrap.paths.tree_hash(source.payload)
-        with mock.patch.object(bootstrap,'run',side_effect=AssertionError('must not execute a namespace')):
+        # Root preview now probes the real namespace/chroot boundary, without
+        # entering a candidate System or asking for a password.
+        if os.geteuid()==0:
+            probe=subprocess.run(['unshare','--pid','--fork','--kill-child','--mount-proc','true'],capture_output=True,text=True)
+            if probe.returncode:self.skipTest('namespace permissions unavailable: '+probe.stderr.strip())
+        boundary=contextlib.nullcontext() if os.geteuid()==0 else mock.patch.object(bootstrap,'run',side_effect=AssertionError('unprivileged namespace'))
+        with boundary:
             result=bootstrap.build(f.args)
             self.assertEqual(result['layout'],'native-v2');self.assertFalse(result['image_written'] or result['boot_acceptance'])
             self.assertEqual(result['base'],f.base['id']);self.assertEqual(result['kernel'],f.kernel['id'])
@@ -104,6 +112,21 @@ class BoundaryTests(unittest.TestCase):
         f.args.login_mode='development'
         with self.assertRaisesRegex(ValueError,'password login'):bootstrap.build(f.args)
         self.assertFalse(f.args.output.exists())
+
+    def test_preflight_failure_precedes_workspace_password_and_vm_assembly(self):
+        # The assembler's single preview is consumed by preflight before any
+        # output directory, Base extraction or password prompt is permitted.
+        from types import SimpleNamespace
+        args=SimpleNamespace(dry_run=False,output=Path('/absent-preflight-output'))
+        evidence=dict(system_record=dict(step=10))
+        def blocked(value):
+            self.assertIs(value,evidence)
+            raise ValueError('namespace entry blocked')
+        with mock.patch.object(bootstrap.native,'preview',return_value=evidence), \
+             mock.patch.object(bootstrap.native.os,'geteuid',return_value=0), \
+             mock.patch.object(bootstrap.native.tempfile,'TemporaryDirectory',side_effect=AssertionError('work before preflight')):
+            with self.assertRaisesRegex(ValueError,'namespace entry blocked'):
+                bootstrap.native.build(args,preflight=blocked)
 
     def test_native_disk_packer_cannot_regenerate_the_legacy_menu_or_change_scope(self):
         import test_mpm_boot_v2 as fixtures
@@ -178,15 +201,21 @@ class ConstructionTests(unittest.TestCase):
             return inspect(directory,**kwargs)
         def give_to_caller(directory):
             events.append('handoff');return handoff(directory)
+        import mbt_runtime
+        prepared=tempfile.TemporaryDirectory(prefix=mbt_runtime.PREFIX,dir=mbt_runtime.temporary_parent())
+        self.addCleanup(prepared.cleanup)
+        execution=mbt_runtime.freeze(REPO,Path(prepared.name))
         with mock.patch.object(fixtures.fixtures.vm,'password_hash_from_terminal',return_value='$6$synthetic$not-a-real-password'),\
              mock.patch.object(bootstrap,'inspect_result',side_effect=inspect_owned),\
              mock.patch.object(fixtures.fixtures.vm,'handoff_result',side_effect=give_to_caller),\
+             mock.patch.object(bootstrap.native,'__file__',str(Path(prepared.name)/'tools/mojt_native_image.py')),\
              mock.patch.object(bootstrap.tx,'protected_directory',side_effect=protect):
             built=f.synthetic_build(finalize_tree=finish)
         image=Path(built['output']);d=seen[0]
         self.assertEqual(events,['verify','verify','handoff']);self.assertEqual(built['bootstrap'],d)
         self.assertEqual(artifact.parse_json((image/'bootstrap.json').read_bytes())['description'],d)
         self.assertEqual((image/'bootstrap.json').stat().st_uid,int(os.environ.get('SUDO_UID','0')))
+        self.assertEqual(base.read(image/'builder-runtime.json'),execution)
         self.assertEqual(d['deployment']['description']['inputs']['description']['boot']['profile'],model.HARDWARE_PROFILE)
         self.assertEqual(json.loads((image/'build.json').read_bytes())['boot_layout'],'native-v2')
         self.assertFalse((image/'run-qemu-direct.sh').exists())

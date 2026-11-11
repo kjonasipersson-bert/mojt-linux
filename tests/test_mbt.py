@@ -72,6 +72,7 @@ class BuilderDeliveryTests(unittest.TestCase):
         wrapper=(profile/'bin/mbt').read_text()
         self.assertIn(' -I -B /run/mojt-system/tools/mbt',wrapper)
         self.assertNotIn('/var/lib/mojt/ports',wrapper)
+        self.assertNotIn('PATH=',wrapper)  # Preserve an explicit private tool environment.
         runtime=json.loads((profile/'mbt-runtime.json').read_text())
         self.assertEqual(runtime['files'],list(model.MBT_FILES))
         self.assertEqual(runtime['source_files'],list(model.MBT_SOURCE_FILES))

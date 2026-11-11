@@ -96,8 +96,25 @@ example metadata and manual sources at their expected relative paths. Normal
 System assemblies need not carry these extra inputs. The System manifest inventories their
 bytes. `mbt-runtime.json` version 1 describes the file set, interpreter and scope;
 it is not a second package database. The installed launcher uses pinned System
-Python with `-I -B` and a fixed helper/System/Base PATH, excluding Ports.
-The build environment separately retains its tools and their library closure.
+Python with `-I -B` and preserves the invoking tool PATH, so an explicit private
+environment's `run` launcher can supply the image/Kernel tools. Bootstrap refuses
+tools selected from the shared `/var/lib/mojt/ports` profile. MPM's own fixed
+management PATH is unchanged. The build environment separately retains its tools
+and their library closure.
+
+Before importing manager libraries, public MBT operations copy their fixed code
+and assembly assets into a private execution directory. Files receive explicit
+`0644` modes, directories `0755`, the enclosing directory `0700`, and the closed
+inventory is checked before a new isolated Python process starts. A development
+checkout with group-writable files is an input, not the runtime measured by MPM;
+MBT changes neither its modes nor the caller's home. Changed or linked resources
+are rejected. The temporary copy lives until the operation finishes, then is
+removed. It is not another installation or registry.
+
+`mojt-mbt-execution-v1` records the exact relative paths, modes and SHA256 values.
+Its ID covers those resources; the source location is separate provenance.
+A successful bootstrap retains this record as `builder-runtime.json`. This is
+content evidence, not authentication of the checkout or release signing.
 
 Base runtime gains no Python requirement. The Nix adapter remains the initial
 environment-acquisition backend; the frontend itself only delegates. Existing
@@ -120,12 +137,24 @@ mbt bootstrap --base-package BASE.tar.zst --base-artifact sha256:BASE_ID \
 ```
 
 Paths and IDs are placeholders for already retained, verified inputs. Preview
-validates them without writing an environment, registry or image. Actual image
+validates them without creating a tool environment, registry or image. It uses
+temporary execution files; root also creates a disposable static-BusyBox jail
+to exercise the real private PID/mount namespace and host `chroot` entry with
+a guest-only PATH. It neither starts the candidate System nor asks for a
+password. The versioned `preflight` report distinguishes a passed privileged
+probe from an ordinary-user preview where that probe has not run.
+Actual image
 creation requires root and an interactive terminal for the new guest password;
 repeat the same command without `--dry-run` in that context. No password flags or
 automatic privilege escalation are provided. `mbt env --profile image` supplies
 the image tools, including the namespace/mount helpers; use its existing `run`
 launcher if these tools are not already available on the builder.
+
+Both preview and image creation check the prepared manager, required host tool
+locations and static BusyBox applets. For actual creation, the privileged probe
+runs before Base extraction, password entry and VM assembly. Preflight does not
+claim that the complete constructor or a guest boot has passed; those remain
+separate acceptance gates.
 
 The assembler first creates a private directory tree and initializes fresh state.
 Before formatting the new image, a private mount/PID namespace runs fixed
@@ -215,6 +244,12 @@ Frontend/delivery tests cover scoped help without provider loading, refusal
 of root compilation, a real Kernel dry-run with frozen config validation, optional
 System delivery and real native packaging/verification through the copied
 installed frontend and successor System assembly without a source checkout.
+The runtime regression makes a real Git checkout under umask `0002` below a
+`0700` home and runs the public package and bootstrap-preview commands with
+isolated Python. It checks the unchanged checkout, deterministic resource ID,
+strict prepared-file permissions and rejection of altered/extra resources.
+Root coverage exercises actual namespace/chroot entry and the existing joined
+construction fixture checks the execution receipt survives publication/handoff.
 Bootstrap tests cover read-only exact-input preview, namespace boundaries,
 failure before disk creation/publication, and one shared synthetic native
 install/stage/select fixture, including result/boot-file agreement. A joined
@@ -223,11 +258,14 @@ freezing, exact package installation, construction, selection and final output.
 Injected mount checks cover read-only firmware and exitrd ordering. Existing build-environment, Kernel
 and System assembly tests continue to own their implementation checks. This is
 not a new real compiler or VM boot acceptance run. A joined real VM acceptance
-remains before physical rollout.
+remains before physical rollout. The public preview does not substitute for a
+complete public bootstrap using the retained real System export. Owner rebuild
+attempts remain paused until that construction boundary is established; #51
+remains draft.
 
 ## One joined acceptance journey
 
-After CI/review, create one **new** sufficiently sized builder image (for example
+After the public construction gate above and CI/review, create one **new** sufficiently sized builder image (for example
 `--disk-size-mib 32768`) from retained exact inputs using this public command.
 For the hardware profile, boot that image once with USB emulation in QEMU on the
 Debian desktop. Check native-v2 selected/running agreement, no failed units,

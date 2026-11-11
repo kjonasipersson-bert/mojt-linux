@@ -46,6 +46,9 @@ def dispatch(args):
         if os.geteuid() == 0 and not any(arg in rest for arg in ('--help','-h','--dry-run')):
             raise ValueError('compile as an ordinary user in a private workspace; installation is a separate MPM operation')
     else:raise ValueError('unknown command; use mbt --help')
+    from mbt_runtime import enter
+    prepared=enter(args)
+    if prepared is not None:return prepared
     result = helper(name).main(rest,prog=prog)
     return 0 if result is None else result
 

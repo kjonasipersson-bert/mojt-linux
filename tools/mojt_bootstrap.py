@@ -258,20 +258,50 @@ def inspect_result(directory, *, base_artifact, kernel_artifact, files=True):
     return d
 
 
+def preflight(args, evidence):
+    """Static gates and an explicit root namespace probe before password entry."""
+    require(evidence['system_record']['step'] >= 10,'first native-v2 bootstrap requires account-enabled System step 10')
+    import mpm_management as management
+    from mpm_kernel_boot import vm_module
+    manager=management.current();vm=vm_module()
+    commands=('cp','cpio','mkfs.ext4','modprobe','zstd','du','openssl',*native.boot.COMMANDS,*TOOLS)
+    selected={name:shutil.which(name) for name in commands}
+    require(all(selected.values()),'bootstrap host tools missing: '+', '.join(n for n,p in selected.items() if p is None))
+    selected={name:str(Path(path).absolute()) for name,path in selected.items()}
+    require(all(not Path(path).is_relative_to('/var/lib/mojt/ports') and
+                not Path(path).resolve().is_relative_to('/var/lib/mojt/ports') for path in selected.values()),
+            'bootstrap tools must come from the host or an explicit private build environment, not shared Ports')
+    require(vm.static_x86_64_elf(args.busybox),'trusted static x86_64 BusyBox required')
+    vm.validate_busybox_applets(args.busybox,'password',extra=tuple(sorted(paths.SHUTDOWN_APPLETS|{'findfs','cat','env'})))
+    privileged='not-run: requires administrator'
+    if os.geteuid()==0:
+        parent=native.WORK_PARENT.resolve(strict=True)
+        tx.protected_directory(parent/('.preflight-'+os.urandom(16).hex()),label='bootstrap preflight workspace')
+        with tempfile.TemporaryDirectory(prefix='mojt-bootstrap-probe-',dir=parent) as temporary:
+            jail=Path(temporary);(jail/'bin').mkdir();(jail/'proc').mkdir()
+            shutil.copyfile(args.busybox,jail/'bin/busybox');(jail/'bin/busybox').chmod(0o755)
+            isolated([selected['chroot'],jail,'/bin/busybox','true'],jail/'proc',env=dict(PATH='/bin',LC_ALL='C'))
+        privileged='passed: private PID/mount namespace and chroot'
+    return dict(format='mojt-bootstrap-preflight-v1',manager=manager['id'],host_tools=selected,privileged=privileged,
+                password_requested=False,image_written=False)
+
+
 def build(args):
     require(args.login_mode == 'password','native-v2 bootstrap requires password login')
     version = dict(upstream=args.system_version,scheme='dotted-v1',revision=args.system_revision);artifact.version(version)
     missing = [name for name in TOOLS if shutil.which(name) is None];require(not missing,'bootstrap host tools missing: '+', '.join(missing))
     if args.dry_run:
         preview = native.preview(args)
-        require(preview['system_record']['step'] >= 10,'first native-v2 bootstrap requires account-enabled System step 10')
+        checks=preflight(args,preview)
         return dict(format='mojt-bootstrap-preview-v1',layout='native-v2',base=preview['base']['id'],kernel=preview['kernel']['id'],
             system_payload=artifact.digest(preview['system_record']),system_version=artifact.version(version),
             boot_profile=model.HARDWARE_PROFILE if preview['hardware'] is not None else model.PROFILE,hardware_inputs=preview['hardware'],
-            output=str(Path(args.output).absolute()),image_written=False,boot_acceptance=False)
-    require(paths.load_payload(args.system_payload)['step'] >= 10,'first native-v2 bootstrap requires account-enabled System step 10')
+            output=str(Path(args.output).absolute()),preflight=checks,image_written=False,boot_acceptance=False)
     def finish(**values):return finalize(system_version=args.system_version,system_revision=args.system_revision,**values)
-    image = native.build(args,finalize_tree=finish)
+    def check(evidence):
+        print('Mojt bootstrap: checking prepared manager, host tools and namespace entry...',file=sys.stderr,flush=True)
+        preflight(args,evidence)
+    image = native.build(args,finalize_tree=finish,preflight=check)
     # Native assembly verified this while root still owned the private output.
     # Do not read caller-owned metadata again after the final ownership handoff.
     details = image['bootstrap']

@@ -388,23 +388,27 @@ def complete(tree, result, context, *, base, selected_system, root_uuid, console
     (result / "kernel-plan-request.json").write_bytes(artifact.canonical(request) + b"\n")
 
 
-def build(args, vm=None, *, finalize_tree=None):
+def build(args, vm=None, *, finalize_tree=None, preflight=None):
     # Fresh image defaults must be traversable independently of the host's
     # private lab mask. Temporary workspaces and credentials have explicit modes.
     previous = os.umask(0o022)
     try:
-        return _build(args, vm) if finalize_tree is None else _build(args,vm,finalize_tree=finalize_tree)
+        options={}
+        if finalize_tree is not None:options['finalize_tree']=finalize_tree
+        if preflight is not None:options['preflight']=preflight
+        return _build(args,vm,**options)
     finally:
         os.umask(previous)
 
 
-def _build(args, vm=None, *, finalize_tree=None):
+def _build(args, vm=None, *, finalize_tree=None, preflight=None):
     evidence = preview(args)
     require(not getattr(args,'hardware_profile',None) or finalize_tree is not None,'native hardware images require mbt bootstrap')
     if args.dry_run:
         return dict(format="mojt-native-image-preview-v1", base=evidence["base"]["id"],
                     kernel=evidence["kernel"]["id"], imports=False, image_written=False)
     require(os.geteuid() == 0, "image assembly requires root; use --dry-run for unprivileged preview")
+    if preflight is not None:preflight(evidence)
     if vm is None:
         spec = importlib.util.spec_from_file_location("native_vm_builder", Path(__file__).with_name("mojt-vm-build.py"))
         vm = importlib.util.module_from_spec(spec)
@@ -469,6 +473,8 @@ def _build(args, vm=None, *, finalize_tree=None):
         else:
             from mojt_bootstrap import inspect_result
             checked = inspect_result(options.output,base_artifact=args.base_artifact,kernel_artifact=args.kernel_artifact)
+            execution=Path(__file__).resolve().parents[1]/'mbt-execution.json'
+            if execution.is_file():shutil.copyfile(execution,options.output/'builder-runtime.json')
             staged = publish/'image'
             transfer_image(options.output,staged)
             require(inspect_result(staged,base_artifact=args.base_artifact,kernel_artifact=args.kernel_artifact) == checked,

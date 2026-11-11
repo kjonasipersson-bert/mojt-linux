@@ -176,8 +176,15 @@ modules, System-owned firmware/licenses and the independently retained native
 Kernel. Its policy is preserved by MPM updates; firmware is read-only and normal
 boot adds no content scans. This draft does not settle all command spellings or
 write a physical disk; bootstrap/profile have automated fixture coverage, not
-owner VM acceptance yet. The next work stays in the same delivery: one joined
-VM acceptance, then the dedicated physical disk. Do not substitute an old-format image or call source assembly of
+owner VM acceptance yet. Repeated owner preparation failures exposed a missing
+execution-runtime boundary: Git checkout modes were being checked as installed
+manager modes. The draft now prepares fixed code/assets before manager imports,
+keeps MPM target/runtime checks strict and performs privileged entry preflight
+before password/assembly. Public packaging and bootstrap-preview tests exercise
+real Git umask/private-home/namespace boundaries. Complete public construction
+with the real System payload remains a gate before another owner VM attempt.
+The next work stays in the same delivery: establish that construction gate,
+one joined VM acceptance, then the dedicated physical disk. Do not substitute an old-format image or call source assembly of
 prebuilt inputs a complete source rebuild.
 
 The owner reaffirmed native self-hosting as the destination on 2026-11-08.
