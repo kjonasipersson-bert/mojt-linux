@@ -15,6 +15,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 
 
@@ -49,6 +50,9 @@ TTYVHangup=yes
 WantedBy=mojt.target
 """
 COMMANDS = ("qemu-img", "sfdisk", "debugfs", "e2fsck", "fallocate")
+SIDECARS = ('bootstrap.json','bootstrap-request.json','selected-deployment.json',
+            'deployment.json','initramfs-binding.json','system-manifest.json',
+            'base-context.json','builder-runtime.json','vmlinuz','initramfs.cpio.gz')
 
 
 def require(condition, message):
@@ -59,6 +63,21 @@ def require(condition, message):
 def regular(path):
     require(not path.is_symlink() and path.is_file(), f"expected regular file: {path}")
     return path
+
+
+def local_console(record):
+    """Read either build format without changing the exact boot deployment."""
+    if record.get('boot_layout') == 'native-v2':
+        sys.path.insert(0,str(Path(__file__).resolve().parent))
+        import mpm_boot_v2 as model
+        value=model.deployment(record.get('boot_record'))
+        settings=value['inputs']['description']['boot']
+        require(not record.get('additional_boot_records'), 'unsupported native-v2 additional build records')
+        require(settings['root_uuid'] == record['disk_layout']['root_uuid'], 'native-v2 root UUID differs from build')
+        return settings['console'] == 'local'
+    require(record.get('boot_layout','legacy-image') == 'legacy-image', 'unsupported build boot layout')
+    entries=[record.get('boot_record'),*record.get('additional_boot_records',[])]
+    return all(isinstance(entry,dict) and entry.get('console') == 'local' for entry in entries)
 
 
 class Ext4:
@@ -177,9 +196,13 @@ def prepare(source, output):
     record = json.loads(regular(source / "build.json").read_text())
     require(record.get("format") == 1 and record.get("boot_mode") == "uefi" and
             record.get("login_mode") == "password", "requires a password-login Mojt UEFI build")
-    entries = [record.get("boot_record"), *record.get("additional_boot_records", [])]
-    require(all(isinstance(entry, dict) and entry.get("console") == "local" for entry in entries),
+    require(local_console(record),
             "source must use local-console boot pairs; serial-only VMs already have a serial getty")
+    native = record.get('boot_layout') == 'native-v2'
+    if native:
+        for name in ('deployment.json','selected-deployment.json'):
+            require(json.loads(regular(source/name).read_text()) == record['boot_record'],
+                    'native-v2 deployment sidecar differs: '+name)
     parts = record["disk_layout"]
     offset, length = parts["root_offset"], parts["root_bytes"]
     require(type(offset) is int and type(length) is int and offset > 0 and length > 0 and
@@ -196,6 +219,10 @@ def prepare(source, output):
         work = Path(temp)
         result = work / "result"
         result.mkdir(mode=0o700)
+        if native:
+            for name in SIDECARS:
+                if (source/name).exists() or (source/name).is_symlink():
+                    shutil.copy2(regular(source/name),result/name)
         variables = source / "OVMF_VARS.fd"
         if variables.exists() or variables.is_symlink():
             shutil.copy2(regular(variables), result / variables.name)

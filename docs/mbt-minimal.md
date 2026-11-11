@@ -265,6 +265,15 @@ retained inputs, followed by guest boot. #51 remains draft until it passes.
 
 ## One joined acceptance journey
 
+For terminal-only testing of a stopped local-console native-v2 image, the
+existing `tools/mojt-vm-serial.py --source IMAGE --output NEW_SERIAL_COPY`
+helper adds an authenticated serial service in a separate copy's persistent
+`/etc`. It retains the native deployment/selection, boot files and builder
+sidecars; it does not reconstruct the installation or change its hardware
+profile. The local console remains available. Start the copy's launcher with
+`QEMU_DISPLAY=none` and use the invoking terminal for login/paste. The source
+must be stopped; QEMU image locking is never bypassed.
+
 After focused CI/review, exercise public construction by creating one **new** sufficiently sized builder image (for example
 `--disk-size-mib 32768`) from retained exact inputs using this public command.
 For the hardware profile, boot that image once with USB emulation in QEMU on the

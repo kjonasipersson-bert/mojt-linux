@@ -5,6 +5,7 @@
 """Real offline GPT/ext4 serial-console copies; no host mounts or credentials."""
 
 import contextlib
+import copy
 import importlib.util
 import io
 import json
@@ -26,6 +27,28 @@ spec.loader.exec_module(serial)
 boot = serial.boot
 UUID = "38ae152c-b81a-44da-b23a-3341398debe6"
 TOOLS = serial.COMMANDS + boot.COMMANDS + ("mkfs.ext4",)
+
+
+class BuildRecordTests(unittest.TestCase):
+    def record(self):
+        import test_mpm_boot_v2 as fixtures
+        source=fixtures.fixture();d=copy.deepcopy(source['description'])
+        d['boot'].update(console='local',profile=fixtures.model.HARDWARE_PROFILE,root_uuid=UUID)
+        value=fixtures.bound(fixtures.record(fixtures.model.INPUTS,d))
+        return dict(boot_layout='native-v2',boot_record=value,additional_boot_records=[],disk_layout=dict(root_uuid=UUID))
+
+    def test_native_v2_is_validated_without_rewriting_the_bound_console_or_id(self):
+        record=self.record();before=copy.deepcopy(record)
+        self.assertTrue(serial.local_console(record));self.assertEqual(record,before)
+        record['boot_record']['id']='sha256:'+'0'*64
+        with self.assertRaises(ValueError):serial.local_console(record)
+
+    def test_native_root_mismatch_additional_records_and_unknown_layout_are_refused(self):
+        record=self.record();record['disk_layout']['root_uuid']='12345678-1234-1234-1234-123456789abc'
+        with self.assertRaisesRegex(ValueError,'UUID differs'):serial.local_console(record)
+        record=self.record();record['additional_boot_records']=[{}]
+        with self.assertRaisesRegex(ValueError,'additional build records'):serial.local_console(record)
+        with self.assertRaisesRegex(ValueError,'unsupported build boot layout'):serial.local_console(dict(boot_layout='future'))
 
 
 @unittest.skipUnless(all(shutil.which(c) for c in TOOLS), "offline image tools unavailable")
@@ -111,6 +134,31 @@ class SerialCopyTests(unittest.TestCase):
         self.assertIn('-serial mon:stdio', script)
         self.assertIn('user,model=e1000e', script)
         subprocess.run(["bash", "-n", str(output / "run-qemu.sh")], check=True)
+
+    def test_native_v2_copy_preserves_boot_metadata_sidecars_and_original_disk(self):
+        # Exercise the format join and real ext4 modification. Opaque fixture
+        # boot bytes are retained; this is not native guest boot acceptance.
+        source,record=self.source();native=BuildRecordTests().record();native.pop('disk_layout')
+        record.update(native,system_step=10)
+        for name in serial.SIDECARS:
+            data=json.dumps(record['boot_record']).encode() if name in ('deployment.json','selected-deployment.json') else b'retained '+name.encode()
+            (source/name).write_bytes(data)
+        (source/'build.json').write_text(json.dumps(record))
+        output=self.root/'native serial';selected=source/'selected-deployment.json';original=selected.read_bytes()
+        selected.write_text('{}')
+        with self.assertRaisesRegex(ValueError,'deployment sidecar differs'):self.prepare(source,output)
+        self.assertFalse(output.exists());selected.write_bytes(original)
+        before={p.name:boot.digest(p) for p in source.iterdir()}
+        self.prepare(source,output)
+        self.assertEqual(before,{p.name:boot.digest(p) for p in source.iterdir()})
+        self.assertEqual(json.loads((output/'build.json').read_text())['boot_record'],record['boot_record'])
+        for name in serial.SIDECARS:self.assertEqual((output/name).read_bytes(),(source/name).read_bytes())
+        with self.root_partition(output) as fs:
+            unit=fs.read(serial.SERVICE)
+            self.assertIn(b'Requires=mojt-privileged.service systemd-logind.service',unit)
+            self.assertIn(b'115200 ttyS0 vt100',unit)
+            self.assertEqual(fs.read('/state/etc/generation-marker'),b'retained etc\n')
+            self.assertEqual(fs.read('/state/var/generation-marker'),b'retained var\n')
 
     def test_linked_securetty_and_conflicting_unit_do_not_publish_or_mutate_source(self):
         for option in ("conflict", "linked_securetty"):
