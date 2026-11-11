@@ -273,6 +273,14 @@ sidecars; it does not reconstruct the installation or change its hardware
 profile. The local console remains available. Start the copy's launcher with
 `QEMU_DISPLAY=none` and use the invoking terminal for login/paste. The source
 must be stopped; QEMU image locking is never bypassed.
+The helper first replays the ext4 journal and runs preen on the **private
+extracted partition**, accepting only clean/safely corrected outcomes. A
+read-only check alone can return zero while committed transactions still need
+replay, so it is insufficient before raw `debugfs` writes. After console setup,
+the filesystem must pass read-only verification and have no recovery/error
+flags. The reconstructed partition is compared byte-for-byte before publication.
+Phase messages and disk-copy progress are printed. Neither the source image nor
+an existing failed copy is repaired or overwritten.
 
 After focused CI/review, exercise public construction by creating one **new** sufficiently sized builder image (for example
 `--disk-size-mib 32768`) from retained exact inputs using this public command.

@@ -14,6 +14,7 @@ import json
 from pathlib import Path
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -183,7 +184,46 @@ def extract_partition(disk, destination, offset, length):
             remaining -= len(data)
 
 
+def clean_filesystem(image, offset=0):
+    """A successful e2fsck -n alone does not establish replay-safe metadata."""
+    with image.open('rb') as stream:
+        stream.seek(offset+1024);block=stream.read(1024)
+    require(len(block)==1024 and struct.unpack_from('<H',block,56)[0]==0xef53,'invalid ext4 superblock')
+    state=struct.unpack_from('<H',block,58)[0]
+    incompat=struct.unpack_from('<I',block,96)[0]
+    ro_compat=struct.unpack_from('<I',block,100)[0]
+    # VALID_FS only; neither RECOVER nor ORPHAN_PRESENT may remain pending.
+    require(state == 1 and not incompat & 4 and not ro_compat & 0x10000,
+            'ext4 filesystem still has errors or pending journal/orphan recovery')
+
+
+def check_filesystem(image, *, recover=False):
+    # Only the extracted, disposable partition is opened read/write. Preen
+    # replays committed journal records and stops on errors requiring a person.
+    args=['e2fsck','-f','-p' if recover else '-n',str(image)]
+    result=subprocess.run(args,capture_output=True,text=True)
+    accepted=(0,1) if recover else (0,)
+    require(result.returncode in accepted,
+            'private ext4 '+('recovery' if recover else 'verification')+' failed (exit '+
+            str(result.returncode)+'):\n'+(result.stdout+result.stderr)[-8000:])
+    clean_filesystem(image)
+
+
+def verify_partition(disk, image, offset, length):
+    """Check the published extent, including zeros, against the checked image."""
+    require(image.stat().st_size==length and offset >= 0 and offset+length<=disk.stat().st_size,
+            'invalid partition verification extent')
+    with disk.open('rb') as actual, image.open('rb') as expected:
+        actual.seek(offset);remaining=length
+        while remaining:
+            count=min(boot.MIB,remaining);data=expected.read(count)
+            require(len(data)==count and actual.read(count)==data,'reconstructed root partition differs from checked filesystem')
+            remaining-=count
+    clean_filesystem(disk,offset)
+
+
 def prepare(source, output):
+    print('Serial copy: checking source metadata and tools...',flush=True)
     source = source.resolve(strict=True)
     require(not output.is_symlink(), "refusing symlink output")
     output = output.resolve()
@@ -229,19 +269,27 @@ def prepare(source, output):
             (result / variables.name).chmod(0o600)
         copy = result / "disk.img"
         # Default QEMU locking is required: never pass --force-share/-U.
-        subprocess.run(["qemu-img", "convert", "-f", "raw", "-O", "raw", str(disk), str(copy)], check=True)
+        print('Serial copy: copying stopped VM disk...',flush=True)
+        subprocess.run(["qemu-img", "convert", "-p", "-f", "raw", "-O", "raw", str(disk), str(copy)], check=True)
         copy.chmod(0o600)
         root = work / "root.ext4"
+        print('Serial copy: reading root partition...',flush=True)
         extract_partition(copy, root, offset, length)
-        subprocess.run(["e2fsck", "-f", "-n", str(root)], check=True, capture_output=True)
+        print('Serial copy: replaying journal and checking copied filesystem...',flush=True)
+        check_filesystem(root,recover=True)
         fs = Ext4(root, work)
         require(parts["root_uuid"] in fs.run("stats"), "root filesystem UUID differs from build record")
+        print('Serial copy: configuring authenticated console...',flush=True)
         configure(root, work, accounts=record.get("system_step", 0) >= 10)
-        subprocess.run(["e2fsck", "-f", "-n", str(root)], check=True, capture_output=True)
+        print('Serial copy: checking modified filesystem...',flush=True)
+        check_filesystem(root)
         # Clear this extent before sparse insertion, including old nonzero bytes.
+        print('Serial copy: writing checked root partition...',flush=True)
         subprocess.run(["fallocate", "--punch-hole", "--keep-size", "--offset", str(offset),
                         "--length", str(length), str(copy)], check=True)
         boot.copy_partition(root, copy, offset, length)
+        print('Serial copy: verifying reconstructed partition bytes...',flush=True)
+        verify_partition(copy,root,offset,length)
         launcher = boot.run_script(network=record.get("system_step", 0) >= 2,
                                    local_console=bool(record.get("hardware")))
         launcher = launcher.replace('${QEMU_DISPLAY:-gtk}', '${QEMU_DISPLAY:-none}')
@@ -251,6 +299,7 @@ def prepare(source, output):
                                              credentials="retained", generations="retained")
         (result / "build.json").write_text(json.dumps(record, indent=2) + "\n", encoding="ascii")
         require(not output.exists() and not output.is_symlink(), "output appeared during preparation")
+        print('Serial copy: publishing verified copy...',flush=True)
         result.rename(output)
     print(f"Serial-console VM: {output}")
     print("Existing guest password and state retained; source VM unchanged.")
