@@ -31,6 +31,25 @@ def request(tree, result, seed, archive):
 
 
 class BoundaryTests(unittest.TestCase):
+    def test_host_utilities_are_selected_before_installing_the_guest_environment(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);binary=root/'bin';sbin=root/'sbin'
+            binary.mkdir();sbin.mkdir()
+            # Reproduce the Debian split: unshare is on the child's PATH, while
+            # chroot/mount/umount are available only through the parent's PATH.
+            unshare=binary/'unshare';unshare.write_text('#!/bin/sh\nwhile [ "$#" -gt 0 ]; do\n'
+                'case "$1" in --*) shift ;; *) break ;; esac\ndone\nexec "$@"\n');unshare.chmod(0o755)
+            for name in ('chroot','mount','umount'):
+                path=sbin/name;path.write_text('#!/bin/sh\nprintf "%s\\n" "'+name+':$PATH"\n');path.chmod(0o755)
+            guest=dict(PATH=str(binary),LC_ALL='C',HOME='/root')
+            with mock.patch.dict(os.environ,dict(PATH=str(sbin)+os.pathsep+str(binary))):
+                result=bootstrap.isolated(['chroot','/synthetic-jail'],root/'proc',env=guest,capture_output=True,text=True)
+                self.assertEqual(result.stdout.strip(),'chroot:'+str(binary))
+                for name in ('mount','umount'):
+                    result=bootstrap.run(name,env=guest,capture_output=True,text=True)
+                    self.assertEqual(result.stdout.strip(),name+':'+str(binary))
+            self.assertEqual(guest,dict(PATH=str(binary),LC_ALL='C',HOME='/root'))
+
     def test_private_worker_direct_entrypoint_loads_bundled_code_with_isolated_python(self):
         result=subprocess.run([sys.executable,'-I','-B',str(REPO/'tools/mojt_bootstrap.py'),'--finalize-tree','/absent','--help'],
                               cwd='/',capture_output=True,text=True,env={'PATH':'/absent','PYTHONPATH':'/untrusted'})

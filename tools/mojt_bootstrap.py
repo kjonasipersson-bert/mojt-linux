@@ -49,12 +49,25 @@ def request(value):
     return d
 
 
+def host_command(name):
+    require(name in TOOLS,'unsupported bootstrap host tool')
+    path = shutil.which(name)
+    require(path is not None,'missing bootstrap host tool: '+name)
+    # Preserve the selected command name (a pinned environment may use symlinks
+    # to multicall binaries). Child env/PATH must not select host utilities.
+    return str(Path(path).absolute())
+
+
 def run(*args, **kwargs):
-    return subprocess.run([str(v) for v in args],check=True,**kwargs)
+    command = [str(v) for v in args]
+    if command[0] in TOOLS:command[0] = host_command(command[0])
+    return subprocess.run(command,check=True,**kwargs)
 
 
 def isolated(command, proc, **kwargs):
     """Helpers cannot outlive this construction and pin its temporary store."""
+    command = list(command)
+    if str(command[0]) in TOOLS:command[0] = host_command(str(command[0]))
     return run('unshare','--pid','--fork','--kill-child','--mount-proc='+str(proc),*command,**kwargs)
 
 

@@ -146,6 +146,18 @@ class PreparationTests(unittest.TestCase):
 
 @unittest.skipUnless(os.geteuid() == 0 and shutil.which('unshare'),'requires root PID/mount namespaces')
 class NamespaceTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('chroot') and shutil.which('busybox'),'requires chroot and static BusyBox')
+    def test_real_bootstrap_chroot_uses_host_utilities_with_a_guest_only_path(self):
+        probe=subprocess.run(['unshare','--pid','--fork','--kill-child','--mount-proc',sys.executable,'-I','-c','pass'],
+                             capture_output=True,text=True)
+        if probe.returncode:self.skipTest('kernel namespace permissions: '+probe.stderr.strip())
+        with tempfile.TemporaryDirectory() as temporary:
+            jail=Path(temporary);(jail/'bin').mkdir();(jail/'proc').mkdir()
+            shutil.copyfile(shutil.which('busybox'),jail/'bin/busybox');(jail/'bin/busybox').chmod(0o755)
+            result=mojt_bootstrap.isolated(['chroot',jail,'/bin/busybox','printf','guest-entry-ok\\n'],jail/'proc',
+                env=dict(PATH='/guest-only',LC_ALL='C'),capture_output=True,text=True,timeout=10)
+            self.assertEqual(result.stdout,'guest-entry-ok\n')
+
     @unittest.skipUnless(all(shutil.which(c) for c in ('sfdisk','mkfs.ext4','losetup','blkid','blockdev')),
                          'requires real GPT/ext4/loop tools')
     def test_root_only_mapping_reads_uuid_and_length_without_partition_scan_and_rejects_wrong_uuid(self):
