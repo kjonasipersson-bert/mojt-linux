@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """Fresh serial UEFI images from verified native Base and installed Kernel inputs."""
 import argparse
+import errno
 import gzip
 import hashlib
 import importlib.util
@@ -16,6 +17,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import uuid
 from types import SimpleNamespace
 
 import mojt_artifact as artifact
@@ -26,6 +28,20 @@ import mojt_system_manifest as manifest_model
 import mpm_catalog as catalog
 import mpm_deployment as deployment
 import mpm_kernel as kernel
+import mpm_transaction as transaction
+
+WORK_PARENT = Path('/var/tmp')
+
+
+def transfer_image(source, destination):
+    """Stage the completed image on its output filesystem before publication."""
+    require(not os.path.lexists(destination),'image staging destination already exists')
+    try:source.rename(destination)
+    except OSError as error:
+        if error.errno != errno.EXDEV:raise
+        # Preserve sparse disks across filesystems; shutil.move/copytree can
+        # allocate every hole in a large virtual disk. Source stays private.
+        subprocess.run(['cp','-a','--sparse=always','--reflink=auto','--',str(source),str(destination)],check=True)
 
 MAX_INITRAMFS = 256 * 1024**2
 INPUTS_FORMAT = "mojt-native-image-inputs-v2"
@@ -395,7 +411,14 @@ def _build(args, vm=None, *, finalize_tree=None):
         spec.loader.exec_module(vm)
     output = Path(os.path.abspath(args.output))
     output.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="mojt-native-inputs-") as work, \
+    if not os.path.lexists(WORK_PARENT):
+        transaction.protected_directory(WORK_PARENT,label='native build workspace')
+        WORK_PARENT.mkdir(mode=0o1777);WORK_PARENT.chmod(0o1777)
+    # MPM must never follow a root-owned target through a caller-owned home.
+    # Check the scratch parent's complete ancestry before creating any work.
+    work_parent = WORK_PARENT.resolve(strict=True)
+    transaction.protected_directory(work_parent/('.mojt-native-check-'+uuid.uuid4().hex),label='native build workspace')
+    with tempfile.TemporaryDirectory(prefix="mojt-native-inputs-",dir=work_parent) as work, \
             tempfile.TemporaryDirectory(prefix=".mojt-native-image-", dir=output.parent) as publish:
         work, publish = Path(work), Path(publish)
         frozen = work / "base.tar.zst"
@@ -429,7 +452,7 @@ def _build(args, vm=None, *, finalize_tree=None):
             source_kernel_installation_digest=evidence["kernel_installation_digest"],
             kernel_installation_digest=artifact.digest(installed),
             base_manifest=str(release / "payload/manifest.toml"), base_inventory=base_inventory(target / "base" / base))
-        options = SimpleNamespace(target=target, output=publish / "image", kernel=obj / "payload/boot" /
+        options = SimpleNamespace(target=target, output=work/'assembled-image' if finalize_tree is not None else publish/'image', kernel=obj / "payload/boot" /
             ("vmlinuz-" + copied["metadata"]["kernel_release"]), modules_dir=obj / "payload/lib/modules" /
             copied["metadata"]["kernel_release"], busybox=busybox, boot_mode="uefi", hardware_profile=getattr(args,'hardware_profile',None),
             firmware_root=firmware_root, system_payload=payload, disk_size_mib=args.disk_size_mib, login_mode=args.login_mode,
@@ -446,6 +469,11 @@ def _build(args, vm=None, *, finalize_tree=None):
         else:
             from mojt_bootstrap import inspect_result
             checked = inspect_result(options.output,base_artifact=args.base_artifact,kernel_artifact=args.kernel_artifact)
+            staged = publish/'image'
+            transfer_image(options.output,staged)
+            require(inspect_result(staged,base_artifact=args.base_artifact,kernel_artifact=args.kernel_artifact) == checked,
+                    'copied native bootstrap result differs')
+            options.output = staged
         require(not os.path.lexists(output), "output appeared during build; not overwriting")
         if finalize_tree is not None:vm.handoff_result(options.output)
         options.output.rename(output)

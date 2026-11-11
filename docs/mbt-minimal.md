@@ -137,6 +137,14 @@ existing MPM handover/constructor/selection libraries. It does not execute archi
 hooks, candidate Python or host-side Nix database mutations. Namespaces contain
 helper lifetimes and mounts; they are not a sandbox for untrusted package code.
 
+Privileged input/assembly work uses a root-controlled private directory under
+the resolved `/var/tmp`, independently of the output's owner or `TMPDIR`.
+MPM's target ancestry checks remain unchanged. The completed image is staged
+beside its destination only after MPM verification; a cross-filesystem transfer
+uses sparse/reflink-aware copying and rechecks the boot result before ownership
+handoff and the final same-filesystem publication rename. A caller-owned home
+is an output location, never the privileged MPM working target.
+
 The same verified tree is then packed into a new disk image. No loop mapping or
 mounting/finalizing of an existing image is required. Failure before publication
 leaves no advertised output image. The selected deployment, boot files and

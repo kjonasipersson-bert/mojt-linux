@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """Fresh bootstrap publication boundaries and one shared install/stage fixture."""
 import copy
+import errno
 import json
 import os
 from pathlib import Path
@@ -31,6 +32,24 @@ def request(tree, result, seed, archive):
 
 
 class BoundaryTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('cp'),'requires sparse file copy')
+    def test_cross_filesystem_image_staging_preserves_sparse_disk_and_reports_failure(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);source=root/'source';source.mkdir();destination=root/'destination'
+            (source/'metadata.json').write_text('{"retained":true}\n')
+            with (source/'disk.img').open('wb') as stream:
+                stream.write(b'first');stream.seek(128*1024*1024);stream.write(b'last')
+            with mock.patch.object(Path,'rename',side_effect=OSError(errno.EXDEV,'different filesystems')):
+                bootstrap.native.transfer_image(source,destination)
+            self.assertEqual((source/'disk.img').stat().st_size,(destination/'disk.img').stat().st_size)
+            self.assertLess((destination/'disk.img').stat().st_blocks*512,1024*1024)
+            with (destination/'disk.img').open('rb') as stream:
+                self.assertEqual(stream.read(5),b'first');stream.seek(-4,2);self.assertEqual(stream.read(),b'last')
+            self.assertEqual((source/'metadata.json').read_bytes(),(destination/'metadata.json').read_bytes())
+            with mock.patch.object(Path,'rename',side_effect=PermissionError('refused')),\
+                 mock.patch.object(bootstrap.native.subprocess,'run',side_effect=AssertionError('must not copy')):
+                with self.assertRaises(PermissionError):bootstrap.native.transfer_image(source,root/'refused')
+
     def test_host_utilities_are_selected_before_installing_the_guest_environment(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary);binary=root/'bin';sbin=root/'sbin'
@@ -118,6 +137,7 @@ class ConstructionTests(unittest.TestCase):
         source=system_fixtures.SystemVmTests();source.setUp();self.addCleanup(source.doCleanups);source.fixture(10)
         hw=hardware_fixtures.HardwareTests();hw.setUp();self.addCleanup(hw.doCleanups)
         f.args.system_payload=source.payload;f.args.login_mode='password'
+        foreign_home=f.work/'caller-home';foreign_home.mkdir(mode=0o700);f.args.output=foreign_home/'image'
         f.args.hardware_profile=bootstrap.native.hardware.PROFILE
         f.args.firmware_root=hw.firmware();f.args.with_build_tools=True
         firmware_before=bootstrap.paths.tree_hash(f.args.firmware_root)
@@ -147,6 +167,12 @@ class ConstructionTests(unittest.TestCase):
             self.assertFalse((profile/'kernel/lib/modules').exists())
             return d
         events=[];inspect=bootstrap.inspect_result;handoff=fixtures.fixtures.vm.handoff_result
+        protected=bootstrap.tx.protected_directory
+        def protect(path,**kwargs):
+            # Emulate the invoking user's home even in single-UID user namespaces.
+            if foreign_home == Path(path) or foreign_home in Path(path).parents:
+                raise ValueError('unsafe Base target ancestor: caller-owned home')
+            return protected(path,**kwargs)
         def inspect_owned(directory,**kwargs):
             events.append('verify');self.assertEqual((Path(directory)/'bootstrap.json').stat().st_uid,os.geteuid())
             return inspect(directory,**kwargs)
@@ -154,10 +180,11 @@ class ConstructionTests(unittest.TestCase):
             events.append('handoff');return handoff(directory)
         with mock.patch.object(fixtures.fixtures.vm,'password_hash_from_terminal',return_value='$6$synthetic$not-a-real-password'),\
              mock.patch.object(bootstrap,'inspect_result',side_effect=inspect_owned),\
-             mock.patch.object(fixtures.fixtures.vm,'handoff_result',side_effect=give_to_caller):
+             mock.patch.object(fixtures.fixtures.vm,'handoff_result',side_effect=give_to_caller),\
+             mock.patch.object(bootstrap.tx,'protected_directory',side_effect=protect):
             built=f.synthetic_build(finalize_tree=finish)
         image=Path(built['output']);d=seen[0]
-        self.assertEqual(events,['verify','handoff']);self.assertEqual(built['bootstrap'],d)
+        self.assertEqual(events,['verify','verify','handoff']);self.assertEqual(built['bootstrap'],d)
         self.assertEqual(artifact.parse_json((image/'bootstrap.json').read_bytes())['description'],d)
         self.assertEqual((image/'bootstrap.json').stat().st_uid,int(os.environ.get('SUDO_UID','0')))
         self.assertEqual(d['deployment']['description']['inputs']['description']['boot']['profile'],model.HARDWARE_PROFILE)
