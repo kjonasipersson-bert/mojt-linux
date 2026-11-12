@@ -1,7 +1,7 @@
 .\" Mojt Linux
 .\" Copyright (C) 2026 Jonas Persson
 .\" SPDX-License-Identifier: GPL-2.0-only
-.TH MBT 1 "2026-11-11" "Mojt Linux" "User Commands"
+.TH MBT 1 "2026-11-12" "Mojt Linux" "User Commands"
 .SH NAME
 mbt \- prepare private build tools and create Mojt build/package results
 .SH SYNOPSIS
@@ -19,13 +19,18 @@ mbt \- prepare private build tools and create Mojt build/package results
 --base-package FILE --base-artifact ID --base-context FILE
 --kernel-registry DIRECTORY --kernel-artifact ID --system-payload DIRECTORY
 --system-generation NAME --output DIRECTORY [--system-version VERSION]
-[--system-revision N] [--with-build-tools] [--dry-run]
+[--system-revision N] [--with-build-tools] [--with-installer-inputs] [--dry-run]
 [--hardware-profile thinkpad-x1-carbon-3 --firmware-root DIRECTORY]
+.PP
+.B mbt bootstrap
+--inputs DIRECTORY --target-root DIRECTORY --efi-directory DIRECTORY
+[--expected-root-uuid UUID --expected-efi-partuuid UUID] [--dry-run]
+[--system-generation NAME]
 .SH DESCRIPTION
 Experimental interface for review. MBT delegates to the existing environment,
 Kernel build, native artifact and image tools. Use each command's --help for flags.
 Building and packaging do not install or activate their result. Bootstrap uses
-MPM installation/deployment libraries on a new image. Existing-system updates
+MPM installation/deployment libraries on a new image or empty mounted target. Existing-system updates
 belong to MPM. No command implicitly reboots or changes a global compiler.
 .SH COMMANDS
 .TP
@@ -52,7 +57,7 @@ verify checks an existing archive without installing it. Packaging has no
 --dry-run option in this initial interface; it writes a new explicit output.
 .TP
 .B bootstrap
-Create a NEW regular UEFI/GPT native-v2 image with serial console and VirtIO.
+With --output, create a NEW regular UEFI/GPT native-v2 image with serial console and VirtIO.
 Requires verified exact Base/Kernel inputs, explicit Base compatibility bounds
 and an account-enabled step-10 System payload. --dry-run validates inputs without
 creating an image or registry. Actual creation requires root and an interactive
@@ -68,7 +73,7 @@ Normal boot does not scan firmware content. Independent firmware artifacts and
 general firmware/service upgrade transitions are not implemented.
 .PP
 Installs Base/System and stages/selects the initial exact deployment through
-MPM libraries in a private directory before mkfs. Fixed manager code runs using
+MPM libraries in a private directory before image formatting or mounted-target copying. Fixed manager code runs using
 the accepted System Python/Nix in private mount/PID namespaces. No archive hooks,
 host Nix database mutation or loop mapping is used. Result/selection and boot-file
 hashes must agree before publication; no direct-boot bypass is exposed.
@@ -78,6 +83,29 @@ Preflight checks prepared manager code, host tool locations and static BusyBox
 before password entry. Root also probes private PID/mount namespace and chroot
 entry; ordinary-user preview explicitly reports this privileged probe as not run.
 This does not establish complete construction or guest boot acceptance.
+.PP
+--with-installer-inputs (requires --with-build-tools) carries the frozen local
+Base/context, Kernel registry, System export, static BusyBox and optional
+firmware in persistent /var/lib/mojt/installer-inputs. --inputs DIRECTORY
+verifies that closed versioned data and supplies the existing exact input flags.
+Competing artifact/provider flags cannot be mixed with it. It loads no hooks/code
+and carries no source installation passwords. SHA256 is not authentication.
+.PP
+--target-root and --efi-directory select separate, already mounted empty ext4
+and FAT32 partitions on the same GPT disk. Root may have an empty lost+found;
+existing EFI trees, alias/child mounts, another mounted partition or active swap
+on the disk and unsupported storage profiles are refused. Even preview requires
+root to inspect block metadata. Actual writes require both expected identity
+flags from preview. No partitioning, formatting, resizing or NVRAM entry is done.
+Use an explicit private image-tool environment to supply the disk/EFI tools.
+.PP
+Construction is shared with the image path and binds the actual target UUID.
+Verified root content is copied/flushed before the fallback EFI directory is
+published. Failure retains partial data and an incomplete marker; there is no
+adoption/resume or automatic cleanup. A late flush failure reports that EFI was
+already published and the target may be bootable. Mounted installation ownership
+stays with root. The initial construction receipt is mounted-install.json under
+the new installation's /var/lib/mojt; MPM records remain current boot authority.
 .SH DELIVERY
 Builder-enabled System images include the Python frontend, existing helper code,
 this manual, fixed assembly assets and a pinned Kernel recipe example. The

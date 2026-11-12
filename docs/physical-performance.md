@@ -7,7 +7,10 @@ SPDX-License-Identifier: GPL-2.0-only
 # Physical MPM/MBT performance: the ordinary command path
 
 This is a small manual measurement session after the joined VM journey in
-[minimal MBT](mbt-minimal.md#one-joined-acceptance-journey). It changes neither
+[minimal MBT](mbt-minimal.md#one-joined-acceptance-journey) and
+[installation to SSD](mounted-installation.md). USB is the startup/installation
+medium; compiler and ordinary-command measurements run on the SSD installation.
+It changes neither
 the installed tools nor their verification policy. It is not another acceptance
 harness, a hardware benchmark suite or a full generation cross-product.
 
@@ -18,9 +21,10 @@ bootstrap path. Keep the accepted VM image, builds and inputs as the reference.
 
 For a device marketed as 32 GB, prepare a **new 24576-MiB (24-GiB) image** using
 the existing `mbt bootstrap --disk-size-mib 24576` option, the same exact
-Base/Kernel/System inputs, the hardware profile and `--with-build-tools`.
+Base/Kernel/System inputs, the hardware profile and
+`--with-build-tools --with-installer-inputs`.
 Use a new output directory and a fresh guest password. This is ordinary bootstrap,
-not a new installer or a new VM acceptance matrix. Do not truncate the 32768-MiB
+using the same constructor as mounted SSD installation. Do not truncate the 32768-MiB
 reference image: changing just the file length would leave its filesystem and
 GPT inconsistent. No resizing of the accepted image is needed.
 
@@ -30,7 +34,8 @@ actual destination capacity in bytes before deciding it fits. The destination's
 model/serial and mounted partitions must be inspected on the Debian host before
 a separately authorized write. This guide does not select a disk or provide a
 generic disk-write command. Use the one-time UEFI boot menu with Secure Boot
-disabled for this unsigned chain. The internal installation is not the test target.
+disabled for this unsigned chain. The USB write and prepared SSD target are
+separate explicit choices; existing OS partitions are never implicitly selected.
 
 Shut any VM using the image down cleanly and wait for QEMU to exit before copying
 or writing it. A successful static-exitrd shutdown is the completion signal;
@@ -46,20 +51,22 @@ no System rebuild, offline filesystem editing or additional package. Bash and
 `date` are already supplied by the builder. Retain its repository revision and
 SHA256 with the results; hashes identify content, not its publisher.
 
-The smaller fresh builder carries the normal System store and exact installed
-Kernel/provenance, but no previous compiler environment or build objects. Its
-first `mbt env` can therefore measure acquisition of missing build-tool outputs
-rather than reconstruction from the VM's populated tool store. Record which
-outputs were already shared with System; this is not an entirely empty Nix store.
-Read the original Debian config from the retained Kernel's provenance and acquire
-the same pinned upstream source when needed. Check actual free space before
-compiling a complete Kernel, and reserve room for new objects, staged modules,
-the package and installation. Keep one new build and one installed candidate for
-this session; the original VM remains the reference with earlier builds retained.
+Prepare only the private **image-tool** environment on the USB as described in
+the installation guide. Its carried kit and tools then install Mojt to the
+prepared SSD partitions without a checkout or compiler. Boot from SSD before
+collecting the following timings; a USB boot needs only login, keyboard/display,
+basic network usability and available installed tools.
 
-An alternative, when a sufficiently large destination is available, is to copy
-the accepted stopped builder with its existing environment/source/builds. That
-remains a populated-store measurement, as explained below.
+The new SSD installation carries the normal System closure and exact installed
+Kernel/provenance, but no compiler environment or previous build objects. Its
+first Kernel-profile `mbt env` measures acquisition of missing build-tool outputs.
+Record outputs already shared with System; this is not an entirely empty Nix
+store. Read the original Debian config from the retained Kernel provenance and
+acquire the pinned upstream source when needed. Check free space on SSD before
+compiling, allowing for objects, staged modules, package and installation.
+The original VM remains the reference with earlier builds retained. Copy the
+small timing helper/guide into the SSD's persistent state if they were prepared
+on USB; installation does not copy the USB's general mutable state.
 
 ## Measurement rules
 
@@ -80,7 +87,7 @@ remains a populated-store measurement, as explained below.
 Ordinary-user timings and root timings need separately owned result directories.
 Choose fresh directories for a new session; the helper refuses existing reports.
 
-## First physical boot and fast baseline
+## SSD boot and fast baseline
 
 Time power-on to the usable login prompt with an external clock. Record whether
 this was power-on or reboot and whether the GRUB timeout was included or skipped.
@@ -120,7 +127,7 @@ cat "$R/"*.txt
 snapshot, fetch a provider, or measure environment creation. Status is metadata
 inspection, not a content scrub. Preserve those labels when comparing results.
 
-## One optional full build and update on the physical machine
+## One optional full build and update on SSD
 
 The following uppercase paths/IDs are explicit placeholders to fill from the
 retained installation on site. Use a new workspace and a new localversion, for

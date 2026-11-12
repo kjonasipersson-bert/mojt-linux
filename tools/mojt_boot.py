@@ -207,6 +207,25 @@ def copy_partition(source, destination, offset, length):
                 outgoing.seek(len(block), 1)
 
 
+def efi_loader(config, work, root_uuid, console):
+    """Build the same UUID-bound fallback loader for an image or mounted ESP."""
+    fs_uuid(root_uuid)
+    subprocess.run(["grub-script-check", str(config)], check=True)
+    stub = work / "grub-embedded.cfg"
+    stub.write_text(terminal(console) + f"if search --no-floppy --fs-uuid --set=mojt_root {root_uuid}; then\n"
+                    "    set root=$mojt_root\n"
+                    "    configfile ($mojt_root)/boot/mojt/grub.cfg\nfi\n"
+                    "echo 'Mojt boot filesystem not found'\nhalt\n", encoding="ascii")
+    subprocess.run(["grub-script-check", str(stub)], check=True)
+    efi = work / "EFI/BOOT"
+    efi.mkdir(parents=True)
+    loader = efi / "BOOTX64.EFI"
+    subprocess.run(["grub-mkstandalone", "-O", "x86_64-efi", "--modules=" + GRUB_MODULES,
+                    "--locales=", "--fonts=", "-o", str(loader),
+                    "boot/grub/grub.cfg=" + str(stub)], check=True)
+    return loader
+
+
 def build_disk(disk, tree, work, size_mib, root_uuid, system, base, console="serial", native_selection=None):
     """Create a NEW regular GPT disk, with standalone GRUB in the EFI fallback path."""
     parts = layout(size_mib)
@@ -238,20 +257,7 @@ def build_disk(disk, tree, work, size_mib, root_uuid, system, base, console="ser
         stream.truncate(parts["root_bytes"])
     subprocess.run(["mkfs.ext4", "-F", "-q", "-L", "MOJT", "-U", root_uuid,
                     "-d", str(tree), str(root)], check=True)
-    config = tree / "boot/mojt/grub.cfg"
-    subprocess.run(["grub-script-check", str(config)], check=True)
-    stub = work / "grub-embedded.cfg"
-    stub.write_text(terminal(console) + f"if search --no-floppy --fs-uuid --set=mojt_root {root_uuid}; then\n"
-                    "    set root=$mojt_root\n"
-                    "    configfile ($mojt_root)/boot/mojt/grub.cfg\nfi\n"
-                    "echo 'Mojt boot filesystem not found'\nhalt\n", encoding="ascii")
-    subprocess.run(["grub-script-check", str(stub)], check=True)
-    efi = work / "EFI/BOOT"
-    efi.mkdir(parents=True)
-    loader = efi / "BOOTX64.EFI"
-    subprocess.run(["grub-mkstandalone", "-O", "x86_64-efi", "--modules=" + GRUB_MODULES,
-                    "--locales=", "--fonts=", "-o", str(loader),
-                    "boot/grub/grub.cfg=" + str(stub)], check=True)
+    loader = efi_loader(tree / "boot/mojt/grub.cfg", work, root_uuid, console)
     fat = work / "mojt.fat"
     with fat.open("xb") as stream:
         stream.truncate(parts["esp_bytes"])

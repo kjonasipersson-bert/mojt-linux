@@ -205,7 +205,7 @@ packages="packages.txt"
                 os.readlink(path) if path.is_symlink() else artifact.file_sha(path) if path.is_file() else None)
                 for source in sources for path in (source, *source.rglob("*"))}
 
-    def synthetic_build(self, corrupt=None, *, finalize_tree=None):
+    def synthetic_build(self, corrupt=None, *, finalize_tree=None, filesystem_uuid=None, filesystem_writer=None):
         vm = fixtures.vm
         original = vm.make_initramfs
         def ramfs(root, *args, **kwargs):
@@ -237,7 +237,10 @@ packages="packages.txt"
                 mock.patch.object(vm.boot, "build_disk", side_effect=disk), \
                 mock.patch.object(vm, "make_initramfs", side_effect=ramfs), \
                 contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            return native.build(self.args, vm=vm, finalize_tree=finalize_tree)
+            options = {}
+            if filesystem_writer is not None:
+                options.update(filesystem_uuid=filesystem_uuid,filesystem_writer=filesystem_writer)
+            return native.build(self.args, vm=vm, finalize_tree=finalize_tree, **options)
 
     def test_real_input_preview_creates_no_output_import_or_state(self):
         self.args.dry_run = True

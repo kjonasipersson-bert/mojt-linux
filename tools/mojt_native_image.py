@@ -388,7 +388,8 @@ def complete(tree, result, context, *, base, selected_system, root_uuid, console
     (result / "kernel-plan-request.json").write_bytes(artifact.canonical(request) + b"\n")
 
 
-def build(args, vm=None, *, finalize_tree=None, preflight=None):
+def build(args, vm=None, *, finalize_tree=None, preflight=None,
+          filesystem_uuid=None, filesystem_writer=None):
     # Fresh image defaults must be traversable independently of the host's
     # private lab mask. Temporary workspaces and credentials have explicit modes.
     previous = os.umask(0o022)
@@ -396,12 +397,16 @@ def build(args, vm=None, *, finalize_tree=None, preflight=None):
         options={}
         if finalize_tree is not None:options['finalize_tree']=finalize_tree
         if preflight is not None:options['preflight']=preflight
+        if filesystem_writer is not None:
+            options.update(filesystem_uuid=filesystem_uuid,filesystem_writer=filesystem_writer)
+        elif filesystem_uuid is not None:raise ValueError('filesystem UUID requires a mounted target writer')
         return _build(args,vm,**options)
     finally:
         os.umask(previous)
 
 
-def _build(args, vm=None, *, finalize_tree=None, preflight=None):
+def _build(args, vm=None, *, finalize_tree=None, preflight=None,
+           filesystem_uuid=None, filesystem_writer=None):
     evidence = preview(args)
     require(not getattr(args,'hardware_profile',None) or finalize_tree is not None,'native hardware images require mbt bootstrap')
     if args.dry_run:
@@ -462,7 +467,24 @@ def _build(args, vm=None, *, finalize_tree=None, preflight=None):
             firmware_root=firmware_root, system_payload=payload, disk_size_mib=args.disk_size_mib, login_mode=args.login_mode,
             root_shell="/run/mojt-system/bin/bash", base_generation=base, system_generation=args.system_generation,
             additional_generations=None, native_context=context, with_build_tools=getattr(args,"with_build_tools",False))
-        if finalize_tree is None:vm.build(options)
+        if getattr(args,'with_installer_inputs',False):
+            from mojt_bootstrap_inputs import write
+            kit = work/'installer-inputs'
+            write(kit,archive=frozen,bounds=evidence['bounds'],registry=registry,payload=payload,
+                  busybox=busybox,firmware=firmware_root,args=args)
+            options.installer_inputs = kit
+        if filesystem_writer is not None:
+            require(finalize_tree is not None,'mounted target requires native-v2 finalization')
+            completed=[]
+            def consume(**values):
+                execution=Path(__file__).resolve().parents[1]/'mbt-execution.json'
+                if execution.is_file():shutil.copyfile(execution,values['result']/'builder-runtime.json')
+                completed.append(filesystem_writer(**values))
+            def finish(**values):return finalize_tree(base_package=frozen,**values)
+            vm.build(options,finalize_tree=finish,filesystem_uuid=filesystem_uuid,filesystem_writer=consume)
+            require(len(completed)==1,'mounted writer did not complete exactly once')
+            return completed[0]
+        elif finalize_tree is None:vm.build(options)
         else:
             def finish(**values):return finalize_tree(base_package=frozen,**values)
             vm.build(options,finalize_tree=finish)
@@ -489,10 +511,20 @@ def _build(args, vm=None, *, finalize_tree=None, preflight=None):
     return result
 
 
-def parser(prog=None):
-    parser = argparse.ArgumentParser(prog=prog,description=__doc__)
-    for name in ("base-package", "base-context", "kernel-registry", "system-payload", "output"):
+def parser(prog=None, *, mounted=False):
+    parser = argparse.ArgumentParser(prog=prog,description=__doc__,allow_abbrev=False)
+    for name in ("base-package", "base-context", "kernel-registry", "system-payload"):
         parser.add_argument("--" + name, type=Path, required=True)
+    if mounted:
+        parser.add_argument('--inputs',type=Path,help='closed local installer input directory; cannot mix bound input flags')
+        parser.add_argument('--with-installer-inputs',action='store_true',help='carry reusable local installation inputs in the new installation')
+        destination=parser.add_mutually_exclusive_group(required=True)
+        destination.add_argument('--output',type=Path,help='new disk-image output directory')
+        destination.add_argument('--target-root',type=Path,help='empty mounted ext4 target partition')
+        parser.add_argument('--efi-directory',type=Path,help='empty mounted FAT32 ESP on the same GPT disk')
+        parser.add_argument('--expected-root-uuid',help='required filesystem identity for mounted writes')
+        parser.add_argument('--expected-efi-partuuid',help='required GPT ESP identity for mounted writes')
+    else:parser.add_argument('--output',type=Path,required=True)
     for name in ("base-artifact", "kernel-artifact", "system-generation"):
         parser.add_argument("--" + name, required=True)
     parser.add_argument("--busybox", type=Path, default=Path("/usr/bin/busybox"))

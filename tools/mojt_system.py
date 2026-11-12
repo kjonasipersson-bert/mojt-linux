@@ -88,7 +88,7 @@ MPM_FILES = (
 # environments; this code list is inventoried as part of the System profile.
 MBT_FILES = ('mbt','mbt_cli.py','mojt-build-env.py','mojt-kernel-build.py',
              'mojt-artifact-pack.py','mojt_system_package.py','mojt_bootstrap.py','mojt-privileged-setup.py',
-             'mbt_runtime.py','mojt-console-size.py')
+             'mbt_runtime.py','mojt-console-size.py','mojt_mounted_install.py','mojt_bootstrap_inputs.py')
 # Fixed assembly inputs at their repository-relative paths, so an installed
 # builder can assemble its successor without carrying a checkout.
 MBT_SOURCE_FILES = ('tests/check-mojt-system.sh','manifests/mpm-release-example.json',
@@ -637,7 +637,7 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
                   'exec '+python+
                   ' -I -B /run/mojt-system/tools/mbt "$@"\n',0o755)
             write(system / 'mbt-runtime.json',json.dumps(dict(format='mojt-mbt-runtime-v1',python=python,
-                  files=list(MBT_FILES),source_files=list(MBT_SOURCE_FILES),syntax='experimental',scope='environment, Kernel build, packaging and fresh native-v2 image bootstrap'),indent=2)+'\n')
+                  files=list(MBT_FILES),source_files=list(MBT_SOURCE_FILES),syntax='experimental',scope='environment, Kernel build, packaging and fresh native-v2 image or mounted-target bootstrap'),indent=2)+'\n')
             write(system / 'share/mbt/kernel-first-build.json',(repo / 'manifests/kernel-first-build.json').read_text())
         helper = retained_command(payload, record, "zstd")
         tar_helper = retained_command(payload, record, "tar")
