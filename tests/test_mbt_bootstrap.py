@@ -171,6 +171,15 @@ class ConstructionTests(unittest.TestCase):
         f.args.firmware_root=hw.firmware();f.args.with_build_tools=True
         if mounted:
             f.args.with_installer_inputs=True;f.args.system_version='0.2';f.args.system_revision=1
+            # Real exports contain absolute guest links even without host Nix.
+            record=base.read(source.payload/'system.json')
+            python_output=record['packages']['python']['output']
+            python_tree=source.payload/python_output.lstrip('/')
+            (python_tree/'lib').mkdir()
+            (python_tree/'lib/guest-runtime').symlink_to(record['packages']['shell']['output']+'/bin/bash')
+            for item in record['objects']:
+                if item['path']==python_output:item['tree_sha256']=bootstrap.paths.tree_hash(python_tree)
+            (source.payload/'system.json').write_text(json.dumps(record))
         firmware_before=bootstrap.paths.tree_hash(f.args.firmware_root)
         real_run=subprocess.run;which=shutil.which;tar=which('tar');seen=[]
         def finish(*,tree,result,base_package):
@@ -245,6 +254,7 @@ class ConstructionTests(unittest.TestCase):
                 self.assertFalse((target/installer.MARKER).exists())
                 kit,record=kits.read(target/kits.LOCATION)
                 self.assertEqual(record['base'],f.base['id']);self.assertEqual(record['kernel'],f.kernel['id'])
+                self.assertTrue((kit/'system-payload'/python_output.lstrip('/')/'lib/guest-runtime').is_symlink())
                 self.assertTrue((target/'state/var/lib/mojt/mounted-builder-runtime.json').is_file())
                 self.assertFalse((target/'disk.img').exists())
                 return

@@ -40,9 +40,35 @@ class PortableInputsTests(unittest.TestCase):
                                     system_generation='system-installer', system_version='0.2',
                                     system_revision=1, with_build_tools=True, hardware_profile=None)
         self.kit = self.root/'kit'
-        self.record = kits.write(self.kit, archive=self.root/'archive', bounds={'exact':'fixture'},
+        self.record = self.write_kit(self.kit)
+
+    def write_kit(self, destination):
+        return kits.write(destination, archive=self.root/'archive', bounds={'exact':'fixture'},
                                  registry=self.root/'registry', payload=self.root/'payload',
                                  busybox=self.root/'busybox', firmware=None, args=self.args)
+
+    def test_exported_guest_links_are_preserved_without_a_host_nix_store(self):
+        target = '/nix/store/'+'c'*32+'-guest-runtime/lib/libc.so.6'
+        source = self.root/'payload'
+        (source/'guest-library').symlink_to(target)
+        (source/'guest-directory').symlink_to(target.rsplit('/',1)[0])
+        before = kits.paths.tree_hash(source)
+        destination = self.root/'linked-kit'
+        record = self.write_kit(destination)
+        directory, checked = kits.read(destination)
+        self.assertEqual(checked,record)
+        self.assertEqual(os.readlink(directory/'system-payload/guest-library'),target)
+        self.assertTrue((directory/'system-payload/guest-directory').is_symlink())
+        self.assertEqual(kits.paths.tree_hash(source),before)
+        link = directory/'system-payload/guest-library'
+        link.unlink(); link.symlink_to('/etc/passwd')
+        with self.assertRaisesRegex(ValueError,'input changed'):kits.read(destination)
+
+    def test_registry_links_still_cannot_escape_their_resource(self):
+        secret = self.root/'host-secret'; secret.write_text('host-only bytes')
+        (self.root/'registry/outside').symlink_to(secret)
+        with self.assertRaisesRegex(ValueError,'link escapes'):
+            self.write_kit(self.root/'unsafe-kit')
 
     def test_closed_inputs_expand_fixed_paths_and_preserve_explicit_target_and_label(self):
         details = {}

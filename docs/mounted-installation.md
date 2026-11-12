@@ -52,6 +52,10 @@ write. Retain the accepted original VM and its build outputs.
 binds the Base archive/context, exact installed Kernel registry, System export,
 static BusyBox, optional firmware/licenses and reviewed bootstrap defaults.
 Each resource has a transfer digest; the descriptor has a content identity.
+System-export symlinks are inventoried and copied literally as guest data;
+they are never resolved against the builder host. Creating/reading the kit
+does not require a host `/nix` or Nix installation. The existing System reader
+retains its guest-path validation when consuming the export.
 The kit includes neither a source checkout nor the installer machine's account
 state or passwords. Hashes are integrity evidence, not publisher authentication.
 The System export is deliberately retained as a bootstrap input; this is not

@@ -19,6 +19,19 @@ BOUND = {'--base-package', '--base-artifact', '--base-context', '--kernel-regist
 require = artifact.require
 
 
+def resource_hash(directory, name):
+    path = directory/name
+    tree = name in ('kernel-registry','system-payload','firmware')
+    require(not path.is_symlink() and (path.is_dir() if tree else path.is_file()),
+            'invalid installer resource type: '+name)
+    if tree and name != 'system-payload':hardware.checked_tree(path)
+    # A System export contains guest-rooted links, including /nix/store links.
+    # Inventory their literal text without resolving against the host. The
+    # System reader interprets guest paths when verifying/constructing inputs.
+    # tree_hash also rejects special files and never follows directory links.
+    return paths.tree_hash(path)
+
+
 def write(destination, *, archive, bounds, registry, payload, busybox, firmware, args):
     """Only frozen artifacts/provider inputs are copied; never host account state."""
     destination.mkdir(mode=0o755)
@@ -28,9 +41,8 @@ def write(destination, *, archive, bounds, registry, payload, busybox, firmware,
     shutil.copytree(payload, destination/'system-payload', symlinks=True)
     shutil.copyfile(busybox, destination/'busybox'); (destination/'busybox').chmod(0o755)
     if firmware is not None:shutil.copytree(firmware, destination/'firmware', symlinks=True)
-    hardware.checked_tree(destination)
     names = REQUIRED | ({'firmware'} if firmware is not None else set())
-    body = dict(format=FORMAT, resources={name:paths.tree_hash(destination/name) for name in sorted(names)},
+    body = dict(format=FORMAT, resources={name:resource_hash(destination,name) for name in sorted(names)},
                 base=args.base_artifact, kernel=args.kernel_artifact,
                 defaults=dict(system_generation=args.system_generation, system_version=args.system_version,
                               system_revision=args.system_revision, with_build_tools=args.with_build_tools,
@@ -55,9 +67,8 @@ def read(directory):
             'unsupported installer resources')
     require({p.name for p in directory.iterdir()} == set(value['resources'])|{'inputs.json'},
             'unexpected or missing installer input')
-    hardware.checked_tree(directory)
     for name, expected in value['resources'].items():
-        require(type(expected) is str and paths.tree_hash(directory/name) == expected,
+        require(type(expected) is str and resource_hash(directory,name) == expected,
                 'installer input changed: ' + name)
     defaults = value['defaults']
     artifact.fields(defaults, ('system_generation','system_version','system_revision','with_build_tools','hardware_profile'))
