@@ -33,6 +33,18 @@ class ReviewTests(unittest.TestCase):
         candidate = manifests.create(d);before = copy.deepcopy((old, candidate))
         self.assertTrue(transition.tooling_review(old, candidate)['description']['compatible'])
         self.assertEqual((old, candidate), before)
+        builder = copy.deepcopy(candidate['description'])
+        builder['profile'].update({'bin/mbt':{'sha256':'f'*64,'mode':0o755},
+            'mbt-runtime.json':{'sha256':'f'*64,'mode':0o644},
+            'share/mbt':{'directory':True,'mode':0o755},
+            'share/mbt/kernel-first-build.json':{'sha256':'f'*64,'mode':0o644},
+            'share/man/man1/mbt.1':{'sha256':'f'*64,'mode':0o644}})
+        builder['profile'].update({name:{'sha256':'e'*64,'mode':0o644} for name in transition.paths.MBT_SOURCE_FILES})
+        builder['profile'].update({name:{'directory':True,'mode':0o755} for name in ('man','manifests')})
+        self.assertTrue(transition.tooling_review(old,manifests.create(builder))['description']['compatible'])
+        self.assertTrue(transition.tooling_review(manifests.create(builder),old)['description']['compatible'])
+        unreviewed=copy.deepcopy(builder);unreviewed['profile']['manifests/extra.json']={'sha256':'e'*64,'mode':0o644}
+        self.assertFalse(transition.tooling_review(old,manifests.create(unreviewed))['description']['compatible'])
         d['profile']['setup']['sha256'] = 'd'*64
         report = transition.tooling_review(old, manifests.create(d))['description']
         self.assertFalse(report['compatible']);self.assertIn('setup', report['blockers'])

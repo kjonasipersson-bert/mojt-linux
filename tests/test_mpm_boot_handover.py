@@ -80,6 +80,9 @@ class PreparationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'state layout'):handover.check(root,source,proof,contract,verify_content=False)
         layout.write_bytes(original)
         work=f.f.f.fixture.work;newroot=work/'failure-newroot';newroot.mkdir()
+        # Exercise the optional, already checked System firmware projection with
+        # the same failed-mount fixture; do not build another provider matrix.
+        firmware=work/'firmware';firmware.mkdir();context['firmware']=firmware
         runtime=work/'fake-exitrd';(runtime/'bin').mkdir(parents=True)
         (runtime/'bin/busybox').write_bytes(b'fixture');(runtime/'shutdown').write_text('fixture')
         for name in ('dev','proc','sys'):(runtime/name).mkdir()
@@ -96,6 +99,10 @@ class PreparationTests(unittest.TestCase):
             handover._enter(root,context,{'deployment':'sha256:'+'0'*64},runner=runner,
                             execute=lambda *args:executed.append(args),newroot=newroot,runtime=runtime)
         self.assertFalse(executed)
+        self.assertIn(['mount','--bind',str(firmware),str(newroot/'usr/lib/firmware')],calls)
+        self.assertIn(['mount','-o','remount,bind,ro',str(firmware),str(newroot/'usr/lib/firmware')],calls)
+        self.assertEqual((newroot/'run/systemd/system/usr-lib-firmware.mount.d/10-mojt-exitrd.conf').read_text(),
+                         '[Unit]\nDefaultDependencies=no\n')
         self.assertIn(['mount','--move',str(newroot/'proc'),str(runtime/'proc')],calls)
         self.assertIn(['mount','--move',str(newroot/'dev'),str(runtime/'dev')],calls)
         self.assertEqual(calls[-1],['mount','-o','remount,ro',str(root)])

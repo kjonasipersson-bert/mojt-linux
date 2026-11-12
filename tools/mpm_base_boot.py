@@ -113,7 +113,7 @@ def boot_tree(root, identifier, stage, tool):
     for name in ('dev', 'proc', 'sys', 'etc', 'var', 'home', 'root'):
         point = system.virtual_file(target, '/' + name)
         require(point.is_dir(), 'Base lacks required mountpoint: /' + name)
-    for name, mode in (('run', 0o755), ('tmp', 0o1777), ('nix', 0o755), ('lib/modules', 0o755)):
+    for name, mode in (('run', 0o755), ('tmp', 0o1777), ('nix', 0o755), ('lib/modules', 0o755), ('lib/firmware', 0o755)):
         point = system.virtual_file(target, '/' + name)
         require(point == target or target in point.parents, 'boot mountpoint escapes Base')
         if not point.exists():

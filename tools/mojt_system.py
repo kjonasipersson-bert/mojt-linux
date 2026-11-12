@@ -84,6 +84,16 @@ MPM_FILES = (
     "mojt_hardware.py", "mojt_generations.py", "mojt_accounts.py", "mojt-system-inspect.py",
     "mpm-nix-prototype", "mpm-nix-catalog.py",
 )
+# Optional builder entrypoints. Compilers remain in separately pinned private
+# environments; this code list is inventoried as part of the System profile.
+MBT_FILES = ('mbt','mbt_cli.py','mojt-build-env.py','mojt-kernel-build.py',
+             'mojt-artifact-pack.py','mojt_system_package.py','mojt_bootstrap.py','mojt-privileged-setup.py',
+             'mbt_runtime.py','mojt-console-size.py')
+# Fixed assembly inputs at their repository-relative paths, so an installed
+# builder can assemble its successor without carrying a checkout.
+MBT_SOURCE_FILES = ('tests/check-mojt-system.sh','manifests/mpm-release-example.json',
+                    'manifests/kernel-first-build.json','man/mpm.1','man/mbt.1')
+
 BASH_RC = r'''# Mojt System interactive Bash defaults; user startup files may override these.
 case $- in *i*) ;; *) return 0 ;; esac
 [ -n "${BASH_VERSION-}" ] || return 0
@@ -428,23 +438,25 @@ def unit(description, executable_path, extra="", dependencies=""):
 
 
 def install(tree, payload, record, busybox, login_mode, repo, console="serial", hardware_profile=None,
-            generation=None):
+            generation=None, with_build_tools=False):
     """Install only into a NEW copied VM tree. Original Base/state stay intact."""
     # Public runtime paths must not inherit a private build workspace's umask.
     # Private state (history, passwords, homes) keeps its explicit modes, and
     # the caller's policy is restored even when fresh assembly fails.
     previous = os.umask(0o022)
     try:
-        return _install(tree,payload,record,busybox,login_mode,repo,console,hardware_profile,generation)
+        return _install(tree,payload,record,busybox,login_mode,repo,console,hardware_profile,generation,with_build_tools)
     finally:os.umask(previous)
 
 
-def _install(tree, payload, record, busybox, login_mode, repo, console, hardware_profile, generation):
+def _install(tree, payload, record, busybox, login_mode, repo, console, hardware_profile, generation, with_build_tools):
     step = record["step"]
+    require(type(with_build_tools) is bool and (not with_build_tools or step >= 3), "builder tools require System step 3+ management runtime")
     require(step < 10 or login_mode == "password", "account stage requires password login")
     require(console in ("serial", "local"), "unsupported console")
     require(hardware_profile in (None, "thinkpad-x1-carbon-3"), "unsupported hardware profile")
     key = VERSION + "-step" + str(step)
+    if with_build_tools:key += "-builder"
     if hardware_profile:
         key += "-" + hardware_profile
     if generation is not None:
@@ -616,6 +628,17 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
         write(system / "bin/mpm", "#!/bin/sh\n"
               "PATH=/run/mojt-system/bin:/usr/bin:/bin\nexport PATH\nexec " + python +
               ' -I -B /run/mojt-system/tools/mpm-system "$@"\n', 0o755)
+        if with_build_tools:
+            for name in MBT_FILES:
+                write(system / 'tools' / name,(repo / 'tools' / name).read_text(),0o644)
+            for name in MBT_SOURCE_FILES:
+                write(system / name,(repo / name).read_text(),0o644)
+            write(system / 'bin/mbt','#!/bin/sh\n'
+                  'exec '+python+
+                  ' -I -B /run/mojt-system/tools/mbt "$@"\n',0o755)
+            write(system / 'mbt-runtime.json',json.dumps(dict(format='mojt-mbt-runtime-v1',python=python,
+                  files=list(MBT_FILES),source_files=list(MBT_SOURCE_FILES),syntax='experimental',scope='environment, Kernel build, packaging and fresh native-v2 image bootstrap'),indent=2)+'\n')
+            write(system / 'share/mbt/kernel-first-build.json',(repo / 'manifests/kernel-first-build.json').read_text())
         helper = retained_command(payload, record, "zstd")
         tar_helper = retained_command(payload, record, "tar")
         require(tar_helper is not None, "missing retained GNU tar helper")
@@ -780,6 +803,7 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
         export("man", "man-db", "bin/man")
         export("manpath", "man-db", "bin/manpath")
         write(system / "share/man/man1/mpm.1", (repo / "man/mpm.1").read_text())
+        if with_build_tools:write(system / "share/man/man1/mbt.1",(repo / "man/mbt.1").read_text())
         write(system / "manual-path", ":".join(["/run/mojt-system/share/man"] + manual_paths(payload, record)) + "\n")
         write(system / "zoneinfo-path", record["packages"]["tzdata"]["output"] + "/share/zoneinfo\n")
     if step >= 10:

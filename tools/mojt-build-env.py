@@ -19,7 +19,7 @@ ROLES = {
     "python": ("python3", ["python3"]),
     "shell": ("bash", ["bash"]),
     "git": ("git", ["git"]),
-    "coreutils": ("coreutils", ["cp", "du", "mkdir", "rm", "cat", "chmod", "sha256sum", "env", "dirname", "basename", "readlink", "realpath", "head", "tail", "sort", "tr", "cut", "touch", "install", "mktemp", "ln", "ls", "stat", "id", "truncate", "sync"]),
+    "coreutils": ("coreutils", ["chroot", "cp", "du", "mkdir", "rm", "cat", "chmod", "sha256sum", "env", "dirname", "basename", "readlink", "realpath", "head", "tail", "sort", "tr", "cut", "touch", "install", "mktemp", "ln", "ls", "stat", "id", "truncate", "sync"]),
     "findutils": ("findutils", ["find", "xargs"]),
     "grep": ("gnugrep", ["grep"]),
     "sed": ("gnused", ["sed"]),
@@ -29,7 +29,7 @@ ROLES = {
     "zstd": ("zstd", ["zstd"]),
     "kmod": ("kmod", ["modprobe", "depmod"]),
     "e2fsprogs": ("e2fsprogs", ["mkfs.ext4", "e2fsck", "debugfs"]),
-    "util-linux": ("util-linux", ["sfdisk", "fallocate"]),
+    "util-linux": ("util-linux", ["sfdisk", "fallocate", "unshare", "mount", "umount"]),
     "dosfstools": ("dosfstools", ["mkfs.vfat"]),
     "mtools": ("mtools", ["mcopy"]),
     "grub": ("grub2_efi", ["grub-mkstandalone", "grub-script-check"]),
@@ -291,8 +291,8 @@ def prepare(args, nix=None):
         raise
 
 
-def main(argv=None):
-    p=argparse.ArgumentParser(description=__doc__)
+def main(argv=None, *, prog=None):
+    p=argparse.ArgumentParser(prog=prog,description=__doc__)
     p.add_argument("--profile", choices=("image", "kernel"), default="image")
     p.add_argument("--source-manifest",type=Path,required=True)
     p.add_argument("--output",type=Path,required=True)

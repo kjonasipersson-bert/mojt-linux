@@ -106,6 +106,17 @@ class HardwareTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "7265"):
             hw.firmware_inputs(root)
 
+    def test_native_inputs_are_frozen_without_copying_an_extracted_distribution_kernel(self):
+        root=self.firmware();system.write(root/'boot/vmlinuz-unrelated','not a bootstrap input')
+        expected=hw.input_identity(root,'test',system)
+        copied=self.root/'frozen';hw.freeze_inputs(root,copied,'test',system,expected)
+        self.assertEqual(hw.input_identity(copied,'test',system),expected)
+        self.assertFalse((copied/'boot').exists())
+        (root/'usr/lib/firmware/iwlwifi-7265D-29.ucode').write_text('changed')
+        with self.assertRaisesRegex(ValueError,'changed after preview'):
+            hw.freeze_inputs(root,self.root/'retry','test',system,expected)
+        self.assertFalse((self.root/'retry').exists())
+
     def test_special_files_and_escaping_links_are_rejected(self):
         root = self.root / "tree"
         root.mkdir()

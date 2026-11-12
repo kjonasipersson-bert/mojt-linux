@@ -41,6 +41,22 @@ def bound(source, data=b'opaque constructor output', image_size=10):
 
 
 class Records(unittest.TestCase):
+    def test_hardware_console_and_machine_profile_are_bound_and_cannot_mix_with_vm_entries(self):
+        source=fixture();d=copy.deepcopy(source['description'])
+        d['boot'].update(console='local',profile=model.HARDWARE_PROFILE)
+        hardware=bound(record(model.INPUTS,d));vm=bound(source)
+        choice=record(model.SELECTION,dict(installation=d['installation'],selected=hardware['id'],previous=None,
+            requests=[dict(area=a,state=None) for a in ('base','kernel','system')],
+            entries=[dict(deployment=hardware['id'],path=model.slot(hardware['id']))]))
+        menu=model.render(choice,{hardware['id']:hardware})
+        self.assertIn(b'console=ttyS0,115200 console=tty0',menu)
+        self.assertIn(b'terminal_input console serial',menu)
+        self.assertEqual(model.parse_menu(menu,{hardware['id']:hardware}),choice)
+        mixed=copy.deepcopy(choice['description']);mixed['entries'].append(dict(deployment=vm['id'],path=model.slot(vm['id'])))
+        mixed['entries'].sort(key=lambda row:row['deployment'])
+        with self.assertRaisesRegex(ValueError,'mixes machine'):
+            model.render(record(model.SELECTION,mixed),{vm['id']:vm,hardware['id']:hardware})
+
     def test_boot_evidence_has_inventory_bounds_without_changing_request_policy_or_ids(self):
         import mpm_requests as requests
         small=dict(installation='1'*32,names=['a','b'],unicode='\u00e5',enabled=True)

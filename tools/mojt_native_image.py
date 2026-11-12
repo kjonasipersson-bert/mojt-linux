@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """Fresh serial UEFI images from verified native Base and installed Kernel inputs."""
 import argparse
+import errno
 import gzip
 import hashlib
 import importlib.util
@@ -16,15 +17,31 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import uuid
 from types import SimpleNamespace
 
 import mojt_artifact as artifact
 import mojt_boot as boot
 import mojt_system as system
+import mojt_hardware as hardware
 import mojt_system_manifest as manifest_model
 import mpm_catalog as catalog
 import mpm_deployment as deployment
 import mpm_kernel as kernel
+import mpm_transaction as transaction
+
+WORK_PARENT = Path('/var/tmp')
+
+
+def transfer_image(source, destination):
+    """Stage the completed image on its output filesystem before publication."""
+    require(not os.path.lexists(destination),'image staging destination already exists')
+    try:source.rename(destination)
+    except OSError as error:
+        if error.errno != errno.EXDEV:raise
+        # Preserve sparse disks across filesystems; shutil.move/copytree can
+        # allocate every hole in a large virtual disk. Source stays private.
+        subprocess.run(['cp','-a','--sparse=always','--reflink=auto','--',str(source),str(destination)],check=True)
 
 MAX_INITRAMFS = 256 * 1024**2
 INPUTS_FORMAT = "mojt-native-image-inputs-v2"
@@ -67,12 +84,21 @@ def preview(args):
     require(source == source.resolve(), "System payload path must not traverse symlinks")
     payload_record = system.load_payload(source)
     require(payload_record["step"] >= 6, "native image requires System step 6+ kmod integration")
+    physical = getattr(args,'hardware_profile',None)
+    firmware = getattr(args,'firmware_root',None)
+    require(physical in (None,hardware.PROFILE),'unsupported hardware profile')
+    require(not firmware or physical,'--firmware-root requires --hardware-profile')
+    require(not physical or args.login_mode == 'password','hardware profile requires password login')
+    if firmware is not None:require(firmware.absolute() == firmware.resolve(),'firmware root must not traverse symlinks')
+    hardware_record = hardware.input_identity(firmware,candidate['metadata']['kernel_release'],system) if physical else None
     boot.generation(args.system_generation)
     output = Path(os.path.abspath(args.output))
     require(output == output.resolve() and not os.path.lexists(output), "output must be a new nonsymlink directory")
     require(not any(output == p or p in output.parents or output in p.parents for p in (root, source, package)),
             "output must be separate from all input trees/files")
-    return dict(base=body, kernel=candidate, bounds=bounds, system_record=payload_record,
+    if firmware is not None:require(output != firmware and firmware not in output.parents and output not in firmware.parents,
+                                  'output must be separate from hardware inputs')
+    return dict(base=body, kernel=candidate, bounds=bounds, system_record=payload_record,hardware=hardware_record,
                 source_archive=dict(sha256=artifact.file_sha(package), size=package.stat().st_size),
                 kernel_installation_digest=artifact.digest(record), kernel_acquisition=record.get("acquisition"))
 
@@ -194,6 +220,8 @@ def check_base_copy(root, original):
     module_point = system.virtual_file(root, "/lib/modules").relative_to(root)
     allowed = {"home", "root", "nix", "run", "tmp", str(module_point),
                *(str(p) for p in module_point.parents if str(p) != ".")}
+    firmware_point = system.virtual_file(root,'/lib/firmware').relative_to(root)
+    allowed.update({str(firmware_point),*(str(p) for p in firmware_point.parents if str(p) != '.')})
     extra = sorted(set(actual) - set(original))
     require(all(name in allowed and actual[name]["type"] == "directory" for name in extra),
             "unexpected addition to immutable Base")
@@ -360,29 +388,41 @@ def complete(tree, result, context, *, base, selected_system, root_uuid, console
     (result / "kernel-plan-request.json").write_bytes(artifact.canonical(request) + b"\n")
 
 
-def build(args, vm=None):
+def build(args, vm=None, *, finalize_tree=None, preflight=None):
     # Fresh image defaults must be traversable independently of the host's
     # private lab mask. Temporary workspaces and credentials have explicit modes.
     previous = os.umask(0o022)
     try:
-        return _build(args, vm)
+        options={}
+        if finalize_tree is not None:options['finalize_tree']=finalize_tree
+        if preflight is not None:options['preflight']=preflight
+        return _build(args,vm,**options)
     finally:
         os.umask(previous)
 
 
-def _build(args, vm=None):
+def _build(args, vm=None, *, finalize_tree=None, preflight=None):
     evidence = preview(args)
+    require(not getattr(args,'hardware_profile',None) or finalize_tree is not None,'native hardware images require mbt bootstrap')
     if args.dry_run:
         return dict(format="mojt-native-image-preview-v1", base=evidence["base"]["id"],
                     kernel=evidence["kernel"]["id"], imports=False, image_written=False)
     require(os.geteuid() == 0, "image assembly requires root; use --dry-run for unprivileged preview")
+    if preflight is not None:preflight(evidence)
     if vm is None:
         spec = importlib.util.spec_from_file_location("native_vm_builder", Path(__file__).with_name("mojt-vm-build.py"))
         vm = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(vm)
     output = Path(os.path.abspath(args.output))
     output.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="mojt-native-inputs-") as work, \
+    if not os.path.lexists(WORK_PARENT):
+        transaction.protected_directory(WORK_PARENT,label='native build workspace')
+        WORK_PARENT.mkdir(mode=0o1777);WORK_PARENT.chmod(0o1777)
+    # MPM must never follow a root-owned target through a caller-owned home.
+    # Check the scratch parent's complete ancestry before creating any work.
+    work_parent = WORK_PARENT.resolve(strict=True)
+    transaction.protected_directory(work_parent/('.mojt-native-check-'+uuid.uuid4().hex),label='native build workspace')
+    with tempfile.TemporaryDirectory(prefix="mojt-native-inputs-",dir=work_parent) as work, \
             tempfile.TemporaryDirectory(prefix=".mojt-native-image-", dir=output.parent) as publish:
         work, publish = Path(work), Path(publish)
         frozen = work / "base.tar.zst"
@@ -407,29 +447,50 @@ def _build(args, vm=None):
         busybox = work / "busybox"
         shutil.copyfile(args.busybox, busybox)
         busybox.chmod(0o755)
+        firmware_root = None
+        if evidence['hardware'] is not None:
+            firmware_root = work/'firmware'
+            hardware.freeze_inputs(args.firmware_root,firmware_root,copied['metadata']['kernel_release'],system,evidence['hardware'])
         base = evidence["base"]["version"]["upstream"]
         context = dict(evidence, registry=str(registry), payload=str(obj / "payload"),
             source_kernel_installation_digest=evidence["kernel_installation_digest"],
             kernel_installation_digest=artifact.digest(installed),
             base_manifest=str(release / "payload/manifest.toml"), base_inventory=base_inventory(target / "base" / base))
-        options = SimpleNamespace(target=target, output=publish / "image", kernel=obj / "payload/boot" /
+        options = SimpleNamespace(target=target, output=work/'assembled-image' if finalize_tree is not None else publish/'image', kernel=obj / "payload/boot" /
             ("vmlinuz-" + copied["metadata"]["kernel_release"]), modules_dir=obj / "payload/lib/modules" /
-            copied["metadata"]["kernel_release"], busybox=busybox, boot_mode="uefi", hardware_profile=None,
-            firmware_root=None, system_payload=payload, disk_size_mib=args.disk_size_mib, login_mode=args.login_mode,
+            copied["metadata"]["kernel_release"], busybox=busybox, boot_mode="uefi", hardware_profile=getattr(args,'hardware_profile',None),
+            firmware_root=firmware_root, system_payload=payload, disk_size_mib=args.disk_size_mib, login_mode=args.login_mode,
             root_shell="/run/mojt-system/bin/bash", base_generation=base, system_generation=args.system_generation,
-            additional_generations=None, native_context=context)
-        vm.build(options)
+            additional_generations=None, native_context=context, with_build_tools=getattr(args,"with_build_tools",False))
+        if finalize_tree is None:vm.build(options)
+        else:
+            def finish(**values):return finalize_tree(base_package=frozen,**values)
+            vm.build(options,finalize_tree=finish)
         # Re-run the portable planner on the output files before publishing any result.
-        checked = deployment.plan(options.output / "kernel-plan-request.json", registry)
-        require(checked["no_change"] and not checked["boot_ready"], "native image plan differs")
+        if finalize_tree is None:
+            checked = deployment.plan(options.output / "kernel-plan-request.json", registry)
+            require(checked["no_change"] and not checked["boot_ready"], "native image plan differs")
+        else:
+            from mojt_bootstrap import inspect_result
+            checked = inspect_result(options.output,base_artifact=args.base_artifact,kernel_artifact=args.kernel_artifact)
+            execution=Path(__file__).resolve().parents[1]/'mbt-execution.json'
+            if execution.is_file():shutil.copyfile(execution,options.output/'builder-runtime.json')
+            staged = publish/'image'
+            transfer_image(options.output,staged)
+            require(inspect_result(staged,base_artifact=args.base_artifact,kernel_artifact=args.kernel_artifact) == checked,
+                    'copied native bootstrap result differs')
+            options.output = staged
         require(not os.path.lexists(output), "output appeared during build; not overwriting")
+        if finalize_tree is not None:vm.handoff_result(options.output)
         options.output.rename(output)
-    return dict(format="mojt-native-image-result-v1", output=str(output), base=evidence["base"]["id"],
+    result = dict(format="mojt-native-image-result-v1", output=str(output), base=evidence["base"]["id"],
                 kernel=evidence["kernel"]["id"], status="fresh image built; owner boot acceptance pending")
+    if finalize_tree is not None:result['bootstrap'] = checked
+    return result
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+def parser(prog=None):
+    parser = argparse.ArgumentParser(prog=prog,description=__doc__)
     for name in ("base-package", "base-context", "kernel-registry", "system-payload", "output"):
         parser.add_argument("--" + name, type=Path, required=True)
     for name in ("base-artifact", "kernel-artifact", "system-generation"):
@@ -437,8 +498,15 @@ def main(argv=None):
     parser.add_argument("--busybox", type=Path, default=Path("/usr/bin/busybox"))
     parser.add_argument("--disk-size-mib", type=int, default=8192)
     parser.add_argument("--login-mode", choices=("password", "development"), default="password")
+    parser.add_argument('--with-build-tools',action='store_true',help='include experimental MBT entrypoints in the new System')
+    parser.add_argument('--hardware-profile',choices=(hardware.PROFILE,),help='native-v2 local-console hardware profile; use mbt bootstrap')
+    parser.add_argument('--firmware-root',type=Path,help='extracted firmware and upstream licenses for the hardware profile')
     parser.add_argument("--dry-run", action="store_true")
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv=None):
+    args = parser().parse_args(argv)
     try:
         print(json.dumps(build(args), indent=2, sort_keys=True))
     except (OSError, ValueError, KeyError, TypeError, RecursionError, EOFError, tarfile.TarError, subprocess.CalledProcessError) as error:

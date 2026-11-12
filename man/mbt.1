@@ -1,0 +1,100 @@
+.\" Mojt Linux
+.\" Copyright (C) 2026 Jonas Persson
+.\" SPDX-License-Identifier: GPL-2.0-only
+.TH MBT 1 "2026-11-11" "Mojt Linux" "User Commands"
+.SH NAME
+mbt \- prepare private build tools and create Mojt build/package results
+.SH SYNOPSIS
+.B mbt env
+[--profile image|kernel] --source-manifest FILE --output DIRECTORY [--dry-run] [-y]
+.PP
+.B mbt build kernel
+--plan FILE --config FILE --config-sha256 SHA256 --environment DIRECTORY
+--output DIRECTORY [--source DIRECTORY] [--resume] [--jobs N] [--dry-run] [-y]
+.PP
+.B mbt package
+{kernel|base|system|pack|verify} ...
+.PP
+.B mbt bootstrap
+--base-package FILE --base-artifact ID --base-context FILE
+--kernel-registry DIRECTORY --kernel-artifact ID --system-payload DIRECTORY
+--system-generation NAME --output DIRECTORY [--system-version VERSION]
+[--system-revision N] [--with-build-tools] [--dry-run]
+[--hardware-profile thinkpad-x1-carbon-3 --firmware-root DIRECTORY]
+.SH DESCRIPTION
+Experimental interface for review. MBT delegates to the existing environment,
+Kernel build, native artifact and image tools. Use each command's --help for flags.
+Building and packaging do not install or activate their result. Bootstrap uses
+MPM installation/deployment libraries on a new image. Existing-system updates
+belong to MPM. No command implicitly reboots or changes a global compiler.
+.SH COMMANDS
+.TP
+.B env
+Create a new private environment with pinned binary tools. The initial provider
+is Nix; the tool inventory and library closure are retained beside the environment.
+--dry-run previews without writing the environment or GC roots. No registry of
+names or separate plan command is needed. Keep a created environment in place.
+Acquisition follows provider-store permissions. Mojt's root-owned store currently
+needs an administrator to import tools; make that pinned environment readable by
+the ordinary builder. MBT does not grant store writes or start a provider daemon.
+.TP
+.B build kernel
+Compile a separate versioned Kernel and matching modules as an ordinary user.
+Source, configuration hash, policy and private environment remain explicit.
+--dry-run validates inputs without fetching sources, compiling or writing output.
+--resume requires the same verified inputs and an eligible incomplete workspace;
+it does not repair arbitrary failed output. No automatic privilege escalation.
+.TP
+.B package
+Create and independently verify a native archive from a complete build or
+retained release. Packaging revision and original build provenance are distinct.
+verify checks an existing archive without installing it. Packaging has no
+--dry-run option in this initial interface; it writes a new explicit output.
+.TP
+.B bootstrap
+Create a NEW regular UEFI/GPT native-v2 image with serial console and VirtIO.
+Requires verified exact Base/Kernel inputs, explicit Base compatibility bounds
+and an account-enabled step-10 System payload. --dry-run validates inputs without
+creating an image or registry. Actual creation requires root and an interactive
+terminal to set the new guest password. No automatic sudo or password flags.
+.PP
+The optional thinkpad-x1-carbon-3 profile selects local password login, USB/SATA
+storage and keyboard support, and graphics/network drivers. --firmware-root names
+an extracted Debian firmware root with Intel 7265 firmware, regulatory database
+and upstream licenses. Firmware/licenses become inventoried System content;
+complete modules remain in the exact native Kernel artifact. Both mounts are
+read-only. Existing-system updates preserve the bound hardware/console policy.
+Normal boot does not scan firmware content. Independent firmware artifacts and
+general firmware/service upgrade transitions are not implemented.
+.PP
+Installs Base/System and stages/selects the initial exact deployment through
+MPM libraries in a private directory before mkfs. Fixed manager code runs using
+the accepted System Python/Nix in private mount/PID namespaces. No archive hooks,
+host Nix database mutation or loop mapping is used. Result/selection and boot-file
+hashes must agree before publication; no direct-boot bypass is exposed.
+An existing image/installation cannot be adopted or a failed preparation resumed.
+This assembles prebuilt inputs; it does not rebuild the entire distribution.
+Preflight checks prepared manager code, host tool locations and static BusyBox
+before password entry. Root also probes private PID/mount namespace and chroot
+entry; ordinary-user preview explicitly reports this privileged probe as not run.
+This does not establish complete construction or guest boot acceptance.
+.SH DELIVERY
+Builder-enabled System images include the Python frontend, existing helper code,
+this manual, fixed assembly assets and a pinned Kernel recipe example. The
+installed builder can assemble its successor without a checkout. Compilers are acquired separately
+in private environments. Ordinary System compositions need not carry MBT.
+Public operations first copy the fixed code/assets to a private execution
+directory with explicit permissions, then start isolated System Python there.
+The source checkout and home permissions are unchanged. Temporary execution
+files are removed after completion; bootstrap retains their content identity
+and inventory as builder-runtime.json. SHA256 evidence is not authentication.
+The launcher preserves an explicitly selected private tool PATH; bootstrap
+refuses tools selected from the shared /var/lib/mojt/ports profile.
+.SH LIMITS
+Writing an image to a physical disk remains a separate explicit operation. The low-level
+image helper retains its legacy default; use mbt bootstrap for native-v2.
+There are no arbitrary recipes/hooks, saved-plan executor,
+named-environment registry, GC or source rebuild of the entire distribution.
+Runtime closure checks are not a universal libc/plugin compatibility guarantee.
+.SH SEE ALSO
+.BR mpm (1)

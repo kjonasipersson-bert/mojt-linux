@@ -8,6 +8,7 @@ from pathlib import Path
 
 import mojt_artifact as artifact
 import mojt_system as paths
+import mojt_hardware as hardware
 import mpm_base as base
 import mpm_boot_early as early
 import mpm_boot_inventory as inventory
@@ -206,7 +207,11 @@ def build(root, source, runtime_directory, busybox, work, *, bounds, adapters, h
         extra = tuple(sorted({'findfs','cat','env'} | (paths.SHUTDOWN_APPLETS-{'cp','ln'} if handover is not None else set())))
         vm.validate_busybox_applets(frozen_busybox,'password',extra=extra)
         payload = root/'kernel/installed'/d['kernel']['artifact'][7:]/'payload'
-        modules = vm.module_paths(d['kernel']['release'],payload/'lib/modules'/d['kernel']['release'],network=True)
+        module_tree = payload/'lib/modules'/d['kernel']['release']
+        if d['boot']['profile'] == model.HARDWARE_PROFILE:
+            vm.module_paths(d['kernel']['release'],module_tree,names=hardware.RUNTIME_MODULES)
+            modules = vm.module_paths(d['kernel']['release'],module_tree,names=hardware.EARLY_MODULES)
+        else:modules = vm.module_paths(d['kernel']['release'],module_tree,network=True)
         for module in modules:
             require(module == module.resolve() and payload/'lib/modules' in module.parents, 'early module outside exact Kernel tree')
         modules = decode_modules(modules,work/'decoded-modules')

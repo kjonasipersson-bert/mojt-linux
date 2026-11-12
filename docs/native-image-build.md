@@ -6,6 +6,13 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Fresh image from native Base and installed Kernel artifacts
 
+For the joined native-v2 bootstrap prototype, use
+[`mbt bootstrap`](mbt-minimal.md#fresh-native-v2-bootstrap). It reuses this
+assembler, finalizes installation/deployment in the private directory before
+mkfs, and publishes only a checked native-v2 image. The low-level
+`mojt-native-image.py` command described below retains its earlier legacy default.
+It is not the public bootstrap interface or an existing-disk updater.
+
 This experimental builder connects the merged [deployment planner](kernel-deployment-plan.md)
 to fresh serial UEFI image assembly. It consumes exact local Base/Kernel content,
 generates and inspects an initramfs, and records a complete deployment for the

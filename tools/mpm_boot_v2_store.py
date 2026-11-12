@@ -8,6 +8,7 @@ import stat
 import tempfile
 
 import mojt_artifact as artifact
+import mojt_hardware as hardware
 import mpm_base as base
 import mpm_boot_v2 as model
 import mpm_catalog as catalog
@@ -51,6 +52,7 @@ def audit_inputs(root, value, bounds, *, adapters=None):
     profile = system.realization_path(root, body['id']) / 'profile'
     manifest = base.read(profile / 'manifest.json')
     require(manifest['description']['label'] == d['system']['generation'], 'System generation label differs')
+    if d['boot']['profile'] == model.HARDWARE_PROFILE:hardware.native_firmware(profile)
     refs = system.retained_providers(root, body['id'])
     system.providers(root, refs, adapters, effect='verify')
     system.verify_links(profile, refs, adapters, manifest['description']['provenance'].get('runtime_outputs', []))

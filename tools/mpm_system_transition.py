@@ -42,9 +42,11 @@ def tooling_review(selected, candidate):
     changed = sorted(p for p in set(before) | set(after) if before.get(p) != after.get(p))
     blocked = []
     for path in changed:
-        allowed = (path.startswith(('tools/', 'tests/')) or path in ('tools', 'tests', 'bin/mpm', 'bin/mojt-system-inspect', 'share/man/man1/mpm.1')
+        allowed = (path.startswith(('tools/', 'tests/')) or path in ('tools', 'tests', 'bin/mpm', 'bin/mojt-system-inspect', 'bin/mbt', 'share/man/man1/mpm.1',
+                   'share/man/man1/mbt.1','mbt-runtime.json','share/mbt/kernel-first-build.json') + paths.MBT_SOURCE_FILES
                    or path.startswith('bin/') and path not in before and path in after
-                   or path in ('share', 'share/man', 'share/man/man1') and path not in before and after.get(path, {}).get('directory') is True)
+                   or path in ('share', 'share/man', 'share/man/man1') and path not in before and after.get(path, {}).get('directory') is True
+                   or path in ('share/mbt','man','manifests') and all(row is None or row.get('directory') is True for row in (before.get(path),after.get(path))))
         if path == 'version':
             allowed = after.get(path, {}).get('sha256') == hashlib.sha256((new['label'] + '\n').encode()).hexdigest()
         if not allowed:blocked.append(path)

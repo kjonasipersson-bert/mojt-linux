@@ -204,14 +204,14 @@ def build(args):
     print('Kernel and modules staged together; running kernel/Base/System not changed.')
 
 
-def main():
-    p=argparse.ArgumentParser(description=__doc__)
+def main(argv=None, *, prog=None):
+    p=argparse.ArgumentParser(prog=prog,description=__doc__)
     for name in ('plan','config','environment','output'):p.add_argument('--'+name,type=Path,required=True)
     p.add_argument('--source',type=Path,help='reuse a clean checkout at the pinned commit; no source fetch')
     p.add_argument('--resume',action='store_true',help='resume an incomplete pre-staging output with --source; revalidate inputs and regenerate config')
     p.add_argument('--config-sha256',required=True);p.add_argument('--jobs',type=int,default=2)
     p.add_argument('--dry-run',action='store_true');p.add_argument('-y','--yes',action='store_true')
-    args=p.parse_args()
+    args=p.parse_args(argv)
     try:build(args)
     except (ValueError,OSError,KeyError,TypeError,subprocess.CalledProcessError) as error:
         p.exit(1,'mojt-kernel-build: '+str(error)+'\nIncomplete new output is retained; never activate it.\n')

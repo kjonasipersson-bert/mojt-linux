@@ -19,6 +19,7 @@ BINDING = 'mojt-initramfs-binding-v2'
 DEPLOYMENT = 'mojt-boot-deployment-v2'
 SELECTION = 'mojt-boot-selection-v2'
 PROFILE = 'qemu-uefi-virtio-v1'
+HARDWARE_PROFILE = 'thinkpad-x1-carbon-3-v1'
 HEADER = '# Mojt native boot selection v2\n'
 MAX_BOOT = 256 * 1024 * 1024
 MAX_ENTRIES = 128
@@ -106,11 +107,11 @@ def inputs(value):
     require(len(components(k['upstream'])) in (2, 3), 'Kernel upstream must be numeric metadata')
     # Pad versions so 6.12 and 6.12.0 have the same numerical meaning.
     require(padded_version(b['kernel_min']) <= padded_version(k['upstream']) <= padded_version(b['kernel_max']), 'Kernel outside exact Base bounds')
-    require(d['firmware'] == [], 'firmware requirements are unsupported by this first native-v2 profile')
+    require(d['firmware'] == [], 'independent firmware artifacts are unsupported; hardware firmware belongs to System')
     require(d['state_requirements'] == [], 'state-schema requirements need a supported native-v2 handler')
     policy = d['boot'];artifact.fields(policy, ('root_uuid', 'console', 'profile', 'extra_args'))
     boot.fs_uuid(policy['root_uuid'])
-    require(policy['console'] == 'serial' and policy['profile'] == PROFILE, 'unsupported native-v2 boot profile')
+    require((policy['console'],policy['profile']) in (('serial',PROFILE),('local',HARDWARE_PROFILE)), 'unsupported native-v2 boot profile')
     arguments(policy['extra_args']);reference(d['constructor'])
     rows = d['management_required']
     require(type(rows) is list and len(rows) <= MAX_ENTRIES, 'unbounded management requirements')
@@ -188,7 +189,7 @@ def selection(value):
 
 def cmdline(value):
     d = deployment(value);i = d['inputs']['description'];policy = i['boot']
-    return ('console=ttyS0,115200 rdinit=/init root=UUID=' + policy['root_uuid'] +
+    return ('console=ttyS0,115200' + (' console=tty0' if policy['console'] == 'local' else '') + ' rdinit=/init root=UUID=' + policy['root_uuid'] +
             ' mojt.deployment=' + value['id'].split(':')[1] +
             ((' ' + ' '.join(policy['extra_args'])) if policy['extra_args'] else ''))
 
@@ -198,7 +199,9 @@ def render(value, entries):
     d = selection(value)
     require(type(entries) is dict and set(entries) == {r['deployment'] for r in d['entries']}, 'menu entries differ from selection')
     policy = None
-    text = HEADER + '# ' + artifact.canonical(value).decode('ascii') + '\n' + boot.terminal('serial')
+    console = deployment(entries[d['selected']])['inputs']['description']['boot']['console']
+    text = HEADER + '# ' + artifact.canonical(value).decode('ascii') + '\n' + boot.terminal(console)
+    if console == 'local':text += 'set gfxpayload=keep\n'
     text += "set timeout=10\nset default='mpm-" + d['selected'].split(':')[1] + "'\n"
     for row in d['entries']:
         record = entries[row['deployment']];actual = deployment(record)

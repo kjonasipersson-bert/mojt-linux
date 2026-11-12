@@ -159,6 +159,34 @@ Normal boot stays free of full content scans. The first System policy still
 requires unchanged startup/service dependencies; unsupported service transitions
 are reported as blocked, not silently accepted.
 
+PR #50 merged after all three full CI jobs passed at
+`b4f3c7885590ec3a8367d1ad3cd398379b397e13` (merge
+`e24e3bfd10a92c734af48c09552cd842fbd6d584`). No additional owner component matrix
+was required before merge. The joined VM acceptance remains part of completing
+MBT/bootstrap before physical rollout.
+
+Step 2 has started with [minimal MBT](mbt-minimal.md): an experimental thin
+frontend over the existing environment, Kernel build and packager, optional
+builder System delivery and its manual. It now includes fresh serial UEFI/VirtIO
+native-v2 image bootstrap through the same MPM install/stage/select libraries,
+with directory construction before mkfs and no loop-device finalization. An
+installed builder carries the fixed code/assets needed to assemble its successor.
+The ThinkPad X1 Carbon 3 image profile now joins local console, USB/SATA/keyboard
+modules, System-owned firmware/licenses and the independently retained native
+Kernel. Its policy is preserved by MPM updates; firmware is read-only and normal
+boot adds no content scans. This draft does not settle all command spellings or
+write a physical disk; bootstrap/profile have automated fixture coverage, not
+owner VM acceptance yet. Repeated owner preparation failures exposed a missing
+execution-runtime boundary: Git checkout modes were being checked as installed
+manager modes. The draft now prepares fixed code/assets before manager imports,
+keeps MPM target/runtime checks strict and performs privileged entry preflight
+before password/assembly. Public packaging and bootstrap-preview tests exercise
+real Git umask/private-home/namespace boundaries. Complete public construction
+with the real System payload remains a gate before another owner VM attempt.
+The next work stays in the same delivery: establish that construction gate,
+one joined VM acceptance, then the dedicated physical disk. Do not substitute an old-format image or call source assembly of
+prebuilt inputs a complete source rebuild.
+
 The owner reaffirmed native self-hosting as the destination on 2026-11-08.
 Complete the joined M1 administration/bootstrap flow, then M2 source recipes for
 Base and Mojt-owned System code; report imported third-party inputs separately.

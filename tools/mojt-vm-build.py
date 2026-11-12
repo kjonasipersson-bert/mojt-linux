@@ -693,7 +693,7 @@ def additional_pairs(entries, *, tree, work, target, first_base, support, args,
         generations.scaffold(candidate / "base" / base, require_directory)
         support.install(candidate, payload, record, args.busybox, args.login_mode,
                         Path(__file__).resolve().parents[1], console=console,
-                        hardware_profile=physical, generation=selected)
+                        hardware_profile=physical, generation=selected, with_build_tools=getattr(args,"with_build_tools",False))
         (candidate / "system" / selected / "assembled-at-utc").write_text(assembled_at + "\n")
         script = support.init_script(INIT)
         if physical:
@@ -718,7 +718,17 @@ def additional_pairs(entries, *, tree, work, target, first_base, support, args,
     return records, network
 
 
-def build(args):
+def handoff_result(result):
+    """Last step: give the completed private image to the invoking sudo user."""
+    uid = int(os.environ.get('SUDO_UID','0'));gid = int(os.environ.get('SUDO_GID','0'))
+    os.chown(result,uid,gid);result.chmod(0o700)
+    for item in result.iterdir():
+        os.chown(item,uid,gid)
+        item.chmod(0o600 if item.name == 'disk.img' else
+                   0o755 if item.name in ('run-qemu.sh','run-qemu-direct.sh') else 0o644)
+
+
+def build(args, *, finalize_tree=None):
     if os.geteuid() != 0:
         fail("run as root (sudo) to preserve Base ownership and create /dev nodes")
     if platform.machine() != "x86_64":
@@ -741,10 +751,12 @@ def build(args):
         fail("explicit boot generations require --boot-mode uefi")
     entries = generations.plan(plan_path, boot.generation)
     native = getattr(args, "native_context", None)
+    if finalize_tree is not None and (native is None or not uefi or entries):
+        fail('native-v2 bootstrap requires one fresh native UEFI generation')
     native_support = None
     if native is not None:
-        if not uefi or physical or entries or not explicit_system or not explicit_base:
-            fail("native image mode requires one explicit serial UEFI Base/System pair")
+        if not uefi or physical and finalize_tree is None or entries or not explicit_system or not explicit_base:
+            fail("native image mode requires one explicit UEFI Base/System pair; hardware requires mbt bootstrap")
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         import mojt_native_image as native_support
     if entries and not explicit_system:
@@ -846,7 +858,8 @@ def build(args):
                     path.mkdir(exist_ok=True)
                 system_version = support.install(
                     tree, payload, record, busybox, args.login_mode, Path(__file__).resolve().parents[1],
-                    console=console, hardware_profile=physical, generation=explicit_system)
+                    console=console, hardware_profile=physical, generation=explicit_system,
+                    with_build_tools=getattr(args,"with_build_tools",False))
                 assembled_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 (tree / "system" / system_version / "assembled-at-utc").write_text(assembled_at + "\n")
                 init_script = support.init_script(INIT)
@@ -858,8 +871,8 @@ def build(args):
                 hardware_record = None
                 if physical:
                     hardware_record = hardware.stage(tree, system_version, modules_dir, release,
-                                                     args.firmware_root, support)
-                    init_script = hardware.init_script(init_script)
+                                                     args.firmware_root, support,native_kernel=native is not None)
+                    if native is None:init_script = hardware.init_script(init_script)
             else:
                 assembled_at = install_system_init(tree, busybox, args.login_mode)
                 system_version = SYSTEM_VERSION
@@ -899,6 +912,15 @@ def build(args):
                 support=support, args=args, root_uuid=root_uuid, console=console,
                 assembled_at=assembled_at, account_mode=bool(record and record["step"] >= 10))
             network = network or extra_network
+            native_boot = None
+            if finalize_tree is not None:
+                # Complete native-v2 while this is still a private directory.
+                # No loop mapping, mounted disk or published image is involved.
+                boot.menu(tree,root_uuid,system_version,version,console)
+                native_boot = finalize_tree(tree=tree,result=result)
+                from mpm_boot_v2 import slot
+                selected_slot = tree/slot(native_boot['deployment']['id'])
+                initramfs = (selected_slot/'initramfs.cpio.gz').read_bytes()
             used = int(subprocess.run(["du", "-s", "--block-size=1", str(tree)], check=True,
                                      capture_output=True, text=True).stdout.split()[0])
             usable = parts["root_bytes"] if uefi else args.disk_size_mib * 1024 * 1024
@@ -907,8 +929,10 @@ def build(args):
             disk = result / "disk.img"
             disk_layout = None
             if uefi:
+                options = dict(console=console)
+                if native_boot is not None:options['native_selection'] = native_boot['selection']
                 disk_layout = boot.build_disk(disk, tree, temp, args.disk_size_mib, root_uuid,
-                                              system_version, version, console=console)
+                                              system_version, version, **options)
             else:
                 with disk.open("xb") as stream:
                     stream.truncate(args.disk_size_mib * 1024 * 1024)
@@ -919,7 +943,7 @@ def build(args):
             (result / "run-qemu.sh").write_text(
                 boot.run_script(network, local_console=bool(physical)) if uefi else run_script(network), encoding="ascii")
             (result / "run-qemu.sh").chmod(0o755)
-            if uefi:
+            if uefi and native_boot is None:
                 (result / "run-qemu-direct.sh").write_text(
                     run_script(network, boot_record["cmdline"]), encoding="ascii")
             (result / "build.json").write_text(
@@ -932,24 +956,22 @@ def build(args):
                             "system_source": record["source"] if record else None,
                             "vm_assembled_utc": assembled_at,
                             "boot_mode": "uefi" if uefi else "direct",
+                            "boot_layout": "native-v2" if native_boot is not None else "legacy-image",
                             "hardware": hardware_record if support else None,
-                            "disk_layout": disk_layout, "boot_record": boot_record,
+                            "disk_layout": disk_layout, "boot_record": native_boot['deployment'] if native_boot else boot_record,
                             "additional_boot_records": extra_records,
                             "login_mode": args.login_mode}, indent=2) + "\n",
                 encoding="ascii",
             )
-            # The disk contains persistent state; keep it private to the caller.
-            uid = int(os.environ.get("SUDO_UID", "0"))
-            gid = int(os.environ.get("SUDO_GID", "0"))
-            os.chown(result, uid, gid)
-            result.chmod(0o700)
-            for item in result.iterdir():
-                os.chown(item, uid, gid)
-                item.chmod(0o600 if item.name == "disk.img" else
-                           0o755 if item.name in ("run-qemu.sh", "run-qemu-direct.sh") else 0o644)
+            # Native-v2 still has privileged final verification in its caller.
+            # Keep ownership until it finishes; caller performs the handoff last.
+            if finalize_tree is None:handoff_result(result)
             if output.exists() or output.is_symlink():
                 fail(f"VM output appeared during build; not overwriting: {output}")
             result.rename(output)
+    if finalize_tree is not None:
+        print('Native-v2 filesystem and UEFI image constructed; final publication pending.')
+        return
     print(f"VM:      {output}")
     print(f"Base:    {version}")
     print(f"Kernel:  {release}")
@@ -982,6 +1004,7 @@ def main():
     parser.add_argument("--system-generation", help="UEFI: explicit immutable System label in the NEW image")
     parser.add_argument("--additional-generations", type=Path,
                         help="UEFI: TOML plan of additional explicit Base/System boot pairs")
+    parser.add_argument('--with-build-tools',action='store_true',help='include experimental MBT; compiler environments remain separate')
     parser.add_argument("--hardware-profile", choices=(hardware.PROFILE,),
                         help="USB/SATA boot, full modules/firmware and local console; requires UEFI/password/step 6")
     parser.add_argument("--firmware-root", type=Path,

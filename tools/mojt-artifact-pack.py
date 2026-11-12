@@ -12,8 +12,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import mojt_artifact as artifact
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+def main(argv=None, *, prog=None):
+    parser = argparse.ArgumentParser(prog=prog,description=__doc__)
     commands = parser.add_subparsers(dest="action", required=True)
     generic = commands.add_parser("pack")
     generic.add_argument("--source", type=Path, required=True)
