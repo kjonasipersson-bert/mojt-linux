@@ -265,6 +265,10 @@ retained inputs, followed by guest boot. #51 remains draft until it passes.
 
 ## One joined acceptance journey
 
+For the subsequent lightweight physical measurement session, see
+[ordinary MPM/MBT command performance](physical-performance.md). It reuses the
+accepted builder and records command timings without repeating the VM matrix.
+
 For terminal-only testing of a stopped local-console native-v2 image, the
 existing `tools/mojt-vm-serial.py --source IMAGE --output NEW_SERIAL_COPY`
 helper adds an authenticated serial service in a separate copy's persistent
