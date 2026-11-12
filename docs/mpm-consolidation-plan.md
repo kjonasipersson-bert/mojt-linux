@@ -200,7 +200,8 @@ on SSD. Do not repeat the heavy VM verification matrix or use USB storage as the
 physical compilation baseline. The [mounted installation increment](mounted-installation.md)
 reuses the common native-v2 constructor and MPM installation/selection APIs, with
 a portable data-only installer kit and an EFI-last publication boundary. It is
-a fresh-target prototype; one focused disposable-target VM installation/boot
-remains before physical use. Device partitioning/formatting is an explicit
+a fresh-target prototype. The focused disposable-target VirtIO VM installation
+and independent target boot passed on 2026-11-12; physical installation/boot is
+the next gate. Device partitioning/formatting is an explicit
 separate operation. The [performance guide](physical-performance.md) applies to
 the resulting SSD installation, preserving normal command verification.

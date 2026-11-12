@@ -87,16 +87,17 @@ the private tool environment to a different guest path.
 
 ## Preview the mounted target
 
-After the separately reviewed SSD preparation, mount root at `/mnt/mojt-root`
-and the ESP at `/mnt/mojt-esp` (example mountpoints). Mount them writable and
-root-controlled; for FAT, use suitable root UID/GID and masks. Neither filesystem
+After the separately reviewed SSD preparation, mount root at `/run/mojt-target-root`
+and the ESP at `/run/mojt-target-esp` (example mountpoints). Use `/run` for new
+mountpoint directories because the running Base root is read-only. Mount them
+writable and root-controlled; for FAT, use suitable root UID/GID and masks. Neither filesystem
 is formatted by the following commands. As root, use installed MBT through the
 private installation environment:
 
 ```sh
 /var/lib/mojt/installer-tools/run /run/mojt-system/bin/mbt bootstrap \
   --inputs /var/lib/mojt/installer-inputs \
-  --target-root /mnt/mojt-root --efi-directory /mnt/mojt-esp \
+  --target-root /run/mojt-target-root --efi-directory /run/mojt-target-esp \
   --system-generation system-ssd-A --dry-run
 ```
 
@@ -112,7 +113,7 @@ For the actual invocation, replace the following uppercase placeholders with
 ```sh
 /var/lib/mojt/installer-tools/run /run/mojt-system/bin/mbt bootstrap \
   --inputs /var/lib/mojt/installer-inputs \
-  --target-root /mnt/mojt-root --efi-directory /mnt/mojt-esp \
+  --target-root /run/mojt-target-root --efi-directory /run/mojt-target-esp \
   --expected-root-uuid ROOT_UUID --expected-efi-partuuid ESP_PARTUUID \
   --system-generation system-ssd-A
 ```
@@ -130,7 +131,7 @@ initramfs, boot-Base and native-v2 selection, and builds the same standalone GRU
 loader used for images. It never formats the mounted destination or constructs
 an intermediate disk image. The target root is an installation store containing
 artifacts, realizations, provider content, boot records and `state`; it is not a
-traditional root for `chroot /mnt/mojt-root`.
+traditional root for `chroot /run/mojt-target-root`.
 
 MBT holds cooperating locks on the disk/partition devices and open mountpoint
 descriptors. After rechecking target identity/emptiness/capacity, it writes
@@ -160,7 +161,7 @@ authoritative after updates. Mounted target ownership is never handed to a sudo
 caller. Default installation verification remains enabled; normal boot still
 does not scan complete payloads.
 
-## Focused validation and next owner test
+## Focused validation and remaining hardware check
 
 Tests exercise fixed input-data expansion/corruption refusal, mount/device guards,
 copy/verification failures, target flush ordering and the late-publication case.
@@ -170,10 +171,17 @@ data, and proves the image writer/handoff is not used. Kernel/block metadata,
 firmware/ELF bytes, provider execution and the EFI binary are fixture boundaries;
 this is not a real installed-disk boot result.
 
-Before physical use, run **one focused VM installation**: installer USB image plus
-one disposable prepared target disk; preview, install, shut down, then boot with
-only the target disk attached. Check its own root UUID, native-v2 selected/running
-agreement, local login/network and no failed units. There is no need to repeat
-the old Kernel/Base/System A/B/A matrix. Actual hardware installation/boot remains
-a separate owner result. After SSD boot, use the [lightweight timing guide](physical-performance.md)
-for first/repeated commands and a fresh compiler build on SSD.
+The focused VirtIO VM acceptance passed on 2026-11-12: the installed MBT consumed
+the carried inputs, installed to separate prepared GPT/ext4/FAT32 target
+partitions, and the target booted with the installer disk detached and separate
+UEFI variable storage. The target root UUID and exact selected/running deployment
+agreed; login and HTTPS worked, with no failed units. This is a VM installation
+and boot result, not physical hardware acceptance or a complete source rebuild.
+
+Next, prepare the 24-GiB installer with the supported hardware profile for the
+32-GB USB medium. Boot that USB, install to separately identified/prepared SSD
+partitions, then boot the SSD before compilation/performance measurements.
+Actual hardware installation/boot remains an owner check. The previous
+Kernel/Base/System A/B/A matrix need not be repeated. After SSD boot, use the
+[lightweight timing guide](physical-performance.md) for first/repeated commands
+and a fresh compiler build on SSD.
