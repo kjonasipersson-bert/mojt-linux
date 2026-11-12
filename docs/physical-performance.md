@@ -13,34 +13,53 @@ harness, a hardware benchmark suite or a full generation cross-product.
 
 ## Prepare before visiting the machine
 
-Use the supported ThinkPad X1 Carbon 3 profile and the accepted native-v2 builder
-image. Retain its original image and build inputs. Shut its VM down cleanly and
-wait for QEMU to exit before copying or writing the disk image. A successful
-static-exitrd shutdown is the completion signal; do not copy a live disk.
-Do not attach two copies with the same filesystem UUID during physical boot.
+Use the supported ThinkPad X1 Carbon 3 profile and the accepted native-v2
+bootstrap path. Keep the accepted VM image, builds and inputs as the reference.
 
-A 32768-MiB image requires at least 34359738368 bytes on the target. A device
-marketed as 32 GB can be too small; prepare a dedicated 64-GB-or-larger USB/SSD.
-The specific destination, its model/serial/capacity and mounted partitions must
-be inspected on the Debian host before a separately authorized write. This guide
-does not select a disk, resize a filesystem or provide a generic disk-write command.
-Use the one-time UEFI boot menu with Secure Boot disabled for this unsigned chain.
-The internal installation is not the test target.
+For a device marketed as 32 GB, prepare a **new 24576-MiB (24-GiB) image** using
+the existing `mbt bootstrap --disk-size-mib 24576` option, the same exact
+Base/Kernel/System inputs, the hardware profile and `--with-build-tools`.
+Use a new output directory and a fresh guest password. This is ordinary bootstrap,
+not a new installer or a new VM acceptance matrix. Do not truncate the 32768-MiB
+reference image: changing just the file length would leave its filesystem and
+GPT inconsistent. No resizing of the accepted image is needed.
 
-While the accepted VM is still available, copy this guide and
-[`tests/measure-command.sh`](../tests/measure-command.sh) from one reviewed, pinned
-repository revision into `/var/lib/mojt/performance/`. Keep the helper root-owned
-and readable (`0644`); it is invoked through Bash. This persistent directory
-travels with the stopped image. No System rebuild, offline filesystem editing
-or additional package is needed. The helper only needs Bash and `date`, which
-the builder installation already supplies. Retain the repository revision and
-helper SHA256 with the results; hashes identify content, not its publisher.
+A 24576-MiB image requires 25769803776 bytes; the 32768-MiB reference requires
+34359738368 bytes and is too large for many nominal 32-GB devices. Inspect the
+actual destination capacity in bytes before deciding it fits. The destination's
+model/serial and mounted partitions must be inspected on the Debian host before
+a separately authorized write. This guide does not select a disk or provide a
+generic disk-write command. Use the one-time UEFI boot menu with Secure Boot
+disabled for this unsigned chain. The internal installation is not the test target.
 
-Also retain the existing private Kernel environment, clean pinned source
-checkout, original Debian config/provenance, compiled Kernel packages and exact
-installed deployment IDs. These already belong to the accepted builder image;
-do not re-export, garbage-collect or reinstall them for this measurement.
-Check available space before choosing to compile another complete Kernel.
+Shut any VM using the image down cleanly and wait for QEMU to exit before copying
+or writing it. A successful static-exitrd shutdown is the completion signal;
+do not copy a live disk. Do not attach two copies with the same filesystem UUID
+during physical boot.
+
+Copy this guide and [`tests/measure-command.sh`](../tests/measure-command.sh)
+from one reviewed, pinned repository revision into `/var/lib/mojt/performance/`
+before starting the measurements. This can be done in the running VM before its
+clean shutdown, or once booted on the physical machine. Keep the helper root-owned
+and readable (`0644`); it is invoked through Bash. The measurement helper needs
+no System rebuild, offline filesystem editing or additional package. Bash and
+`date` are already supplied by the builder. Retain its repository revision and
+SHA256 with the results; hashes identify content, not its publisher.
+
+The smaller fresh builder carries the normal System store and exact installed
+Kernel/provenance, but no previous compiler environment or build objects. Its
+first `mbt env` can therefore measure acquisition of missing build-tool outputs
+rather than reconstruction from the VM's populated tool store. Record which
+outputs were already shared with System; this is not an entirely empty Nix store.
+Read the original Debian config from the retained Kernel's provenance and acquire
+the same pinned upstream source when needed. Check actual free space before
+compiling a complete Kernel, and reserve room for new objects, staged modules,
+the package and installation. Keep one new build and one installed candidate for
+this session; the original VM remains the reference with earlier builds retained.
+
+An alternative, when a sufficiently large destination is available, is to copy
+the accepted stopped builder with its existing environment/source/builds. That
+remains a populated-store measurement, as explained below.
 
 ## Measurement rules
 
@@ -148,9 +167,10 @@ explicitly; never treat the difference as compiler speed.
 An image copied after the VM build already has the tool outputs in its Nix store.
 Creating a new environment in it is a **populated-store** measurement, including
 the ordinary closure verification and probes, not an uncached download test.
-Keep acquisition logs if new outputs are fetched. A separate fresh installation
-would be needed to measure a genuinely unpopulated provider store; no cleanup of
-this working installation is part of the session. Likewise, an already installed
+Keep acquisition logs if new outputs are fetched. A separately bootstrapped builder, retaining its normal
+System closure but no previous compiler environment, measures acquisition of the
+actually missing tool outputs. Record those shared inputs rather than calling
+the whole store empty. No cleanup of this working installation is part of the session. Likewise, an already installed
 Kernel measures the no-op path, not first installation. Build a distinct release
 for the installation/activation timings, or label reuse of an existing candidate
 as such. After a new build, its packaging version string is not the boot artifact
