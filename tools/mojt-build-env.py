@@ -29,7 +29,7 @@ ROLES = {
     "zstd": ("zstd", ["zstd"]),
     "kmod": ("kmod", ["modprobe", "depmod"]),
     "e2fsprogs": ("e2fsprogs", ["mkfs.ext4", "e2fsck", "debugfs"]),
-    "util-linux": ("util-linux", ["sfdisk", "fallocate", "unshare", "mount", "umount"]),
+    "util-linux": ("util-linux", ["sfdisk", "fallocate", "unshare", "mount", "umount", "blkid"]),
     "dosfstools": ("dosfstools", ["mkfs.vfat"]),
     "mtools": ("mtools", ["mcopy"]),
     "grub": ("grub2_efi", ["grub-mkstandalone", "grub-script-check"]),

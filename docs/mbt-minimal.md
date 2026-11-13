@@ -18,7 +18,7 @@ language or complete physical installation. MPM's public syntax is unchanged.
 | `mbt env` | `mojt-build-env.py` | Create a new private pinned image/Kernel tool environment |
 | `mbt build kernel` | `mojt-kernel-build.py` | Build a separate versioned Kernel and matching modules |
 | `mbt package` | `mojt-artifact-pack.py` | Package retained inputs or verify a native archive |
-| `mbt bootstrap` | `mojt_bootstrap.py` and the existing image assembler | Install exact inputs and select the first native-v2 deployment on a new image |
+| `mbt bootstrap` | `mojt_bootstrap.py` and the existing constructor | Install exact inputs and select the first native-v2 deployment on a new image or prepared mounted partitions |
 
 There is no separate `plan` verb. Environment creation and Kernel compilation
 retain their existing `--dry-run`, refusal of existing outputs, frozen input
@@ -123,10 +123,18 @@ environment nor MBT changes Base libc or claims arbitrary plugin ABI safety.
 
 ## Fresh native-v2 bootstrap
 
+The [mounted installation increment](mounted-installation.md) adds the same
+construction path for an empty mounted ext4 root and FAT32 ESP on one prepared
+GPT disk. USB is used for startup/installation; SSD installation precedes the
+physical compiler/performance session. `--with-installer-inputs` carries reusable
+local data, and `--inputs DIRECTORY` consumes it without a checkout. The mounted
+path does not partition, format or overwrite an existing installation.
+
 The default profile is x86-64, serial console, UEFI/GPT and VirtIO. Bootstrap requires
-an account-enabled step-10 System payload and interactive password login. It
-creates a new regular disk image; it accepts no physical target device and cannot
-adopt an existing installation or resume a failed preparation.
+an account-enabled step-10 System payload and interactive password login. With
+`--output`, it creates a new regular disk image; this mode accepts no physical
+target device. Neither mode adopts an existing installation or resumes a failed
+preparation.
 
 ```sh
 mbt bootstrap --base-package BASE.tar.zst --base-artifact sha256:BASE_ID \
@@ -264,6 +272,10 @@ acceptance is one explicitly authorized fresh public bootstrap with those
 retained inputs, followed by guest boot. #51 remains draft until it passes.
 
 ## One joined acceptance journey
+
+For the subsequent lightweight physical measurement session, see
+[ordinary MPM/MBT command performance](physical-performance.md). It reuses the
+accepted builder and records command timings without repeating the VM matrix.
 
 For terminal-only testing of a stopped local-console native-v2 image, the
 existing `tools/mojt-vm-serial.py --source IMAGE --output NEW_SERIAL_COPY`

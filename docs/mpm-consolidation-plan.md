@@ -191,3 +191,17 @@ The owner reaffirmed native self-hosting as the destination on 2026-11-08.
 Complete the joined M1 administration/bootstrap flow, then M2 source recipes for
 Base and Mojt-owned System code; report imported third-party inputs separately.
 Do not relabel the existing prebuilt-input image assembly as native self-hosting.
+
+## Physical installation before physical compilation
+
+The current physical priority is USB startup, installation to prepared SSD
+partitions, SSD boot, then lightweight MPM/MBT measurements and a compiler build
+on SSD. Do not repeat the heavy VM verification matrix or use USB storage as the
+physical compilation baseline. The [mounted installation increment](mounted-installation.md)
+reuses the common native-v2 constructor and MPM installation/selection APIs, with
+a portable data-only installer kit and an EFI-last publication boundary. It is
+a fresh-target prototype. The focused disposable-target VirtIO VM installation
+and independent target boot passed on 2026-11-12; physical installation/boot is
+the next gate. Device partitioning/formatting is an explicit
+separate operation. The [performance guide](physical-performance.md) applies to
+the resulting SSD installation, preserving normal command verification.

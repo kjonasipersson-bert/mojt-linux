@@ -284,8 +284,8 @@ def password_hash_from_terminal():
     if not sys.stdin.isatty():
         fail("password mode needs an interactive terminal (do not pass secrets via flags)")
     try:
-        first = getpass.getpass("New Mojt VM root password: ")
-        second = getpass.getpass("Confirm Mojt VM root password: ")
+        first = getpass.getpass("New Mojt root password: ")
+        second = getpass.getpass("Confirm Mojt root password: ")
     except (EOFError, KeyboardInterrupt):
         fail("password entry aborted")
     if first != second:
@@ -728,7 +728,7 @@ def handoff_result(result):
                    0o755 if item.name in ('run-qemu.sh','run-qemu-direct.sh') else 0o644)
 
 
-def build(args, *, finalize_tree=None):
+def build(args, *, finalize_tree=None, filesystem_uuid=None, filesystem_writer=None):
     if os.geteuid() != 0:
         fail("run as root (sudo) to preserve Base ownership and create /dev nodes")
     if platform.machine() != "x86_64":
@@ -751,6 +751,12 @@ def build(args, *, finalize_tree=None):
         fail("explicit boot generations require --boot-mode uefi")
     entries = generations.plan(plan_path, boot.generation)
     native = getattr(args, "native_context", None)
+    if filesystem_writer is not None:
+        if finalize_tree is None or filesystem_uuid is None:
+            fail('mounted installation requires native-v2 finalization and an explicit filesystem UUID')
+        boot.fs_uuid(filesystem_uuid)
+    elif filesystem_uuid is not None:
+        fail('filesystem UUID override requires the mounted installation writer')
     if finalize_tree is not None and (native is None or not uefi or entries):
         fail('native-v2 bootstrap requires one fresh native UEFI generation')
     native_support = None
@@ -766,8 +772,9 @@ def build(args, *, finalize_tree=None):
     if explicit_base:
         boot.generation(explicit_base)
     parts = boot.layout(args.disk_size_mib) if uefi else None
-    commands = ["cp", "cpio", "mkfs.ext4", "modprobe", "zstd", "du"]
-    if uefi:
+    commands = ["cp", "cpio", "modprobe", "zstd", "du"]
+    if filesystem_writer is None:commands.append("mkfs.ext4")
+    if uefi and filesystem_writer is None:
         commands += boot.COMMANDS
     if args.login_mode == "password":
         commands.append("openssl")
@@ -846,6 +853,12 @@ def build(args, *, finalize_tree=None):
             tree = temp / "filesystem"
             tree.mkdir()
             populate_disk_tree(target, version, tree)
+            installer_inputs = getattr(args,'installer_inputs',None)
+            if installer_inputs is not None:
+                from mojt_bootstrap_inputs import LOCATION
+                destination = tree/LOCATION
+                destination.parent.mkdir(parents=True,exist_ok=True)
+                shutil.copytree(installer_inputs,destination,symlinks=True)
             if support:
                 # Mountpoint scaffolding is added to the VM copy, not the Base release.
                 copied_base = tree / "base" / version
@@ -891,7 +904,7 @@ def build(args, *, finalize_tree=None):
                 warn_missing_shadow(tree)
                 print("mojt-vm-build: WARNING: development mode gives unauthenticated "
                       "root access on the VM console.", file=sys.stderr)
-            root_uuid = str(uuid.uuid4()) if uefi else None
+            root_uuid = (filesystem_uuid or str(uuid.uuid4())) if uefi else None
             if uefi:
                 init_script = boot.init_script(init_script, root_uuid, system_version, version)
             initramfs = make_initramfs(temp / "initroot", busybox, modules, init_script,
@@ -921,6 +934,13 @@ def build(args, *, finalize_tree=None):
                 from mpm_boot_v2 import slot
                 selected_slot = tree/slot(native_boot['deployment']['id'])
                 initramfs = (selected_slot/'initramfs.cpio.gz').read_bytes()
+            if filesystem_writer is not None:
+                # The common constructor is complete; no GPT, mkfs or image
+                # output/handoff is used for already prepared partitions.
+                (result / "initramfs.cpio.gz").write_bytes(initramfs)
+                shutil.copy2(kernel, result / "vmlinuz")
+                filesystem_writer(tree=tree, result=result, bootstrap=native_boot)
+                return
             used = int(subprocess.run(["du", "-s", "--block-size=1", str(tree)], check=True,
                                      capture_output=True, text=True).stdout.split()[0])
             usable = parts["root_bytes"] if uefi else args.disk_size_mib * 1024 * 1024

@@ -150,6 +150,12 @@ class BoundaryTests(unittest.TestCase):
 @unittest.skipUnless(os.geteuid()==0 and all(shutil.which(p) for p in ('zstd','cpio','tar')),'requires root/native archive fixture tools')
 class ConstructionTests(unittest.TestCase):
     def test_hardware_image_joins_accounts_firmware_and_exact_native_selection_before_publication(self):
+        self.hardware_construction(mounted=False)
+
+    def test_mounted_target_reuses_native_constructor_without_image_creation_and_carries_input_data(self):
+        self.hardware_construction(mounted=True)
+
+    def hardware_construction(self, *, mounted):
         import test_native_image as fixtures
         import test_system_vm as system_fixtures
         import test_hardware_boot as hardware_fixtures
@@ -163,6 +169,17 @@ class ConstructionTests(unittest.TestCase):
         foreign_home=f.work/'caller-home';foreign_home.mkdir(mode=0o700);f.args.output=foreign_home/'image'
         f.args.hardware_profile=bootstrap.native.hardware.PROFILE
         f.args.firmware_root=hw.firmware();f.args.with_build_tools=True
+        if mounted:
+            f.args.with_installer_inputs=True;f.args.system_version='0.2';f.args.system_revision=1
+            # Real exports contain absolute guest links even without host Nix.
+            record=base.read(source.payload/'system.json')
+            python_output=record['packages']['python']['output']
+            python_tree=source.payload/python_output.lstrip('/')
+            (python_tree/'lib').mkdir()
+            (python_tree/'lib/guest-runtime').symlink_to(record['packages']['shell']['output']+'/bin/bash')
+            for item in record['objects']:
+                if item['path']==python_output:item['tree_sha256']=bootstrap.paths.tree_hash(python_tree)
+            (source.payload/'system.json').write_text(json.dumps(record))
         firmware_before=bootstrap.paths.tree_hash(f.args.firmware_root)
         real_run=subprocess.run;which=shutil.which;tar=which('tar');seen=[]
         def finish(*,tree,result,base_package):
@@ -172,7 +189,7 @@ class ConstructionTests(unittest.TestCase):
             adapter=provider_fixture.Adapter(tree,ref);adapter.binary=adapter.executable='/accepted/nix-store'
             adapter.boot_paths=lambda ref,target:sorted(r['path'].lstrip('/') for r in ref['identity']['objects'])
             adapter.boot_mounts=lambda ref,target:[dict(source='nix',target='nix')]
-            prep=f.work/'preparation';prep.mkdir();archive=prep/'base.tar.zst';shutil.copyfile(base_package,archive)
+            prep=Path(tempfile.mkdtemp(prefix='preparation-',dir=f.work));archive=prep/'base.tar.zst';shutil.copyfile(base_package,archive)
             seed=base.read(result/'selected-deployment.json');value=request(tree,result,seed,archive)
             def run(args,**kwargs):
                 if '--load-db' in args:return subprocess.CompletedProcess(args,0)
@@ -210,7 +227,38 @@ class ConstructionTests(unittest.TestCase):
              mock.patch.object(fixtures.fixtures.vm,'handoff_result',side_effect=give_to_caller),\
              mock.patch.object(bootstrap.native,'__file__',str(Path(prepared.name)/'tools/mojt_native_image.py')),\
              mock.patch.object(bootstrap.tx,'protected_directory',side_effect=protect):
-            built=f.synthetic_build(finalize_tree=finish)
+            if mounted:
+                import mojt_mounted_install as installer
+                import mojt_bootstrap_inputs as kits
+                target=f.work/'mounted-root';esp=f.work/'mounted-esp';target.mkdir();esp.mkdir()
+                target_uuid='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+                target_record=dict(root={'path':str(target),'uuid':target_uuid},efi={'path':str(esp)})
+                def loader(config,work,root_uuid,console):
+                    self.assertEqual(root_uuid,target_uuid);self.assertEqual(console,'local')
+                    path=work/'BOOTX64.EFI';path.write_bytes(b'synthetic loader; not hardware boot acceptance');return path
+                def writer(**values):return installer.publish(target_record,**values)
+                def target_run(name,*args,**kwargs):
+                    if name == 'sync':return subprocess.CompletedProcess([],0)
+                    return real_run([which(name),*map(str,args)],check=True,**kwargs)
+                with mock.patch.object(installer,'recheck'),\
+                     mock.patch.object(installer,'run',side_effect=target_run),\
+                     mock.patch.object(installer.boot,'efi_loader',side_effect=loader),\
+                     mock.patch.object(fixtures.fixtures.vm.boot,'build_disk',side_effect=AssertionError('must not create an image')):
+                    built=f.synthetic_build(finalize_tree=finish,filesystem_uuid=target_uuid,filesystem_writer=writer)
+                self.assertEqual(built['format'],'mojt-mounted-bootstrap-result-v1')
+                self.assertEqual(events,['verify']);self.assertFalse(f.args.output.exists())
+                choice,entries,unused=selection.current(target,verify=True)
+                self.assertEqual(choice['description']['selected'],built['deployment'])
+                self.assertEqual(entries[built['deployment']]['record']['description']['inputs']['description']['boot']['root_uuid'],target_uuid)
+                self.assertTrue((esp/'EFI/BOOT/BOOTX64.EFI').is_file())
+                self.assertFalse((target/installer.MARKER).exists())
+                kit,record=kits.read(target/kits.LOCATION)
+                self.assertEqual(record['base'],f.base['id']);self.assertEqual(record['kernel'],f.kernel['id'])
+                self.assertTrue((kit/'system-payload'/python_output.lstrip('/')/'lib/guest-runtime').is_symlink())
+                self.assertTrue((target/'state/var/lib/mojt/mounted-builder-runtime.json').is_file())
+                self.assertFalse((target/'disk.img').exists())
+                return
+            else:built=f.synthetic_build(finalize_tree=finish)
         image=Path(built['output']);d=seen[0]
         self.assertEqual(events,['verify','verify','handoff']);self.assertEqual(built['bootstrap'],d)
         self.assertEqual(artifact.parse_json((image/'bootstrap.json').read_bytes())['description'],d)

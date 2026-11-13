@@ -1,7 +1,7 @@
 # Mojt Linux
 # Copyright (C) 2026 Jonas Persson
 # SPDX-License-Identifier: GPL-2.0-only
-"""Fresh native-v2 image bootstrap using the existing MPM installation APIs."""
+"""Fresh native-v2 images or prepared-partition installs using the MPM APIs."""
 import argparse
 import json
 import os
@@ -258,13 +258,14 @@ def inspect_result(directory, *, base_artifact, kernel_artifact, files=True):
     return d
 
 
-def preflight(args, evidence):
+def preflight(args, evidence, *, mounted=False):
     """Static gates and an explicit root namespace probe before password entry."""
     require(evidence['system_record']['step'] >= 10,'first native-v2 bootstrap requires account-enabled System step 10')
     import mpm_management as management
     from mpm_kernel_boot import vm_module
     manager=management.current();vm=vm_module()
-    commands=('cp','cpio','mkfs.ext4','modprobe','zstd','du','openssl',*native.boot.COMMANDS,*TOOLS)
+    disk_tools=('sfdisk','blkid','sync','grub-mkstandalone','grub-script-check') if mounted else ('mkfs.ext4',*native.boot.COMMANDS)
+    commands=('cp','cpio','modprobe','zstd','du','openssl',*disk_tools,*TOOLS)
     selected={name:shutil.which(name) for name in commands}
     require(all(selected.values()),'bootstrap host tools missing: '+', '.join(n for n,p in selected.items() if p is None))
     selected={name:str(Path(path).absolute()) for name,path in selected.items()}
@@ -289,6 +290,13 @@ def preflight(args, evidence):
 def build(args):
     require(args.login_mode == 'password','native-v2 bootstrap requires password login')
     version = dict(upstream=args.system_version,scheme='dotted-v1',revision=args.system_revision);artifact.version(version)
+    require(not getattr(args,'with_installer_inputs',False) or args.with_build_tools,
+            '--with-installer-inputs requires --with-build-tools')
+    if getattr(args,'target_root',None) is not None:
+        import mojt_mounted_install
+        return mojt_mounted_install.build(args)
+    require(not any(getattr(args,n,None) is not None for n in ('efi_directory','expected_root_uuid','expected_efi_partuuid')),
+            'mounted target options require --target-root')
     missing = [name for name in TOOLS if shutil.which(name) is None];require(not missing,'bootstrap host tools missing: '+', '.join(missing))
     if args.dry_run:
         preview = native.preview(args)
@@ -310,18 +318,28 @@ def build(args):
                 deployment=details['deployment']['id'],base=details['base'],system=details['system'],kernel=details['kernel'],boot_acceptance=False)
 
 
+def parser(prog=None):
+    result = native.parser(prog=prog or 'mbt bootstrap',mounted=True)
+    result.description = __doc__
+    result.add_argument('--system-version',default=paths.VERSION,help='Mojt System packaging version (not third-party package versions)')
+    result.add_argument('--system-revision',type=int,default=1)
+    return result
+
+
 def main(argv=None, *, prog=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv[:1] == ['--finalize-tree']:
-        parser = argparse.ArgumentParser(description='Internal fresh-tree bootstrap worker')
-        parser.add_argument('--finalize-tree',type=Path,required=True);parser.add_argument('--result',type=Path,required=True)
-        parser.add_argument('--base-package',type=Path,required=True);args = parser.parse_args(argv)
+        worker_parser = argparse.ArgumentParser(description='Internal fresh-tree bootstrap worker')
+        worker_parser.add_argument('--finalize-tree',type=Path,required=True);worker_parser.add_argument('--result',type=Path,required=True)
+        worker_parser.add_argument('--base-package',type=Path,required=True);args = worker_parser.parse_args(argv)
         finalize_child(args.finalize_tree,args.result,args.base_package);return 0
-    parser = native.parser(prog=prog or 'mbt bootstrap')
-    parser.description = __doc__
-    parser.add_argument('--system-version',default=paths.VERSION,help='Mojt System packaging version (not third-party package versions)')
-    parser.add_argument('--system-revision',type=int,default=1)
-    args = parser.parse_args(argv)
+    from mojt_bootstrap_inputs import expand
+    origin = {}
+    try:argv = expand(argv,details=origin)
+    except (OSError,ValueError,KeyError,TypeError) as error:
+        print('mojt-bootstrap: '+str(error),file=sys.stderr);return 1
+    args = parser(prog).parse_args(argv)
+    args.installer_inputs_id = origin.get('id')
     try:
         print(json.dumps(build(args),indent=2,sort_keys=True));return 0
     except (OSError,ValueError,KeyError,TypeError,RecursionError,EOFError,StopIteration,subprocess.CalledProcessError) as error:

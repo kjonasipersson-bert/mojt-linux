@@ -93,6 +93,7 @@ jobs:
           python3 -B -m unittest discover -s tests -p 'test_mbt*.py' -v
           sudo env PYTHONPATH=tests python3 -B -m unittest discover -s tests -p 'test_mbt_bootstrap.py' -v
           sudo env PYTHONPATH=tests python3 -B -m unittest discover -s tests -p 'test_mbt_runtime.py' -v
+          sudo env PYTHONPATH=tests python3 -B -m unittest discover -s tests -p 'test_mbt_mounted.py' -v
       - name: Check System management runtime delivery
         run: python3 -m unittest discover -s tests -p 'test_system_vm.py' -v
       - name: Check native-v2 serial-copy metadata compatibility
