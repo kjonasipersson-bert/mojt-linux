@@ -25,7 +25,7 @@ is an estimate, not a phase benchmark. The existing native-v2 installed
 Base/System/Kernel activation path and bootstrap work must now be assessed as
 implemented increments, with their bounded lifecycle restrictions retained.
 
-The immediate work is **activation performance and interactive choices**:
+The accepted increment is **fast activation, lean installation and interactive choices**:
 
 1. Keep activation to selecting an already admitted boot entry, using metadata
    checks and one atomic menu publication. Do not construct initramfs, rescan
@@ -38,9 +38,10 @@ The immediate work is **activation performance and interactive choices**:
 3. Offer prepared activation candidates interactively with version and identity;
    offer installed candidates for preparation/upgrade. Preserve exact flags, JSON,
    cancellation, stale-selection guards and atomic publication failure behavior.
-4. Measure preparation and activation separately on the owner's hardware after
-   delivering the new installed tools. Expensive acceptance tests belong in the
-   project/test workflow or explicitly selected diagnostics.
+4. Keep preparation and activation costs separate. Expensive acceptance tests
+   belong in the project/test workflow or explicitly selected diagnostics.
+   The owner accepted activation usability after the C/D hardware run below;
+   no extra repetition is needed solely to obtain a missing stopwatch sample.
 
 The owner tested installation of A/B and initial activation with the original
 #54 delivery and reported unacceptable time and fan activity for both. No exact
@@ -49,11 +50,23 @@ by the boundaries above: normal selection performs **zero full audits**;
 `activate` requires an already prepared entry. `stage` prepares; `upgrade` can
 prepare and select. Constructor/admission costs still belong to preparation.
 See [activation and installation performance](activation-performance.md).
-All three CI jobs passed for functional revision `991714ac`. The successor
-[C/D hardware test](activation-fast-hardware-test.md) is prepared: bootstrap C
-through the old manager, then measure D installation, preparation and activation
-separately through the new installed MPM. It preserves original A/B checkpoints
-and provider dependencies. New physical performance acceptance remains pending.
+All three CI jobs passed for functional revision `991714ac` and delivery
+`78fb02b5`. The owner completed the [C/D hardware test](activation-fast-hardware-test.md#recorded-owner-acceptance--2026-11-14):
+C booted, D installed in 11.595 s, D prepared in 275.823 s, cancellation worked,
+and public `mpm system activate` selected D. The owner reported C running/D next
+boot, then successful D boot/after-check and working Ports. Activation felt fast
+but not immediate and was explicitly accepted as sufficient for now.
+Activation time is unmeasured because the public command was used directly;
+no precise latency or speedup ratio is claimed. Original A/B checkpoints and
+provider dependencies were retained. Optional C return was not reported.
+
+The bounded activation/chooser/boot gate is closed. **Preparation performance
+remains open**: about 4 minutes 36 seconds wall and 265.932 s CPU in `stage`,
+including 43.16 s candidate checks. This is separate from accepted activation.
+The next bounded investigation is to separate repeated integrity scans from
+necessary boot construction, then reduce normal preparation work with focused
+regression checks. It does not authorize sweeping writable-root or service/state
+changes. The kernel/firmware/MBT items below remain proposals for discussion.
 
 ### Proposals for discussion, not scheduled commitments
 

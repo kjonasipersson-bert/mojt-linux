@@ -179,6 +179,32 @@ if returning. This optional return changes next boot only and does not undo
 persistent state or discard either generation.
 
 The root-mapped automated tests exercise real packaging/installation plus runner
-and guard behavior; they do not claim a physical boot, owner-machine timings or
-new firmware coverage. Hardware acceptance remains pending until the owner
-returns results.
+and guard behavior; they do not claim a physical boot or new firmware coverage.
+The separate owner result below records the bounded physical acceptance.
+
+## Recorded owner acceptance — 2026-11-14
+
+The owner ran the delivery from `78fb02b52b75b9ab03d9ca0a2ec6069843e7fd2d`,
+using the script filename `msft.py` on the installed SSD. The functional files
+remain pinned to `991714ac`. This is one focused System tooling update, with
+Base 0.1.3 and Kernel 6.12.107-mojt1 shown in the C login/status photograph.
+
+| Step | Observed result | Evidence |
+| --- | --- | --- |
+| C boot | C running and selected | Owner console photograph |
+| D installation | PASS; 11.595 s wall, 6.095 s CPU | Owner photograph of the helper's timed result |
+| D preparation | PASS; 275.823 s wall, 265.932 s CPU | Same photograph; candidate checks 43.16 s are included in preparation, not additional time |
+| Invalid input and cancellation | Worked; next-boot-preservation check accepted | Owner confirmation after the requested `0`, then `q` test |
+| D selection | Owner used public `mpm system activate` directly; status showed C running, D next boot | Owner report; the helper's timed activation step was not run |
+| D boot and after-check | Worked; Ports works | Owner confirmation after reboot and the requested `after` command, which checks exact staged D, retained Base/Kernel and Neovim |
+| Activation usability | Fast, though not immediate; sufficient for now | Explicit owner acceptance |
+
+There is **no measured activation duration** for this run. Do not manufacture an
+`activate.json`, infer a speedup ratio or ask for a repeat solely to fill that
+missing measurement. Evidence files remain on the owner's SSD; this acceptance
+record is based on the shared photograph and reports, not an imported log bundle.
+The optional return to C was not reported and is not claimed as physically tested.
+
+This closes the bounded activation/chooser/boot acceptance gate for #54. It does
+not close preparation performance: roughly 4 minutes 36 seconds of `stage`
+work remains to investigate, separately from the accepted fast activation.

@@ -71,8 +71,30 @@ The owner found both original test installation and first activation
 unacceptably slow, with substantial fan activity. That first activation used the
 old running MPM. The original #54 change only reduced selection audit passes
 from two to one and did not meet the required fast activation boundary.
-No real-machine latency is claimed for this replacement implementation.
+The focused owner result below records installation/preparation timing and
+qualitative activation acceptance for the replacement.
 The [successor hardware test](activation-fast-hardware-test.md) delivers the new
 manager as C and measures D through its public installed MPM. Original A/B
 checkpoints stay separate. The earlier [A/B delivery](activation-hardware-test.md)
 remains pinned to the old implementation.
+
+
+## Owner result — 2026-11-14
+
+The [C/D acceptance record](activation-fast-hardware-test.md#recorded-owner-acceptance--2026-11-14)
+records D installation at **11.595 s wall / 6.095 s CPU** and preparation at
+**275.823 s wall / 265.932 s CPU**. Candidate checks took 43.16 s within that
+preparation total. These are actual console measurements from the owner's SSD,
+not timings of the isolated development environment or the old bootstrap.
+
+The owner confirmed invalid-input/cancellation behavior, selected D using public
+`mpm system activate`, reported C running/D selected, then confirmed successful
+D boot/after-check and working Ports. Activation felt fast but not immediate;
+the owner explicitly accepted it as sufficient for now. Its elapsed time is
+**unmeasured**, because direct activation bypassed the helper's timing/logging.
+No repeated activation is required to close this bounded acceptance gate.
+
+Preparation remains the known performance issue. Investigate its repeated
+retained-content/provider scans and construction separately; keep its cost
+visible rather than adding it back to ordinary activation. The proposals for
+writable-root layout, kernel building, firmware and MBT remain distinct work.
