@@ -310,7 +310,11 @@ class ConstructorTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'--baseline is only'):
             transition.prepare(root,other,baseline=f.f.f.baseline,adapters=f.f.adapters)
         before_preview=f.f.f.snapshot()
-        preview=selection.select(root,other_id,expected_selected=value['id'],dry_run=True)
+        with mock.patch.object(selection,'_gates',wraps=selection._gates) as audits:
+            preview=selection.select(root,other_id,expected_selected=value['id'],dry_run=True)
+            audits.assert_not_called()
+            selection.select(root,other_id,expected_selected=value['id'],dry_run=True,verify=True)
+            self.assertEqual(audits.call_count,1)
         self.assertFalse(preview['changed']);self.assertEqual(before_preview,f.f.f.snapshot())
         publish=selection.tx.publish
         with mock.patch.object(selection.tx,'publish',side_effect=OSError('before menu rename')):

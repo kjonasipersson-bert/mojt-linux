@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import time
 
 import mojt_artifact as artifact
 import mpm_base as base
@@ -64,7 +65,10 @@ def stage(root, area, identifier, *, bounds=None, adapters=None, runtime=None,
           expected_preflight=None, expected_inputs=None):
     """Prepare and admit, without selection. Dry-run never constructs or writes."""
     require(os.geteuid() == 0,'boot updates require an administrator')
+    started = time.monotonic()
+    print('Checking exact '+area+' candidate and compatibility...',file=sys.stderr,flush=True)
     root = system.target(root);plan = prepare(root,area,identifier,bounds=bounds,adapters=adapters)
+    print('Candidate checks: %.2f s' % (time.monotonic()-started),file=sys.stderr,flush=True)
     require(expected_preflight is None or plan['id'] == expected_preflight,'boot inputs changed after approval; repeat preview')
     p = plan['description'];require(p['checks']['compatible'],'boot update blocked: '+'; '.join(p['checks']['errors']))
     before = p['baseline_inputs']['description']
@@ -130,15 +134,50 @@ def activate(root, area, identifier, *, expected_selected=None, dry_run=False, y
     require(preview['selected'] == selected,'selection changed during update preview')
     if dry_run:return dict(preview,action='activate',selection_would_change=preview['deployment'] != selected)
     if preview['deployment'] == selected:return dict(preview,dry_run=False,action='no-change',selection_would_change=False)
+    show_preview(root,area,identifier,preview)
     if not yes:require(input('Select this exact '+area+' update for NEXT boot? [y/N] ').strip().lower() in ('y','yes'),'activation cancelled')
     with common.read_locks(root):
         require(selection.current(root)[0]['description']['selected'] == selected,'selection changed after approval')
+    started = time.monotonic()
     staged = stage(root,area,identifier,yes=True,expected_preflight=preview['preflight'],
                    expected_inputs=preview.get('inputs'),**options)
     require(staged['selected'] == selected,'selection changed before construction')
+    print('Deployment preparation: %.2f s' % (time.monotonic()-started),file=sys.stderr,flush=True)
+    started = time.monotonic()
+    print('Verifying boot selection before publication...',file=sys.stderr,flush=True)
     chosen = selection.select(root,staged['deployment'],area=area,expected_selected=selected,yes=True)
+    print('Selection verification/publication: %.2f s' % (time.monotonic()-started),file=sys.stderr,flush=True)
     return dict(staged,action='activate',changed=chosen['changed'],dry_run=False,
                 selection_changed=chosen['changed'],selected=chosen['selected'],previous=chosen['previous'])
+
+
+def choose_artifact(root, area):
+    """Metadata-only installed inventory; compatibility is checked after choice."""
+    if area == 'kernel':
+        import mpm_kernel
+        rows = mpm_kernel.status(root/'kernel')['installed']
+    elif area == 'base':
+        import mpm_base_status
+        rows = mpm_base_status.status(root)['installed']
+    else:
+        rows = system.status(root)['installed']
+    require(rows,'no installed '+area+' candidates; install content first')
+    print('Installed '+area+' candidates (compatibility checked after choice):',file=sys.stderr)
+    for number,row in enumerate(rows,1):
+        print('  %d. %s / %s' % (number,row['version']['release_id'],row['artifact']),file=sys.stderr)
+    while True:
+        answer = input('Candidate number, or q to cancel: ').strip()
+        require(answer.lower() != 'q','candidate selection cancelled')
+        if answer.isascii() and answer.isdecimal() and 1 <= int(answer) <= len(rows):
+            return rows[int(answer)-1]['artifact']
+        print('Choose a listed number, or q.',file=sys.stderr)
+
+
+def show_preview(root, area, identifier, preview):
+    print('Target: '+str(root)+'\nArea: '+area+'\nCandidate: '+str(preview.get('release'))+
+          ' / '+identifier+'\nCurrent next boot: '+preview['selected']+
+          '\nThis prepares and selects the candidate for NEXT boot.'+
+          '\nRunning system unchanged. Previous deployment retained. No automatic reboot.',file=sys.stderr,flush=True)
 
 
 def main(area, argv, *, runtime=None):
@@ -152,12 +191,13 @@ def main(area, argv, *, runtime=None):
     for action in ('activate','upgrade','stage','select','rollback'):
         command = commands.add_parser(action)
         if action in ('activate','upgrade','stage'):
-            command.add_argument('--artifact',required=True,help='exact installed candidate; does not fetch or build')
+            command.add_argument('--artifact',help='exact installed candidate; does not fetch or build')
             if area == 'base':command.add_argument('--base-context',type=Path,help='Kernel bounds for this exact Base')
             if action != 'stage':command.add_argument('--expected-selected')
         else:
             if action == 'select':command.add_argument('--deployment',required=True)
             command.add_argument('--expected-selected',required=True)
+            command.add_argument('--verify',action='store_true',help='also fully verify selection preview; publication always verifies')
         command.add_argument('--disk-root',type=Path)
         command.add_argument('--dry-run',action='store_true')
         command.add_argument('-y','--yes',action='store_true')
@@ -171,8 +211,12 @@ def main(area, argv, *, runtime=None):
         require(selection.present(root),'this operation requires native-v2 boot selection')
         if args.action in ('select','rollback'):
             result = selection.select(root,getattr(args,'deployment',None),area=area,expected_selected=args.expected_selected,
-                rollback=args.action == 'rollback',dry_run=args.dry_run,yes=args.yes)
+                rollback=args.action == 'rollback',dry_run=args.dry_run,yes=args.yes,verify=args.verify)
         else:
+            if args.artifact is None:
+                require(not args.yes and not args.json and sys.stdin.isatty(),
+                        '--artifact is required with --yes, --json or noninteractive input')
+                args.artifact = choose_artifact(root,area)
             from mpm_system_cli import ProviderAdapters
             adapters = ProviderAdapters(live)
             context = getattr(args,'base_context',None)

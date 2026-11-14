@@ -518,3 +518,15 @@ content-only or diagnostic slots and refuses stale expected selection.
 Initial image assembly and constructor admission use the manager API.
 Automatic installed System staging from an active v2 baseline and boot wish
 integration remain incomplete; v1 writers cannot change a v2 boot authority.
+
+.SH INTERACTIVE NATIVE BOOT CHOICES
+On a native-v2 installation, activate, upgrade and stage may omit --artifact
+when stdin is a terminal. Choose an installed candidate by its listed number,
+or q to cancel. Compatibility is checked after the choice. --yes, --json and
+noninteractive input require an explicit --artifact. Activation shows its target
+and next-boot effect before confirmation; the running system is unchanged.
+Progress and phase timings are written to stderr.
+.PP
+Native-v2 select and rollback preview exact metadata; final publication always
+performs full content and management checks under locks. Add --verify to
+select or rollback --dry-run for a full content audit of the preview as well.

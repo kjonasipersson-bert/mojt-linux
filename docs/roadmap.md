@@ -6,10 +6,67 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Mojt development priorities
 
-Updated 2026-11-08. This records the agreed order and measured progress;
+Updated 2026-11-14. This records the agreed order and measured progress;
 future commands and policies are not claims of implemented functionality.
 The [architecture](architecture.md) defines the layer boundaries and the
 [MPM contract](mpm.md) records the accepted update semantics.
+
+## Current position and next increment — 2026-11-14
+
+This section supersedes older “next” and “unimplemented” statements in the
+historical tracks below. Keep their evidence and limits; do not infer that an
+old experiment covers today's complete installed workflow.
+
+The owner has booted the successor native System prepared with the fixed Ports
+repair bridge in #53 and installed Neovim successfully. This is physical
+installed-update/Ports acceptance, not a new full Base/Kernel/firmware matrix.
+The update appeared to take roughly 5–10 minutes on the owner's machine; that
+is an estimate, not a phase benchmark. The existing native-v2 installed
+Base/System/Kernel activation path and bootstrap work must now be assessed as
+implemented increments, with their bounded lifecycle restrictions retained.
+
+The immediate work is **activation performance and interactive choices**:
+
+1. Measure candidate checks, deployment preparation and final selection
+   separately. Remove repeated full scans where they duplicate a publication
+   gate; preserve verification under the final publication locks. Keep explicit
+   diagnostic verification available. Expensive acceptance tests belong in the
+   project/test workflow or explicit verification modes, not ordinary operations.
+2. Offer installed candidates interactively with version and exact identity;
+   show target, area, current next boot and intended effect before consent.
+   Preserve exact flags, JSON and noninteractive operation for scripts. Never
+   silently choose a latest candidate or reboot automatically.
+3. Test cancellation, stale selections and damaged content, then measure one
+   focused real-machine update. Do not repeat an unchanged full boot matrix.
+
+The first implementation removes the duplicate full selection audit before
+confirmation: preview checks metadata; publication still fully audits all menu
+entries under locks. `select`/`rollback --dry-run --verify` explicitly audits a
+preview too. This reduces **selection audit passes from two to one** for an
+ordinary committed selection; it does not claim that the entire multi-phase
+activation pipeline now scans each input only once. Further constructor,
+preflight and admission duplication needs measurements before removal.
+
+### Proposals for discussion, not scheduled commitments
+
+- Revisit the writable-root layout: a read-only `/` is inconvenient. Specify
+  writable administration paths and their persistence/rollback semantics before
+  changing mount policy; immutable installed content remains a separate concern.
+- Build a kernel on the target installation using a Debian-derived Kconfig,
+  extending the earlier controlled native-build proof into the installed flow.
+- Broaden System firmware coverage for installation on many machines; define
+  coverage and verify representative hardware rather than claiming all machines.
+- Continue usability testing and MBT development, reusing installed MPM APIs.
+- Explore bootstrap choices as independent axes: target (directory, disk image,
+  physical disk), profile (minimal, normal, build machine, rescue), and source
+  (local directory, installation medium, configured repository).
+- Explore the interface split: MPM owns installed content, versions, environments
+  and choices; the build/bootstrap interface owns compilation and packaging.
+  Proposed environment commands or a future `mojt` name are not implemented
+  contracts or a decision to rename MBT.
+
+Full self-hosting still requires source builds of Base and the entire System;
+image assembly from prebuilt inputs and a kernel build alone do not establish it.
 
 ## Completed foundation
 
