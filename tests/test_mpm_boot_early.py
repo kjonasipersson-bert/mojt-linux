@@ -282,11 +282,17 @@ class ConstructorTests(unittest.TestCase):
         with mock.patch.object(update,'prepare',side_effect=[approved,changed]), \
              mock.patch.object(constructor,'freeze_runtime',side_effect=AssertionError('stale approval wrote runtime')):
             with self.assertRaisesRegex(ValueError,'changed after approval'):
-                update.activate(root,'system',other,yes=True,**options)
+                update.upgrade(root,'system',other,yes=True,**options)
         self.assertEqual(snapshot,f.f.f.snapshot())
         with mock.patch.object(constructor.archive,'vm_module',return_value=vm),mock.patch.object(vm,'module_paths',return_value=[module]):
             staged=update.stage(root,'system',other,yes=True,**options)
         other_id=staged['deployment'];self.assertNotEqual(other_id,value['id'])
+        with mock.patch.object(constructor,'build',side_effect=AssertionError('activation constructed')), \
+             mock.patch.object(selection,'_gates',side_effect=AssertionError('activation audited')), \
+             mock.patch.object(artifact,'file_sha',side_effect=AssertionError('activation hashed content')):
+            self.assertTrue(update.activate(root,'system',other,yes=True)['changed'])
+            selection.select(root,expected_selected=other_id,rollback=True,yes=True)
+            self.assertEqual(selection.current(root)[0]['description']['selected'],value['id'])
         snapshot=f.f.f.snapshot()
         self.assertFalse(update.stage(root,'system',other,yes=True,**options)['changed'])
         self.assertEqual(snapshot,f.f.f.snapshot())
@@ -310,7 +316,11 @@ class ConstructorTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'--baseline is only'):
             transition.prepare(root,other,baseline=f.f.f.baseline,adapters=f.f.adapters)
         before_preview=f.f.f.snapshot()
-        preview=selection.select(root,other_id,expected_selected=value['id'],dry_run=True)
+        with mock.patch.object(selection,'_gates',wraps=selection._gates) as audits:
+            preview=selection.select(root,other_id,expected_selected=value['id'],dry_run=True)
+            audits.assert_not_called()
+            selection.select(root,other_id,expected_selected=value['id'],dry_run=True,verify=True)
+            self.assertEqual(audits.call_count,1)
         self.assertFalse(preview['changed']);self.assertEqual(before_preview,f.f.f.snapshot())
         publish=selection.tx.publish
         with mock.patch.object(selection.tx,'publish',side_effect=OSError('before menu rename')):
@@ -359,17 +369,17 @@ class ConstructorTests(unittest.TestCase):
                                       ('kernel',f.f.f.candidate['id'],{})):
             with self.subTest(area=area):
                 before=f.f.f.snapshot()
-                preview=update.activate(root,area,identifier,dry_run=True,**options,**extra)
+                preview=update.upgrade(root,area,identifier,dry_run=True,**options,**extra)
                 self.assertFalse(preview['changed']);self.assertEqual(before,f.f.f.snapshot())
                 with mock.patch.object(constructor.archive,'vm_module',return_value=vm), \
                      mock.patch.object(vm,'module_paths',side_effect=lambda release,p,**kw:[p/'kernel/example.ko']):
-                    changed=update.activate(root,area,identifier,yes=True,**options,**extra)
+                    changed=update.upgrade(root,area,identifier,yes=True,**options,**extra)
                 self.assertTrue(changed['selection_changed']);current=selection.current(root)[1][changed['selected']]['record']
                 self.assertEqual(current['description']['inputs']['description'][area]['artifact'],identifier)
                 other_area='kernel' if area=='base' else 'base'
                 self.assertEqual(current['description']['inputs']['description'][other_area],source['description'][other_area])
                 before=f.f.f.snapshot()
-                self.assertFalse(update.activate(root,area,identifier,yes=True,**options,**extra)['changed'])
+                self.assertFalse(update.upgrade(root,area,identifier,yes=True,**options,**extra)['changed'])
                 self.assertEqual(before,f.f.f.snapshot())
                 with self.assertRaisesRegex(ValueError,'preserve other areas'):
                     selection.select(root,value['id'],expected_selected=changed['selected'],area='system',yes=True)

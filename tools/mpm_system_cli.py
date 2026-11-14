@@ -41,12 +41,13 @@ def main(argv, *, runtime=None):
         for name in ('archive-sha256', 'snapshot'):install.add_argument('--' + name)
         for name in ('sources-root', 'cache-root'):install.add_argument('--' + name, type=Path)
         install.add_argument('--dependency-file', type=Path, action='append', default=[])
+        install.add_argument('--verify',action='store_true',help='explicitly audit archive payloads, retained objects and provider closures')
         install.add_argument('--dry-run', action='store_true');install.add_argument('-y', '--yes', action='store_true')
         status = sub.add_parser('status');status.add_argument('--verify', action='store_true')
         select = sub.add_parser('select');select.add_argument('--deployment',required=True)
         rollback = sub.add_parser('rollback')
         for command in (select,rollback):
-            command.add_argument('--expected-selected',required=True);command.add_argument('--dry-run',action='store_true')
+            command.add_argument('--verify',action='store_true');command.add_argument('--expected-selected',required=True);command.add_argument('--dry-run',action='store_true')
             command.add_argument('-y','--yes',action='store_true')
         for command in (install, status, select, rollback):
             command.add_argument('--disk-root', type=Path);command.add_argument('--json', action='store_true')
@@ -58,17 +59,17 @@ def main(argv, *, runtime=None):
         if args.action in ('select','rollback'):
             from mpm_boot_selection import select as choose
             result = choose(root,getattr(args,'deployment',None),expected_selected=args.expected_selected,
-                            rollback=args.action=='rollback',dry_run=args.dry_run,yes=args.yes)
+                            rollback=args.action=='rollback',dry_run=args.dry_run,yes=args.yes,verify=args.verify)
         elif args.action == 'install':
             if args.source is not None:
                 base.require(args.archive_sha256 is not None and not args.dependency_file, '--source requires --archive-sha256 and obtains components from the same snapshot')
                 from mpm_system_source import install as acquire
                 result = acquire(root, args.sources_root or (runtime.sources if runtime else Path('/var/lib/mojt/sources')),
                     args.cache_root or (runtime.cache if runtime else Path('/var/lib/mojt/cache')), args.source, args.expected_id,
-                    archive_sha256=args.archive_sha256, snapshot=args.snapshot, dry_run=args.dry_run, yes=args.yes, adapters=adapters)
+                    archive_sha256=args.archive_sha256, snapshot=args.snapshot, dry_run=args.dry_run, yes=args.yes, adapters=adapters, verify=args.verify)
             else:
                 base.require(not any(v is not None for v in (args.archive_sha256, args.snapshot, args.sources_root, args.cache_root)), 'source/cache flags require --source')
-                result = system.install(root, args.from_file, args.expected_id, dependency_files=args.dependency_file, dry_run=args.dry_run, yes=args.yes, adapters=adapters)
+                result = system.install(root, args.from_file, args.expected_id, dependency_files=args.dependency_file, dry_run=args.dry_run, yes=args.yes, adapters=adapters, verify=args.verify)
         else:
             from mpm_boot_status import read_running
             running = read_running(runtime) if runtime is not None and args.disk_root is None else None

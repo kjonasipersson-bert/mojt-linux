@@ -48,6 +48,16 @@ class NixAdapterTests(unittest.TestCase):
         self.assertTrue(any('--verify-path' in c for c in self.calls))
         self.assertEqual(os.readlink(self.root/'retained/nix'/Path(self.output).name),self.output)
 
+    def test_system_install_realises_without_scrubbing_and_propagates_helper_failure(self):
+        from mpm_nix_boot import NixBootAdapter
+        adapter = NixBootAdapter('/pinned/nix/bin/nix-store',self.run_nix)
+        adapter.install(self.ref,self.root)
+        self.assertEqual(len(self.calls),1);self.assertIn('--realise',self.calls[0])
+        self.assertFalse(any('--verify-path' in call for call in self.calls))
+        with mock.patch.object(adapter,'runner',side_effect=OSError('import failed')):
+            with self.assertRaisesRegex(OSError,'import failed'):
+                adapter.install(self.ref,self.root)
+
     def test_wrong_closure_and_actual_content_verification_failure_are_refused(self):
         directory=self.root/'retained/nix';directory.mkdir();(directory/Path(self.output).name).symlink_to(self.output)
         with mock.patch.object(Path,'is_dir',lambda p:str(p)==self.output):

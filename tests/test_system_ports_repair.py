@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """Fixed repair bridge: actual native archives and installation, no live network."""
 import copy
+import hashlib
 import importlib.util
 import os
 from pathlib import Path
@@ -48,6 +49,10 @@ class RepairTests(Fixture):
         self.archive, self.body = self.package(self.composition, self.actions)
         self.install(adapters=self.providers)
         self.downloads = {p:(REPO / p).read_bytes() for p in repair.FILES}
+        # Packaging fixtures use this checkout, not the historical remote pin.
+        # Production FILES stays frozen; network refusal has separate coverage.
+        self.enterContext(mock.patch.object(repair, 'FILES',
+            {p:hashlib.sha256(data).hexdigest() for p,data in self.downloads.items()}))
 
     def test_fixed_generation_installs_with_existing_manager_and_old_content_unchanged(self):
         before = tree(self.root); output = self.work / 'repair-kit'
