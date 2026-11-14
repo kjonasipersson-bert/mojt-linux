@@ -39,3 +39,6 @@ optional verification mode. Explicit status verification remains available.
 The owner reported roughly 5–10 minutes for the prior physical update, without
 phase measurements. Capture stderr for a subsequent focused update and compare
 phase times on the same machine. No measured whole-update speedup is claimed.
+
+The [focused hardware test](activation-hardware-test.md) provides a fixed
+two-generation delivery, interactive cancellation checks and timing logs.
