@@ -193,8 +193,10 @@ def _main(argv, *, root, runtime, adapters, stack):
     else:
         require(not args.expected_sources, '--expected-sources requires --sources')
         sources = copy.deepcopy(old['sources']) if old else {}
-    from mpm_ports_nix_source import prepare, materialize, preview as discovery_preview
-    prepared = prepare(runtime, args, sources, platform)
+    prepared = None
+    if runtime is not None and args.sources is None and args.action in ('install', 'update'):
+        from mpm_ports_nix_source import prepare, materialize, preview as discovery_preview
+        prepared = prepare(runtime, args, sources, platform)
     if prepared is not None:
         # This is a provider-discovery preview, not a publishable profile plan:
         # binaries may export more commands than their package's public name.
