@@ -2,7 +2,7 @@
 # Mojt Linux
 # Copyright (C) 2026 Jonas Persson
 # SPDX-License-Identifier: GPL-2.0-only
-"""Pinned successor hardware test: old MPM enters C; new MPM measures D.
+"""Pinned payload hardware test: old MPM enters E; new MPM prepares F.
 
 One USB-delivered file supplies long exact arguments and records evidence.
 Every install/stage/selection runs the public installed MPM, shown before use.
@@ -23,15 +23,15 @@ import sys
 import tempfile
 import time
 
-REVISION = '991714acfab88676521599ca8f303cd24b09590f'
+REVISION = 'b4772dfcbb1456ed65b74c511412790988711aba'
 ORIGIN = 'https://raw.githubusercontent.com/kjonasipersson-bert/mojt-linux/' + REVISION + '/'
-FILES = {'tools/mpm_boot_update.py': '91d5bd4be75ca583c1282f65fdfa86ad7a006d6f239de2acb0dc4a7fef11b320', 'tools/mpm_boot_selection.py': '3f1fc453c3316475ca3bce2d8d66d655785b1b0857f91dfe298540c3a368933f', 'tools/mpm_cli.py': 'c5e229ae2e4b748eb9b3409a73a6acda58ca9e57cc55be2af1a0362ffbed1b3b', 'tools/mpm_native_io.py': '73ca7279541119c0ad2171d69184fbc1a54e983e06bebce47de3cb7b855c39da', 'tools/mpm_nix_boot.py': '341a0a31af58f93d2c45b81d8c6942ba160f91fc2973a08040d21c13dc2d7e91', 'tools/mpm_system.py': '3984e6d6bb5101d8ff6e41c7e6a7e263465abc2c9c7ff95af20c038002d286bd', 'tools/mpm_system_cli.py': 'b437b965d25f3d4c9a85356ad6667f4ce5f3fc67682b459f9ab348b63e713bea', 'tools/mpm_system_source.py': 'e13c7750f3f7bdcccbc0b0465b282b06a6c3bd3708068eaa02538eb2008ec70d', 'man/mpm.1': '5e75761605284b87f602e294ab02ef270934afcb9e79fc61807c2bbf7796de1d'}
+FILES = {'tools/mpm_boot_constructor.py': 'b09b5397c4b055f90ab3fbfcf528ea0ce9279ccf0868add2eb5f75c3c4c28692', 'tools/mpm_boot_update.py': 'e726ae0dc54a7f73c1d67c4fd8ea258fdeb7e042b4d0b27b145705a96bb3be99', 'tools/mpm_boot_selection.py': 'dcce609054efe160c042e7fa0222174fbb61d29db5f5244818d8563857d7798f', 'tools/mpm_cli.py': 'c5e229ae2e4b748eb9b3409a73a6acda58ca9e57cc55be2af1a0362ffbed1b3b', 'tools/mpm_native_io.py': '73ca7279541119c0ad2171d69184fbc1a54e983e06bebce47de3cb7b855c39da', 'tools/mpm_nix_boot.py': '341a0a31af58f93d2c45b81d8c6942ba160f91fc2973a08040d21c13dc2d7e91', 'tools/mpm_system.py': '3984e6d6bb5101d8ff6e41c7e6a7e263465abc2c9c7ff95af20c038002d286bd', 'tools/mpm_system_cli.py': 'b437b965d25f3d4c9a85356ad6667f4ce5f3fc67682b459f9ab348b63e713bea', 'tools/mpm_system_source.py': 'e13c7750f3f7bdcccbc0b0465b282b06a6c3bd3708068eaa02538eb2008ec70d', 'man/mpm.1': '5124b1c42ddf8d083cd3b8d82bab497f30f71307a3bc28456c31bc81aae98443'}
 ROOT = Path('/run/mojt-disk')
 RUNTIME = Path('/run/mojt-system')
-WORK = Path('/var/lib/mojt/activation-fast-54')
-LABEL = 'system-activation-C'
-PROBE_LABEL = 'system-activation-D'
-FORMAT = 'mojt-fast-activation-test-54-v1'
+WORK = Path('/var/lib/mojt/initramfs-payload-55')
+LABEL = 'system-payload-E'
+PROBE_LABEL = 'system-payload-F'
+FORMAT = 'mojt-initramfs-payload-test-55-v1'
 AREAS = ('base','kernel','platform','boot','firmware','state_requirements')
 
 
@@ -188,8 +188,8 @@ def snapshot():
 
 def baseline():
     before = snapshot();status = before['status']
-    require(status['running']['label'] in ('system-ports-fix-1','system-activation-A','system-activation-B'),
-            'start from the accepted SSD System (Ports fix or original activation A/B), not installer media or another test')
+    require(status['running']['label'] in ('system-ports-fix-1','system-activation-A','system-activation-B','system-activation-C','system-activation-D'),
+            'start from the accepted SSD System (Ports fix or accepted activation A/B/C/D), not installer media or another test')
     require(status['running']['deployment'] == before['selected'],'resolve the pending boot choice before preparation')
     return before
 
@@ -278,7 +278,7 @@ def install_args(row, directory):
 
 def enter(state):
     require(baseline() == state['baseline'],'running/selected baseline changed after preparation')
-    confirm('Install C through OLD MPM, prepare it and select C for NEXT boot? This is bootstrap, not a performance sample.')
+    confirm('Install E through OLD MPM, prepare it and select E for NEXT boot? This is bootstrap, not a performance sample.')
     before = snapshot()
     run('bootstrap-install',*install_args(state['candidate'],'candidate'),before=before)
     unchanged(before,snapshot())
@@ -288,26 +288,39 @@ def enter(state):
     after = check(state,'origin',selected='candidate')
     require(after['selected'] == staged,'bootstrap selected another deployment')
     save('entered.json',after)
-    print('READY: C selected. Reboot deliberately, then run install. Bootstrap timings do not measure the new MPM.')
+    print('READY: E selected. Reboot deliberately, then run install. Bootstrap timings do not measure the new MPM.')
 
 
 def exercise(action, state):
     before = check(state,'candidate');tools_match()
     if action == 'install':
         require(not any(row['artifact'] == state['probe']['artifact'] for row in before['status']['installed']),
-                'D is already installed; a repeat is not a fresh installation sample')
-        confirm('Install D with NEW MPM, without --verify, keeping next boot unchanged?')
+                'F is already installed; a repeat is not a fresh installation sample')
+        confirm('Install F with NEW MPM, without --verify, keeping next boot unchanged?')
         result = run('install',*install_args(state['probe'],'probe'),before=before)
-        require(result['result']['changed'],'D installation was a no-op, not a fresh installation sample')
+        require(result['result']['changed'],'F installation was a no-op, not a fresh installation sample')
         unchanged(before,check(state,'candidate'))
-        require(any(row['artifact'] == state['probe']['artifact'] for row in snapshot()['status']['installed']), 'D was not installed')
+        require(any(row['artifact'] == state['probe']['artifact'] for row in snapshot()['status']['installed']), 'F was not installed')
+    elif action == 'prime':
+        confirm('Build the reusable payload while preparing the original System, without selecting it? This cold preparation may take time.')
+        report = run('prime','system','stage','--artifact',state['origin']['artifact'],'-y','--json',before=before)
+        unchanged(before,check(state,'candidate'))
+        result = report['result']
+        require(result['changed'] and result['initramfs_payload']['reused'] is False,
+                'expected a fresh cold payload build; preserve evidence rather than treating reuse as a cold sample')
     elif action == 'stage':
         require(not any(row['artifact'] == state['probe']['artifact'] for row in before['status']['staged_deployments']),
-                'D is already prepared; a repeat is not a fresh preparation sample')
-        confirm('Prepare D for boot without selecting it? Construction may still take time.')
+                'F is already prepared; a repeat is not a fresh preparation sample')
+        prime = read('prime-result.json')
+        require(prime['changed'] and prime['initramfs_payload']['reused'] is False,
+                'run prime successfully before measuring warm preparation')
+        confirm('Prepare F for boot without selecting it? Construction may still take time.')
         report = run('stage','system','stage','--artifact',state['probe']['artifact'],'-y','--json',before=before)
         unchanged(before,check(state,'candidate'))
-        require(report['result']['changed'] and report['result']['deployment'] is not None,'expected newly prepared D deployment')
+        require(report['result']['changed'] and report['result']['deployment'] is not None,'expected newly prepared F deployment')
+        require(report['result']['initramfs_payload']['reused'] is True
+                and report['result']['initramfs_payload']['inputs'] == prime['initramfs_payload']['inputs'],
+                'F did not reuse the exact cold payload; preserve evidence')
     elif action == 'cancel':
         require(sys.stdin.isatty(),'cancellation test needs a terminal')
         print('In the real MPM chooser, enter 0, then q.',flush=True)
@@ -318,40 +331,40 @@ def exercise(action, state):
                 'expected invalid-number reprompt followed by q cancellation')
     elif action == 'activate':
         staged = read('stage-result.json')['deployment']
-        confirm('Select prepared D ('+state['probe']['artifact']+') for NEXT boot?')
+        confirm('Select prepared F ('+state['probe']['artifact']+') for NEXT boot?')
         report = run('activate','system','activate','--artifact',state['probe']['artifact'],
                      '--expected-selected',before['selected'],'-y','--json',before=before)
         after = check(state,'candidate',selected='probe')
-        require(after['selected'] == staged and report['result']['selected'] == staged,'expected exact staged D selection')
+        require(after['selected'] == staged and report['result']['selected'] == staged,'expected exact staged F selection')
         require(after['status']['running'] == before['status']['running'],'running System changed during selection')
-        print('PASS: D selected; C still running. Reboot deliberately, then run after.')
+        print('PASS: F selected; E still running. Reboot deliberately, then run after.')
     save(action+'-after.json',snapshot())
     print('PASS: '+action+'; original Base/Kernel/boot policy retained. Evidence: '+str(WORK))
 
 
 def after(state):
     current = check(state,'probe');tools_match()
-    require(current['selected'] == read('stage-result.json')['deployment'],'booted deployment differs from measured D')
+    require(current['selected'] == read('stage-result.json')['deployment'],'booted deployment differs from measured F')
     subprocess.run([str(RUNTIME/'bin/mpm'),'ports','list'],check=True)
     subprocess.run(['/var/lib/mojt/ports/current/bin/nvim','--version'],check=True)
     save('after.json',current)
-    print('PASS: D running and selected; original Base/Kernel retained; Ports and Neovim work.')
+    print('PASS: F running and selected; original Base/Kernel retained; Ports and Neovim work.')
 
 
 def back(state):
     before = check(state,'probe');tools_match()
     candidate = read('bootstrap-stage-result.json')['deployment']
-    confirm('Select retained C for NEXT boot?')
+    confirm('Select retained E for NEXT boot?')
     run('back','system','select','--deployment',candidate,'--expected-selected',before['selected'],'-y','--json',before=before)
     current = check(state,'probe',selected='candidate')
-    require(current['selected'] == candidate,'expected original C return deployment')
+    require(current['selected'] == candidate,'expected original E return deployment')
     save('back-after.json',current)
-    print('C selected for NEXT boot. Reboot deliberately if returning; running D is unchanged.')
+    print('E selected for NEXT boot. Reboot deliberately if returning; running F is unchanged.')
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action',choices=('prepare','enter','status','install','stage','cancel','activate','after','back'))
+    parser.add_argument('action',choices=('prepare','enter','status','install','prime','stage','cancel','activate','after','back'))
     args = parser.parse_args(argv)
     require(os.geteuid() == 0 and os.path.ismount(ROOT) and os.path.ismount(RUNTIME),
             'run as root on the installed Mojt SSD, not Debian or installer media')
@@ -369,14 +382,14 @@ def main(argv=None):
                     'preparation evidence already exists; inspect status before repeating')
             before = baseline();downloads = WORK/'downloads';downloads.mkdir(mode=0o700)
             data = fetch(downloads)
-            print('Packaging C and D on the SSD. This preparation is outside the MPM performance samples.',flush=True)
+            print('Packaging E and F on the SSD. This preparation is outside the MPM performance samples.',flush=True)
             origin = before['status']['running']
             candidate = package(ROOT,origin['artifact'],data,WORK/'candidate',label=LABEL,revision=1)
             probe = package(ROOT,origin['artifact'],data,WORK/'probe',label=PROBE_LABEL,revision=2)
             require(baseline() == before,'baseline changed during preparation')
             save('state.json',dict(format=FORMAT,revision=REVISION,files=FILES,bridge_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                                    baseline=before,origin=origin,candidate=candidate,probe=probe))
-            print('READY: packages C and D only. Next: enter. No boot choice changed.');return 0
+            print('READY: packages E and F only. Next: enter. No boot choice changed.');return 0
         state = read('state.json')
         require(state['format'] == FORMAT and state['revision'] == REVISION and state['files'] == FILES
                 and state['bridge_sha256'] == hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),

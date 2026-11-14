@@ -102,6 +102,8 @@ reader, handover, selection and bootstrap regressions remain separate checks.
 The minimal probe is not full System, firmware or storage-driver acceptance.
 
 Owner hardware performance and boot acceptance for the new two-member path are
-pending. The previous C/D acceptance covers the earlier monolithic constructor.
+pending; the [E/F test guide](initramfs-payload-hardware-test.md) provides the
+pinned successor delivery, cold/warm measurements and deliberate boot check.
+The previous C/D acceptance covers the earlier monolithic constructor.
 Future ordinary install/preparation integration must reuse this path and preserve
 the accepted fast atomic choice, explicit requirements and independent lifecycles.

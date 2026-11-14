@@ -6,6 +6,11 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Focused fast-install and activation hardware test
 
+This is the historical C/D delivery. Its helper is frozen at
+`78fb02b52b75b9ab03d9ca0a2ec6069843e7fd2d`; the current helper has advanced to
+the separate [E/F payload test](initramfs-payload-hardware-test.md). Use the
+matching pinned script and checkpoint for each guide.
+
 Run after the reviewed delivery head's CI passes. Functional code is pinned to
 `991714acfab88676521599ca8f303cd24b09590f`, which passed all three CI jobs.
 The USB script has an exact SHA256 for each of its nine downloaded files. These
