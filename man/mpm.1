@@ -31,8 +31,10 @@ These operations require no optional provider backend and never activate a Kerne
 New System profiles deliver the complete frontend and its Python modules.
 Installed commands use the selected System's pinned Python, an isolated import
 path and management command path, independently of Ports programs.
-Ports defaults to /var/lib/mojt/ports. Initial metadata is an explicit finite
-mojt-ports-sources-v1 bundle, then retained in the published profile.
+Ports defaults to /var/lib/mojt/ports. The installed frontend discovers requested
+packages from the System's pinned Nixpkgs source. Explicit finite
+mojt-ports-sources-v1 bundles remain available and take precedence.
+Accepted metadata is retained in the published profile.
 Native Kernel install/plan defaults to /run/mojt-disk/kernel; boot commands
 default to /run/mojt-disk. Explicit --root/--disk-root inspection keeps its
 explicit target and does not attach the current machine's runtime record.
@@ -208,6 +210,13 @@ Base/System/native Port installation joins remain work. Existing explicit Ports
 source bundles continue to work separately.
 .SH PORTS ACTIONS
 .TP
+.B update
+On an installed System, check its pinned provider source. On a fresh machine,
+accept an empty named nixpkgs view; packages are discovered on demand by install.
+An existing view keeps its accepted pin. This does not fetch a newer Nixpkgs
+revision or advance installed packages. An explicit bundle is needed to change
+an accepted pin in this implementation.
+.TP
 .BI "update --sources " "FILE [--expected-sources ID]"
 Accept an explicit local mojt-ports-sources-v1 bundle for this machine's platform.
 The envelope has format, id and description; description has platform and sources.
@@ -219,12 +228,27 @@ There is no channel refresh, package evaluation or implicit source build.
 .TP
 .BI "install " "SELECTOR ... [--source NAME] [--no-activate]"
 Use the common resolver for stable latest NAME, numeric series NAME@2.12 or
-exact release NAME@=2.12.3. Initial installation needs --sources FILE, or update
-must already have accepted it. Multiple named sources require --source NAME.
+exact release NAME@=2.12.3. On an installed System, no initial --sources file is
+needed: missing package names are evaluated against /run/mojt-system/ports.toml.
+Only that pinned source's offered releases are available; an unavailable exact
+release or series fails before payload acquisition. The adapter supplies a stable
+release policy for this source; opaque versions remain exact-only.
+The source-checkout frontend needs --sources FILE, or an already accepted view.
+Multiple named sources require --source NAME.
 Record independent interactive wishes and import exact binary objects.
 Existing accepted wishes do not advance as a side effect of another install.
 First unambiguous installation records a following default unless --no-activate;
 later installations retain versions without changing an existing active choice.
+.PP
+Provider discovery uses no legacy Ports state. It temporarily retains exact
+signed binary outputs to inventory their actual commands, then passes a finite
+catalog and exact references to the same profile transaction as explicit bundles.
+No source builds are allowed. Without -y, downloading and final publication have
+separate confirmations. Failure leaves the previous profile current; temporary
+roots are released, though downloaded Nix objects can remain for later reuse.
+For a newly discovered name, --dry-run reports an acquisition preview: commands
+and aliases await binary inspection. It creates no profile or roots and imports
+no payloads. It is not a publishable profile plan.
 .TP
 .BI "upgrade " "[NAME ...]"
 Advance only recorded latest/series wishes for those names, or all wishes if

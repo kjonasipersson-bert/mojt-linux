@@ -4,6 +4,7 @@
 """Joined frontend/filesystem flow; provider fixture is explicit, not live Nix."""
 import contextlib
 import copy
+import dataclasses
 import inspect
 import io
 import json
@@ -12,6 +13,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -21,6 +23,8 @@ import mpm_ports_cli as manager
 import mpm_ports_profile as profiles
 import mpm_request_plan as planning
 import mpm_requests as wishes
+import mpm_ports_nix_source as discovery
+import mpm_selection
 import test_mpm_ports_profile as fixtures
 
 
@@ -49,6 +53,84 @@ class PortsCliTests(unittest.TestCase):
 
     def state(self): return profiles.current(self.root)['record']['description']
     def output(self, name='hello'): return subprocess.check_output([str(self.root / 'current/bin' / name)], text=True).strip()
+
+    def installed_provider(self):
+        """Real CLI/profile transaction; only Nix evaluation/acquisition is a fixture."""
+        manifest = self.parent / 'ports.toml'
+        manifest.write_text('format = 1\n[nixpkgs]\npath = "/pinned"\nrevision = "' + 'a'*40 +
+                            '"\nsystem = "x86_64-linux"\n')
+        self.runtime = dataclasses.replace(cli.Runtime(), source=manifest)
+        self.pin = dict(path='/pinned', revision='a'*40, system='x86_64-linux',
+                        store='/nix/store/pinned', nar_hash='sha256:fixture')
+        self.provider_calls = []; self.temporary_roots = []
+        def run(*args):
+            self.provider_calls.append(args)
+            self.assertEqual(args[0:3], ('nix-store', '--realise', '2.12.3'))
+            self.assertIn('max-jobs', args); self.assertIn('require-sigs', args)
+            root = Path(args[args.index('--add-root')+1]); root.symlink_to('/fixture-binary')
+            self.temporary_roots.append(root)
+            if getattr(self, 'download_failure', False): raise ValueError('binary unavailable')
+        backend = SimpleNamespace(source_from_fields=lambda *a:dict(self.pin),
+            resolve_package=lambda source,name,attribute:dict(name=name,attribute=attribute,
+                version='2.12.3',output='2.12.3'), selection_core=lambda:mpm_selection, run=run)
+        def catalog(*args, **kwargs):
+            value = copy.deepcopy(self.f.sources['local']['catalogs']['hello'])
+            value['candidates'] = [value['candidates'][1]]
+            value['candidates'][0]['source'] = discovery.NAME
+            value['sources'] = {discovery.NAME:dict(backend='copy', identity=dict(self.pin))}
+            return value
+        def bundle(backend, value, name):
+            view = discovery.source_view({name:value}, [self.f.offers[1]])
+            return planning.record(manager.SOURCES, dict(platform='x86_64-linux', sources=dict(local=view)))
+        module = SimpleNamespace(load_backend=lambda:backend, prepare_catalog=catalog, prepare_bundle=bundle)
+        patch = mock.patch.object(discovery, 'exporter', return_value=module)
+        patch.start(); self.addCleanup(patch.stop)
+
+    @unittest.skipUnless(os.geteuid() == 0, 'installed administrator flow; also run in root-mapped namespace')
+    def test_installed_fresh_install_without_sources_uses_same_profile_transaction(self):
+        self.installed_provider()
+        preview = self.call('install', 'hello@2.12', '--dry-run', runtime=self.runtime)
+        self.assertEqual(preview['plan']['format'], 'mojt-ports-provider-preview-v1')
+        self.assertEqual(self.provider_calls, []); self.assertFalse(self.root.exists())
+        self.assertIn('no eligible', self.call('install', 'hello@2.1', '--dry-run', runtime=self.runtime, success=False))
+        with mock.patch('builtins.input', return_value='n'):
+            self.assertIn('Cancelled', self.call('install', 'hello', runtime=self.runtime))
+        self.assertEqual(self.provider_calls, []); self.assertFalse(self.root.exists())
+        result = self.call('install', 'hello@2.12', '-y', runtime=self.runtime)
+        self.assertTrue(result['changed']); self.assertEqual(self.output(), '2.12.3')
+        self.assertEqual(self.output('hello-2.12'), '2.12.3')
+        self.assertEqual(self.state()['requests']['description']['claims'][0]['source'], 'nixpkgs')
+        self.assertTrue(all(not p.parent.exists() for p in self.temporary_roots))
+        count = len(profiles.history(self.root)); pointer = os.readlink(self.root / 'current')
+        self.assertFalse(self.call('install', 'hello@2.12', '-y', runtime=self.runtime)['changed'])
+        self.assertFalse(self.call('upgrade', '-y', runtime=self.runtime)['changed'])
+        self.assertFalse(self.call('update', '-y', runtime=self.runtime)['changed'])
+        self.assertEqual(len(self.provider_calls), 1)
+        self.assertEqual(len(profiles.history(self.root)), count)
+        self.assertEqual(os.readlink(self.root / 'current'), pointer)
+
+    @unittest.skipUnless(os.geteuid() == 0, 'installed administrator flow')
+    def test_installed_discovery_failure_and_wrong_source_do_not_publish(self):
+        self.installed_provider(); self.download_failure = True
+        self.assertIn('binary unavailable', self.call('install', 'hello', '-y', runtime=self.runtime, success=False))
+        self.assertFalse(self.root.exists())
+        self.assertTrue(all(not p.parent.exists() for p in self.temporary_roots))
+        self.assertIn('initial operation', self.call('install', 'hello', '--source', 'other', '-y', runtime=self.runtime, success=False))
+        self.assertEqual(len(self.provider_calls), 1)
+
+    @unittest.skipUnless(os.geteuid() == 0, 'installed administrator flow')
+    def test_installed_update_then_install_and_source_pin_guard(self):
+        self.installed_provider()
+        self.assertTrue(self.call('update', '-y', runtime=self.runtime)['changed'])
+        self.assertEqual(self.provider_calls, [])
+        self.call('install', 'hello', '-y', runtime=self.runtime)
+        before = self.state(); self.pin['revision'] = 'b'*40
+        self.assertIn('another source pin', self.call('update', '-y', runtime=self.runtime, success=False))
+        self.assertEqual(self.state(), before)
+
+    def test_explicit_catalog_does_not_invoke_installed_discovery(self):
+        with mock.patch.object(discovery, 'exporter', side_effect=AssertionError('implicit provider')):
+            self.call('install', 'hello', '--sources', str(self.bundle), '-y')
 
     def test_public_preview_empty_status_and_cancellation_write_nothing(self):
         self.assertEqual(self.call('status')['installed'], [])
@@ -157,10 +239,11 @@ class PortsCliTests(unittest.TestCase):
             self.assertEqual(self.call('search', 'h.*', '--json')['matches'], [])
             self.call('status'); self.call('history', '--json'); self.call('list', '--json')
 
-    def test_installed_copy_can_publish_without_checkout_or_prototype(self):
+    def test_installed_copy_can_publish_without_checkout(self):
         installed = self.parent / 'installed'; installed.mkdir()
         for name in ('mpm_cli.py', 'mpm_ports_cli.py', 'mpm_requests.py', 'mpm_request_plan.py',
-                     'mpm_ports_profile.py', 'mpm_nix_binary.py', 'mpm_selection.py', 'mpm_transaction.py'):
+                     'mpm_ports_profile.py', 'mpm_nix_binary.py', 'mpm_selection.py', 'mpm_transaction.py',
+                     'mpm_ports_nix_source.py', 'mpm-nix-catalog.py', 'mpm-nix-prototype'):
             shutil.copyfile(Path(manager.__file__).parent / name, installed / name)
         # The acceptance harness supplies a trusted file-copy provider, just as
         # native boot fixtures substitute host tools. Production mapping stays Nix.

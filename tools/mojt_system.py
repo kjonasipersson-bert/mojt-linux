@@ -79,7 +79,7 @@ MPM_FILES = (
     "mpm_selector_ports.py", "mpm_system.py", "mpm_system_model.py", "mpm_system_cli.py", "mpm_system_source.py", "mpm_system_transition.py", "mpm_boot_v2.py", "mpm_boot_v2_store.py", "mpm_boot_inventory.py", "mpm_boot_early.py", "mpm_boot_constructor.py", "mpm_boot_base.py", "mpm_boot_handover.py", "mpm_nix_boot.py", "mpm_boot_status.py", "mpm_base.py", "mpm_base_transition.py", "mpm_base_boot.py", "mpm_base_cli.py", "mpm_base_source.py", "mpm_base_status.py",
     "mpm_native_io.py", "mojt-base-install", "mpm_kernel.py", "mpm_kernel_source.py", "mpm_deployment.py", "mpm_kernel_boot.py",
     "mpm_transaction.py", "mpm_defaults.py", "mpm_management.py", "mpm_requests.py", "mpm_request_plan.py", "mpm_sources.py", "mpm_sources_cli.py",
-    "mpm_ports_profile.py", "mpm_ports_cli.py", "mpm_nix_binary.py", "mpm_native_cache.py", "mojt_artifact.py", "mojt_boot.py", "mojt_system.py",
+    "mpm_ports_profile.py", "mpm_ports_cli.py", "mpm_ports_nix_source.py", "mpm_nix_binary.py", "mpm_native_cache.py", "mojt_artifact.py", "mojt_boot.py", "mojt_system.py",
     "mojt_system_manifest.py", "mojt_native_image.py", "mojt-vm-build.py",
     "mojt_hardware.py", "mojt_generations.py", "mojt_accounts.py", "mojt-system-inspect.py",
     "mpm-nix-prototype", "mpm-nix-catalog.py",

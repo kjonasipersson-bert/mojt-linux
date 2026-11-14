@@ -35,7 +35,7 @@ def help_text():
           "  catalog                 explicit local catalog discovery\n"
           "  kernel                  install, status, activate, upgrade, stage, select, rollback, resolve\n"
           "  ports                   install, activate, upgrade, update, apply, remove, reset, list, history\n"
-          "                          initial/update input: --sources FILE\n"
+          "                          installed pinned provider, or explicit --sources FILE\n"
           "  base                    install, status, activate, upgrade, stage, select, rollback; search, show, versions with --catalog FILE\n"
           "  system                  install, status, activate, upgrade, stage, select, rollback; search, show, versions with --catalog FILE\n"
           "System install retains native content only; Base/Kernel selection changes next boot only.\n"
