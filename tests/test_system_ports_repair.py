@@ -21,6 +21,12 @@ loader = importlib.util.spec_from_file_location('ports_repair', REPO / 'tools/mo
 repair = importlib.util.module_from_spec(loader); loader.loader.exec_module(repair)
 
 
+class Provider:
+    def describe(self, reference, root): return dict(reference=copy.deepcopy(reference), commands={})
+    def ensure(self, reference, root): pass
+    def verify(self, reference, root): pass
+
+
 @unittest.skipUnless(os.geteuid() == 0 and shutil.which('zstd'), 'requires root-mapped native install and zstd')
 class RepairTests(Fixture):
     def setUp(self):
@@ -30,7 +36,9 @@ class RepairTests(Fixture):
         (content / 'tools/mpm_ports_nix_source.py').unlink()
         path = content / 'tools/mojt_system.py'
         path.write_text(path.read_text().replace('"mpm_ports_nix_source.py", ', ''))
-        part = pack(content, spec('component'), self.work / 'original-runtime')
+        self.providers = {'fixture':Provider()}
+        provider = dict(provider='fixture', identity=dict(closure='accepted-startup-runtime'))
+        part = pack(content, spec('component', dependencies=[provider]), self.work / 'original-runtime')
         self.reference = dict(provider='native', artifact=part['artifact']['id'])
         self.component_archive = self.work / 'original-runtime' / part['archive']['file']
         d = copy.deepcopy(self.composition['description']); d['components'][0]['reference'] = self.reference
@@ -38,7 +46,7 @@ class RepairTests(Fixture):
         d['profile'].append(dict(path='version', source=dict(reference=self.reference, path='version')))
         d['profile'].sort(key=lambda r:r['path']); self.composition = base.record(model.FORMAT, d)
         self.archive, self.body = self.package(self.composition, self.actions)
-        self.install()
+        self.install(adapters=self.providers)
         self.downloads = {p:(REPO / p).read_bytes() for p in repair.FILES}
 
     def test_fixed_generation_installs_with_existing_manager_and_old_content_unchanged(self):
@@ -53,7 +61,7 @@ class RepairTests(Fixture):
         self.assertEqual(new_component['dependencies'], old_component['dependencies'])
         self.assertFalse(any((self.root / 'boot').glob('**/*')))
         system.install(self.root, output / result['generation'], result['artifact'],
-            dependency_files=[output / result['component']], yes=True)
+            dependency_files=[output / result['component']], adapters=self.providers, yes=True)
         old_profile = system.realization_path(self.root, self.body['id']) / 'profile'
         new_profile = system.realization_path(self.root, result['artifact']) / 'profile'
         report = transition.tooling_review(base.read(old_profile / 'manifest.json'), base.read(new_profile / 'manifest.json'))
