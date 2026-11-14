@@ -72,5 +72,7 @@ unacceptably slow, with substantial fan activity. That first activation used the
 old running MPM. The original #54 change only reduced selection audit passes
 from two to one and did not meet the required fast activation boundary.
 No real-machine latency is claimed for this replacement implementation.
-The [original hardware delivery](activation-hardware-test.md) remains pinned to
-that earlier code; it does not install or measure the new implementation.
+The [successor hardware test](activation-fast-hardware-test.md) delivers the new
+manager as C and measures D through its public installed MPM. Original A/B
+checkpoints stay separate. The earlier [A/B delivery](activation-hardware-test.md)
+remains pinned to the old implementation.

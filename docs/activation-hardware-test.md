@@ -10,8 +10,8 @@ SPDX-License-Identifier: GPL-2.0-only
 It installs the earlier combined preparation/activation implementation, not the
 replacement described in [activation performance](activation-performance.md).
 Keep existing checkpoints/evidence; do not use this delivery to measure the new
-fast activation or optional installation verification paths. A successor tooling
-delivery is needed for that physical acceptance.
+fast activation or optional installation verification paths. Use the separate [C/D successor test](activation-fast-hardware-test.md) for that
+physical acceptance.
 
 Run only after this PR's current-head CI is green. Keep the existing SSD
 installation, Base and Kernel. Boot the accepted `system-ports-fix-1`, with no

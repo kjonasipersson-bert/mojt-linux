@@ -49,9 +49,11 @@ by the boundaries above: normal selection performs **zero full audits**;
 `activate` requires an already prepared entry. `stage` prepares; `upgrade` can
 prepare and select. Constructor/admission costs still belong to preparation.
 See [activation and installation performance](activation-performance.md).
-The existing pinned test bridge installs the earlier implementation and is
-historical evidence, not delivery of the replacement. New physical performance
-acceptance remains pending.
+All three CI jobs passed for functional revision `991714ac`. The successor
+[C/D hardware test](activation-fast-hardware-test.md) is prepared: bootstrap C
+through the old manager, then measure D installation, preparation and activation
+separately through the new installed MPM. It preserves original A/B checkpoints
+and provider dependencies. New physical performance acceptance remains pending.
 
 ### Proposals for discussion, not scheduled commitments
 
