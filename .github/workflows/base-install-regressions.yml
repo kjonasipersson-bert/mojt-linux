@@ -23,6 +23,10 @@ jobs:
         run: |
           python3 -B -m unittest discover -s tests -p 'test_mpm_ports_*.py' -v
           python3 -B -m unittest discover -s tests -p 'test_mpm_nix_binary.py' -v
+          sudo env PYTHONPATH=tests python3 -B -m unittest -v \
+            test_mpm_ports_cli.PortsCliTests.test_installed_fresh_install_without_sources_uses_same_profile_transaction \
+            test_mpm_ports_cli.PortsCliTests.test_installed_discovery_failure_and_wrong_source_do_not_publish \
+            test_mpm_ports_cli.PortsCliTests.test_installed_update_then_install_and_source_pin_guard
       - name: Check fresh Ports capability gates in System metadata
         run: python3 -B -m unittest discover -s tests -p 'test_system_manifest.py' -v
       - name: Check owner-authorized native acquisition and verified cache

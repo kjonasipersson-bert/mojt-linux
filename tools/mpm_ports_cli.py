@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """Fresh Ports frontend over accepted finite sources; no implicit catalog refresh."""
 import argparse
+from contextlib import ExitStack
 import copy
 import hashlib
 import json
@@ -36,7 +37,8 @@ def source_bundle(value, platform):
 def executor_identity(runtime):
     files = ('mpm_cli.py', 'mpm_ports_cli.py', 'mpm_requests.py',
              'mpm_request_plan.py', 'mpm_ports_profile.py', 'mpm_nix_binary.py',
-             'mpm_selection.py', 'mpm_transaction.py')
+             'mpm_selection.py', 'mpm_transaction.py', 'mpm_ports_nix_source.py',
+             'mpm-nix-catalog.py', 'mpm-nix-prototype')
     directory = Path(__file__).parent
     return dict(provider='mpm-runtime', identity=dict(format='mojt-mpm-executor-v1',
         files={name: hashlib.sha256((directory / name).read_bytes()).hexdigest() for name in files},
@@ -160,6 +162,11 @@ def inspect(root, args, previous, platform):
 
 
 def main(argv, *, root=None, runtime=None, adapters=None):
+    with ExitStack() as stack:
+        return _main(argv, root=root, runtime=runtime, adapters=adapters, stack=stack)
+
+
+def _main(argv, *, root, runtime, adapters, stack):
     args = parser().parse_args(argv)
     if root is not None and args.root is not None:
         raise ValueError('specify --root only once')
@@ -186,8 +193,25 @@ def main(argv, *, root=None, runtime=None, adapters=None):
     else:
         require(not args.expected_sources, '--expected-sources requires --sources')
         sources = copy.deepcopy(old['sources']) if old else {}
-    require(args.action != 'update' or args.sources is not None, 'update needs an explicit --sources snapshot bundle')
-    require(args.action == 'update' or old is not None or args.sources is not None, 'initial operation needs --sources FILE')
+    from mpm_ports_nix_source import prepare, materialize, preview as discovery_preview
+    prepared = prepare(runtime, args, sources, platform)
+    if prepared is not None:
+        # This is a provider-discovery preview, not a publishable profile plan:
+        # binaries may export more commands than their package's public name.
+        if prepared['rows']:
+            proposal = discovery_preview(prepared)
+            if args.dry_run:
+                print(json.dumps(dict(dry_run=True, changed=False, plan=proposal), indent=2)); return 0
+            if not args.yes:
+                print(json.dumps(proposal, indent=2))
+                if input('Fetch these exact binaries for inspection? [y/N] ').strip().lower() != 'y':
+                    print('Cancelled.'); return 0
+        sources = materialize(prepared, sources, stack)
+        require(profiles.current(root) == previous, 'Ports baseline changed during discovery; retry')
+    require(args.action != 'update' or args.sources is not None or prepared is not None,
+            'update needs an explicit --sources snapshot bundle')
+    require(args.action == 'update' or old is not None or args.sources is not None or prepared is not None,
+            'initial operation needs --sources FILE (no installed provider source)')
     before_keys = {c['key'] for c in state['description']['claims']}
     advance = []
     if args.action == 'install':
