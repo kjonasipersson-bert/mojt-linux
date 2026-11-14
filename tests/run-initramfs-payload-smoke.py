@@ -12,6 +12,7 @@ from pathlib import Path
 import os
 import subprocess
 import sys
+import tempfile
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'tools'))
 import mojt_artifact as artifact
@@ -27,10 +28,17 @@ def main():
     parser.add_argument('--output',type=Path,required=True)
     args=parser.parse_args()
     artifact.require(os.geteuid()==0,'real initramfs device nodes require root')
+    # RUNNER_TEMP is below an unprivileged home on GitHub. The cache must
+    # obey the same protected-ancestor contract as a real installed disk.
+    with tempfile.TemporaryDirectory(prefix='mojt-payload-smoke-',dir='/var/tmp') as private:
+        probe(args,Path(private)/'disk')
+
+
+def probe(args,root):
     kernel=args.kernel.resolve(strict=True);busybox=args.busybox.resolve(strict=True)
     artifact.require(not args.output.exists(),'use a new disposable smoke output')
     args.output.mkdir(parents=True,mode=0o700);work=args.output.resolve()
-    root=work/'disk';(root/'boot/mpm').mkdir(parents=True)
+    (root/'boot/mpm').mkdir(parents=True)
     vm=archive.vm_module();artifact.require(vm.static_x86_64_elf(busybox),'static BusyBox required')
     key=model.record(constructor.PAYLOAD_KEY,dict(probe=1,kernel_sha256=artifact.file_sha(kernel),busybox_sha256=artifact.file_sha(busybox)))
     def create():
