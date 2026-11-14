@@ -6,10 +6,88 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Mojt development priorities
 
-Updated 2026-11-08. This records the agreed order and measured progress;
+Updated 2026-11-14. This records the agreed order and measured progress;
 future commands and policies are not claims of implemented functionality.
 The [architecture](architecture.md) defines the layer boundaries and the
 [MPM contract](mpm.md) records the accepted update semantics.
+
+## Current position and next increment — 2026-11-14
+
+This section supersedes older “next” and “unimplemented” statements in the
+historical tracks below. Keep their evidence and limits; do not infer that an
+old experiment covers today's complete installed workflow.
+
+The owner has booted the successor native System prepared with the fixed Ports
+repair bridge in #53 and installed Neovim successfully. This is physical
+installed-update/Ports acceptance, not a new full Base/Kernel/firmware matrix.
+The update appeared to take roughly 5–10 minutes on the owner's machine; that
+is an estimate, not a phase benchmark. The existing native-v2 installed
+Base/System/Kernel activation path and bootstrap work must now be assessed as
+implemented increments, with their bounded lifecycle restrictions retained.
+
+The accepted increment is **fast activation, lean installation and interactive choices**:
+
+1. Keep activation to selecting an already admitted boot entry, using metadata
+   checks and one atomic menu publication. Do not construct initramfs, rescan
+   payloads or repeat preflight during activation. Full selection audits require
+   explicit `--verify`.
+2. Keep System installation to required copying, safe unpacking, composition and
+   provider acquisition. Reuse retained content without scrubbing it, unpack new
+   archives once, compose the profile once, and reserve full payload/provider
+   integrity audits for `install --verify`.
+3. Offer prepared activation candidates interactively with version and identity;
+   offer installed candidates for preparation/upgrade. Preserve exact flags, JSON,
+   cancellation, stale-selection guards and atomic publication failure behavior.
+4. Keep preparation and activation costs separate. Expensive acceptance tests
+   belong in the project/test workflow or explicitly selected diagnostics.
+   The owner accepted activation usability after the C/D hardware run below;
+   no extra repetition is needed solely to obtain a missing stopwatch sample.
+
+The owner tested installation of A/B and initial activation with the original
+#54 delivery and reported unacceptable time and fan activity for both. No exact
+phase times were supplied. The original duplicate-audit removal is superseded
+by the boundaries above: normal selection performs **zero full audits**;
+`activate` requires an already prepared entry. `stage` prepares; `upgrade` can
+prepare and select. Constructor/admission costs still belong to preparation.
+See [activation and installation performance](activation-performance.md).
+All three CI jobs passed for functional revision `991714ac` and delivery
+`78fb02b5`. The owner completed the [C/D hardware test](activation-fast-hardware-test.md#recorded-owner-acceptance--2026-11-14):
+C booted, D installed in 11.595 s, D prepared in 275.823 s, cancellation worked,
+and public `mpm system activate` selected D. The owner reported C running/D next
+boot, then successful D boot/after-check and working Ports. Activation felt fast
+but not immediate and was explicitly accepted as sufficient for now.
+Activation time is unmeasured because the public command was used directly;
+no precise latency or speedup ratio is claimed. Original A/B checkpoints and
+provider dependencies were retained. Optional C return was not reported.
+
+The bounded activation/chooser/boot gate is closed. **Preparation performance
+remains open**: about 4 minutes 36 seconds wall and 265.932 s CPU in `stage`,
+including 43.16 s candidate checks. This is separate from accepted activation.
+The next bounded investigation is to separate repeated integrity scans from
+necessary boot construction, then reduce normal preparation work with focused
+regression checks. It does not authorize sweeping writable-root or service/state
+changes. The kernel/firmware/MBT items below remain proposals for discussion.
+
+### Proposals for discussion, not scheduled commitments
+
+- Revisit the writable-root layout: a read-only `/` is inconvenient. Specify
+  writable administration paths and their persistence/rollback semantics before
+  changing mount policy; immutable installed content remains a separate concern.
+- Build a kernel on the target installation using a Debian-derived Kconfig,
+  extending the earlier controlled native-build proof into the installed flow.
+- Broaden System firmware coverage for installation on many machines; define
+  coverage and verify representative hardware rather than claiming all machines.
+- Continue usability testing and MBT development, reusing installed MPM APIs.
+- Explore bootstrap choices as independent axes: target (directory, disk image,
+  physical disk), profile (minimal, normal, build machine, rescue), and source
+  (local directory, installation medium, configured repository).
+- Explore the interface split: MPM owns installed content, versions, environments
+  and choices; the build/bootstrap interface owns compilation and packaging.
+  Proposed environment commands or a future `mojt` name are not implemented
+  contracts or a decision to rename MBT.
+
+Full self-hosting still requires source builds of Base and the entire System;
+image assembly from prebuilt inputs and a kernel build alone do not establish it.
 
 ## Completed foundation
 

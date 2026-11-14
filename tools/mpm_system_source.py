@@ -56,7 +56,7 @@ def prepare(root, source_root, cache_root, name, identifier, *, archive_sha256, 
         archive_verified=False, profile_validated=False))
 
 
-def execute(plan, *, adapters=None):
+def execute(plan, *, adapters=None, verify=False):
     d = sources.cache.envelope(plan, FORMAT);root = targets(d['target'], d['sources_root'], d['cache_root'])
     base.require(os.geteuid() == 0, 'System realization requires an administrator')
     source = sources.registry(d['sources_root'], write=True)
@@ -66,7 +66,7 @@ def execute(plan, *, adapters=None):
         base.require(actual == plan, 'System source install plan changed')
         system.providers(root, d['providers'], adapters)
         if d['completed']:
-            return dict(plan=plan, changed=False, installation=system.install(root, None, d['artifact'], yes=True, adapters=adapters))
+            return dict(plan=plan, changed=False, installation=system.install(root, None, d['artifact'], yes=True, adapters=adapters, verify=verify))
         archives, origins = [], {}
         for row in d['components']:
             if 'retained' in row:continue
@@ -79,7 +79,7 @@ def execute(plan, *, adapters=None):
         info = base.store_info(root)
         base.require(system.target_identity(root) == d['target_identity'] and (info['installation'] if info else None) == d['installation'], 'System target changed during acquisition')
         result = system.install(root, cached['archive'], d['artifact'], dependency_files=archives,
-            acquisition=origin(args, cached, d['acquisition']), dependency_acquisition=origins, adapters=adapters, yes=True)
+            acquisition=origin(args, cached, d['acquisition']), dependency_acquisition=origins, adapters=adapters, yes=True, verify=verify)
         return dict(plan=plan, changed=result['changed'], installation=result)
 
 
@@ -88,11 +88,11 @@ def origin(args, cached, planned):
                 max_expanded=planned['description']['max_expanded'])
 
 
-def install(root, source_root, cache_root, name, identifier, *, archive_sha256, snapshot=None, dry_run=False, yes=False, adapters=None):
+def install(root, source_root, cache_root, name, identifier, *, archive_sha256, snapshot=None, dry_run=False, yes=False, adapters=None, verify=False):
     plan = prepare(root, source_root, cache_root, name, identifier, archive_sha256=archive_sha256, snapshot=snapshot)
     if dry_run:return dict(plan=plan, changed=False, dry_run=True)
     if not plan['description']['completed'] and not yes:
         print(json.dumps(plan, indent=2), file=sys.stderr)
         if input('Acquire this exact System bundle without changing configuration or boot? [y/N] ').strip().lower() not in ('y', 'yes'):
             return dict(plan=plan, changed=False, cancelled=True)
-    return execute(plan, adapters=adapters)
+    return execute(plan, adapters=adapters, verify=verify)

@@ -81,8 +81,9 @@ all new native inputs in the common cache, and calls the same content installer.
 Complete compatible installed components can be reused. Missing or ambiguous
 component encodings block; there is no arbitrary mirror/encoding/provider choice.
 Both generation and newly acquired component receipts retain their source/cache
-verification evidence. An exact completed repeat verifies retained data without
-fetching again, including when the original kit directory is gone.
+verification evidence. An exact completed repeat reads retained metadata without
+fetching again, including when the original kit directory is gone. Add
+`install --verify` for a full System retained-content/provider audit.
 
 Provider operations currently require the running installation, whose selected
 System supplies the adapter/helper. An explicit offline target cannot use the

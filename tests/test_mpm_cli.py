@@ -38,6 +38,20 @@ class DispatchTests(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(cli.main(['system','plan']),1)
 
+    def test_native_activation_and_selection_need_no_codec_unless_verifying(self):
+        import mpm_boot_update as update
+        import mpm_boot_selection as selection
+        with mock.patch.object(cli.os,'geteuid',return_value=0), \
+             mock.patch.object(selection,'present',return_value=True), \
+             mock.patch.object(update,'main',return_value=0), \
+             mock.patch.object(cli,'require_codec') as codec:
+            for area in ('base','system','kernel'):
+                for action in ('activate','select','rollback'):
+                    self.assertEqual(cli.main([area,action],runtime=cli.Runtime()),0)
+            codec.assert_not_called()
+            self.assertEqual(cli.main(['system','activate','--verify'],runtime=cli.Runtime()),0)
+            codec.assert_called_once()
+
     def test_help_and_unsupported_system_mutations_never_load_a_provider(self):
         with mock.patch.object(cli.runpy, "run_path", side_effect=AssertionError("provider loaded")):
             for args in ([], ["--help"], ["kernel", "--help"]):

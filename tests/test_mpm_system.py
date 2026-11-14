@@ -85,16 +85,45 @@ class Fixture(unittest.TestCase):
         dest = self.work / ('generation-package-' + str(self.serial));result = pack(source, s, dest)
         return dest / result['archive']['file'], result['artifact']
 
-    def install(self, **kw):return system.install(self.root, self.archive, self.body['id'], dependency_files=[self.component_archive], yes=True, **kw)
+    def install(self, **kw):
+        dependencies = kw.pop('dependency_files',[self.component_archive])
+        return system.install(self.root,self.archive,self.body['id'],dependency_files=dependencies,yes=True,**kw)
 
 
 @unittest.skipUnless(shutil.which('zstd'), 'requires real native archive codec')
 class PreviewTests(Fixture):
     def test_real_composition_component_and_profile_preview_write_no_target(self):
         before = tree(self.root);result = self.install(dry_run=True)
-        self.assertTrue(result['profile_validated'] and result['archive_verified'])
+        self.assertTrue(result['profile_validated']);self.assertFalse(result['archive_verified'])
         self.assertEqual(tree(self.root), before);self.assertFalse(self.marker.exists())
         self.assertFalse((self.root / 'artifacts').exists())
+
+    def test_payload_hashing_is_optional_but_archive_structure_and_zstd_errors_are_not(self):
+        import tarfile
+        # Change payload bytes without updating the valid descriptor or tar sizes.
+        raw = subprocess.run(['zstd','-qd','-c',str(self.component_archive)],check=True,capture_output=True).stdout
+        original = b'private fixture configuration\n'
+        self.assertIn(original,raw)
+        changed = raw.replace(original,b'changed fixture configuration\n')
+        encoded = subprocess.run(['zstd','-q','-c'],input=changed,check=True,capture_output=True).stdout
+        damaged = self.work/'changed.tar.zst';damaged.write_bytes(encoded)
+        self.install(dry_run=True,dependency_files=[damaged])
+        with self.assertRaisesRegex(ValueError,'checksum differs'):
+            self.install(dry_run=True,dependency_files=[damaged],verify=True)
+        # Undeclared traversal and a truncated compressed frame fail in normal mode.
+        content = io.BytesIO()
+        with tarfile.open(fileobj=io.BytesIO(raw),mode='r:') as source, tarfile.open(fileobj=content,mode='w') as target:
+            for member in source:
+                data = source.extractfile(member) if member.isfile() else None
+                if member.name.endswith('/payload/private.conf'):member.name = '../../outside'
+                target.addfile(member,data)
+        damaged.write_bytes(subprocess.run(['zstd','-q','-c'],input=content.getvalue(),check=True,capture_output=True).stdout)
+        with self.assertRaisesRegex(ValueError,'member differs'):
+            self.install(dry_run=True,dependency_files=[damaged])
+        damaged.write_bytes(encoded[:-8])
+        with self.assertRaises((ValueError,tarfile.TarError)):
+            self.install(dry_run=True,dependency_files=[damaged])
+        self.assertEqual(tree(self.root),{});self.assertFalse((self.work/'outside').exists())
 
     def test_status_of_missing_target_has_no_codec_or_registry_dependency(self):
         absent = self.work / 'absent';result = system.status(absent)
@@ -138,8 +167,8 @@ class PreviewTests(Fixture):
     def test_changed_physical_target_is_refused_without_a_registry(self):
         build = system.build_profile
         moved = self.work / 'replaced-target'
-        def replace_target(*args):
-            result = build(*args)
+        def replace_target(*args, **kwargs):
+            result = build(*args, **kwargs)
             self.root.rename(moved);self.root.mkdir()
             return result
         with mock.patch.object(system, 'build_profile', side_effect=replace_target), self.assertRaisesRegex(ValueError, 'target changed'):
@@ -171,6 +200,32 @@ class InstallTests(Fixture):
         self.assertFalse(repeat['changed']);self.assertEqual(tree(self.root), before)
         self.assertEqual(system.status(self.root, verify=True), actual)
 
+    def test_default_install_does_not_scrub_and_builds_profile_once(self):
+        with mock.patch.object(artifact,'verify',side_effect=AssertionError('implicit archive scrub')), \
+             mock.patch.object(system,'build_profile',wraps=system.build_profile) as build, \
+             mock.patch.object(system.io,'unpack_regular',wraps=system.io.unpack_regular) as unpack:
+            self.assertTrue(self.install()['changed'])
+            self.assertEqual(build.call_count,1)
+            self.assertEqual(unpack.call_count,2)  # One pass per new archive.
+            self.assertTrue(all(call.kwargs['verify'] is False for call in unpack.call_args_list))
+            self.assertFalse(system.install(self.root,None,self.body['id'],yes=True)['changed'])
+            self.assertEqual(unpack.call_count,2);self.assertEqual(build.call_count,1)
+        system.status(self.root,verify=True)
+        with mock.patch.object(artifact,'verify',wraps=artifact.verify) as audit:
+            self.assertFalse(system.install(self.root,None,self.body['id'],yes=True,verify=True)['changed'])
+            self.assertGreater(audit.call_count,0)
+
+    def test_explicit_verification_detects_damage_in_final_profile_copy(self):
+        copy_profile = system.copy_profile
+        def corrupt(source,destination):
+            copy_profile(source,destination)
+            file = destination/'bin/mpm';file.chmod(0o755)
+            file.write_bytes(b'x'*file.stat().st_size);file.chmod(0o555)
+        with mock.patch.object(system,'copy_profile',side_effect=corrupt), \
+             self.assertRaisesRegex(ValueError,'profile copy damaged'):
+            self.install(verify=True)
+        self.assertFalse(system.realization_path(self.root,self.body['id']).exists())
+
     def test_same_label_different_builds_coexist_and_label_is_not_selection(self):
         self.install();second, body = self.package(revision=2)
         system.install(self.root, second, body['id'], yes=True)
@@ -193,13 +248,7 @@ class InstallTests(Fixture):
         self.assertEqual(observed['running']['manifest'], record['description']['system']['manifest'])
 
     def test_interruption_retains_components_generation_and_allows_explicit_retry(self):
-        real = system.build_profile
-        calls = [0]
-        def interrupted(*args):
-            calls[0] += 1
-            if calls[0] == 2:raise OSError('injected realization failure')
-            return real(*args)
-        with mock.patch.object(system, 'build_profile', side_effect=interrupted), self.assertRaises(OSError):self.install()
+        with mock.patch.object(system, 'copy_profile', side_effect=OSError('injected realization failure')), self.assertRaises(OSError):self.install()
         status = system.status(self.root)
         self.assertEqual(len(status['retained']), 1);self.assertEqual(len(status['components']), 1);self.assertEqual(status['installed'], [])
         self.assertTrue(system.install(self.root, None, self.body['id'], yes=True)['changed'])
@@ -220,7 +269,8 @@ class InstallTests(Fixture):
         self.install();path = system.realization_path(self.root, self.body['id']) / 'profile/bin/mpm'
         path.chmod(0o755);path.write_bytes(b'changed after install')
         with self.assertRaisesRegex(ValueError, 'profile content'):system.status(self.root, verify=True)
-        with self.assertRaises(ValueError):system.install(self.root, None, self.body['id'], yes=True)
+        self.assertFalse(system.install(self.root, None, self.body['id'], yes=True)['changed'])
+        with self.assertRaises(ValueError):system.install(self.root, None, self.body['id'], yes=True,verify=True)
 
     def test_unsafe_target_and_missing_codec_do_not_initialize_a_registry(self):
         outside = self.work / 'outside';outside.mkdir();linked = self.work / 'linked';linked.symlink_to(outside)

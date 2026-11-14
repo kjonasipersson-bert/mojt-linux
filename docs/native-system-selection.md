@@ -64,25 +64,24 @@ mpm system rollback --expected-selected sha256:CURRENT_ID -y
 ```
 
 Offline commands require `--disk-root`. Only administrators can select, including
-preview. Selection verifies admitted slots, current immutable trees and state,
-checks preparing/candidate/recovery registry support, and preserves exact Base,
-Kernel and boot policy. All entries are retained. Rollback validates the previous
-choice against current state instead of restoring historical configuration/data.
-Neither operation changes running services, reboots, changes wish roots or
-collects content. Initial boot wish roots are null; request-to-boot integration
-is still required before declaring complete configuration-driven administration.
+preview. Ordinary selection checks the admitted entry's protected metadata,
+installation identity, boot-file existence/sizes, exact area preservation and
+expected selection; it does not rescan immutable trees or rerun startup preflight.
+All entries remain retained. Rollback selects a previously prepared entry without
+restoring historical configuration/data. `activate --artifact ID` finds a prepared
+entry and uses this same publisher; absent/ambiguous entries fail explicitly.
+Neither operation constructs initramfs, changes running services, reboots, changes
+wish roots or collects content. Initial boot wish roots remain null.
 
-Publication holds existing store/install/Kernel/boot and existing Ports locks,
-rechecks the selected baseline, stages/fsyncs one complete menu and replaces it
+Publication holds the existing store/install/Kernel/boot and existing Ports locks,
+rereads the selected baseline, stages/fsyncs one complete menu and replaces it
 atomically. Pre-rename failure preserves the old choice. Post-rename flush failure
-reports uncertainty and keeps the new menu plus both deployments. A repeated
-selection is a no-op. Operation-local tree proofs avoid hashing a shared immutable
-dependency once per menu entry; they never persist across independent operations.
-State can change after selection; the early handover checks it again at boot.
-Normal boot rechecks exact metadata, paths and current state, not complete
-package/boot-file inventories. Full integrity scans belong to installation,
-staging/selection and explicit diagnostics; runtime identity does not assert a
-fresh payload audit. See [normal boot policy](native-initramfs-reader.md#normal-boot-and-explicit-content-verification).
+reports uncertainty and retains the possibly committed menu plus deployments.
+A repeated selection is a no-op. `--verify` explicitly adds full retained-content,
+handover and registry compatibility audits under publication locks; a dry-run
+with that flag audits without publishing. Ordinary selection makes no fresh
+integrity claim. Preparation and the normal early boot reader retain their own
+checks. See [operation boundaries](activation-performance.md).
 
 ## Installed, selected and running
 

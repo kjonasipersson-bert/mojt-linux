@@ -40,29 +40,27 @@ attach the inspector host's running identity.
 `--dependency-file` is repeatable. A supplied archive must exactly match one
 native dependency of the generation and have role `component`. Unrelated,
 duplicate or missing components are refused. Already installed exact components
-are verified/reused, including on retries. No implicit source/provider lookup,
+are reused through their protected metadata, including on retries. No implicit source/provider lookup,
 network fetch, evaluation, build or package-name substitution occurs. Exact
-repeat installation verifies retained bytes and writes no new receipt/profile;
+repeat installation reads retained metadata and writes no new receipt/profile;
 the original input archive may have disappeared.
 
 The generation and its direct components are local native packages. A native
 component may now declare exact provider runtime dependencies in its descriptor.
-The core uses the same `describe`/`ensure`/`verify` adapter protocol as Ports;
-provider identities remain opaque to it. The installed frontend supplies the
-existing Nix binary adapter only on demand. Nix validates the accepted output,
-complete closure, NAR hashes and command inventory, imports binaries without
-builds, and registers roots under the installation's `retained/nix/`. It never
-changes a Nix profile or activates Ports. Expected hashes do not authenticate a
-publisher; the existing Nix signature requirement remains enabled for imports.
+The core retains opaque provider identities. The installed Nix adapter realises
+binary outputs with builds disabled, signature enforcement enabled and roots
+under `retained/nix/`. Its normal System install path propagates helper errors
+without querying/hashing the whole closure or running `--verify-path`. Ports'
+existing adapter protocol and verification behavior remain unchanged. Expected
+hashes do not authenticate a publisher.
 
-Provider descriptions are checked before approval without downloads or retention
-writes. Actual import/verification is after approval under installation locks.
-Exact references are retained transitively by the component descriptor and its
-receipt; no second mutable provider catalog is invented. An interrupted provider
-import leaves complete native inputs retained, with no installed generation,
-and an explicit retry finishes from those inputs. Repeat installation verifies
-the retained provider dependency rather than acquiring it again. Plain status
-needs no provider; `status --verify` checks provider dependencies too.
+Provider descriptions are checked before approval. Required binary acquisition
+and root registration happen under installation locks after approval. An
+interrupted provider import leaves complete native inputs retained, and an
+explicit retry can finish from them. Repeating a completed install neither
+acquires nor scrubs provider content. `install --verify` explicitly audits
+payloads, retained objects, profile content and provider closures. Plain status
+needs no provider; `status --verify` also audits dependencies.
 
 The CLI currently permits provider operations only for the running installation,
 using its retained `nix-store` helper. An explicit offline target cannot silently
@@ -91,7 +89,7 @@ The supported subset of the proposed
 System components, role `component`, with no transitive native components or outer
 requirements. Provider dependencies must have supported exact identities. Root-owned protected files/directories and controlled component symbolic links
 are accepted; archive links are never followed during extraction.
-Their data/modes are verified and write bits removed in storage; private source
+Their types/modes/paths are checked and write bits removed in storage; private source
 files remain private. No mode normalization makes private files world-readable.
 
 Profile mappings must reference listed exact components and safe payload-relative
@@ -101,8 +99,9 @@ are refused. Runtime layout currently matches the delivered System contract:
 executables and the complete declared MPM module set readable. This is a file/
 content check, not execution or proof of dynamic-library/ELF compatibility.
 
-Measured `management.json` and the existing System manifest bind the actual
-assembled profile and source dependencies. Literal manager support is extracted
+Generated `management.json` and the existing System manifest bind the assembled
+profile layout, declared payload hashes and source dependencies. Full payload hash
+comparison requires `--verify`. Literal manager support is extracted
 without importing candidate Python; the composition cannot overstate it. The
 candidate must support its own native System representation. Explicit Base ABI
 facts and state layout 1 are mandatory; required host/Kernel capabilities,
@@ -135,11 +134,14 @@ component and generation objects use the shared `mojt-install-receipt-v1`, kind
 measured manifest and dependency receipt IDs. These are independently versioned
 records; unknown versions/layouts fail rather than being adopted or migrated.
 
-All incoming bytes are frozen/verified and a temporary profile validated before
+New archives are privately copied and safely unpacked once; payload hashing is
+optional through `--verify`. One temporary profile is composed before
 target mutation. The plan binds the physical target directory and existing
 installation identity, which are rechecked after approval. The writer then reuses the common artifact-store locking and
-ordered installation lock, revalidates retained components, publishes complete
-immutable objects and finally the complete realization. A failure can retain
+ordered installation lock, rechecks retained component metadata, publishes complete
+immutable objects and durably copies/publishes that prepared profile without
+composing it again. Archive structure/link confinement, decompressor exit status,
+copy failures and atomic publication errors are checked in both modes. A failure can retain
 complete imported components or a generation object without its realization;
 status reports that generation as **retained, not installed**. Retry can finish
 from retained inputs. It does not reassign defaults or delete state as an undo.

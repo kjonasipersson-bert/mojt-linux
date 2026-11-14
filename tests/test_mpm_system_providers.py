@@ -66,6 +66,7 @@ class InstallTests(ProviderFixture):
     def test_install_noop_verified_status_and_management_bind_exact_provider_dependency(self):
         self.assertTrue(self.install(adapters=self.adapters)['changed'])
         self.assertEqual(self.adapter.events.count('ensure'), 1)
+        self.assertNotIn('verify',self.adapter.events)
         self.assertEqual(system.object_record(self.root, self.component['id'])[1]['description']['dependencies'], [self.provider])
         observed = management.observe_target(self.root)['description']['registries']
         self.assertEqual(observed[-1]['capabilities'], ['exact-provider-dependencies'])
@@ -79,7 +80,8 @@ class InstallTests(ProviderFixture):
         self.adapter.present = False
         self.assertEqual(len(system.status(self.root)['installed']), 1)
         with self.assertRaisesRegex(ValueError, 'dependency damaged'):system.status(self.root, verify=True, adapters=self.adapters)
-        with self.assertRaisesRegex(ValueError, 'dependency damaged'):system.install(self.root, None, self.body['id'], yes=True, adapters=self.adapters)
+        self.assertFalse(system.install(self.root, None, self.body['id'], yes=True, adapters=self.adapters)['changed'])
+        with self.assertRaisesRegex(ValueError, 'dependency damaged'):system.install(self.root, None, self.body['id'], yes=True, adapters=self.adapters,verify=True)
         self.assertEqual(tree(self.root), before)
 
     def test_failed_provider_import_retains_native_inputs_and_explicit_retry_finishes(self):

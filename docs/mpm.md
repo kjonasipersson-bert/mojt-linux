@@ -147,12 +147,16 @@ No new CLI spelling or MBT syntax is approved by the data-format draft.
 | `remove` | Remove selected Ports installations from the current profile; if an active installation is removed, choose an installed replacement by the history rule below. Physical collection is separate and must preserve dependencies, project pins and rollback references. Base/System/Kernel deployment removal needs separate safeguards. |
 | `status` | Read-only inspection of installed content and separate selected/running observations; no metadata refresh, store initialization, repair or implied selection. Per-area support is listed in section 6. |
 
-The boot-area `activate` terminology above describes the intended selection
-effect. Today's implemented Kernel interface spells out `stage` (prepare a
-complete deployment) and `select` (choose next boot). Do not infer that an
-unimplemented `mpm base activate` exists or that `install` also selects a Base.
-The Base command proposal preserves that separation; generalized deployment
-spelling is not decided by this documentation update.
+On native-v2 installations, `stage` prepares a complete deployment and `activate`
+selects an already prepared entry atomically. Activation does no construction or
+payload/provider scrub; missing preparation is an error. `upgrade --artifact ID`
+can prepare and select an explicit installed candidate. Full activation and
+System installation integrity audits require `--verify`; ordinary install performs
+required copying/safe unpacking/materialization and propagates operation errors.
+The shared exact metadata, lock and publication checks remain. See
+[implemented operation boundaries](activation-performance.md). Legacy boot paths
+retain their separately documented restrictions. Installation never implicitly
+selects a Base or System boot entry.
 
 Examples, describing desired behavior rather than runnable commands:
 

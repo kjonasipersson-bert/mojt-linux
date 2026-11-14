@@ -2,13 +2,32 @@
 # Copyright (C) 2026 Jonas Persson
 # SPDX-License-Identifier: GPL-2.0-only
 """Boot-only projection; preserve the existing Nix runtime adapter unchanged."""
+import os
 from pathlib import Path
 
 from mpm_nix_binary import NixBinaryAdapter, store_path
 from mpm_ports_profile import require
+from mpm_transaction import protected_directory, sync_directory
 
 
 class NixBootAdapter(NixBinaryAdapter):
+    def install(self,ref,root):
+        """Retain System binaries without the optional full provider scrub.
+
+        Keep the inherited ensure/verify protocol used by Ports and preparation
+        unchanged. Nix's realise exit status and root publication remain required.
+        """
+        i = self.identity(ref);directory = Path(root)/'retained/nix'
+        protected_directory(directory,write=True,label='Nix retention')
+        directory.mkdir(mode=0o700,exist_ok=True)
+        gcroot = directory/store_path(i['output']).name
+        if os.path.lexists(gcroot):
+            require(gcroot.is_symlink() and os.readlink(gcroot) == i['output'],'Nix retention conflict')
+        self.runner([self.binary,'--realise',i['output'],'--add-root',str(gcroot),'--indirect',
+                     '--option','max-jobs','0','--option','builders','','--option','require-sigs','true'])
+        require(gcroot.is_symlink() and os.readlink(gcroot) == i['output'],'Nix did not register the expected root')
+        sync_directory(directory);sync_directory(directory.parent)
+
     def preserves(self,refs,baseline):
         """Project native references; keep the accepted runtime comparison unchanged."""
         if type(baseline) is dict and baseline.get('format') == 'mojt-system-provider-baseline-v1':
