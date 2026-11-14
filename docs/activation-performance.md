@@ -6,39 +6,71 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Activation performance and installed choices
 
-`mpm system activate`, `upgrade` and `stage` (and their Base/Kernel equivalents)
-can omit `--artifact` in a terminal. They list installed candidates by release
-and full identity. Enter a number or `q`; invalid numbers prompt again. No
-candidate is automatically selected. This list is metadata-only and does not
-promise compatibility. Existing preflight checks decide that after the choice.
-`--yes`, `--json` and noninteractive input require `--artifact` explicitly.
+The 2026-11-14 owner decision separates preparation from choosing next boot.
+Normal activation must only select a completed entry. Normal System installation
+must perform the required import/materialization work, without integrity scrubs.
+Full content verification is explicit through `--verify`.
 
-Activation displays the target, candidate, selected deployment and next-boot
-effect before confirmation. The running system stays unchanged; old deployments
-remain retained and reboot is deliberate. Progress and elapsed phase times go
-to stderr, preserving JSON on stdout. Candidate checks, deployment preparation
-and selection/publication are measured separately. Preparation includes its
-own candidate recheck; those times must not be added as disjoint subphases.
+## Operation boundaries
 
-Selection preview now validates exact metadata without a full content audit.
-The final locked selection preparation still fully verifies every menu entry,
-its trees, handover gates and management compatibility before atomic publication.
-There is no persistent verification cache. Failed or stale gates refuse
-publication, including for an existing staged candidate. To audit a preview:
+| Command | Normal work | Explicit verification |
+| --- | --- | --- |
+| `mpm system install` | Freeze/copy and safely unpack each new archive once; compose one profile; retain provider binaries; atomically publish completed objects/profile | `--verify` hashes payloads and audits reused objects, profile content and provider closures |
+| `mpm {base,system,kernel} stage --artifact ID` | Prepare and admit a complete boot deployment without selecting it | Existing constructor/admission verification remains part of preparation |
+| `mpm {base,system,kernel} activate --artifact ID` | Find an admitted entry for the artifact and preserved other areas; atomically choose next boot | `--verify` audits retained boot entries before selection |
+| `mpm {base,system,kernel} select` / `rollback` | Choose an admitted deployment or the previous entry | `--verify` audits retained boot entries before selection |
+| `mpm {base,system,kernel} upgrade --artifact ID` | Prepare an explicit installed update, then choose it | Preparation still includes its constructor/admission checks |
 
-```sh
-mpm system select --deployment sha256:... --expected-selected sha256:... --dry-run --verify
-```
+Activation never constructs an initramfs, imports providers, scans installed
+payloads, runs Nix or repeats startup preflight. A missing prepared entry is an
+error directing the user to `stage`. Ambiguous prepared deployments require an
+exact `select --deployment` choice; labels never identify content. A repeat of
+the current choice makes no selection change.
 
-This change removes one duplicate selection audit (two passes become one for
-normal committed selection). Full activation still contains preflight,
-construction, retention and admission checks; it is not yet a single-scan
-pipeline. It also does not move required import/publication checks into an
-optional verification mode. Explicit status verification remains available.
+Selection keeps inexpensive metadata checks: installation and receipt bindings,
+slot/boot-file existence, sizes and protected paths, area preservation, exact
+expected selection and menu consistency. The writer locks, rereads the baseline,
+fsyncs a temporary complete menu and atomically replaces the one authoritative
+boot menu. There is no separate mutable selection database. Failures before
+rename preserve the old menu; post-rename flush errors report uncertainty and
+retain the possibly committed choice. Running services and persistent state do
+not change. The normal boot reader retains its current-state checks.
 
-The owner reported roughly 5–10 minutes for the prior physical update, without
-phase measurements. Capture stderr for a subsequent focused update and compare
-phase times on the same machine. No measured whole-update speedup is claimed.
+`--verify` is off by default. It audits once under final selection locks; with
+`--dry-run` it audits the preview without publishing. A failed explicit audit
+prevents selection. Normal selection does not assert a fresh integrity audit.
 
-The [focused hardware test](activation-hardware-test.md) provides a fixed
-two-generation delivery, interactive cancellation checks and timing logs.
+## System installation
+
+Default local installation checks descriptor identities and safely unpacks the
+archive in one pass without payload hash comparison. It checks bounded member
+names/order/types/sizes, permissions and link targets; decompressor errors and
+failed copies/provider commands still fail. Compressed archive identity is
+recorded during the required private copy. Existing protected metadata is reused;
+there is no retained archive/tree or Nix `--verify-path` scrub. The private
+profile is composed once, copied durably and published without rebuilding it.
+Its expected payload hashes come from component descriptors; generated management
+evidence is still produced by the manager. Those expected hashes are not a claim
+that normal installation audited the delivered bytes.
+
+Nix realisation remains binary-only with signature enforcement and propagates
+its exit status. System's lean install method does not change the inherited
+Ports `ensure`/`verify` contract or the startup-bound runtime adapter file.
+Named-source cache acquisition retains its independent source/trust checks;
+`install --verify` controls the additional System installation audit.
+
+## Interactive choices and evidence
+
+Terminal users may omit `--artifact`. `activate` lists **prepared** candidates;
+`stage` and `upgrade` list installed artifacts. Lists show release and exact
+artifact ID. Invalid input reprompts, and `q` cancels without a boot change.
+Scripts, `--yes` and `--json` require an explicit artifact. Activation displays
+the next-boot effect before consent and never reboots automatically.
+
+The owner found both original test installation and first activation
+unacceptably slow, with substantial fan activity. That first activation used the
+old running MPM. The original #54 change only reduced selection audit passes
+from two to one and did not meet the required fast activation boundary.
+No real-machine latency is claimed for this replacement implementation.
+The [original hardware delivery](activation-hardware-test.md) remains pinned to
+that earlier code; it does not install or measure the new implementation.

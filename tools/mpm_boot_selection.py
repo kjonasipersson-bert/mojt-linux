@@ -192,14 +192,14 @@ def select(root, identifier=None, *, expected_selected, rollback=False, dry_run=
         if wanted == d['selected']:return old,entries,raw
         next_d = copy.deepcopy(d);next_d.update(selected=wanted,previous=d['selected'],entries=[dict(deployment=k,path=model.slot(k)) for k in sorted(entries)])
         return record(model.SELECTION,next_d),entries,raw
-    with read_locks(root):value,entries,raw = prepare(audit=verify)
+    with read_locks(root):value,entries,raw = prepare(audit=verify and dry_run)
     changed = value['description']['selected'] != expected_selected
     report = dict(selected=value['description']['selected'],previous=value['description']['previous'],changed=changed and not dry_run,
                   dry_run=dry_run,running_changed=False,requests_changed=False,owner_boot_acceptance='pending')
     if dry_run:return report
     if changed and not yes:require(input('Select this exact '+area+' deployment for next boot? [y/N] ').strip().lower() in ('y','yes'),'selection cancelled')
     with locked(root):
-        fresh,entries,actual = prepare(audit=True);require(fresh == value and actual == raw,'selection inputs changed; repeat preview')
+        fresh,entries,actual = prepare(audit=verify);require(fresh == value and actual == raw,'selection inputs changed; repeat preview')
         _publish(root,value,entries,raw)
     return report
 

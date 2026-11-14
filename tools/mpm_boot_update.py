@@ -119,7 +119,7 @@ def stage(root, area, identifier, *, bounds=None, adapters=None, runtime=None,
     return dict(report,action='stage',changed=True,deployment=result['deployment'])
 
 
-def activate(root, area, identifier, *, expected_selected=None, dry_run=False, yes=False, **options):
+def upgrade(root, area, identifier, *, expected_selected=None, dry_run=False, yes=False, verify=False, **options):
     """Stage and publish next boot. The single menu remains the commit point."""
     require(os.geteuid() == 0,'boot updates require an administrator')
     root = system.target(root)
@@ -144,16 +144,49 @@ def activate(root, area, identifier, *, expected_selected=None, dry_run=False, y
     require(staged['selected'] == selected,'selection changed before construction')
     print('Deployment preparation: %.2f s' % (time.monotonic()-started),file=sys.stderr,flush=True)
     started = time.monotonic()
-    print('Verifying boot selection before publication...',file=sys.stderr,flush=True)
-    chosen = selection.select(root,staged['deployment'],area=area,expected_selected=selected,yes=True)
+    print('Publishing boot selection...',file=sys.stderr,flush=True)
+    chosen = selection.select(root,staged['deployment'],area=area,expected_selected=selected,yes=True,verify=verify)
     print('Selection verification/publication: %.2f s' % (time.monotonic()-started),file=sys.stderr,flush=True)
     return dict(staged,action='activate',changed=chosen['changed'],dry_run=False,
                 selection_changed=chosen['changed'],selected=chosen['selected'],previous=chosen['previous'])
 
 
-def choose_artifact(root, area):
+def activate(root, area, identifier, *, expected_selected=None, dry_run=False, yes=False, verify=False):
+    """Select an already admitted entry; never construct or audit content by default."""
+    require(os.geteuid() == 0,'boot activation requires an administrator')
+    root = system.target(root);model.identity(identifier)
+    with common.read_locks(root):
+        value,entries,_ = selection.current(root)
+        require(value is not None,'native-v2 initial selection is missing')
+        selected = value['description']['selected']
+        require(expected_selected is None or expected_selected == selected,'selected deployment changed; repeat preview')
+        before = entries[selected]['record']['description']['inputs']['description']
+        available,_ = selection.available(root)
+        preserved = [key for key in ('base','system','kernel','platform','boot','firmware','state_requirements') if key != area]
+        matches = {key:item for key,item in available.items()
+                   if (inputs := item['record']['description']['inputs']['description'])[area]['artifact'] == identifier
+                   and all(inputs[key] == before[key] for key in preserved)}
+        require(matches,'no prepared '+area+' boot entry; run mpm '+area+' stage --artifact '+identifier+' first')
+        require(selected in matches or len(matches) == 1,'multiple prepared boot entries; use select --deployment with an exact deployment ID')
+        deployment = selected if selected in matches else next(iter(matches))
+        candidate = matches[deployment]['record']['description']['inputs']['description'][area]
+    preview = dict(area=area,artifact=identifier,release=candidate.get('generation',candidate.get('release')),
+                   selected=selected,deployment=deployment)
+    if not dry_run and deployment != selected:show_preview(root,area,identifier,preview)
+    chosen = selection.select(root,deployment,area=area,expected_selected=selected,
+                              dry_run=dry_run,yes=yes,verify=verify)
+    return dict(preview | chosen,action='activate',selection_changed=chosen['changed'],
+                selection_would_change=deployment != selected,running_changed=False,persistent_state_changed=False)
+
+
+def choose_artifact(root, area, *, prepared=False):
     """Metadata-only installed inventory; compatibility is checked after choice."""
-    if area == 'kernel':
+    if prepared:
+        entries,_ = selection.available(root)
+        candidates = {item['record']['description']['inputs']['description'][area]['artifact']:
+                      item['record']['description']['inputs']['description'][area] for item in entries.values()}
+        rows = [dict(artifact=key,version=dict(release_id=row.get('generation',row.get('release')))) for key,row in sorted(candidates.items())]
+    elif area == 'kernel':
         import mpm_kernel
         rows = mpm_kernel.status(root/'kernel')['installed']
     elif area == 'base':
@@ -161,8 +194,8 @@ def choose_artifact(root, area):
         rows = mpm_base_status.status(root)['installed']
     else:
         rows = system.status(root)['installed']
-    require(rows,'no installed '+area+' candidates; install content first')
-    print('Installed '+area+' candidates (compatibility checked after choice):',file=sys.stderr)
+    require(rows,'no '+('prepared' if prepared else 'installed')+' '+area+' candidates; '+('run stage first' if prepared else 'install content first'))
+    print(('Prepared' if prepared else 'Installed')+' '+area+' candidates:',file=sys.stderr)
     for number,row in enumerate(rows,1):
         print('  %d. %s / %s' % (number,row['version']['release_id'],row['artifact']),file=sys.stderr)
     while True:
@@ -176,7 +209,7 @@ def choose_artifact(root, area):
 def show_preview(root, area, identifier, preview):
     print('Target: '+str(root)+'\nArea: '+area+'\nCandidate: '+str(preview.get('release'))+
           ' / '+identifier+'\nCurrent next boot: '+preview['selected']+
-          '\nThis prepares and selects the candidate for NEXT boot.'+
+          '\nCandidate for NEXT boot.'+
           '\nRunning system unchanged. Previous deployment retained. No automatic reboot.',file=sys.stderr,flush=True)
 
 
@@ -193,11 +226,13 @@ def main(area, argv, *, runtime=None):
         if action in ('activate','upgrade','stage'):
             command.add_argument('--artifact',help='exact installed candidate; does not fetch or build')
             if area == 'base':command.add_argument('--base-context',type=Path,help='Kernel bounds for this exact Base')
-            if action != 'stage':command.add_argument('--expected-selected')
+            if action != 'stage':
+                command.add_argument('--expected-selected')
+                command.add_argument('--verify',action='store_true',help='explicitly audit retained content before selection')
         else:
             if action == 'select':command.add_argument('--deployment',required=True)
             command.add_argument('--expected-selected',required=True)
-            command.add_argument('--verify',action='store_true',help='also fully verify selection preview; publication always verifies')
+            command.add_argument('--verify',action='store_true',help='explicitly audit retained content before selection')
         command.add_argument('--disk-root',type=Path)
         command.add_argument('--dry-run',action='store_true')
         command.add_argument('-y','--yes',action='store_true')
@@ -216,16 +251,20 @@ def main(area, argv, *, runtime=None):
             if args.artifact is None:
                 require(not args.yes and not args.json and sys.stdin.isatty(),
                         '--artifact is required with --yes, --json or noninteractive input')
-                args.artifact = choose_artifact(root,area)
-            from mpm_system_cli import ProviderAdapters
-            adapters = ProviderAdapters(live)
-            context = getattr(args,'base_context',None)
-            options = dict(bounds=base.read(context) if context else None,adapters=adapters,runtime=live,
-                           tar=str(live.helpers/'tar') if live else 'tar',dry_run=args.dry_run,yes=args.yes)
-            if args.action == 'stage':result = stage(root,area,args.artifact,**options)
+                args.artifact = choose_artifact(root,area,prepared=True) if args.action == 'activate' else choose_artifact(root,area)
+            if args.action == 'activate':
+                result = activate(root,area,args.artifact,expected_selected=args.expected_selected,
+                                  verify=args.verify,dry_run=args.dry_run,yes=args.yes)
             else:
-                result = activate(root,area,args.artifact,expected_selected=args.expected_selected,**options)
-                if args.action == 'upgrade':result['action'] = 'upgrade' if result['action'] != 'no-change' else 'no-change'
+                from mpm_system_cli import ProviderAdapters
+                adapters = ProviderAdapters(live)
+                context = getattr(args,'base_context',None)
+                options = dict(bounds=base.read(context) if context else None,adapters=adapters,runtime=live,
+                               tar=str(live.helpers/'tar') if live else 'tar',dry_run=args.dry_run,yes=args.yes)
+                if args.action == 'stage':result = stage(root,area,args.artifact,**options)
+                else:
+                    result = upgrade(root,area,args.artifact,expected_selected=args.expected_selected,verify=args.verify,**options)
+                    result['action'] = 'upgrade' if result['action'] != 'no-change' else 'no-change'
         if args.json:print(json.dumps(result,sort_keys=True,indent=2))
         else:
             if result.get('artifact'):print('Candidate:',result['release'],'/',result['artifact'])

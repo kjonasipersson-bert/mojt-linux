@@ -6,6 +6,13 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Focused PR #54 hardware test
 
+**Historical delivery:** this script pins the original #54 functional revision.
+It installs the earlier combined preparation/activation implementation, not the
+replacement described in [activation performance](activation-performance.md).
+Keep existing checkpoints/evidence; do not use this delivery to measure the new
+fast activation or optional installation verification paths. A successor tooling
+delivery is needed for that physical acceptance.
+
 Run only after this PR's current-head CI is green. Keep the existing SSD
 installation, Base and Kernel. Boot the accepted `system-ports-fix-1`, with no
 pending next-boot choice. The test refuses an installer/other starting label.

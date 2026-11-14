@@ -18,7 +18,7 @@ import mpm_system_cli as cli
 
 
 class Boundaries(unittest.TestCase):
-    def test_selection_defers_full_audit_until_locked_publication(self):
+    def test_selection_only_audits_when_explicitly_requested(self):
         wanted='sha256:'+'2'*64;before='sha256:'+'1'*64
         entry=dict(record=fixtures.bound(fixtures.fixture()))
         old=dict(description=dict(selected=before,previous=None,entries=[]))
@@ -38,11 +38,44 @@ class Boundaries(unittest.TestCase):
                 selection.select(Path('/fixture'),wanted,expected_selected=before)
             gates.assert_not_called();publish.assert_not_called()
             selection.select(Path('/fixture'),wanted,expected_selected=before,yes=True)
-            self.assertEqual(gates.call_count,1);publish.assert_called_once();publish.reset_mock()
+            gates.assert_not_called();publish.assert_called_once();publish.reset_mock()
+            selection.select(Path('/fixture'),wanted,expected_selected=before,yes=True,verify=True)
+            gates.assert_called_once();publish.assert_called_once();gates.reset_mock();publish.reset_mock()
             gates.side_effect=ValueError('damaged retained tree')
             with self.assertRaisesRegex(ValueError,'damaged retained tree'):
-                selection.select(Path('/fixture'),wanted,expected_selected=before,yes=True)
+                selection.select(Path('/fixture'),wanted,expected_selected=before,yes=True,verify=True)
             publish.assert_not_called()
+
+    def test_activation_requires_an_admitted_entry_and_never_prepares_one(self):
+        import mpm_boot_update as update
+        before = fixtures.bound(fixtures.fixture())
+        source = copy.deepcopy(before['description']['inputs']['description'])
+        artifact = 'sha256:'+'9'*64;source['system']['artifact'] = artifact
+        candidate = fixtures.bound(selection.model.record(selection.model.INPUTS,source))
+        entries = {before['id']:dict(record=before),candidate['id']:dict(record=candidate)}
+        old = dict(description=dict(selected=before['id']))
+        report = dict(changed=True,selected=candidate['id'],previous=before['id'],dry_run=False)
+        with mock.patch.object(update.os,'geteuid',return_value=0), \
+             mock.patch.object(update.system,'target',side_effect=lambda p:p), \
+             mock.patch.object(update.common,'read_locks',side_effect=lambda p:nullcontext()), \
+             mock.patch.object(selection,'current',return_value=(old,entries,b'menu')), \
+             mock.patch.object(selection,'available',return_value=(entries,[])), \
+             mock.patch.object(update,'stage',side_effect=AssertionError('activation staged content')), \
+             mock.patch.object(update,'prepare',side_effect=AssertionError('activation scanned content')), \
+             mock.patch.object(selection,'select',return_value=report) as select, \
+             mock.patch('sys.stderr',new_callable=io.StringIO):
+            chosen = update.activate(Path('/fixture'),'system',artifact,yes=True)
+            self.assertEqual(chosen['selected'],candidate['id'])
+            self.assertFalse(select.call_args.kwargs['verify'])
+            update.activate(Path('/fixture'),'system',artifact,yes=True,verify=True)
+            self.assertTrue(select.call_args.kwargs['verify'])
+            select.reset_mock()
+            with self.assertRaisesRegex(ValueError,'no prepared'):
+                update.activate(Path('/fixture'),'system','sha256:'+'8'*64,yes=True)
+            select.assert_not_called()
+            with self.assertRaisesRegex(ValueError,'selected deployment changed'):
+                update.activate(Path('/fixture'),'system',artifact,expected_selected=candidate['id'],yes=True)
+            select.assert_not_called()
 
     def test_candidate_choice_is_explicit_and_does_not_install(self):
         import mpm_boot_update as update

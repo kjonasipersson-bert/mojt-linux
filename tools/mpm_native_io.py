@@ -80,58 +80,81 @@ def frozen_copy(source, destination, *, maximum=MAX_ARCHIVE):
         os.close(fd)
 
 
-def unpack_regular(path, body, target, *, symlinks=False):
-    """Second pass over our frozen verified archive; no extract/extractall calls."""
-    artifact.validate_descriptor(body)
-    require(all(r["type"] in (("file", "directory", "symlink") if symlinks else ("file", "directory")) for r in body["files"]), "materialization requires regular entries")
-    kind = body["kind"]
+def unpack_regular(path, body, target, *, symlinks=False, verify=True, expected_id=None, budget=artifact.MAX_CONTENT):
+    """Bounded one-pass materialization; payload hashing is explicitly selectable.
+
+    A missing descriptor is read from the archive. Paths, links, types, sizes,
+    member order and decompressor errors are checked even without a content audit.
+    """
     with tempfile.TemporaryFile() as errors:
         process = subprocess.Popen(["zstd", "-q", "-d", "-c", "--", str(path)], stdout=subprocess.PIPE, stderr=errors)
         try:
             with tarfile.open(fileobj=process.stdout, mode="r|") as archive:
+                root = archive.next()
+                require(root is not None and root.name in ("./" + k for k in artifact.KINDS) and root.isdir(), "native category differs")
+                require(root.mode == 0o755 and root.uid == root.gid == root.mtime == 0 and not root.pax_headers, "invalid category metadata")
                 member = archive.next()
-                require(member is not None and member.name == "./" + kind and member.isdir(), "native category differs")
-                member = archive.next()
-                require(member is not None and member.name == "./" + kind + "/artifact.json" and member.isfile()
-                        and member.size <= artifact.MAX_METADATA, "native descriptor missing")
-                require(archive.extractfile(member).read() == artifact.canonical(body) + b"\n", "frozen descriptor differs")
+                require(member is not None and member.name == root.name + "/artifact.json" and member.isfile()
+                        and 0 <= member.size <= artifact.MAX_METADATA, "native descriptor missing")
+                require(member.mode == 0o644 and member.uid == member.gid == member.mtime == 0 and not member.pax_headers,
+                        "invalid descriptor metadata")
+                raw = archive.extractfile(member).read();found = artifact.parse_json(raw)
+                artifact.validate_descriptor(found)
+                require(raw == artifact.canonical(found) + b"\n" and root.name == "./" + found['kind'], "native descriptor encoding differs")
+                require(body is None or found == body, "frozen descriptor differs")
+                require(expected_id is None or found['id'] == expected_id, "unexpected artifact identity")
+                body = found
+                require(sum(row.get('size',0) for row in body['files']) <= budget, 'native dependency bundle exceeds content budget')
+                require(all(r["type"] in (("file", "directory", "symlink") if symlinks else ("file", "directory")) for r in body["files"]), "materialization requires regular entries")
                 for row in body["files"]:
-                    member = archive.next()
-                    require(member is not None and member.name == "./" + kind + "/" + row["path"], "frozen member differs")
+                    member = archive.next();expected = artifact._tar_info(root.name + "/" + row['path'], row)
+                    require(member is not None and set(member.pax_headers) <= {'path','linkpath'}
+                            and (member.name,member.type,member.mode,member.uid,member.gid,member.size,member.mtime) ==
+                                (expected.name,expected.type,expected.mode,expected.uid,expected.gid,expected.size,0),
+                            "frozen member differs: " + row['path'])
                     destination = target / row["path"]
-                    if row["type"] == "directory":
-                        require(member.isdir(), "directory type differs")
-                        destination.mkdir(mode=0o700)
+                    if row["type"] == "directory":destination.mkdir(mode=0o700)
                     elif row["type"] == "symlink":
-                        require(member.issym() and member.linkname == row['target'], 'link target differs')
-                        # Descriptor validation prohibits descendants of a link.
-                        # No extraction/chmod/open operation follows this entry.
+                        require(member.linkname == row['target'], 'link target differs')
                         destination.symlink_to(row['target'])
                     else:
-                        require(member.isfile() and member.size == row["size"], "file type/size differs")
-                        checksum = hashlib.sha256()
-                        with destination.open("xb") as output:
-                            with archive.extractfile(member) as source:
-                                while chunk := source.read(128 * 1024):
-                                    checksum.update(chunk)
-                                    output.write(chunk)
-                            require(checksum.hexdigest() == row["sha256"], "extracted file checksum differs")
-                            os.fchmod(output.fileno(), stored_mode(row))
-                            os.fsync(output.fileno())
+                        checksum = hashlib.sha256() if verify else None
+                        with destination.open("xb") as output, archive.extractfile(member) as source:
+                            while chunk := source.read(128 * 1024):
+                                if checksum is not None:checksum.update(chunk)
+                                output.write(chunk)
+                            require(output.tell() == row['size'], 'extracted file size differs')
+                            if checksum is not None:require(checksum.hexdigest() == row["sha256"], "extracted file checksum differs")
+                            os.fchmod(output.fileno(), stored_mode(row));os.fsync(output.fileno())
                 require(archive.next() is None, "unexpected frozen member")
-            while process.stdout.read(128 * 1024):
-                pass
+                while trailer := archive.fileobj.read(128 * 1024):
+                    require(not any(trailer), 'nonzero data after tar end marker')
+            while process.stdout.read(128 * 1024):pass
             require(process.wait() == 0, "zstd extraction failed")
         finally:
             process.stdout.close()
-            if process.poll() is None:
-                process.terminate()
-                process.wait()
+            if process.poll() is None:process.terminate();process.wait()
     for row in reversed(body["files"]):
         if row["type"] == "directory":
-            entry = target / row["path"]
-            entry.chmod(stored_mode(row))
-            sync_directory(entry)
+            entry = target / row["path"];entry.chmod(stored_mode(row));sync_directory(entry)
+    return body
+
+
+def copy_regular(source, destination, size, mode):
+    """Copy required bytes once, without a separate hash/readback pass."""
+    fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        info = os.fstat(fd)
+        require(stat.S_ISREG(info.st_mode) and info.st_size == size, 'source file type/size differs')
+        with os.fdopen(fd,'rb',closefd=False) as origin, destination.open('xb') as output:
+            remaining = size
+            while remaining:
+                chunk = origin.read(min(128*1024,remaining))
+                require(chunk, 'source file truncated during copy')
+                output.write(chunk);remaining -= len(chunk)
+            require(not origin.read(1), 'source file grew during copy')
+            os.fchmod(output.fileno(),mode);os.fsync(output.fileno())
+    finally:os.close(fd)
 
 
 def clean_stage(path):

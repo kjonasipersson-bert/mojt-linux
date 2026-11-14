@@ -6,33 +6,37 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Exact installed boot updates
 
-`mpm system activate --artifact sha256:FULL_ID` prepares an already installed
-System and selects it for the **next boot**. `mpm system upgrade --artifact ID`
-uses the same path with an explicit exact update target. `--dry-run` performs
-verified preflight without writing a runtime bundle, boot tree, slot or menu.
-Preflight is internal; there is no public `mpm system plan` operation.
+`mpm system activate --artifact sha256:FULL_ID` selects an already prepared
+System boot entry for the **next boot**. It performs bounded metadata checks and
+atomic selection only. It never constructs initramfs or rescans package/provider
+content. If no entry exists, prepare it with `stage` first. `upgrade --artifact ID`
+combines preparation and selection for an explicit installed update target.
 
 ```sh
 mpm system install --from-file SYSTEM.tar.zst --expected-id sha256:FULL_ID -y
-mpm system upgrade --artifact sha256:FULL_ID --dry-run
-mpm system upgrade --artifact sha256:FULL_ID -y
+mpm system stage --artifact sha256:FULL_ID -y
+mpm system activate --artifact sha256:FULL_ID -y
 mpm system status
 # Reboot deliberately, then inspect status again.
 ```
 
-System installation still takes the generation's exact component archives via
-`--dependency-file`, or obtains them from the same accepted named source snapshot.
-Base and Kernel use the same `activate`/`upgrade` path on native-v2. Base updates
-require `--base-context FILE` with Kernel bounds bound to that exact candidate.
-`install` retains content only; it never selects next boot. `stage`, `select` and
-`rollback` remain lower-level operations for explicitly separated preparation and
-selection. Selection requires `--expected-selected ID` when invoked directly.
+System installation takes exact component archives through `--dependency-file`,
+or obtains them from one accepted named-source snapshot. Default installation
+performs required materialization without retained-content or provider scrubs;
+`install --verify` explicitly adds these integrity checks. Installation never
+selects next boot. Base and Kernel use the same preparation/activation split on
+native-v2; Base preparation needs `--base-context FILE` with exact Kernel bounds.
+Direct `select` and `rollback` use `--expected-selected ID`. Their default path
+checks metadata; `--verify` explicitly audits retained content before publication.
+See [operation boundaries](activation-performance.md).
 
-The installed command uses the mounted installation, its delivered Python, static
-BusyBox and helpers. It freezes a private copy of the running manager's retained
-interpreter closure for initramfs construction; candidate Python is never run.
-Core requests opaque provider proofs; the Nix adapter interprets Nix references.
-An explicit offline target cannot borrow the host's unrelated store/runtime.
+The remaining preflight/constructor sections describe **preparation**, invoked by
+`stage` and `upgrade`, not ordinary `activate`. Their `--dry-run` performs preflight
+without writing runtime bundles, boot trees, slots or the menu. There is no
+public `mpm system plan` operation. Preparation uses the mounted installation,
+its delivered Python, static BusyBox and helpers. It freezes the running manager's
+retained interpreter closure; candidate Python is never run. An offline target
+cannot borrow the host's unrelated store/runtime.
 
 The authoritative native-v2 selection is the baseline, even when another
 combination is still running. Exactly one of Base/System/Kernel changes; the

@@ -158,7 +158,7 @@ def dispatch(args, runtime):
             elif arg.startswith('--disk-root='):target = Path(arg.split('=',1)[1])
         target = target if target is not None else runtime.disk if runtime else None
         if action in ('activate','upgrade') or area == 'system' and action == 'stage' or target is not None and present(target):
-            require_codec(runtime,command)
+            if action in ('stage','upgrade') or option(command,'--verify'):require_codec(runtime,command)
             from mpm_boot_update import main
             return main(area,command[1:],runtime=runtime)
     if area == 'system' and action in (None, '--help', '-h', 'install', 'status','select','rollback'):

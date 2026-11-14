@@ -27,25 +27,31 @@ implemented increments, with their bounded lifecycle restrictions retained.
 
 The immediate work is **activation performance and interactive choices**:
 
-1. Measure candidate checks, deployment preparation and final selection
-   separately. Remove repeated full scans where they duplicate a publication
-   gate; preserve verification under the final publication locks. Keep explicit
-   diagnostic verification available. Expensive acceptance tests belong in the
-   project/test workflow or explicit verification modes, not ordinary operations.
-2. Offer installed candidates interactively with version and exact identity;
-   show target, area, current next boot and intended effect before consent.
-   Preserve exact flags, JSON and noninteractive operation for scripts. Never
-   silently choose a latest candidate or reboot automatically.
-3. Test cancellation, stale selections and damaged content, then measure one
-   focused real-machine update. Do not repeat an unchanged full boot matrix.
+1. Keep activation to selecting an already admitted boot entry, using metadata
+   checks and one atomic menu publication. Do not construct initramfs, rescan
+   payloads or repeat preflight during activation. Full selection audits require
+   explicit `--verify`.
+2. Keep System installation to required copying, safe unpacking, composition and
+   provider acquisition. Reuse retained content without scrubbing it, unpack new
+   archives once, compose the profile once, and reserve full payload/provider
+   integrity audits for `install --verify`.
+3. Offer prepared activation candidates interactively with version and identity;
+   offer installed candidates for preparation/upgrade. Preserve exact flags, JSON,
+   cancellation, stale-selection guards and atomic publication failure behavior.
+4. Measure preparation and activation separately on the owner's hardware after
+   delivering the new installed tools. Expensive acceptance tests belong in the
+   project/test workflow or explicitly selected diagnostics.
 
-The first implementation removes the duplicate full selection audit before
-confirmation: preview checks metadata; publication still fully audits all menu
-entries under locks. `select`/`rollback --dry-run --verify` explicitly audits a
-preview too. This reduces **selection audit passes from two to one** for an
-ordinary committed selection; it does not claim that the entire multi-phase
-activation pipeline now scans each input only once. Further constructor,
-preflight and admission duplication needs measurements before removal.
+The owner tested installation of A/B and initial activation with the original
+#54 delivery and reported unacceptable time and fan activity for both. No exact
+phase times were supplied. The original duplicate-audit removal is superseded
+by the boundaries above: normal selection performs **zero full audits**;
+`activate` requires an already prepared entry. `stage` prepares; `upgrade` can
+prepare and select. Constructor/admission costs still belong to preparation.
+See [activation and installation performance](activation-performance.md).
+The existing pinned test bridge installs the earlier implementation and is
+historical evidence, not delivery of the replacement. New physical performance
+acceptance remains pending.
 
 ### Proposals for discussion, not scheduled commitments
 

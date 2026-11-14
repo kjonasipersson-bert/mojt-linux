@@ -102,7 +102,9 @@ def providers(root, refs, adapters, *, effect=None):
         except KeyError as error:raise ValueError('unsupported System provider: ' + ref['provider']) from error
         description = adapter.describe(copy.deepcopy(ref), root)
         require(description['reference'] == ref, 'System provider changed accepted identity')
-        if effect is not None:getattr(adapter, effect)(copy.deepcopy(ref), root)
+        if effect is not None:
+            operation = getattr(adapter,'install',adapter.ensure) if effect == 'install' else getattr(adapter,effect)
+            operation(copy.deepcopy(ref),root)
 
 
 def retained_providers(root, identifier):
@@ -176,7 +178,7 @@ def composition(path, body):
     return value, actions
 
 
-def inventory(profile):
+def inventory(profile, *, declared=None):
     result = {}
     for path in sorted(profile.rglob('*')):
         name = path.relative_to(profile).as_posix()
@@ -185,7 +187,7 @@ def inventory(profile):
         require(stat.S_ISLNK(info.st_mode) or stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode) and info.st_nlink == 1, 'unsupported System profile entry')
         result[name] = (dict(link=os.readlink(path)) if path.is_symlink() else
                        dict(directory=True, mode=stat.S_IMODE(info.st_mode)) if path.is_dir() else
-                       dict(sha256=artifact.file_sha(path), mode=stat.S_IMODE(info.st_mode)))
+                       dict(sha256=declared[name]['sha256'] if declared is not None and name in declared else artifact.file_sha(path), mode=stat.S_IMODE(info.st_mode)))
     return result
 
 
@@ -231,7 +233,7 @@ def verify_links(profile, references, adapters, outputs=()):
             adapter.verify_path(copy.deepcopy(ref), target, executable=path.relative_to(profile).parts[0] == 'bin')
 
 
-def build_profile(profile, body, value, parts, *, adapters=None):
+def build_profile(profile, body, value, parts, *, adapters=None, verify=False):
     d = value['description'];planned = {};total = 0
     for mapping in d['profile']:
         identifier = model.reference(mapping['source']['reference']);component, source = parts[identifier]
@@ -254,9 +256,8 @@ def build_profile(profile, body, value, parts, *, adapters=None):
             require(source.is_symlink() and os.readlink(source) == row['target'], 'System source link changed')
             destination.symlink_to(row['target']);continue
         else:
-            require(artifact.file_sha(source) == row['sha256'], 'System source component changed')
-            with source.open('rb') as origin, destination.open('xb') as output:
-                shutil.copyfileobj(origin, output, 128 * 1024);output.flush();os.fchmod(output.fileno(), stored_mode(row));os.fsync(output.fileno())
+            if verify:require(artifact.file_sha(source) == row['sha256'], 'System source component changed')
+            io.copy_regular(source,destination,row['size'],stored_mode(row))
         modes[destination] = stored_mode(row)
     runtime = d['runtime']
     references = provider_references(parts)
@@ -308,12 +309,23 @@ def build_profile(profile, body, value, parts, *, adapters=None):
         requirements=dict(base_abi={r['name']:r['value'] for r in d['requirements']['base_abi']}, state_layout=d['requirements']['state_layout']),
         support=dict(ports=ports),
         provides=sorted('/run/mojt-system/' + p.relative_to(profile).as_posix() for p in (profile / 'bin').iterdir() if executable(p.relative_to(profile).as_posix())),
-        artifacts=dict(native=dict(components=d['components'])), provenance=dict(artifact=body['id'], composition=value['id'], assembler=manager(), runtime_outputs=outputs), profile=inventory(profile)))
+        artifacts=dict(native=dict(components=d['components'])), provenance=dict(artifact=body['id'], composition=value['id'], assembler=manager(), runtime_outputs=outputs), profile=inventory(profile,declared=None if verify else {name:row for name,(row,_) in planned.items() if row['type'] == 'file'})))
     require(len(artifact.canonical(measured)) <= artifact.MAX_METADATA, 'System profile manifest exceeds metadata limit')
     # The root is private and read-only only after both generated files exist.
     profile.chmod(0o755);io.write_json(profile / 'manifest.json', measured);profile.chmod(0o555)
     for directory in [p for p in profile.rglob('*') if not p.is_symlink() and p.is_dir()] + [profile]:io.sync_directory(directory)
     return measured
+
+
+def copy_profile(source, destination):
+    """Publish the privately prepared profile without rebuilding or reading it back."""
+    def copy_file(original, target):
+        info = io.regular(Path(original))
+        io.copy_regular(original,Path(target),info.st_size,stat.S_IMODE(info.st_mode))
+        return target
+    shutil.copytree(source,destination,symlinks=True,copy_function=copy_file)
+    for directory in [p for p in destination.rglob('*') if not p.is_symlink() and p.is_dir()] + [destination]:
+        io.sync_directory(directory)
 
 
 def realization(root, identifier, *, verify=False):
@@ -350,14 +362,23 @@ def _initialize(root, info):
     (root / 'realizations/system').mkdir(mode=0o755, exist_ok=True);io.sync_directory(root / 'realizations')
 
 
-def _retain(root, info, body, source, encoding, acquisition=None):
+def _retain(root, info, body, source, encoding, acquisition=None, *, verify=False):
     dest = object_path(root, body['id'])
-    if management.present(dest):return object_record(root, body['id'], verify=True)[1]
+    if management.present(dest):return object_record(root, body['id'], verify=verify)[1]
     stage = Path(tempfile.mkdtemp(prefix='.install-', dir=dest.parent))
     try:
-        checksum, size = io.frozen_copy(source / 'archive.tar.zst', stage / 'archive.tar.zst')
-        require(dict(sha256=checksum, size=size) == encoding and artifact.verify(stage / 'archive.tar.zst', body['id']) == body, 'System import changed after preview')
-        io.unpack_regular(stage / 'archive.tar.zst', body, stage, symlinks=True)
+        checksum,size = encoding['sha256'],encoding['size']
+        if verify:
+            copied = io.frozen_copy(source / 'archive.tar.zst',stage / 'archive.tar.zst')
+            require(copied == (checksum,size), 'System import changed after preview')
+        else:io.copy_regular(source / 'archive.tar.zst',stage / 'archive.tar.zst',size,0o444)
+        for row in body['files']:
+            destination = stage / row['path'];original = source / row['path']
+            if row['type'] == 'directory':destination.mkdir(mode=0o700)
+            elif row['type'] == 'symlink':
+                require(original.is_symlink() and os.readlink(original) == row['target'], 'System source link changed')
+                destination.symlink_to(row['target'])
+            else:io.copy_regular(original,destination,row['size'],stored_mode(row))
         for row in reversed(body['files']):
             os.chown(stage / row['path'], 0, 0, follow_symlinks=False)
             if row['type'] != 'symlink':(stage / row['path']).chmod(stored_mode(row))
@@ -373,11 +394,10 @@ def _retain(root, info, body, source, encoding, acquisition=None):
     return receipt
 
 
-def _freeze(archive, work, expected=None, *, budget=artifact.MAX_CONTENT):
+def _freeze(archive, work, expected=None, *, budget=artifact.MAX_CONTENT, verify=False):
     work.mkdir();checksum, size = io.frozen_copy(archive, work / 'archive.tar.zst')
-    body = artifact.verify(work / 'archive.tar.zst', expected);acceptable(body)
+    body = io.unpack_regular(work / 'archive.tar.zst', None, work, symlinks=True, verify=verify, expected_id=expected, budget=budget);acceptable(body)
     require(sum(r.get('size', 0) for r in body['files']) <= budget, 'System dependency bundle exceeds content budget')
-    io.unpack_regular(work / 'archive.tar.zst', body, work, symlinks=True)
     for row in reversed(body['files']):
         if row['type'] != 'symlink':(work / row['path']).chmod(stored_mode(row))
     return body, dict(sha256=checksum, size=size)
@@ -389,7 +409,7 @@ def target_identity(root):
     return dict(device=info.st_dev, inode=info.st_ino)
 
 
-def install(root, archive, identifier, *, dependency_files=(), dry_run=False, yes=False, acquisition=None, adapters=None, dependency_acquisition=None):
+def install(root, archive, identifier, *, dependency_files=(), dry_run=False, yes=False, acquisition=None, adapters=None, dependency_acquisition=None, verify=False):
     io.identifier(identifier);root = target(root, write=not dry_run)
     physical = target_identity(root)
     require(dry_run or os.geteuid() == 0, 'System realization requires an administrator')
@@ -398,11 +418,11 @@ def install(root, archive, identifier, *, dependency_files=(), dry_run=False, ye
     dependency_acquisition = dependency_acquisition or {}
     require(type(dependency_acquisition) is dict, 'invalid System dependency acquisition records')
     if marker and management.present(object_path(root, identifier)):
-        body, receipt = object_record(root, identifier, verify=True)
-        completed = realization(root, identifier, verify=True)
+        body, receipt = object_record(root, identifier, verify=verify)
+        completed = realization(root, identifier, verify=verify)
         if completed:
-            providers(root, retained_providers(root, identifier), adapters, effect=None if dry_run else 'verify')
-            if not dry_run:
+            providers(root, retained_providers(root, identifier), adapters, effect='verify' if verify and not dry_run else None)
+            if verify and not dry_run:
                 profile = realization_path(root, identifier) / 'profile'
                 verify_links(profile, retained_providers(root, identifier), adapters, base.read(profile / 'manifest.json')['description']['provenance'].get('runtime_outputs', []))
             if not dry_run:
@@ -411,14 +431,14 @@ def install(root, archive, identifier, *, dependency_files=(), dry_run=False, ye
         archive = object_path(root, identifier) / 'archive.tar.zst';acquisition = receipt['description'].get('acquisition')
     require(archive is not None, 'missing exact System archive')
     with tempfile.TemporaryDirectory(prefix='mojt-system-preview-') as temp:
-        work = Path(temp);body, encoding = _freeze(archive, work / 'generation', identifier)
+        work = Path(temp);body, encoding = _freeze(archive, work / 'generation', identifier, verify=verify)
         comp, actions = composition(work / 'generation', body)
         io.acquisition_trust(acquisition, identifier, encoding['sha256'], encoding['size'])
         parts, frozen, encodings = {}, {}, {}
         remaining = artifact.MAX_CONTENT - sum(r.get('size', 0) for r in body['files'])
         required = {r['artifact'] for r in body['dependencies']}
         for n, file in enumerate(dependency_files):
-            component, encoded = _freeze(file, work / ('part-' + str(n)), budget=remaining)
+            component, encoded = _freeze(file, work / ('part-' + str(n)), budget=remaining, verify=verify)
             remaining -= sum(r.get('size', 0) for r in component['files'])
             acceptable(component, 'component');dep = component['id']
             require(dep in required and dep not in frozen, 'unexpected/duplicate System dependency archive')
@@ -426,8 +446,8 @@ def install(root, archive, identifier, *, dependency_files=(), dry_run=False, ye
             frozen[dep] = work / ('part-' + str(n));encodings[dep] = encoded;parts[dep] = (component, frozen[dep])
         for dep in required - set(parts):
             require(marker is not None and management.present(object_path(root, dep)), 'missing exact System component: ' + dep + '; supply --dependency-file')
-            component, unused = object_record(root, dep, verify=True);acceptable(component, 'component');parts[dep] = (component, object_path(root, dep))
-        measured = build_profile(work / 'profile', body, comp, parts, **({'adapters':adapters} if adapters is not None else {}))
+            component, unused = object_record(root, dep, verify=verify);acceptable(component, 'component');parts[dep] = (component, object_path(root, dep))
+        measured = build_profile(work / 'profile', body, comp, parts, **({'adapters':adapters} if adapters is not None else {}), verify=verify)
         require(set(dependency_acquisition) <= set(frozen), 'unbound System dependency acquisition record')
         references = provider_references(parts)
         providers(root, references, adapters)
@@ -436,7 +456,7 @@ def install(root, archive, identifier, *, dependency_files=(), dry_run=False, ye
             artifact=identifier, composition=comp['id'], dependencies=sorted(required), manifest=measured['id'],
             archive=encoding, providers=references, dependency_acquisition=dependency_acquisition,
             configuration_changes=False, service_changes=False, selection_changes=False, running_changes=False))
-        if dry_run:return dict(plan=plan, changed=False, dry_run=True, archive_verified=True, profile_validated=True)
+        if dry_run:return dict(plan=plan, changed=False, dry_run=True, archive_verified=verify, profile_validated=True)
         if not yes:
             print(json.dumps(plan, indent=2), file=__import__('sys').stderr)
             if input('Install this exact System without changing state or boot? [y/N] ').strip().lower() not in ('y', 'yes'):
@@ -446,31 +466,32 @@ def install(root, archive, identifier, *, dependency_files=(), dry_run=False, ye
             require(target_identity(root) == physical, 'System target changed while acquiring locks')
             require(plan['description']['installation'] in (None, info['installation']), 'System installation identity changed after preview')
             _initialize(root, info)
-            existing = realization(root, identifier, verify=True) if management.present(object_path(root, identifier)) else None
+            existing = realization(root, identifier, verify=verify) if management.present(object_path(root, identifier)) else None
             if existing:
-                providers(root, retained_providers(root, identifier), adapters, effect='verify')
+                providers(root, retained_providers(root, identifier), adapters, effect='verify' if verify else None)
                 profile = realization_path(root, identifier) / 'profile'
-                verify_links(profile, retained_providers(root, identifier), adapters, base.read(profile / 'manifest.json')['description']['provenance'].get('runtime_outputs', []))
+                if verify:verify_links(profile, retained_providers(root, identifier), adapters, base.read(profile / 'manifest.json')['description']['provenance'].get('runtime_outputs', []))
                 return dict(plan=plan, changed=False, realization=existing['id'])
             for dep in sorted(required):
-                if dep in frozen:_retain(root, info, parts[dep][0], frozen[dep], encodings[dep], dependency_acquisition.get(dep))
-                else:object_record(root, dep, verify=True)
-            receipt = _retain(root, info, body, work / 'generation', encoding, acquisition)
+                if dep in frozen:_retain(root, info, parts[dep][0], frozen[dep], encodings[dep], dependency_acquisition.get(dep), verify=verify)
+                else:object_record(root, dep, verify=verify)
+            receipt = _retain(root, info, body, work / 'generation', encoding, acquisition, verify=verify)
             if references:
                 (root / 'retained').mkdir(mode=0o755, exist_ok=True)
                 target(root, write=True)
-                providers(root, references, adapters, effect='ensure')
-                providers(root, references, adapters, effect='verify')
+                providers(root, references, adapters, effect='ensure' if verify else 'install')
+                if verify:providers(root, references, adapters, effect='verify')
                 io.sync_directory(root / 'retained');io.sync_directory(root)
             destination = realization_path(root, identifier)
             require(not management.present(destination), 'refuse to replace a System realization')
             stage = Path(tempfile.mkdtemp(prefix='.install-', dir=destination.parent))
             try:
-                retained = {dep:(object_record(root, dep, verify=True)[0], object_path(root, dep)) for dep in required}
-                actual = build_profile(stage / 'profile', body, comp, retained, **({'adapters':adapters} if adapters is not None else {}))
-                require(actual == measured, 'System profile changed after preview')
-                verify_links(stage / 'profile', references, adapters, runtime_outputs(retained))
-                dependencies = {dep:object_record(root, dep, verify=True)[1]['id'] for dep in sorted(required)}
+                retained = {dep:(object_record(root, dep, verify=verify)[0], object_path(root, dep)) for dep in required}
+                require(all(retained[dep][0] == parts[dep][0] for dep in retained), 'System components changed after preview')
+                copy_profile(work / 'profile',stage / 'profile');actual = measured
+                if verify:require(inventory(stage / 'profile') == actual['description']['profile'], 'System profile copy damaged')
+                if verify:verify_links(stage / 'profile', references, adapters, runtime_outputs(retained))
+                dependencies = {dep:object_record(root,dep)[1]['id'] for dep in sorted(required)}
                 proof = base.record(REALIZATION, dict(installation=info['installation'], artifact=identifier, receipt=receipt['id'], composition=comp['id'], manifest=actual['id'], dependencies=dependencies))
                 io.write_json(stage / 'realization.json', proof);stage.chmod(0o555);io.sync_directory(stage)
                 tx.publish(stage, destination)

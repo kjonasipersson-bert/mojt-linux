@@ -103,16 +103,18 @@ docs/base-installation.md and docs/mpm-base-contract.md for the implemented scop
 MBT public spellings remain proposed; bootstrap will reuse the same MPM functions.
 .SH SYSTEM CONTENT
 .BI "system install --from-file " "GENERATION --expected-id sha256:FULL_ID"
-verifies a native System generation, its exact native component inputs and its
-resolved composition, then materializes an immutable profile. Supply missing
+imports a native System generation and exact components, safely unpacks each
+new archive once and composes one immutable profile. Full payload, retained
+content and provider closure audits require --verify. Supply missing
 components with repeatable --dependency-file ARCHIVE. Installed exact components
-are reused; unrelated inputs fail. --dry-run validates without target writes;
+are reused through protected metadata; unrelated inputs fail.
+--dry-run checks the local package structure/composition without target writes;
 -y approves installation. No package code, services or lifecycle actions execute.
 .PP
 The first subset requires native leaf components with ordinary protected files,
 explicit Base ABI facts, the bin/python3, bin/mpm and tools runtime layout, and
 an empty lifecycle action set. Native components may bind exact provider runtime
-dependencies; the installed frontend imports/verifies Nix binary closures and retains
+dependencies; the installed frontend imports Nix binary closures and retains
 them without activating a profile. Provider operations require the running installation;
 explicit offline targets cannot use the host store. Direct provider profile mappings,
 transitive native components and links remain unsupported. No source refresh occurs.
@@ -125,11 +127,12 @@ retained. Late-created privileged helpers remain unavailable runtime requirement
 installation does not create them or establish boot readiness. See docs/system-packaging.md.
 .PP
 .BI "{base,system,kernel} activate --artifact " "sha256:FULL_ID"
-prepares an installed exact candidate and atomically selects its complete
-native-v2 deployment for next boot. upgrade --artifact ID uses the same path
-with an explicitly chosen update target. --dry-run previews without writing
+selects an already prepared native-v2 boot entry atomically. It does not build
+initramfs, scan content or run provider helpers. Missing preparation is an error:
+run stage first. upgrade --artifact ID prepares and selects an explicit installed
+update target. --dry-run previews without writing
 runtime bundles, slots, boot trees or selection. There is no system plan command.
-Base requires --base-context FILE declaring Kernel bounds for this exact Base.
+Base preparation requires --base-context FILE declaring exact Kernel bounds.
 The other two areas, running system and persistent state are preserved.
 No source refresh, moving-policy resolution, automatic reboot or migration occurs.
 .PP
@@ -521,12 +524,15 @@ integration remain incomplete; v1 writers cannot change a v2 boot authority.
 
 .SH INTERACTIVE NATIVE BOOT CHOICES
 On a native-v2 installation, activate, upgrade and stage may omit --artifact
-when stdin is a terminal. Choose an installed candidate by its listed number,
-or q to cancel. Compatibility is checked after the choice. --yes, --json and
+when stdin is a terminal. Activation lists prepared candidates; stage/upgrade
+list installed artifacts. Choose a listed number or q to cancel. --yes, --json and
 noninteractive input require an explicit --artifact. Activation shows its target
 and next-boot effect before confirmation; the running system is unchanged.
 Progress and phase timings are written to stderr.
 .PP
-Native-v2 select and rollback preview exact metadata; final publication always
-performs full content and management checks under locks. Add --verify to
-select or rollback --dry-run for a full content audit of the preview as well.
+Native-v2 activate, select and rollback check exact metadata and atomically
+publish the boot choice under locks. Full retained-content/management audits
+require --verify, and a failed audit prevents publication. With --dry-run that
+flag audits the preview without publishing. system install --verify audits
+archive payloads, reused objects, profiles and provider closures; ordinary
+installation performs required materialization without these scrubs.
