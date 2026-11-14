@@ -63,10 +63,21 @@ provider dependencies were retained. Optional C return was not reported.
 The bounded activation/chooser/boot gate is closed. **Preparation performance
 remains open**: about 4 minutes 36 seconds wall and 265.932 s CPU in `stage`,
 including 43.16 s candidate checks. This is separate from accepted activation.
-The next bounded investigation is to separate repeated integrity scans from
-necessary boot construction, then reduce normal preparation work with focused
-regression checks. It does not authorize sweeping writable-root or service/state
-changes. The kernel/firmware/MBT items below remain proposals for discussion.
+The next increment follows the accepted Base/System composability direction:
+release versions normally combine freely within their actual ABI/capability
+requirements; exact boot references record choices rather than compulsory release
+pairing. The ordinary user model is install -> select/activate -> reboot, with
+preparation completed by normal installation when the boot context is available.
+`stage` remains an advanced explicit operation and internal MPM/MBT API. Automatic
+installation/preparation integration is still pending.
+
+First separate reusable early-boot runtime/driver payloads from the small exact
+combination metadata. Reuse heavy initramfs work by its actual inputs, without
+baking a System/Base selection into that reusable payload. Retain exact per-boot
+bindings and the accepted fast selection path. Then separate repeated integrity
+scans from necessary construction and integrate preparation into ordinary install.
+This work does not authorize sweeping writable-root or service/state changes.
+The kernel/firmware/MBT items below remain proposals for discussion.
 
 ### Proposals for discussion, not scheduled commitments
 

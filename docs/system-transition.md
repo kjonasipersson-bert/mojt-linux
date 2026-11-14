@@ -6,6 +6,14 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Exact installed boot updates
 
+The accepted user-facing direction is ordinary install -> select/activate ->
+reboot, with normal installation finishing preparation when boot context exists.
+Standalone `stage` is an advanced operation, also used by MPM/MBT internally.
+The explicit sequence below describes today's implementation gap; automatic
+installation/preparation integration is not yet implemented. Base/System releases
+should normally combine within real compatibility requirements rather than
+matched version pairs; see [the MPM contract](mpm.md).
+
 `mpm system activate --artifact sha256:FULL_ID` selects an already prepared
 System boot entry for the **next boot**. It performs bounded metadata checks and
 atomic selection only. It never constructs initramfs or rescans package/provider
@@ -36,7 +44,11 @@ without writing runtime bundles, boot trees, slots or the menu. There is no
 public `mpm system plan` operation. Preparation uses the mounted installation,
 its delivered Python, static BusyBox and helpers. It freezes the running manager's
 retained interpreter closure; candidate Python is never run. An offline target
-cannot borrow the host's unrelated store/runtime.
+cannot borrow the host's unrelated store/runtime. The staged path now reuses a
+Kernel/runtime/driver payload independently of the selected Base/System IDs,
+then emits the small exact-deployment member and complete binding. On a warm
+hit it skips freezing and copying the runtime. See
+[reusable initramfs](reusable-initramfs.md); full preparation checks still run.
 
 The authoritative native-v2 selection is the baseline, even when another
 combination is still running. Exactly one of Base/System/Kernel changes; the

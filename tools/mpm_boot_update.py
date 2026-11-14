@@ -109,14 +109,12 @@ def stage(root, area, identifier, *, bounds=None, adapters=None, runtime=None,
     print('Preparing exact '+area+' deployment; retained content verification and construction may take a while...',file=sys.stderr,flush=True)
     with tempfile.TemporaryDirectory(prefix='mojt-boot-update-') as temporary:
         work = Path(temporary)
-        if runtime_directory is None:
-            runtime_directory = work/'runtime'
-            frozen = constructor.freeze_runtime(root,ref,interpreter,runtime_directory,adapters=adapters)
-            require(frozen == measured,'manager runtime changed before construction')
         contract = handover.prepare(root,source,plan,adapters=adapters,tar=tar)
         result = selection.stage(root,source,runtime_directory,busybox,work/'construction',
-                                 bounds=p['kernel_bounds'],adapters=adapters,contract=contract)
-    return dict(report,action='stage',changed=True,deployment=result['deployment'])
+                                 bounds=p['kernel_bounds'],adapters=adapters,contract=contract,runtime_value=measured)
+    payload = result['initramfs_payload']
+    print('Early-boot runtime/drivers: '+('reused' if payload['reused'] else 'built'),file=sys.stderr,flush=True)
+    return dict(report,action='stage',changed=True,deployment=result['deployment'],initramfs_payload=payload)
 
 
 def upgrade(root, area, identifier, *, expected_selected=None, dry_run=False, yes=False, verify=False, **options):

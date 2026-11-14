@@ -98,3 +98,13 @@ Preparation remains the known performance issue. Investigate its repeated
 retained-content/provider scans and construction separately; keep its cost
 visible rather than adding it back to ordinary activation. The proposals for
 writable-root layout, kernel building, firmware and MBT remain distinct work.
+
+
+## Next construction increment
+
+The [reusable initramfs payload](reusable-initramfs.md) separates runtime/drivers
+from the small exact-deployment member. Base/System identity changes alone no
+longer require rebuilding that large member. A warm update reuses its compressed
+bytes and skips runtime freezing/copying, module decoding and large-payload
+compression. Existing preparation/admission integrity checks still run; total
+stage speedup and physical two-member boot acceptance remain unmeasured.

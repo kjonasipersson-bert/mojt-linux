@@ -101,6 +101,18 @@ the original archive is unavailable. It does not create a moving upgrade wish.
 Base moving upgrades and System deployment remain unimplemented. See
 docs/base-installation.md and docs/mpm-base-contract.md for the implemented scope.
 MBT public spellings remain proposed; bootstrap will reuse the same MPM functions.
+.SH BASE AND SYSTEM COMPOSITION
+Base and System have independent release lifecycles and should normally combine
+within their actual compatibility requirements, without compulsory matched
+release versions. A too-old Base libc can constrain a System binary that uses
+it; a provider-owned libc does not become a Base-libc dependency. Exact boot
+references record repeatable choices, not dependencies on exactly those versions.
+.PP
+The accepted ordinary boot-area flow is install, select/activate, then deliberate
+reboot. Normal installation should finish preparation when a complete boot
+context is available. stage remains an advanced explicit preparation command and
+an internal MPM/MBT/bootstrap operation. Current content installation still leaves
+preparation separate; automatic integration is not yet implemented.
 .SH SYSTEM CONTENT
 .BI "system install --from-file " "GENERATION --expected-id sha256:FULL_ID"
 imports a native System generation and exact components, safely unpacks each
@@ -136,7 +148,14 @@ Base preparation requires --base-context FILE declaring exact Kernel bounds.
 The other two areas, running system and persistent state are preserved.
 No source refresh, moving-policy resolution, automatic reboot or migration occurs.
 .PP
-stage --artifact ID prepares without selecting. select --deployment ID
+stage --artifact ID prepares without selecting. It reuses the large early-boot
+runtime/driver payload when its actual inputs are unchanged and writes a small
+per-deployment archive member with exact current metadata. Base/System choices
+alone do not invalidate the reusable member. Kernel, runtime, BusyBox, required
+early drivers/applets or payload generator changes do. Preparation integrity
+checks still run. See docs/reusable-initramfs.md.
+.PP
+select --deployment ID
 --expected-selected ID chooses an admitted deployment. rollback
 --expected-selected ID returns to the previous compatible selection within the
 specified area. These lower-level operations remain available.

@@ -204,6 +204,9 @@ jobs:
           release="${kernel##*/vmlinuz-}"
           test -d "/lib/modules/$release"
           printf 'Boot probe kernel: %s (%s)\n' "$kernel" "$kernel_package"
+          sudo python3 tests/run-initramfs-payload-smoke.py \
+            --kernel "$kernel" --busybox /bin/busybox \
+            --output "$RUNNER_TEMP/mojt-hardware-initramfs-payload"
           for bus in sata usb; do
             sudo python3 tests/run-uefi-smoke.py \
               --kernel "$kernel" --modules-dir "/lib/modules/$release" \
@@ -247,7 +250,7 @@ jobs:
 
           os.umask(0o022)
           temporary = Path(sys.argv[1])
-          for scenario in ("sata", "usb", "sata-to-usb", "generations", "serial", "shutdown-legacy", "shutdown-corrected"):
+          for scenario in ("sata", "usb", "sata-to-usb", "generations", "serial", "shutdown-legacy", "shutdown-corrected", "initramfs-payload"):
               source = temporary / ("mojt-hardware-" + scenario)
               if not source.is_dir():
                   continue

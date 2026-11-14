@@ -86,6 +86,22 @@ inspectable. See the [Base release unit](base-format.md#accepted-base-release-un
 fifth OS layer. Its release identity includes a unique build identity; a
 `uname -r` string alone is not sufficient to distinguish all builds.
 
+### Base and System combine by requirements, not matched releases
+
+Accepted direction, 2026-11-14: Base and System are sufficiently separate that
+their versions should normally be freely combinable. Ordinary releases do not
+require a matching Base/System version pair. Enforce concrete ABI/capability
+requirements where they exist, such as a too-old Base libc for a System binary
+that actually uses it. Do not invent a Base-libc dependency for a binary whose
+provider closure supplies its own libc. Version labels alone do not establish
+compatibility or incompatibility.
+
+A boot entry binds exact selected Base/System/Kernel identities for repeatable
+boot and recovery. This is distinct from release dependencies: recording Base A
+with System B does not make B dependent on exactly A. Compatible installed
+versions may be recombined explicitly, subject to their real Kernel/state/ABI
+constraints and the currently implemented transition limits.
+
 Actions in one area MUST NOT implicitly install, upgrade, remove, or activate
 content in another. If an operation requires a different Base or Kernel, the
 plan must explain the requirement and obtain explicit approval for a
@@ -141,11 +157,37 @@ No new CLI spelling or MBT syntax is approved by the data-format draft.
 | Action | Intended behavior |
 | --- | --- |
 | `update` | Refresh local repository/release catalog metadata, like `apt update`. No packages installed, removed, or activated. |
-| `install` | Resolve and retain a selected release plus dependencies. For Ports, first installation of a directly requested application also establishes its default activation; later installs leave the existing activation unchanged. |
+| `install` | Resolve and retain a selected release plus dependencies. In the accepted normal boot-area flow, finish required boot preparation when a complete target context exists; leave selection unchanged. For Ports, first installation of a directly requested application also establishes its default activation; later installs leave the existing activation unchanged. |
 | `upgrade` | Propose changes to tracked requests **within the selected area**, respecting their policies and pins. After approval, retain eligible new releases and advance permitted selections, preserving previous content. Boot-area selections take effect at the next boot; Ports selections apply to new program starts. |
 | `activate` | Select an **already installed** version for a chosen profile, or a bootable deployment for Base/System/Kernel. |
+| `select` | In boot areas, atomically choose a completed boot deployment for the next boot. The current `activate` frontend also offers artifact-based choice. |
+| `stage` | Advanced explicit preparation of a boot deployment without selecting it; also an internal MPM/MBT/bootstrap operation. |
 | `remove` | Remove selected Ports installations from the current profile; if an active installation is removed, choose an installed replacement by the history rule below. Physical collection is separate and must preserve dependencies, project pins and rollback references. Base/System/Kernel deployment removal needs separate safeguards. |
 | `status` | Read-only inspection of installed content and separate selected/running observations; no metadata refresh, store initialization, repair or implied selection. Per-area support is listed in section 6. |
+
+### Ordinary user flow and implementation status
+
+The accepted user model is **install -> select/activate -> deliberate reboot**.
+Normal installation on a running system with a known Base/System/Kernel/machine
+context should finish the required preparation and leave a selectable boot entry.
+`select`/`activate` performs the fast atomic choice; it must not hide content
+scrubs or initramfs construction. `upgrade` may coordinate installation,
+preparation and the explicitly approved boot choice within its own area.
+
+A standalone `stage` is useful for administrators preparing alternatives, delayed
+rollout, or build/bootstrap tooling. The technical preparation phase is required;
+a separate mandatory end-user command is not an architectural requirement. Pure
+content import into an incomplete/offline target may finish before boot context
+exists and must report that distinction accurately.
+
+**Current implementation limit:** native content installation still leaves boot
+preparation separate. The following `stage`/`activate` description documents that
+implemented path, not a permanent three-command requirement. Automatic preparation
+inside normal installation is a next integration step, not already implemented.
+Reusable initramfs work must key construction to actual early-boot inputs; a new
+System/Base selection alone should not force a rebuild of unchanged runtime and
+driver payloads. A Kernel change is an important input change, alongside required
+early drivers, runtime, boot code/configuration and archive format.
 
 On native-v2 installations, `stage` prepares a complete deployment and `activate`
 selects an already prepared entry atomically. Activation does no construction or
