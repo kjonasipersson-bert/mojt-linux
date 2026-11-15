@@ -111,8 +111,9 @@ references record repeatable choices, not dependencies on exactly those versions
 The accepted ordinary boot-area flow is install, select/activate, then deliberate
 reboot. Normal installation should finish preparation when a complete boot
 context is available. stage remains an advanced explicit preparation command and
-an internal MPM/MBT/bootstrap operation. Current content installation still leaves
-preparation separate; automatic integration is not yet implemented.
+an internal MPM/MBT/bootstrap operation. Live native-v2 System installation now
+includes preparation. --content-only and offline imports leave it separate;
+Base/Kernel installation integration is still pending.
 .SH SYSTEM CONTENT
 .BI "system install --from-file " "GENERATION --expected-id sha256:FULL_ID"
 imports a native System generation and exact components, safely unpacks each
