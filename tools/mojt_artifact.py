@@ -15,6 +15,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import stat
+import sys
 import subprocess
 import tarfile
 import tempfile
@@ -57,6 +58,13 @@ def digest(value):
 
 
 def file_sha(path):
+    native=sys.modules.get('mpm_native_io')
+    if native is not None and not native.preparation_verify():
+        return native.preparation_cached(('sha256',str(Path(path).absolute())),[path],lambda:_file_sha(path),cost=64)
+    return _file_sha(path)
+
+
+def _file_sha(path):
     with Path(path).open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
@@ -77,6 +85,13 @@ def parse_json(raw):
 
 
 def read_json(path):
+    native=sys.modules.get('mpm_native_io')
+    if native is not None:
+        return native.preparation_cached(('artifact-json',str(Path(path).absolute())),[path],lambda:_read_json(path))
+    return _read_json(path)
+
+
+def _read_json(path):
     with Path(path).open("rb") as stream:
         return parse_json(stream.read(MAX_METADATA + 1))
 

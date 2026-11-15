@@ -3,6 +3,9 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """Shared bounded native archive I/O; no selection, state effects or package hooks."""
 from datetime import datetime, timezone
+from contextlib import contextmanager
+from contextvars import ContextVar
+import copy
 import hashlib
 import os
 from pathlib import Path
@@ -16,6 +19,75 @@ import tempfile
 import mojt_artifact as artifact
 
 MAX_ARCHIVE = artifact.MAX_CONTENT + 4 * artifact.MAX_METADATA
+_PREPARATION = ContextVar('mpm_preparation',default=None)
+
+
+@contextmanager
+def preparation(*, verify=False):
+    """One stage call; no durable cache and no reuse of mutable state checks."""
+    token=_PREPARATION.set(dict(verify=verify,values={},size=0,providers={},provider_size=0))
+    try:yield
+    finally:_PREPARATION.reset(token)
+
+
+def preparation_verify():
+    """Other callers keep their existing full-verification default."""
+    active=_PREPARATION.get()
+    return True if active is None else active['verify']
+
+
+def preparation_provider_check(key, check, *, cost):
+    """Remember successful immutable-provider queries for one ordinary stage.
+
+    Callers must recheck live roots, object existence and helper bindings before
+    each lookup. Database file status is deliberately not a dependency: this is
+    a checked identity within one call, not a fresh database or byte audit.
+    """
+    active=_PREPARATION.get()
+    if active is None or active['verify']:return check()
+    if key in active['providers']:return True
+    result=check()
+    if result is True and len(active['providers'])<512 and active['provider_size']+cost<=32*1024**2:
+        active['providers'][key]=True;active['provider_size']+=cost
+    return result
+
+
+def preparation_cached(key, paths, read, *, cost=None, require_stable=True):
+    """Reuse metadata only while all dependencies and protected ancestors match.
+
+    File status is an invalidation guard, not a content-integrity proof. Required
+    copies still hash their actual bytes; explicit audits bypass hash caches.
+    """
+    active=_PREPARATION.get()
+    if active is None:return read()
+    paths=tuple(Path(p).absolute() for p in paths)
+    def signature():
+        result=[]
+        for path in paths:
+            if path!=path.resolve():return None
+            for parent in path.parents:
+                try:info=parent.lstat()
+                except FileNotFoundError:return None
+                result.append((str(parent),info.st_dev,info.st_ino,info.st_mode,info.st_uid,info.st_gid))
+            try:info=path.lstat()
+            except FileNotFoundError:result.append((str(path),None));continue
+            result.append((str(path),info.st_dev,info.st_ino,info.st_mode,info.st_uid,info.st_gid,
+                           info.st_nlink,info.st_size,info.st_mtime_ns,info.st_ctime_ns))
+        return tuple(result)
+    before=signature()
+    if before is None:return read()
+    cached=active['values'].get(key)
+    if cached is not None and cached[0]==before:return copy.deepcopy(cached[1])
+    if cached is not None:
+        active['size']-=cached[2];del active['values'][key]
+    value=read()
+    if signature()!=before:
+        require(not require_stable,'metadata changed during preparation read')
+        return value  # Nix may checkpoint its database during a metadata query.
+    charge=cost if cost is not None else sum(p.stat().st_size for p in paths if p.is_file() and p.suffix=='.json')
+    if value is not None and len(active['values'])<512 and active['size']+charge<=32*1024**2:
+        active['values'][key]=(before,copy.deepcopy(value),charge);active['size']+=charge
+    return value
 
 
 def require(ok, message):

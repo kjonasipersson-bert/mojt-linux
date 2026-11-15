@@ -103,7 +103,8 @@ def providers(root, refs, adapters, *, effect=None):
         description = adapter.describe(copy.deepcopy(ref), root)
         require(description['reference'] == ref, 'System provider changed accepted identity')
         if effect is not None:
-            operation = getattr(adapter,'install',adapter.ensure) if effect == 'install' else getattr(adapter,effect)
+            operation = (getattr(adapter,'install',adapter.ensure) if effect == 'install' else
+                         getattr(adapter,'inspect',adapter.verify) if effect == 'inspect' else getattr(adapter,effect))
             operation(copy.deepcopy(ref),root)
 
 
@@ -129,6 +130,15 @@ def manager():
 
 
 def object_record(root, identifier, *, verify=False):
+    if verify:return _object_record(root,identifier,verify=True)
+    folder=object_path(root,identifier)
+    dependencies=[root/'artifacts',root/'artifacts/store.json',root/'artifacts/.lock',root/'artifacts/system',
+                  root/'artifacts/system/registry.json',root/'artifacts/system/installed',folder,
+                  *(folder/name for name in ('artifact.json','installed.json','archive.tar.zst'))]
+    return io.preparation_cached(('system-object',str(root),identifier),dependencies,lambda:_object_record(root,identifier))
+
+
+def _object_record(root, identifier, *, verify=False):
     marker = registry(root);require(marker is not None, 'missing System registry')
     path = object_path(root, identifier);require(stat.S_IMODE(io.directory(path).st_mode) == 0o555, 'unsealed System object')
     body = base.read(path / 'artifact.json');acceptable(body)

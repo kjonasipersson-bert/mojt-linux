@@ -61,7 +61,8 @@ def describe_runtime(root, ref, interpreter, *, adapters):
     require(os.geteuid() == 0, 'bootstrap runtime preparation requires an administrator')
     root = Path(root).absolute();require(root == root.resolve(), 'linked bootstrap runtime source')
     reference(ref);require(adapters is not None and ref['provider'] in adapters, 'trusted runtime adapter required')
-    adapter = adapters[ref['provider']];adapter.verify(ref,root)
+    adapter = adapters[ref['provider']]
+    (adapter.verify if io.preparation_verify() else getattr(adapter,'inspect',adapter.verify))(ref,root)
     trees = {}
     for name in provider_paths(root,ref,adapters):
         require(name.split('/')[0] not in RESERVED, 'bootstrap provider overlaps initramfs controls')
@@ -100,16 +101,39 @@ def constructor(runtime, busybox, *, handover=False):
 
 def capture(root, source, adapters):
     d = model.inputs(source)
-    def tree(relative):return dict(path=relative,measurement=inventory.measure(inventory.path(root,relative)))
+    known={}
+    def remember(key,value):
+        require(key not in known or known[key]==value,'conflicting retained boot tree measurements')
+        known[key]=value
+    if not io.preparation_verify():
+        # Retained proofs are expected measurements, never a claim of a fresh
+        # audit. Reuse only the same immutable artifact/provider identity.
+        from mpm_boot_selection import current
+        unused,entries,unused_raw=current(root)
+        for entry in entries.values():
+            old=entry['record']['description']['inputs'];previous=model.inputs(old)
+            proof=early.proof(entry['receipt']['description']['proof'],old)
+            for area in ('base','system','kernel'):
+                row=proof['modules' if area=='kernel' else area]
+                remember((area,previous[area]['artifact'],row['path']),row['measurement'])
+            for provider in proof['providers']:
+                identity=artifact.digest(provider['reference'])
+                for path,measured in provider['trees'].items():remember(('provider',identity,path),measured)
+    def measurement(kind,identity,relative):
+        path=inventory.path(root,relative)
+        require(path.is_dir(),'boot tree is unavailable: '+relative)
+        expected=known.get((kind,identity,relative))
+        return dict(expected) if expected is not None else inventory.measure(path)
+    def tree(area,relative):return dict(path=relative,measurement=measurement(area,d[area]['artifact'],relative))
     providers = [];seen = set()
     for ref in system.retained_providers(root,d['system']['artifact']):
         names = provider_paths(root,ref,adapters)
         fresh = [p for p in names if p not in seen];seen.update(names)
-        if fresh:providers.append(dict(reference=ref,trees={p:inventory.measure(inventory.path(root,p)) for p in fresh}))
+        if fresh:providers.append(dict(reference=ref,trees={p:measurement('provider',artifact.digest(ref),p) for p in fresh}))
     value = record(early.PROOF,dict(inputs=source['id'],constructor=d['constructor'],
-        base=tree('realizations/base/'+d['base']['artifact'][7:]+'/tree/rootfs'),
-        system=tree('realizations/system/'+d['system']['artifact'][7:]+'/profile'),
-        modules=tree('kernel/installed/'+d['kernel']['artifact'][7:]+'/payload/lib/modules'),providers=providers))
+        base=tree('base','realizations/base/'+d['base']['artifact'][7:]+'/tree/rootfs'),
+        system=tree('system','realizations/system/'+d['system']['artifact'][7:]+'/profile'),
+        modules=tree('kernel','kernel/installed/'+d['kernel']['artifact'][7:]+'/payload/lib/modules'),providers=providers))
     early.proof(value,source);return value
 
 
@@ -280,7 +304,7 @@ def build(root, source, runtime_directory, busybox, work, *, bounds, adapters, h
         if handover is not None:
             import mpm_boot_handover as transfer
             transfer.recheck_locked(root,handover,source,adapters)
-            transfer.check(root,source,trees,handover)
+            transfer.check(root,source,trees,handover,verify_content=io.preparation_verify())
         work.mkdir(mode=0o700)
         frozen_busybox = work/'busybox';checksum,unused = io.frozen_copy(busybox,frozen_busybox,maximum=model.MAX_BOOT)
         require(checksum == d['constructor']['identity']['busybox_sha256'], 'BusyBox changed during copying');frozen_busybox.chmod(0o755)
@@ -338,7 +362,8 @@ def build(root, source, runtime_directory, busybox, work, *, bounds, adapters, h
             require(len(raw) <= model.MAX_BOOT,'combined initramfs exceeds size limit')
         else:raw = make_payload()
         # The frozen original module inventory is rechecked after decompression.
-        require(inventory.measure(payload/'lib/modules') == trees['description']['modules']['measurement'], 'Kernel modules changed during construction')
+        if io.preparation_verify():
+            require(inventory.measure(payload/'lib/modules') == trees['description']['modules']['measurement'], 'Kernel modules changed during construction')
         binding = record(model.BINDING,dict(inputs=source['id'],constructor=d['constructor'],archive=dict(sha256=hashlib.sha256(raw).hexdigest(),size=len(raw))))
         model.binding(binding,source)
         return CompletedBuild(dict(archive=raw,binding=binding,proof=trees,boot_ready=False,selection_changed=False,handover_enabled=handover is not None,

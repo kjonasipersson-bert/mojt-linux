@@ -92,9 +92,31 @@ some identical trees are scanned repeatedly. Payload-cache work is only 0.455 s.
 Only the summary was imported; it records MPM exit 0 and no failed measured
 phase, without the diagnostic's final context/reuse assertion results.
 
-Next separate repeated provider and retained-content audits from necessary
-construction, then reduce repeated immutable-input/metadata work within an
-operation and integrate preparation into ordinary install. Keep explicit `--verify` audits available,
+The [ordinary stage increment](stage-fast-path.md) separates repeated
+provider/retained-content audits from preparation with explicit `--verify`, and
+adds guarded metadata/hash reuse within one operation. Retained expected proofs
+may be reused for exact immutable identities; this is not a fresh byte audit.
+The [owner private-code test](stage-fast-hardware-test.md#recorded-owner-result--2026-11-15)
+measured 134.812 s cold and 66.369 s warm (65.992 s CPU), 71.6% shorter warm
+elapsed time than the 233.777 s profile. Both operations exited 0 with no Nix
+`--verify-path` calls and unchanged boot choice; warm payload reuse took 0.285 s.
+Nix metadata queries remain at 253 calls of each type (13.197 s total), and link
+checks take 10.767 s. Query-cache misses are not diagnosed by the summary.
+The final performance follow-up caches successful exact Nix provider queries
+once per ordinary stage, independently of database file status and the general
+metadata cache. Live root/helper bindings, closure existence and command
+inventory remain checked each time; explicit audits keep their full path.
+The [final owner measurement](stage-fast-hardware-test.md#final-nix-query-cache-measurement--2026-11-15)
+passed: warm stage 55.171 s wall / 54.713 s CPU, with 72 Nix query commands in
+1.887 s. Cold stage took 110.759 s wall / 109.951 s CPU. Both calls exited 0;
+the helper guards exact warm reuse, unchanged running/menu state and zero full
+Nix scrubs. Warm elapsed time fell a further 16.9%, or 76.4% from the original
+233.777 s profile. Performance tuning stops here before returning to the roadmap.
+Installed-tooling delivery
+and integration into ordinary install remain open. No new boot is claimed by
+this private-code test. A separately pinned follow-up measurement uses
+`/var/lib/mojt/stage-nix-57` and leaves the previous evidence intact.
+Keep explicit `--verify` audits available,
 required metadata/compatibility checks and safe atomic publication intact, and
 the accepted Base/System independence and selection boundary explicit.
 This work does not authorize sweeping writable-root or service/state changes.

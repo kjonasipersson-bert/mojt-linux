@@ -1,0 +1,120 @@
+<!--
+Mojt Linux
+Copyright (C) 2026 Jonas Persson
+SPDX-License-Identifier: GPL-2.0-only
+-->
+
+# Ordinary stage checks and explicit content audits
+
+The [owner phase profile](stage-profiling.md#owner-phase-profile--2026-11-15)
+measured 253 full Nix path audits, 52,487 file-hash calls and five complete
+planning passes. This increment keeps the planning/current-state gates but
+separates full byte audits from normal preparation.
+
+## Policy and scope
+
+`mpm {base,system,kernel} stage --artifact ID` now runs with content scrubs off.
+`--verify` explicitly requests the existing full retained-archive, realization,
+provider, tree-proof and boot-file checks. `upgrade --verify` passes that request
+to its preparation as well as selection. Ordinary activation/selection keeps its
+existing fast behavior. Stage reports `verification_requested` in its public
+JSON result; this is a requested policy, not an assertion that a dry-run
+constructed/audited a new deployment.
+
+The preparation policy is scoped to one call, reset on success/failure, and has
+no persistent metadata cache. Standalone constructor/MBT/store library callers
+outside that scope retain their existing full-check defaults. Existing boot,
+binding, readiness and selection wire formats are unchanged. SHA256 remains
+integrity evidence rather than publisher authentication.
+
+Normal preparation still checks exact metadata/receipt/installation identities,
+ABI and Kernel bounds, provider preservation, allowed startup changes, account
+shells, required paths/links, firmware/profile compatibility, current defaults,
+schema/recovery support, the physical target and boot selection. Existing shared
+and exclusive lock boundaries and final mutable-state rechecks remain. These
+checks are not replaced with a cached approval or a serialized plan.
+
+Required copying/materialization and generated archives retain their byte
+checks, size/path limits, external-command exit checks, durable writes and
+atomic publication. A full byte audit is not silently claimed by normal stage.
+
+## Operation-local reuse
+
+- The Nix boot adapter adds metadata inspection: protected retention-root binding,
+  exact registered closure and NAR hashes, and command inventory. Normal stage
+  uses it instead of `--verify-path`. Its base Ports adapter and inherited full
+  `verify` implementation are unchanged. Providers lacking inspection retain
+  their full verifier as a conservative fallback.
+- Successful Nix closure/hash queries are reusable for the exact reference,
+  helper and installation during one ordinary stage. A separate bounded cache
+  (512 entries / 32 MiB charged identity data) is independent of general metadata
+  cache occupancy, symlink aliases and database/WAL file status. A database write
+  does not itself invalidate the already checked immutable provider identity.
+  The retention-root/helper bindings, existence of every closure directory and
+  current command inventory are checked on every call, including cache hits.
+  Query failures are not cached. New or changed identities query again; the
+  cache is discarded on return or failure. Outside stage, or under `--verify`,
+  queries are not reused; the full verifier remains unchanged. This deliberately
+  reuses a check from earlier in the same operation, without claiming a fresh
+  database read or content audit at every phase.
+- Parsed metadata, metadata-only Base/System/Kernel object checks and repeated
+  code hashes are reusable only while their dependency signatures match. Each
+  lookup restats files and ancestors, including inode/device, owner, permissions,
+  link count, size and nanosecond modification/change times. Replaced or edited
+  metadata is re-read and validated. Caller mutations cannot change cached
+  values; results are copied. Errors and missing results are not cached.
+- The private cache is bounded to 512 entries and 32 MiB of charged metadata per
+  preparation call. Alias paths are not cached. Mutable state planning is still
+  rerun; a stat-based cache is not a fresh content proof. Explicit full audits
+  bypass file-hash reuse.
+
+Tree proofs may reuse **expected** measurements from already admitted entries
+when the Base/System/Kernel artifact or complete provider reference and tree path
+match exactly. The current canonical directory must still exist. Conflicting
+measurements are refused. A new tree without such evidence is measured once to
+construct its proof. `--verify` measures/audits the current content instead of
+borrowing old measurements. No old receipt is rewritten, and reuse does not
+claim that current bytes were freshly scrubbed.
+
+Runtime description, first-time Base scaffolding, a changed payload generator
+or other genuine payload inputs can still require construction. Cache input
+hashes include the changed producer code, so the first preparation after this
+increment can build a new payload. A subsequent compatible preparation is the
+warm comparison. Installation/preparation integration remains separate work.
+
+## Validation and owner test
+
+Focused tests cover scope reset, normal/explicit verification dispatch,
+replacement and permission invalidation, same-size content changes with restored
+mtime, immutable metadata reuse, full-audit refusal of damaged payloads, provider
+query/root failures, exact proof reuse and missing-tree refusal. Existing
+constructor, admission, bootstrap, rollback and state gates remain regression
+checks. The [owner SSD result](stage-fast-hardware-test.md#recorded-owner-result--2026-11-15)
+measured 134.812 s cold and 66.369 s warm, compared with the previous 233.777 s
+profile: 71.6% shorter warm elapsed time. Both calls exited 0 with zero
+`--verify-path` commands. Warm payload reuse took 0.285 s. Nix metadata queries
+still ran 253 times each; the intended query cache did not reduce that count on
+this machine, and the summary does not identify the cache guard responsible.
+The final performance follow-up replaces that stat-dependent provider cache
+with the operation-local query cache above. Regression tests exercise seven
+passes with two queries total despite real SQLite WAL writes, a symlinked bin
+directory and a full general metadata cache. They also cover missing objects,
+root/helper rebinding, changed identities, query errors, scope reset and explicit
+audit bypass. The [final SSD measurement](stage-fast-hardware-test.md#final-nix-query-cache-measurement--2026-11-15)
+confirms 36 queries of each type (72 commands, 1.887 s) and warm stage at
+55.171 s wall / 54.713 s CPU, compared with 66.369 s before this last fix.
+Both measured calls exited 0, with exact warm reuse and unchanged selection
+guarded by the helper. This is a 16.9% further reduction; no new installed-tooling
+delivery or physical boot is claimed. Further performance work is deferred so
+development can return to the roadmap.
+
+The [short SSD test](stage-fast-hardware-test.md) runs the reviewed new manager
+in a private complete code bundle using F's installed interpreter/runtime. It prepares retained alternatives
+without installing another System, changing next boot or rebooting. This is an
+explicit maintenance test of new code, not a claim that installed F already
+contains it. The ordinary installed profiler remains available for final
+measurement after the normal tooling update.
+The short-test helper now pins the final query-cache follow-up at `47001725`
+and writes separate evidence under `/var/lib/mojt/stage-nix-57`. It requires
+reduced Nix query counts as well as exact warm reuse and unchanged selection.
+Preserve the previous measurement under `/var/lib/mojt/stage-fast-57`.
