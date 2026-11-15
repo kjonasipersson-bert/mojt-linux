@@ -15,7 +15,7 @@ Full content verification is explicit through `--verify`.
 
 | Command | Normal work | Explicit verification |
 | --- | --- | --- |
-| `mpm system install` | Freeze/copy and safely unpack each new archive once; compose one profile; retain provider binaries; atomically publish completed objects/profile | `--verify` hashes payloads and audits reused objects, profile content and provider closures |
+| `mpm system install` | Freeze/copy and safely unpack each new archive once; compose one profile; retain provider binaries; atomically publish completed objects/profile; the live native-v2 frontend then prepares a boot entry without selecting it (--content-only/offline imports skip preparation) | `--verify` hashes payloads and audits reused objects, profile content and provider closures |
 | `mpm {base,system,kernel} stage --artifact ID` | Prepare and admit a complete boot deployment without selecting it; reuse unchanged immutable metadata and expected proofs | `--verify` requests full retained-content/provider/tree audits |
 | `mpm {base,system,kernel} activate --artifact ID` | Find an admitted entry for the artifact and preserved other areas; atomically choose next boot | `--verify` audits retained boot entries before selection |
 | `mpm {base,system,kernel} select` / `rollback` | Choose an admitted deployment or the previous entry | `--verify` audits retained boot entries before selection |
@@ -143,7 +143,9 @@ own costs include 13.197 s of Nix metadata queries and 10.767 s of link checks.
 Both metadata query types still ran 253 times; the cause of missed reuse is not
 established by this summary. This tests private code and unchanged boot choice,
 not new installed tooling or another physical boot. Automatic preparation inside
-normal install remains separate work.
+normal live System installation was integrated subsequently; see
+[the usability acceptance](mpm-usability-hardware-test.md). Historical timings here
+measure the separately invoked operations, not the joined installation command.
 
 The [final Nix query-cache measurement](stage-fast-hardware-test.md#final-nix-query-cache-measurement--2026-11-15)
 then measured 110.759 s cold and 55.171 s warm (54.713 s warm CPU), with 36

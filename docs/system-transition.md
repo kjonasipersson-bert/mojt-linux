@@ -9,8 +9,9 @@ SPDX-License-Identifier: GPL-2.0-only
 The accepted user-facing direction is ordinary install -> select/activate ->
 reboot, with normal installation finishing preparation when boot context exists.
 Standalone `stage` is an advanced operation, also used by MPM/MBT internally.
-The explicit sequence below describes today's implementation gap; automatic
-installation/preparation integration is not yet implemented. Base/System releases
+Normal live native-v2 System installation now includes preparation, leaving
+next boot unchanged. Offline and --content-only imports still need explicit
+preparation; Base/Kernel install integration remains separate. Base/System releases
 should normally combine within real compatibility requirements rather than
 matched version pairs; see [the MPM contract](mpm.md).
 
@@ -22,7 +23,6 @@ combines preparation and selection for an explicit installed update target.
 
 ```sh
 mpm system install --from-file SYSTEM.tar.zst --expected-id sha256:FULL_ID -y
-mpm system stage --artifact sha256:FULL_ID -y
 mpm system activate --artifact sha256:FULL_ID -y
 mpm system status
 # Reboot deliberately, then inspect status again.
