@@ -99,7 +99,7 @@ class RootTests(unittest.TestCase):
 @unittest.skipUnless(os.geteuid()==0 and shutil.which('unshare') and shutil.which('mount'),'private mount namespace requires root and mount tools')
 class MountTests(unittest.TestCase):
     def test_real_mounts_keep_root_and_local_writable_and_release_content_readonly(self):
-        result=subprocess.run(['unshare','--mount','--propagation','private',sys.executable,str(Path(__file__).resolve()),'--mount-probe'],
+        result=subprocess.run(['unshare','--mount','--propagation','private',sys.executable,'-B',str(Path(__file__).resolve()),'--mount-probe'],
                               capture_output=True,text=True)
         if result.returncode and 'unshare failed: Operation not permitted' in result.stderr:self.skipTest('mount namespaces unavailable')
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
