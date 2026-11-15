@@ -15,6 +15,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import stat
+import sys
 import subprocess
 import tarfile
 import tempfile
@@ -57,9 +58,9 @@ def digest(value):
 
 
 def file_sha(path):
-    from mpm_native_io import preparation_cached, preparation_verify
-    if not preparation_verify():
-        return preparation_cached(('sha256',str(Path(path).absolute())),[path],lambda:_file_sha(path),cost=64)
+    native=sys.modules.get('mpm_native_io')
+    if native is not None and not native.preparation_verify():
+        return native.preparation_cached(('sha256',str(Path(path).absolute())),[path],lambda:_file_sha(path),cost=64)
     return _file_sha(path)
 
 
@@ -84,8 +85,10 @@ def parse_json(raw):
 
 
 def read_json(path):
-    from mpm_native_io import preparation_cached
-    return preparation_cached(('artifact-json',str(Path(path).absolute())),[path],lambda:_read_json(path))
+    native=sys.modules.get('mpm_native_io')
+    if native is not None:
+        return native.preparation_cached(('artifact-json',str(Path(path).absolute())),[path],lambda:_read_json(path))
+    return _read_json(path)
 
 
 def _read_json(path):

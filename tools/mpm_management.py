@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import sys
 
 FORMAT = 'mojt-management-capabilities-v1'
 CONTEXT = 'mojt-management-context-v1'
@@ -231,8 +232,12 @@ def file_hash(file):
             f'unsafe/unbounded manager implementation: {file} '
             f'(mode={stat.S_IMODE(info.st_mode):04o}, links={info.st_nlink}, bytes={info.st_size}; '
             'require a regular single-link file without group/other write access, at most 4 MiB)')
-    from mojt_artifact import file_sha
-    return file_sha(file)
+    def checksum():
+        with file.open('rb') as stream:return hashlib.file_digest(stream,'sha256').hexdigest()
+    native=sys.modules.get('mpm_native_io')
+    if native is not None and not native.preparation_verify():
+        return native.preparation_cached(('sha256',str(file.absolute())),[file],checksum,cost=64)
+    return checksum()
 
 
 def produce(tools, names):
