@@ -84,12 +84,17 @@ not reported. This one comparison saves about 58 s (20%); roughly four minutes
 of preparation remains unacceptable, and remaining phase costs are not yet
 individually measured.
 
-Next [profile the installed stage phases](stage-profiling.md), as requested by
-the owner, to identify the remaining cost before changing verification policy.
-The standalone diagnostic observes unchanged installed code and can prepare
-retained E using running F and the existing warm payload, without a new System
-package or reboot. Then separate repeated integrity scans from necessary
-construction and integrate preparation into ordinary install. Keep explicit `--verify` audits available,
+The [owner phase profile](stage-profiling.md#owner-phase-profile--2026-11-15)
+now measures the installed stage path at 233.777 s wall. Nix subprocesses take
+99.074 s (759 commands), including 253 full `--verify-path` calls at 85.721 s;
+52,487 file-hash calls take another 33.238 s. The planner runs five times and
+some identical trees are scanned repeatedly. Payload-cache work is only 0.455 s.
+Only the summary was imported; it records MPM exit 0 and no failed measured
+phase, without the diagnostic's final context/reuse assertion results.
+
+Next separate repeated provider and retained-content audits from necessary
+construction, then reduce repeated immutable-input/metadata work within an
+operation and integrate preparation into ordinary install. Keep explicit `--verify` audits available,
 required metadata/compatibility checks and safe atomic publication intact, and
 the accepted Base/System independence and selection boundary explicit.
 This work does not authorize sweeping writable-root or service/state changes.

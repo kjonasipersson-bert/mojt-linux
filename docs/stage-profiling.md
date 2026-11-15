@@ -95,7 +95,7 @@ uploaded automatically. Setup imports, status checks, the confirmation prompt,
 final status checks and summary writing are outside the timed MPM call. This
 omits normal process/interpreter startup and adds observer overhead. It does
 not provide cold-cache or uninstrumented timing claims; caches are not cleared.
-No fixed bottleneck conclusion is made before the owner measurement.
+The owner measurement below records one observed run, not a general benchmark.
 
 Existing evidence is never overwritten. On any error, keep the files and inspect
 `mpm system status`. A failed/partial stage can have retained immutable content;
@@ -108,5 +108,61 @@ a separate attempt. Reports are written even when the measured command fails.
 Automated tests cover nested own-time accounting, real tree scans and tamper
 refusal, exception propagation and restoration, the unchanged installed launcher
 dispatch, constructor/payload-key identity under observation, and E/F context
-guards. These tests do not claim that the diagnostic has run on the owner's SSD.
-The actual phase breakdown remains pending owner execution.
+guards. The diagnostic delivery `1b825382` passed all three CI jobs (run
+`43697244149`). The automated tests are separate from the owner measurement.
+
+## Owner phase profile — 2026-11-15
+
+The owner supplied `summary.txt` from the requested installed-stage probe. Its
+SHA256 is `51805aea0b35e0794b1aef66a98fb448163a5b29b9a997becd52658c6b62648d`.
+Only that summary was imported; the full `profile.json`, MPM JSON and stderr log
+were not supplied. It records MPM exit 0 and no failed measured phase. It does
+not itself include the diagnostic's final context/reuse assertions, so this
+record does not infer their result from the exit code alone.
+
+Total measured MPM time was **233.777 s wall / 223.577 s CPU**, with 132.115 s
+Python CPU and 91.463 s completed-child CPU (rounded components). The update
+stage itself took 233.770 s wall. Candidate checks took 45.626 s within that
+total, runtime selection/description/source identity 0.086/2.703/0.322 s,
+handover preparation 38.107 s, and selection's preparation path 119.550 s.
+The latter contains constructor work 60.523 s, slot retention 19.775 s and final
+admission 39.188 s. These inclusive phases must not be added to their children.
+Other work, including repeated preflight, falls outside this coarse phase list.
+
+The **own-time** ranking identifies the following costs after subtracting
+observed nested calls:
+
+| Function/work | Calls | Own wall time |
+| --- | ---: | ---: |
+| Nix provider subprocesses (`_run`) | 759 | 99.074 s |
+| Regular file SHA256 (`file_sha`) | 52,487 | 33.238 s |
+| Other System object-record work (`object_record`) | 455 | 18.565 s |
+| Tree measurement (`measure`) | 421 | 17.171 s |
+| Canonical JSON (`canonical`) | 23,047 | 11.744 s |
+| Profile-link checks (`verify_links`) | 7 | 10.727 s |
+
+The Nix commands break down as **253 `--verify-path` calls taking 85.721 s**,
+253 `--query --requisites` calls taking 6.759 s, and 253 `--query --hash` calls
+taking 6.594 s. These are components of the 99.074 s Nix time, not extra costs.
+Nix subprocesses account for about 42% of total measured wall time; full path
+verification alone accounts for about 37%.
+
+The planner `_prepare` ran **five times**. The slowest listed tree scans include
+the same nixpkgs tree twice (3.626/3.616 s) and the same Kernel module tree at
+least three times (1.256/1.252/1.250 s). Call counts do not establish how many
+distinct files, System objects or provider identities were involved, but the
+summary and call graph demonstrate repeated planning and some repeated scans.
+
+In contrast to the larger constructor phase, **`cached_payload` took 0.455 s**.
+No runtime-freeze or module-decoding phase appears in the summary. Constructor
+and admission phases still contain full audits/rechecks; their names must not be
+interpreted as time spent solely copying or compressing an initramfs.
+
+The next optimization should separate the default path from repeated full Nix
+and retained-file audits, keeping an explicit full-verification option. Share
+operation-local checks for identical immutable inputs only where the existing
+lock/snapshot contract permits; retain fresh selection, persistent-state,
+compatibility and publication checks. Then address repeated object metadata,
+hash and tree work. This is a measured priority, not an implemented policy change
+or a predicted final latency. No further SSD run is needed to identify these
+first targets.
