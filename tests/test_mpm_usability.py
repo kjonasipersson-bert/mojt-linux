@@ -130,8 +130,8 @@ class ManualReader(unittest.TestCase):
             a,b,d=map(ref,(active,inactive,doc))
             packages=[dict(reference=a,commands={'nvim':'ignored'},manuals=[d],manual_program='nvim'),dict(reference=b,commands={})]
             description=dict(active=dict(neovim=a),packages=packages,objects=[dict(reference=r) for r in (a,b,d)])
-            with mock.patch.object(manuals.profiles,'current',return_value=dict(record=dict(description=description))), \
-                 mock.patch.object(manuals.NixBinaryAdapter,'identity',side_effect=lambda r:r['identity']):
+            with mock.patch.object(profiles,'current',return_value=dict(record=dict(description=description))), \
+                 mock.patch('mpm_nix_binary.NixBinaryAdapter.identity',side_effect=lambda r:r['identity']):
                 paths,aliases=manuals.manual_paths(base)
                 self.assertEqual(paths,[str(active/'share/man'),str(doc/'share/man')]);self.assertEqual(aliases,{'neovim':'nvim'})
                 (doc/'share/man').rmdir();(doc/'share/man').symlink_to(inactive/'share/man')

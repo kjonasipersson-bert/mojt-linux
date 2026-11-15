@@ -802,11 +802,12 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
     if step >= 9:
         export("man", "man-db", "bin/man")
         export("manpath", "man-db", "bin/manpath")
-        from mpm_man import wrapper as manual_wrapper
+        spec=importlib.util.spec_from_file_location('mojt_man_wrapper',repo/'tools/mpm_man.py')
+        manual=importlib.util.module_from_spec(spec);spec.loader.exec_module(manual)
         for program in ("man","manpath"):
             target=system/"bin"/program
             retained=os.readlink(target);target.unlink()
-            write(target,manual_wrapper(retained),0o755)
+            write(target,manual.wrapper(retained),0o755)
         write(system / "share/man/man1/mpm.1", (repo / "man/mpm.1").read_text())
         if with_build_tools:write(system / "share/man/man1/mbt.1",(repo / "man/mbt.1").read_text())
         write(system / "manual-path", ":".join(["/run/mojt-system/share/man"] + manual_paths(payload, record)) + "\n")
