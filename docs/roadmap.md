@@ -92,9 +92,12 @@ some identical trees are scanned repeatedly. Payload-cache work is only 0.455 s.
 Only the summary was imported; it records MPM exit 0 and no failed measured
 phase, without the diagnostic's final context/reuse assertion results.
 
-Next separate repeated provider and retained-content audits from necessary
-construction, then reduce repeated immutable-input/metadata work within an
-operation and integrate preparation into ordinary install. Keep explicit `--verify` audits available,
+The next [ordinary stage increment](stage-fast-path.md) separates repeated
+provider/retained-content audits from preparation with explicit `--verify`, and
+adds guarded metadata/hash reuse within one operation. Retained expected proofs
+may be reused for exact immutable identities; this is not a fresh byte audit.
+New owner timing is pending. Integration into ordinary install remains open.
+Keep explicit `--verify` audits available,
 required metadata/compatibility checks and safe atomic publication intact, and
 the accepted Base/System independence and selection boundary explicit.
 This work does not authorize sweeping writable-root or service/state changes.

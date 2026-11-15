@@ -42,6 +42,10 @@ def envelope(value, fmt):
 
 
 def read(path):
+    return io.preparation_cached(('base-json',str(path.absolute())),[path],lambda:_read(path))
+
+
+def _read(path):
     fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
     with os.fdopen(fd,'rb') as stream:
         info = os.fstat(stream.fileno())
@@ -145,6 +149,14 @@ def realization_path(root, identifier):return root/'realizations/base'/io.identi
 
 
 def object_record(root, identifier, *, verify=False):
+    if verify:return _object_record(root,identifier,verify=True)
+    folder=object_path(root,identifier)
+    dependencies=[root/'artifacts',root/'artifacts/store.json',root/'artifacts/.lock',root/'artifacts/base',folder,
+                  *(folder/name for name in ('artifact.json','installed.json','archive.tar.zst'))]
+    return io.preparation_cached(('base-object',str(root),identifier),dependencies,lambda:_object_record(root,identifier))
+
+
+def _object_record(root, identifier, *, verify=False):
     info=store_info(root);require(info is not None, 'missing Base store')
     path=object_path(root,identifier)
     tx.protected_directory(path,label='Base object')

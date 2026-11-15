@@ -118,6 +118,14 @@ def unpack_kernel(path, body, target):
 
 
 def object_record(path, expected_id, *, verify=False):
+    if verify:return _object_record(path,expected_id,verify=True)
+    from mpm_native_io import preparation_cached
+    return preparation_cached(('kernel-object',str(path),expected_id),
+        [path,*(path/name for name in ('artifact.json','installed.json','archive.tar.zst'))],
+        lambda:_object_record(path,expected_id))
+
+
+def _object_record(path, expected_id, *, verify=False):
     owner = directory(path).st_uid
     for name in ("artifact.json", "installed.json", "archive.tar.zst"):
         info = regular(path / name)

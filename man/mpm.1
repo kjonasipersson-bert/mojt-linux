@@ -152,8 +152,12 @@ stage --artifact ID prepares without selecting. It reuses the large early-boot
 runtime/driver payload when its actual inputs are unchanged and writes a small
 per-deployment archive member with exact current metadata. Base/System choices
 alone do not invalidate the reusable member. Kernel, runtime, BusyBox, required
-early drivers/applets or payload generator changes do. Preparation integrity
-checks still run. See docs/reusable-initramfs.md.
+early drivers/applets or payload generator changes do. Ordinary preparation
+checks exact metadata, compatibility and current state, reusing unchanged
+metadata and expected tree proofs within the documented scope. Full retained
+archive/tree/provider audits require stage --verify; upgrade --verify also
+audits preparation. Required copies still check their bytes and command errors.
+See docs/stage-fast-path.md and docs/reusable-initramfs.md.
 .PP
 select --deployment ID
 --expected-selected ID chooses an admitted deployment. rollback

@@ -89,8 +89,9 @@ def _admit(root, item, built, *, adapters):
     with locked(root) as root:
         require(store.inspect(root,item['id']) == item,'retained slot changed')
         handover.recheck_locked(root,built.handover,source,adapters)
-        cache = {};early.verify_content(root,source,built['proof'],cache=cache)
-        handover.check(root,source,built['proof'],built.handover,cache=cache)
+        cache = {}
+        if io.preparation_verify():early.verify_content(root,source,built['proof'],cache=cache)
+        handover.check(root,source,built['proof'],built.handover,cache=cache,verify_content=io.preparation_verify())
         value = record(READY,dict(installation=source['description']['installation'],deployment=item['id'],inputs=source['id'],
             archive=built['binding']['description']['archive'],proof=built['proof'],handover=built.handover))
         model.envelope(value,READY)

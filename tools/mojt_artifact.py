@@ -57,6 +57,13 @@ def digest(value):
 
 
 def file_sha(path):
+    from mpm_native_io import preparation_cached, preparation_verify
+    if not preparation_verify():
+        return preparation_cached(('sha256',str(Path(path).absolute())),[path],lambda:_file_sha(path),cost=64)
+    return _file_sha(path)
+
+
+def _file_sha(path):
     with Path(path).open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
@@ -77,6 +84,11 @@ def parse_json(raw):
 
 
 def read_json(path):
+    from mpm_native_io import preparation_cached
+    return preparation_cached(('artifact-json',str(Path(path).absolute())),[path],lambda:_read_json(path))
+
+
+def _read_json(path):
     with Path(path).open("rb") as stream:
         return parse_json(stream.read(MAX_METADATA + 1))
 

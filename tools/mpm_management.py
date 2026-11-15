@@ -231,7 +231,8 @@ def file_hash(file):
             f'unsafe/unbounded manager implementation: {file} '
             f'(mode={stat.S_IMODE(info.st_mode):04o}, links={info.st_nlink}, bytes={info.st_size}; '
             'require a regular single-link file without group/other write access, at most 4 MiB)')
-    with file.open('rb') as stream:return hashlib.file_digest(stream, 'sha256').hexdigest()
+    from mojt_artifact import file_sha
+    return file_sha(file)
 
 
 def produce(tools, names):

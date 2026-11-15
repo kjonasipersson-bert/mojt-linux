@@ -19,6 +19,7 @@ import mpm_boot_selection as selection
 import mpm_boot_v2 as model
 import mpm_system as system
 import mpm_system_transition as transition
+import mpm_native_io as io
 
 require = artifact.require
 
@@ -62,6 +63,15 @@ def source_for(plan, runtime, busybox):
 
 def stage(root, area, identifier, *, bounds=None, adapters=None, runtime=None,
           runtime_directory=None, busybox=None, tar='tar', dry_run=False, yes=False,
+          expected_preflight=None, expected_inputs=None, verify=False):
+    with io.preparation(verify=verify):
+        return _stage(root,area,identifier,bounds=bounds,adapters=adapters,runtime=runtime,
+            runtime_directory=runtime_directory,busybox=busybox,tar=tar,dry_run=dry_run,yes=yes,
+            expected_preflight=expected_preflight,expected_inputs=expected_inputs)
+
+
+def _stage(root, area, identifier, *, bounds=None, adapters=None, runtime=None,
+          runtime_directory=None, busybox=None, tar='tar', dry_run=False, yes=False,
           expected_preflight=None, expected_inputs=None):
     """Prepare and admit, without selection. Dry-run never constructs or writes."""
     require(os.geteuid() == 0,'boot updates require an administrator')
@@ -73,12 +83,13 @@ def stage(root, area, identifier, *, bounds=None, adapters=None, runtime=None,
     p = plan['description'];require(p['checks']['compatible'],'boot update blocked: '+'; '.join(p['checks']['errors']))
     before = p['baseline_inputs']['description']
     report = dict(area=area,artifact=identifier,selected=p['selected'],changed=False,dry_run=dry_run,
+                  verification_requested=io.preparation_verify(),
                   selection_changed=False,running_changed=False,persistent_state_changed=False,
                   checks=p['checks'],preflight=plan['id'],deployment=None)
     candidate = transition.boot_fields(plan)[area]
     report['release'] = candidate.get('release',candidate.get('generation'))
     if all(candidate.get(key) == value for key,value in before[area].items()):
-        selection.ready(root,p['selected'],verify=True)
+        selection.ready(root,p['selected'],verify=io.preparation_verify())
         return dict(report,action='no-change',deployment=p['selected'])
     if runtime_directory is not None:
         runtime_directory = Path(runtime_directory).absolute()
@@ -102,11 +113,11 @@ def stage(root, area, identifier, *, bounds=None, adapters=None, runtime=None,
         matches = [key for key,row in entries.items() if row['record']['description']['inputs'] == source]
         require(len(matches) <= 1,'multiple deployments for exact constructor inputs')
         if matches:
-            selection.ready(root,matches[0],verify=True)
+            selection.ready(root,matches[0],verify=io.preparation_verify())
             return dict(report,action='no-change',deployment=matches[0])
     if dry_run:return dict(report,action='stage',inputs=source['id'])
     if not yes:require(input('Prepare this exact '+area+' for next boot? [y/N] ').strip().lower() in ('y','yes'),'staging cancelled')
-    print('Preparing exact '+area+' deployment; retained content verification and construction may take a while...',file=sys.stderr,flush=True)
+    print('Preparing exact '+area+' deployment'+(' with full content verification' if io.preparation_verify() else '')+'...',file=sys.stderr,flush=True)
     with tempfile.TemporaryDirectory(prefix='mojt-boot-update-') as temporary:
         work = Path(temporary)
         contract = handover.prepare(root,source,plan,adapters=adapters,tar=tar)
@@ -128,7 +139,7 @@ def upgrade(root, area, identifier, *, expected_selected=None, dry_run=False, ye
         require(expected_selected is None or selected == expected_selected,'selected deployment changed; repeat preview')
     # Preview and approval precede all construction, even when activation
     # composes several existing low-level operations.
-    preview = stage(root,area,identifier,dry_run=True,**options)
+    preview = stage(root,area,identifier,dry_run=True,verify=verify,**options)
     require(preview['selected'] == selected,'selection changed during update preview')
     if dry_run:return dict(preview,action='activate',selection_would_change=preview['deployment'] != selected)
     if preview['deployment'] == selected:return dict(preview,dry_run=False,action='no-change',selection_would_change=False)
@@ -137,7 +148,7 @@ def upgrade(root, area, identifier, *, expected_selected=None, dry_run=False, ye
     with common.read_locks(root):
         require(selection.current(root)[0]['description']['selected'] == selected,'selection changed after approval')
     started = time.monotonic()
-    staged = stage(root,area,identifier,yes=True,expected_preflight=preview['preflight'],
+    staged = stage(root,area,identifier,yes=True,verify=verify,expected_preflight=preview['preflight'],
                    expected_inputs=preview.get('inputs'),**options)
     require(staged['selected'] == selected,'selection changed before construction')
     print('Deployment preparation: %.2f s' % (time.monotonic()-started),file=sys.stderr,flush=True)
@@ -226,7 +237,7 @@ def main(area, argv, *, runtime=None):
             if area == 'base':command.add_argument('--base-context',type=Path,help='Kernel bounds for this exact Base')
             if action != 'stage':
                 command.add_argument('--expected-selected')
-                command.add_argument('--verify',action='store_true',help='explicitly audit retained content before selection')
+            command.add_argument('--verify',action='store_true',help='explicitly audit retained content')
         else:
             if action == 'select':command.add_argument('--deployment',required=True)
             command.add_argument('--expected-selected',required=True)
@@ -259,7 +270,7 @@ def main(area, argv, *, runtime=None):
                 context = getattr(args,'base_context',None)
                 options = dict(bounds=base.read(context) if context else None,adapters=adapters,runtime=live,
                                tar=str(live.helpers/'tar') if live else 'tar',dry_run=args.dry_run,yes=args.yes)
-                if args.action == 'stage':result = stage(root,area,args.artifact,**options)
+                if args.action == 'stage':result = stage(root,area,args.artifact,verify=args.verify,**options)
                 else:
                     result = upgrade(root,area,args.artifact,expected_selected=args.expected_selected,verify=args.verify,**options)
                     result['action'] = 'upgrade' if result['action'] != 'no-change' else 'no-change'

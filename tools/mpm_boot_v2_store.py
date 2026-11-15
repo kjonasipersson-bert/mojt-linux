@@ -33,7 +33,7 @@ def target(value, *, write=False):
 
 
 def audit_inputs(root, value, bounds, *, adapters=None):
-    """Audit exact installed content, not startup compatibility or constructor code."""
+    """Check exact installed identities; stage policy selects additional byte audits."""
     require(os.geteuid() == 0, 'native-v2 retained content audit requires an administrator')
     d = model.inputs(value);info = base.store_info(root)
     require(info is not None and info['installation'] == d['installation'], 'foreign boot inputs')
@@ -41,12 +41,12 @@ def audit_inputs(root, value, bounds, *, adapters=None):
     require(context['base'] == {k:d['base'][k] for k in ('artifact', 'release')}
             and context['platform'] == d['platform'] and artifact.digest(context) == d['base']['bounds_evidence']
             and all(context[k] == d['base'][k] for k in ('kernel_min', 'kernel_max')), 'Base bounds evidence differs')
-    body, receipt = base.object_record(root, d['base']['artifact'], verify=True)
-    realized = base.realization(root, body['id'], receipt, verify=True)
+    body, receipt = base.object_record(root, d['base']['artifact'], verify=base.io.preparation_verify())
+    realized = base.realization(root, body['id'], receipt, verify=base.io.preparation_verify())
     require(realized is not None and realized['description']['rootfs_sha256'] == d['base']['rootfs_sha256']
             and body['version']['upstream'] == d['base']['release'] and body['platform'] == d['platform'], 'Base content differs')
     body, unused = system.object_record(root, d['system']['artifact'])
-    realized = system.realization(root, body['id'], verify=True)
+    realized = system.realization(root, body['id'], verify=base.io.preparation_verify())
     require(realized is not None and body['platform'] == d['platform'], 'System generation is not installed for this platform')
     require(all(realized['description'][k] == d['system'][k] for k in ('composition', 'manifest')), 'System composition/manifest differs')
     profile = system.realization_path(root, body['id']) / 'profile'
@@ -54,7 +54,7 @@ def audit_inputs(root, value, bounds, *, adapters=None):
     require(manifest['description']['label'] == d['system']['generation'], 'System generation label differs')
     if d['boot']['profile'] == model.HARDWARE_PROFILE:hardware.native_firmware(profile)
     refs = system.retained_providers(root, body['id'])
-    system.providers(root, refs, adapters, effect='verify')
+    system.providers(root, refs, adapters, effect='verify' if base.io.preparation_verify() else 'inspect')
     system.verify_links(profile, refs, adapters, manifest['description']['provenance'].get('runtime_outputs', []))
     if d['management_required']:
         runtimes = (management.current(), management.retained(profile, manifest))
@@ -67,7 +67,7 @@ def audit_inputs(root, value, bounds, *, adapters=None):
                         'unsupported boot management requirement: ' + row['family'])
     kernel_path = root / 'kernel/installed' / io.identifier(d['kernel']['artifact'])
     tx.protected_directory(kernel_path, label='native Kernel content')
-    body, unused = kernel.object_record(kernel_path, d['kernel']['artifact'], verify=True)
+    body, unused = kernel.object_record(kernel_path, d['kernel']['artifact'], verify=base.io.preparation_verify())
     expected = deployment.kernel_identity(body)
     require(expected == {k:v for k,v in d['kernel'].items() if k != 'upstream'}
             and body['version']['scheme'] == 'dotted-v1' and body['version']['upstream'] == d['kernel']['upstream']

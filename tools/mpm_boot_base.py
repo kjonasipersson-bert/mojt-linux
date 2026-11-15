@@ -48,8 +48,8 @@ def inspect(root, value, *, cache=None, verify=True):
 def prepare_locked(root, identifier, *, tar='tar'):
     """Caller holds the existing store/install locks. No state/default effects."""
     require(os.geteuid() == 0,'boot Base preparation requires an administrator')
-    root = base.target(root,write=True);body,receipt = base.object_record(root,identifier,verify=True)
-    realized = base.realization(root,identifier,receipt,verify=True)
+    root = base.target(root,write=True);body,receipt = base.object_record(root,identifier,verify=base.io.preparation_verify())
+    realized = base.realization(root,identifier,receipt,verify=base.io.preparation_verify())
     require(realized is not None,'native Base realization required')
     executable = shutil.which(str(tar));require(executable is not None,'trusted GNU tar is unavailable')
     executable = Path(executable).resolve()
@@ -64,7 +64,7 @@ def prepare_locked(root, identifier, *, tar='tar'):
         if path.name.startswith('.prepare-'):continue
         model.hexadecimal(path.name);value = base.read(path/'realization.json');d = model.envelope(value,FORMAT)
         if all(d.get(k) == v for k,v in dict(base=identifier,source_realization=realized['id'],extractor=extractor,code=code).items()):
-            inspect(root,value);io.sync_directory(path);io.sync_directory(parent);return value
+            inspect(root,value,verify=io.preparation_verify());io.sync_directory(path);io.sync_directory(parent);return value
     stage = Path(tempfile.mkdtemp(prefix='.prepare-',dir=parent))
     try:
         scaffold = existing.boot_tree(root,identifier,stage,str(executable))

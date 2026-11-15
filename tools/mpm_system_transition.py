@@ -146,10 +146,10 @@ def selected_context(root, baseline):
     state,entries,menu = selection.current(root)
     require(state is not None,'native-v2 initial selection is incomplete')
     selected_id = state['description']['selected'];value = entries[selected_id]['record']
-    require(inspect(root,selected_id) == value,'selected native-v2 slot changed')
+    require(inspect(root,selected_id,verify=base.io.preparation_verify()) == value,'selected native-v2 slot changed')
     source = value['description']['inputs'];old = inputs(source)
     body,receipt = system.object_record(root,old['system']['artifact'])
-    realized = system.realization(root,body['id'],verify=True)
+    realized = system.realization(root,body['id'],verify=base.io.preparation_verify())
     require(realized is not None,'selected native System is not installed')
     require(all(realized['description'][key] == old['system'][key] for key in ('composition','manifest')),
             'selected native System realization differs from deployment')
@@ -157,7 +157,7 @@ def selected_context(root, baseline):
     manifest = manifests.validate(base.read(profile/'manifest.json'))
     require(manifest['id'] == old['system']['manifest'] and manifest['description']['label'] == old['system']['generation']
             and body['platform'] == old['platform'],'selected native System identity differs')
-    kernel_body,_ = kernel.object_record(root/'kernel/installed'/kernel.identifier(old['kernel']['artifact']),old['kernel']['artifact'],verify=True)
+    kernel_body,_ = kernel.object_record(root/'kernel/installed'/kernel.identifier(old['kernel']['artifact']),old['kernel']['artifact'],verify=base.io.preparation_verify())
     require(dict(deployment.kernel_identity(kernel_body),upstream=kernel_body['version']['upstream']) == old['kernel'],
             'selected native Kernel identity differs')
     bounds = catalog.base_context(dict(format=catalog.BASE_FORMAT,platform=old['platform'],
@@ -179,8 +179,8 @@ def _prepare(root, identifier, baseline, adapters, *, area='system', bounds=None
         require(context['native'] and area in ('base','system','kernel'), 'joined updates require native-v2 selection')
         old = copy.deepcopy(old)
         if area == 'base':
-            body,receipt = base.object_record(root,identifier,verify=True)
-            realized = base.realization(root,identifier,receipt,verify=True)
+            body,receipt = base.object_record(root,identifier,verify=base.io.preparation_verify())
+            realized = base.realization(root,identifier,receipt,verify=base.io.preparation_verify())
             require(realized is not None,'candidate Base is not installed')
             bounds = catalog.base_context(bounds if bounds is not None else context['bounds'])
             require(bounds['base'] == dict(artifact=identifier,release=body['version']['upstream'])
@@ -189,7 +189,7 @@ def _prepare(root, identifier, baseline, adapters, *, area='system', bounds=None
                 kernel_min=bounds['kernel_min'],kernel_max=bounds['kernel_max'],bounds_evidence=artifact.digest(bounds))
             context['bounds'] = bounds
         elif area == 'kernel':
-            body,_ = kernel.object_record(root/'kernel/installed'/kernel.identifier(identifier),identifier,verify=True)
+            body,_ = kernel.object_record(root/'kernel/installed'/kernel.identifier(identifier),identifier,verify=base.io.preparation_verify())
             require(body['platform'] == old['platform'] and not body['requirements'] and not body['dependencies'],
                     'unsupported candidate Kernel platform/requirements')
             old['kernel'] = dict(deployment.kernel_identity(body),upstream=body['version']['upstream'])
@@ -199,17 +199,17 @@ def _prepare(root, identifier, baseline, adapters, *, area='system', bounds=None
     info = base.store_info(root);require(info is not None, 'native installation store required')
     body, receipt = system.object_record(root, identifier)
     require(body['metadata']['system_role'] == 'generation', 'candidate must be an installed System generation')
-    realized = system.realization(root, identifier, verify=True)
+    realized = system.realization(root, identifier, verify=base.io.preparation_verify())
     require(realized is not None, 'System is retained but not installed; finish realization first')
     profile = system.realization_path(root, identifier) / 'profile'
     candidate = manifests.validate(base.read(profile / 'manifest.json'))
     refs = system.retained_providers(root, identifier)
-    system.providers(root, refs, adapters, effect='verify')
+    system.providers(root, refs, adapters, effect='verify' if base.io.preparation_verify() else 'inspect')
     outputs = candidate['description']['provenance'].get('runtime_outputs', [])
     system.verify_links(profile, refs, adapters, outputs)
-    base_body, base_receipt = base.object_record(root, old['base']['artifact'], verify=True)
+    base_body, base_receipt = base.object_record(root, old['base']['artifact'], verify=base.io.preparation_verify())
     require(base_body['version']['upstream'] == old['base']['release'], 'installed Base differs from selected exact Base')
-    base_realized = base.realization(root, base_body['id'], base_receipt, verify=True)
+    base_realized = base.realization(root, base_body['id'], base_receipt, verify=base.io.preparation_verify())
     require(base_realized is not None, 'selected Base needs an installed native realization')
     if context['native']:
         require(base_realized['description']['rootfs_sha256'] == old['base']['rootfs_sha256'],

@@ -69,7 +69,7 @@ def recheck_locked(root, value, source, adapters):
     require(str(root) == p['target'],'handover plan belongs to another target')
     require(transition.repeat(root,saved,adapters) == saved,
             'System handover inputs changed; prepare again')
-    boot_base.inspect(root,d['boot_base'])
+    boot_base.inspect(root,d['boot_base'],verify=base.io.preparation_verify())
 
 
 def prepare(root, source, plan, *, adapters, tar='tar'):
@@ -110,7 +110,7 @@ def prepare(root, source, plan, *, adapters, tar='tar'):
         value = record(FORMAT,dict(inputs=source['id'],preflight=plan,baseline_manifest=old,baseline_support=support,
             base_facts=dict(architecture=release['base']['architecture'],base_abi=release['abi'],state_layout=release['state']['layout_version']),
             boot_base=boot_base.prepare_locked(root,i['base']['artifact'],tar=tar),mounts=[mounts[k] for k in sorted(mounts)]))
-        validate(value,source);check(root,source,None,value,provider_roots=sorted(provider_roots))
+        validate(value,source);check(root,source,None,value,provider_roots=sorted(provider_roots),verify_content=base.io.preparation_verify())
         from mpm_boot_selection import current
         menu = current(root)[2] if context['native'] else transition.boot.checked_file(root/'boot/mojt/grub.cfg')
         require(hashlib.sha256(menu).hexdigest() == p['selection_sha256']

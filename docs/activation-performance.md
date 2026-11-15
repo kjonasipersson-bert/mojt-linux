@@ -16,10 +16,10 @@ Full content verification is explicit through `--verify`.
 | Command | Normal work | Explicit verification |
 | --- | --- | --- |
 | `mpm system install` | Freeze/copy and safely unpack each new archive once; compose one profile; retain provider binaries; atomically publish completed objects/profile | `--verify` hashes payloads and audits reused objects, profile content and provider closures |
-| `mpm {base,system,kernel} stage --artifact ID` | Prepare and admit a complete boot deployment without selecting it | Existing constructor/admission verification remains part of preparation |
+| `mpm {base,system,kernel} stage --artifact ID` | Prepare and admit a complete boot deployment without selecting it; reuse unchanged immutable metadata and expected proofs | `--verify` requests full retained-content/provider/tree audits |
 | `mpm {base,system,kernel} activate --artifact ID` | Find an admitted entry for the artifact and preserved other areas; atomically choose next boot | `--verify` audits retained boot entries before selection |
 | `mpm {base,system,kernel} select` / `rollback` | Choose an admitted deployment or the previous entry | `--verify` audits retained boot entries before selection |
-| `mpm {base,system,kernel} upgrade --artifact ID` | Prepare an explicit installed update, then choose it | Preparation still includes its constructor/admission checks |
+| `mpm {base,system,kernel} upgrade --artifact ID` | Prepare an explicit installed update, then choose it | `--verify` requests full preparation and selection audits |
 
 Activation never constructs an initramfs, imports providers, scans installed
 payloads, runs Nix or repeats startup preflight. A missing prepared entry is an
@@ -132,6 +132,8 @@ measured 233.777 s total: 759 Nix commands used 99.074 s, including 253 full
 the payload cache itself took 0.455 s. These results prioritize repeated provider
 and retained-content checks before further payload construction work. The Nix
 breakdown is included in its subtotal; inclusive phase durations must not be
-added to their own-time entries. No audit-policy change is implemented by the
-profiling diagnostic. Automatic preparation inside normal install remains
-separate integration work.
+added to their own-time entries. The profiling diagnostic itself changes no
+audit policy. The subsequent [ordinary stage implementation](stage-fast-path.md)
+makes full content audits explicit and reuses unchanged metadata within each
+call, while retaining current-state and publication checks. Its new SSD timing
+is pending. Automatic preparation inside normal install remains separate work.
