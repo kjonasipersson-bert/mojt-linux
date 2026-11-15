@@ -21,3 +21,6 @@ __pycache__/
 *.swp
 *.swo
 .DS_Store
+
+# Generated handbook website
+/build/handbook/

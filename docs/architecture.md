@@ -6,6 +6,23 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Mojt Architecture (experimental)
 
+## Writable root and independent persistent state (2026-11-15)
+
+New native-v2 handovers use persistent `state/rootfs` for writable `/`, with
+selected Base trees/files projected read-only. `/usr/local` has a separate
+persistent `state/local` bind; existing `/etc`, `/var`, `/home` and `/root`
+mappings remain. Local `/opt`, `/srv` and administrator-created root paths
+survive compatible generation changes. `/run` and `/tmp` remain tmpfs.
+Initialization is additive and occurs only on first boot of the new handover,
+with an installation/projection marker and no silent adoption or overwrites.
+Existing embedded boot code remains unchanged; old entries can still have
+read-only root. Data/schema rollback is not automatic. See the
+[Handbook path and persistence tables](../doc/handbook/part-iii/filesystem-layout.md)
+and [handover contract](native-system-handover.md).
+
+This is an implemented increment under test, not physical writable-root boot
+acceptance or a claim that older installed tooling has already changed.
+
 ## Explicit boot generations (2026-10-25 experiment)
 
 New UEFI builds pin both Base and System in each boot pair, independently of

@@ -218,7 +218,7 @@ def check_base_copy(root, original):
     actual = base_inventory(root)
     require(all(actual.get(name) == row for name, row in original.items()), "assembled Base content/metadata changed")
     module_point = system.virtual_file(root, "/lib/modules").relative_to(root)
-    allowed = {"home", "root", "nix", "run", "tmp", str(module_point),
+    allowed = {"home", "root", "nix", "run", "tmp", "usr/local", "usr", str(module_point),
                *(str(p) for p in module_point.parents if str(p) != ".")}
     firmware_point = system.virtual_file(root,'/lib/firmware').relative_to(root)
     allowed.update({str(firmware_point),*(str(p) for p in firmware_point.parents if str(p) != '.')})

@@ -1,0 +1,25 @@
+# Mojt Linux
+# Copyright (C) 2026 Jonas Persson
+# SPDX-License-Identifier: GPL-2.0-only
+
+[book]
+title = "Mojt Handbook"
+authors = ["Jonas Persson"]
+language = "en"
+src = "."
+
+[build]
+build-dir = "../../build/handbook"
+create-missing = false
+
+[output.html]
+site-url = "/"
+cname = "handbook.mojt.org"
+no-section-label = true
+
+# mdBook emits README chapters as index.html; preserve source-style links.
+[output.html.redirect]
+"README.html" = "index.html"
+"part-ii/README.html" = "index.html"
+"part-iii/README.html" = "index.html"
+"part-iv/README.html" = "index.html"
