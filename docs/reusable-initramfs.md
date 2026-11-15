@@ -58,9 +58,9 @@ On a warm live update, the constructor skips freezing/cloning the runtime,
 decoding the early modules, creating the large initramfs tree and compressing
 that payload. It still generates the small member and final exact binding.
 The existing runtime description, preflight, retained-input audits, source-tree
-proofs, slot retention and final admission checks remain. No new total stage
-latency or fixed speedup is claimed. Separating optional integrity scrubs from
-ordinary preparation remains subsequent work.
+proofs, slot retention and final admission checks remain. The bounded owner
+measurement below does not establish a fixed speedup. Separating optional
+integrity scrubs from ordinary preparation remains subsequent work.
 
 ## Private content cache
 
@@ -101,9 +101,17 @@ different overlays over the same cached payload; full native-v2 constructor,
 reader, handover, selection and bootstrap regressions remain separate checks.
 The minimal probe is not full System, firmware or storage-driver acceptance.
 
-Owner hardware performance and boot acceptance for the new two-member path are
-pending; the [E/F test guide](initramfs-payload-hardware-test.md) provides the
-pinned successor delivery, cold/warm measurements and deliberate boot check.
+The [E/F owner acceptance](initramfs-payload-hardware-test.md#recorded-owner-acceptance--2026-11-1415)
+passed on 2026-11-14–15: F installation took 11.483 s wall / 4.996 s CPU,
+cold preparation 286.737 s / 276.351 s, and warm preparation approximately
+229 s / 219 s. The warm helper PASS checks reuse of the exact cold payload key
+for a newly prepared F deployment. Candidate checks (about 45 s) are included in
+the preparation totals. The owner reported activation at 4.2 s, then successful
+F boot and `after` PASS, including Ports/Neovim and preserved Base/Kernel.
+This closes the focused physical two-member boot/reuse gate, with about 20%
+less total preparation time in this one comparison. Preparation still takes
+nearly four minutes; performance remains open and remaining phase costs have
+not been individually measured. Optional E return was not reported.
 The previous C/D acceptance covers the earlier monolithic constructor.
 Future ordinary install/preparation integration must reuse this path and preserve
 the accepted fast atomic choice, explicit requirements and independent lifecycles.

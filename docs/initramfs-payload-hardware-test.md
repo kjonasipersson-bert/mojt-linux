@@ -123,4 +123,34 @@ After successful F acceptance, optional `python3 /root/payload.py back` selects
 the original exact E deployment for next boot. It does not reboot or roll back
 persistent state. D and previous accepted generations remain retained.
 
-Owner results for E/F, actual performance and physical return are pending.
+## Recorded owner acceptance — 2026-11-14–15
+
+The owner used the delivery from
+`d1984592b2a95eb534b7224bc6846fe8c4dd8fd3` as `/root/payload.py`, with
+functional files pinned to `b4772dfc`. E was entered using the old manager;
+after reboot, the owner confirmed E running and selected. The first photograph
+records bootstrap installation at 11.420 s wall / 5.029 s CPU, preparation at
+271.555 s wall / 267.609 s CPU (35.61 s candidate checks included), and selection
+at 2.124 s wall / 2.108 s CPU. Those are old-manager bootstrap measurements,
+not new-constructor samples.
+
+| New-manager operation | Observed result | Evidence |
+| --- | --- | --- |
+| F installation without `--verify` | PASS; 11.483 s wall / 4.996 s CPU; original Base/Kernel/boot policy retained | Second owner console photograph; supersedes the earlier rounded 11.4 s report |
+| Cold preparation of retained D (`prime`) | PASS; payload built; 286.737 s wall / 276.351 s CPU | Same photograph; 45.04 s candidate checks are included in the preparation total |
+| Warm preparation of F (`stage`) | PASS; approximately 229 s wall / 219 s CPU; approximately 45 s candidate checks included | Owner report, rounded to seconds; helper PASS requires a new deployment reusing the exact cold payload inputs ID |
+| F activation | Approximately 4.2 s elapsed | Owner report; no activation CPU time supplied |
+| Deliberate F reboot and `after` | Worked; PASS | Owner confirmation after the requested reboot/after sequence; helper checks exact F running/selected, retained Base/Kernel/boot policy, Ports and Neovim |
+
+In this one SSD run, warm preparation took about 58 s less wall time (about 20%)
+than cold preparation. These are complete preparation measurements for different
+System generations, not isolated compression timings or a general benchmark.
+The result confirms reuse and physical boot of the combined archive. It does
+not attribute every remaining second to verification, prove a new Kernel/Base
+combination, or make the remaining roughly four-minute preparation acceptable.
+Separating repeated content audits from required preparation remains open.
+
+Evidence remains under `/var/lib/mojt/initramfs-payload-55` on the owner's SSD.
+This record uses the shared photographs and reports; no evidence bundle was
+imported and no host test was run by the collaborator. Optional return to E was
+not reported. Previous C/D acceptance remains a separate historical result.
