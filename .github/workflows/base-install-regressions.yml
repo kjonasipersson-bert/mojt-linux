@@ -39,7 +39,7 @@ jobs:
           sudo install -d -m 0755 /run/sshd
           python3 -B -m unittest discover -s tests -p 'test_kernel_tracks.py' -v
           python3 -B -m unittest discover -s tests -p 'test_mojt_sshd.py' -v
-          sudo env PYTHONPATH=tests python3 -B -m unittest test_mojt_sshd -v
+          sudo env PYTHONPATH=tests python3 -B -m unittest test_mojt_sshd test_kernel_ssh_delivery -v
       - name: Check fixed Ports repair as a new native System generation
         run: sudo env PYTHONPATH=tests python3 -B -m unittest -v test_system_ports_repair test_system_activation_test test_system_fast_test
       - name: Check owner-authorized native acquisition and verified cache
