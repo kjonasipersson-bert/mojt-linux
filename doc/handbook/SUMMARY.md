@@ -21,7 +21,8 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Part III. System administration
 
-- [To be written](part-iii/README.md)
+- [Overview](part-iii/README.md)
+- [5. Filesystem layout and persistent state](part-iii/filesystem-layout.md)
 
 # Part IV. Development
 

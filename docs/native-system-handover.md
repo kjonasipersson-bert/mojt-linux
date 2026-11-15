@@ -51,9 +51,13 @@ Account shells and System start resolve in the future guest namespace, never
 against host files, and must belong to retained immutable content. Mutable-state
 executables cannot qualify. Required mountpoints must be real empty directories.
 
-After these checks the backing filesystem becomes writable. Base, System and
-native modules bind read-only; `/etc`, `/var`, `/home` and `/root` bind persistent
-state. `/run` and `/tmp` are tmpfs. Provider namespaces remain writable for later
+After these checks the backing filesystem becomes writable. New handovers bind
+`state/rootfs` as writable `/`, then project the selected Base's immutable
+top-level trees/files read-only (normally `/usr`, with canonical Base aliases).
+System and native modules bind read-only; `/etc`, `/var`, `/home` and `/root`
+retain their existing persistent mounts. `state/local` binds writable at
+`/usr/local`; `/opt`, `/srv`, `/mnt`, `/media`, `/boot` and custom root paths
+remain in the persistent root directory. `/run` and `/tmp` are tmpfs. Provider namespaces remain writable for later
 imports, but each retained System dependency gets a read-only bind. The separate
 Nix boot adapter projects today's `nix` namespace; core handover uses declared
 paths. New namespaces require supported empty mountpoints and cannot cover
@@ -64,9 +68,24 @@ mounts, including dependency objects, get runtime mount-unit policies keeping
 them until static exitrd cleanup. Handover moves `/dev`, `/proc`, `/sys`, then the
 backing disk, and execs static BusyBox `switch_root` to `/run/mojt-system/start`.
 Its normal unchanged setup/services run; no general lifecycle executor is added.
+The root is atomically initialized at first boot with an installation-bound
+`mojt-writable-root-v1` marker, never during stage. The marker binds the
+immutable top-level projection, not a Base release ID. Compatible Base changes
+reuse the same machine directories. Unknown roots, foreign markers, changed
+reserved aliases/mountpoint types, incompatible projections and hidden files
+under reserved mountpoints are refused rather than overwritten. Base `/usr/local`
+must be a real empty mountpoint; sealed boot Base scaffolding adds it when absent.
+No persistent-state layout-version bump, automatic migration or change to old
+boot records is made. Older entries retain their embedded read-only-root behavior
+and keep new root/local data without exposing it. See the
+[Handbook filesystem chapter](../doc/handbook/part-iii/filesystem-layout.md) for
+the complete persistence and generation-change rules.
+
 On a pre-exec failure, completed moves/binds are reversed and backing read-only
 mode is restored when possible. No forced/lazy unmount or successful-cleanup
-claim hides errors; the diagnostic shell remains the failure path.
+claim hides errors; the diagnostic shell remains the failure path. Successfully
+published root scaffolding remains after a later failure and is reusable;
+existing persistent files are never rolled back or removed.
 
 Runtime evidence is separately versioned at `/run/mojt/native-v2.json`, with the
 complete deployment/input identity. It is never forged as v1. [Atomic selection/status](native-system-selection.md) now consumes admitted
@@ -88,6 +107,13 @@ real System boot or shutdown evidence. The admitted v2 selection/status join
 subsequently passed [owner A/B/A boot/return and clean shutdown](system-boot-acceptance.md#owner-acceptance-2026-11-09)
 on 2026-11-09, preserving exact Base/Kernel and persistent state. Public active-v2
 staging and request integration remain.
+
+The new writable-root increment has separate [G/H/G hardware instructions and owner acceptance](writable-root-hardware-test.md#recorded-owner-acceptance--2026-11-15).
+The owner reported every step PASS on 2026-11-15 with delivery `d3bd849f`,
+covering physical G/H/G boot and return, persistent root/local state, cleared
+temporary files, read-only release mounts and working Ports. The collaborator
+did not run tests on the owner's machine or import its full evidence/shutdown
+transcript; no different-Base/Kernel matrix or old-F recovery boot is claimed.
 
 MBT must subsequently reuse these installation/handover APIs for bootstrap and
 the existing build environment, Kernel build and native packaging. The destination

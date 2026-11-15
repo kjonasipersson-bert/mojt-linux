@@ -119,6 +119,12 @@ changes. Selecting an older deployment returns to older code, without restoring
 an earlier database schema, configuration or user file. Retained generations
 and backups serve different purposes.
 
+New native-v2 handovers support a writable persistent `/`, with Base content
+still mounted read-only and a separate persistent `/usr/local`. Existing boot
+entries retain their original layout. See
+[Filesystem layout and persistent state](../part-iii/filesystem-layout.md)
+for the path-by-path rules and the rollout boundary.
+
 ## 1.7. Where to go next
 
 The installation chapter is reserved until the installation workflow is ready

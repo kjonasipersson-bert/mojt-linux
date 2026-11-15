@@ -110,7 +110,13 @@ class PreparationTests(unittest.TestCase):
         self.assertTrue(any(c[-1]==str(newroot/'run/mojt-system') for c in readonly))
         self.assertTrue(any('/nix/store/' in c[-1] for c in readonly))
         self.assertTrue((newroot/'run/initramfs/shutdown').is_file())
-        after=f.f.f.snapshot();self.assertEqual(snapshot,after)
+        after=f.f.f.snapshot();self.assertEqual(snapshot,{k:after[k] for k in snapshot})
+        additions=set(after)-set(snapshot)
+        self.assertTrue(additions)
+        self.assertTrue(all(k=="state/local" or k=="state/rootfs" or k.startswith("state/rootfs/") for k in additions))
+        self.assertIn(["mount","--bind",str(root/"state/rootfs"),str(newroot)],calls)
+        self.assertIn(["mount","-o","remount,bind,ro",str(context["tree"]/"usr"),str(newroot/"usr")],calls)
+        self.assertIn(["mount","--bind",str(root/"state/local"),str(newroot/"usr/local")],calls)
 
 
 if __name__=='__main__':unittest.main()

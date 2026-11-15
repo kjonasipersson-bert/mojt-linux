@@ -10,6 +10,7 @@ import re
 import shutil
 import stat
 import subprocess
+import tempfile
 import time
 import tomllib
 
@@ -182,6 +183,7 @@ def check(root, source, trees, value, *, provider_roots=None, cache=None, verify
     else:require(not (profile/'hardware.json').exists(),'hardware System requires its native boot profile')
     for mount in d['mounts']:require(inventory.path(root,mount['source']).is_dir(),'provider mount source missing')
     for name in ('etc','var','home','root'):inventory.path(root,'state/'+name)
+    writable_root(root,tree,d['mounts'])  # Inspect only; stage never initializes machine state.
     for shell in [*persistent['base_shells'],*persistent['system_shells']]:guest_file(root,tree,profile,provider_roots,d['mounts'],shell)
     guest_file(root,tree,profile,provider_roots,d['mounts'],'/run/mojt-system/start')
     hostname = common.checked_bytes(root/'state/etc/hostname').decode().strip()
@@ -196,6 +198,82 @@ def unit_name(path):
         result += '-' if byte == 47 else chr(byte) if chr(byte).isascii() and (chr(byte).isalnum() or byte in b':_.') else '\\x%02x'%byte
     if result.startswith('.'):result = '\\x2e'+result[1:]
     return (result or '-')+'.mount'
+
+
+ROOT_MARKER = '.mojt-root-layout.json'
+ROOT_DIRECTORIES = ('boot','dev','etc','home','media','mnt','opt','proc','root','run','srv','sys','tmp','var')
+
+
+def writable_root(root, tree, mounts, *, create=False):
+    """Persistent shell of directories; release content is mounted read-only.
+
+    No overlay, mutable Base copy or generation-specific state. Existing roots
+    must have our installation/layout marker; never adopt arbitrary contents.
+    Only early boot creates this additive state, after current-state checks.
+    """
+    root=Path(root);tree=Path(tree)
+    mutable=set(ROOT_DIRECTORIES)|{row['target'] for row in mounts}
+    directories={name:(0o700 if name=='root' else 0o1777 if name=='tmp' else 0o755) for name in mutable}
+    projection={};bindings=[]
+    require((tree/'usr').is_dir() and not (tree/'usr').is_symlink(),'writable root requires a real Base /usr')
+    for source in sorted(tree.iterdir()):
+        name=source.name;info=source.lstat()
+        require(name!=ROOT_MARKER,'Base conflicts with writable-root marker')
+        if name in mutable:
+            require(stat.S_ISDIR(info.st_mode) and not any(source.iterdir()),'Base content conflicts with persistent/runtime root path: '+name)
+        elif stat.S_ISLNK(info.st_mode):
+            target=paths.virtual_file(tree,'/'+name).relative_to(tree).as_posix()
+            require(target.split('/')[0] not in mutable and target!=name,'Base root link targets mutable content: '+name)
+            projection[name]=dict(type='symlink',target=target)
+        else:
+            require(stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode),'unsupported Base root entry: '+name)
+            projection[name]=dict(type='directory' if stat.S_ISDIR(info.st_mode) else 'file')
+            if stat.S_ISDIR(info.st_mode):directories[name]=0o755
+            bindings.append((source,name))
+    local=paths.virtual_file(tree,'/usr/local')
+    require(local==tree/'usr/local' and local.is_dir() and not any(local.iterdir()),'Base /usr/local must be an empty real mountpoint')
+    state=root/'state';folder=state/'rootfs';local_state=state/'local'
+    for directory in (state,folder,local_state):
+        tx.protected_directory(directory,label='Writable root')
+        if os.path.lexists(directory):require(directory.is_dir(),'writable root storage is not a directory')
+    expected=dict(format='mojt-writable-root-v1',installation=base.store_info(root)['installation'],projection=projection)
+    def inspect(folder):
+        require(os.path.lexists(folder/ROOT_MARKER),'unmanaged writable root; explicit migration required')
+        require(base.read(folder/ROOT_MARKER)==expected,'writable root layout/installation differs; explicit migration required')
+        for name,mode in directories.items():
+            point=folder/name;info=point.lstat()
+            if name in ('opt','srv','mnt','media','boot'):
+                require(stat.S_ISDIR(info.st_mode),'persistent root directory changed type: '+name)
+                continue
+            require(stat.S_ISDIR(info.st_mode) and info.st_uid==0 and stat.S_IMODE(info.st_mode)==mode,
+                    'writable root mountpoint changed: '+name)
+            require(not any(point.iterdir()),'writable root mountpoint hides local files: '+name)
+        for name,row in projection.items():
+            point=folder/name
+            if row['type']=='symlink':
+                require(point.is_symlink() and os.readlink(point)==row['target'],'writable root Base link changed: '+name)
+            elif row['type']=='file':
+                info=point.lstat()
+                require(stat.S_ISREG(info.st_mode) and info.st_uid==0 and info.st_nlink==1 and info.st_size==0 and stat.S_IMODE(info.st_mode)==0o444,
+                        'writable root Base file mountpoint changed: '+name)
+    if os.path.lexists(folder):inspect(folder)
+    elif create:
+        stage=Path(tempfile.mkdtemp(prefix='.rootfs-',dir=state))
+        try:
+            for name,mode in directories.items():
+                (stage/name).mkdir(mode=mode);(stage/name).chmod(mode);tx.sync_directory(stage/name)
+            for name,row in projection.items():
+                if row['type']=='symlink':(stage/name).symlink_to(row['target'])
+                elif row['type']=='file':
+                    with (stage/name).open('xb') as stream:os.fchmod(stream.fileno(),0o444);os.fsync(stream.fileno())
+            base.io.write_json(stage/ROOT_MARKER,expected);stage.chmod(0o755)
+            tx.sync_directory(stage);tx.publish(stage,folder)
+        finally:base.io.clean_stage(stage)
+        inspect(folder)
+    if create:
+        if not local_state.exists():local_state.mkdir(mode=0o755);local_state.chmod(0o755)
+        tx.sync_directory(local_state);tx.sync_directory(state)
+    return dict(root=folder,local=local_state,bindings=bindings)
 
 
 def enter(root, source, trees, value, cmdline, release, *, runner=None, execute=None, verify_content=False):
@@ -240,7 +318,10 @@ def _enter(root, context, verified, *, runner=None, execute=None, newroot=Path('
         if readonly:runner(['mount','-o','remount,bind,ro',source,target])
     try:
         runner(['mount','-o','remount,rw',root]);backing_writable = True
-        bind(context['tree'],newroot,True)
+        layout=writable_root(root,context['tree'],context['mounts'],create=True)
+        bind(layout['root'],newroot)
+        for source,name in layout['bindings']:bind(source,newroot/name,True)
+        bind(layout['local'],newroot/'usr/local')
         runner(['mount','-t','tmpfs','-o','mode=0755,nodev,nosuid,strictatime','tmpfs',newroot/'run']);mounted.append(newroot/'run')
         for path in ('mojt-system','mojt','initramfs/bin','systemd/system'):(newroot/'run'/path).mkdir(parents=True,exist_ok=True)
         bind(context['profile'],newroot/'run/mojt-system',True)
@@ -259,7 +340,8 @@ def _enter(root, context, verified, *, runner=None, execute=None, newroot=Path('
         shutil.copyfile(runtime/'bin/busybox',newroot/'run/initramfs/bin/busybox');(newroot/'run/initramfs/bin/busybox').chmod(0o755)
         (newroot/'run/initramfs/bin/sh').symlink_to('busybox')
         shutil.copyfile(runtime/'shutdown',newroot/'run/initramfs/shutdown');(newroot/'run/initramfs/shutdown').chmod(0o755)
-        protected = ['/etc','/var','/home','/root','/run/mojt-system','/run/mojt-disk','/'+str(module_point),
+        protected = ['/etc','/var','/home','/root','/usr/local','/run/mojt-system','/run/mojt-disk','/'+str(module_point),
+                     *['/'+name for unused,name in layout['bindings']],
                      *['/'+m['target'] for m in context['mounts']],*immutable]
         if firmware_point is not None:protected.append('/'+str(firmware_point))
         for path in protected:

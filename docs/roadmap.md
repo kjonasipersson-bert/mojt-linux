@@ -6,7 +6,7 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Mojt development priorities
 
-Updated 2026-11-14. This records the agreed order and measured progress;
+Updated 2026-11-15. This records the agreed order and measured progress;
 future commands and policies are not claims of implemented functionality.
 The [architecture](architecture.md) defines the layer boundaries and the
 [MPM contract](mpm.md) records the accepted update semantics.
@@ -119,14 +119,24 @@ this private-code test. A separately pinned follow-up measurement uses
 Keep explicit `--verify` audits available,
 required metadata/compatibility checks and safe atomic publication intact, and
 the accepted Base/System independence and selection boundary explicit.
-This work does not authorize sweeping writable-root or service/state changes.
+The owner subsequently authorized writable root and Handbook clarification.
+The next increment implements persistent `state/rootfs` as `/`, Base content
+projected read-only, and persistent `state/local` at `/usr/local`. Existing
+`/etc`, `/var`, `/home` and `/root` mappings remain. Root/local state is initialized
+only on boot, not stage, and old entries retain their embedded mount behavior.
+The [Handbook filesystem chapter](../doc/handbook/part-iii/filesystem-layout.md)
+records what survives generation changes, what follows releases and what is
+temporary. The owner reported all steps PASS for the pinned
+[G/H/G hardware test](writable-root-hardware-test.md#recorded-owner-acceptance--2026-11-15)
+on 2026-11-15: physical boot, writable-root persistence across System change
+and return, cleared temporary files, read-only Base/System and working Ports.
+No shutdown problem was reported; a separate transcript was not imported.
+The bounded writable-root gate is closed. Service/state migrations and a wider
+Base/Kernel/hardware matrix remain outside this increment.
 The kernel/firmware/MBT items below remain proposals for discussion.
 
 ### Proposals for discussion, not scheduled commitments
 
-- Revisit the writable-root layout: a read-only `/` is inconvenient. Specify
-  writable administration paths and their persistence/rollback semantics before
-  changing mount policy; immutable installed content remains a separate concern.
 - Build a kernel on the target installation using a Debian-derived Kconfig,
   extending the earlier controlled native-build proof into the installed flow.
 - Broaden System firmware coverage for installation on many machines; define

@@ -30,7 +30,7 @@ remain the references for formats, implementation details and acceptance evidenc
 
 ## Part III. System administration
 
-[TBD](part-iii/README.md). Chapters will be added as workflows become established.
+5. [Filesystem layout and persistent state](part-iii/filesystem-layout.md) — writable root, release mounts and what generation changes preserve
 
 ## Part IV. Development
 
