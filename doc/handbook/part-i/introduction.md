@@ -125,7 +125,7 @@ The installation chapter is reserved until the installation workflow is ready
 for a general guide. Continue with [MPM](mpm.md) to manage an existing Mojt
 installation, or [MBT](mbt.md) to prepare tool environments and build results.
 For the project's goals and layer boundaries, see the
-[manifesto](../../../docs/manifesto.md) and
-[architecture](../../../docs/architecture.md).
+[manifesto](https://github.com/kjonasipersson-bert/mojt-linux/blob/main/docs/manifesto.md) and
+[architecture](https://github.com/kjonasipersson-bert/mojt-linux/blob/main/docs/architecture.md).
 
 [Previous: Handbook](../README.md) · [Next: Installing Mojt](installing-mojt.md)

@@ -295,12 +295,12 @@ files retain their current contents when older code boots.
 
 ## 3.10. Further reading
 
-See the [MPM manual](../../../man/mpm.1),
-[Ports implementation](../../../docs/ports-cli-integration.md),
-[removal/reset semantics](../../../docs/ports-remove-reset.md),
-[native System transitions](../../../docs/system-transition.md) and
-[activation behavior](../../../docs/activation-performance.md).
-The [MPM contract](../../../docs/mpm.md) describes the wider design and marks
+See the [MPM manual](https://github.com/kjonasipersson-bert/mojt-linux/blob/main/man/mpm.1),
+[Ports implementation](https://github.com/kjonasipersson-bert/mojt-linux/blob/main/docs/ports-cli-integration.md),
+[removal/reset semantics](https://github.com/kjonasipersson-bert/mojt-linux/blob/main/docs/ports-remove-reset.md),
+[native System transitions](https://github.com/kjonasipersson-bert/mojt-linux/blob/main/docs/system-transition.md) and
+[activation behavior](https://github.com/kjonasipersson-bert/mojt-linux/blob/main/docs/activation-performance.md).
+The [MPM contract](https://github.com/kjonasipersson-bert/mojt-linux/blob/main/docs/mpm.md) describes the wider design and marks
 remaining implementation gaps.
 
 [Previous: Installing Mojt](installing-mojt.md) · [Next: MBT](mbt.md)

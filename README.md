@@ -25,7 +25,8 @@ SPDX-License-Identifier: GPL-2.0-only
 Mojt is an experimental Linux distribution inspired by BSD's separation of the base operating system and ports. Its Base prototype is a versioned filesystem image, not a continuously updated package collection. System services and Ports are composed separately.
 
 Start with the [Mojt Handbook](doc/handbook/README.md) for concepts and practical
-MPM/MBT workflows.
+MPM/MBT workflows. See [building the handbook website](docs/handbook-web.md)
+for local preview and the `handbook.mojt.org` hosting target.
 
 Read the [manifesto](docs/manifesto.md), [architecture notes](docs/architecture.md), [Base format specification](docs/base-format.md), and the draft [MPM package-management contract](docs/mpm.md).
 

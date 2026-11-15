@@ -14,7 +14,7 @@ practical tasks. The text and examples describe Mojt itself.
 Mojt is experimental. This first edition documents the current repository
 implementation; interfaces and supported transitions can still change.
 Implemented workflows and future intentions are identified where they differ.
-The handbook is a user guide; the technical documents in [`docs/`](../../docs/)
+The handbook is a user guide; the technical documents in [`docs/`](https://github.com/kjonasipersson-bert/mojt-linux/tree/main/docs)
 remain the references for formats, implementation details and acceptance evidence.
 
 ## Part I. Getting started
