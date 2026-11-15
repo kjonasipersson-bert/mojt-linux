@@ -116,3 +116,20 @@ old boot entries to force a retry. Successful initialization can remain after a
 later boot failure; unknown or incompatible roots are deliberately refused.
 The helper declines an existing preparation directory rather than overwriting
 partial evidence. No automatic rollback of writable data is attempted.
+
+
+## Recorded owner acceptance — 2026-11-15
+
+The owner reported that all steps of the G/H/G sequence returned PASS and
+everything behaved as expected, using delivery `d3bd849f` with functional code
+pinned at `0976c58d`. This closes the bounded physical writable-root boot,
+generation-change and return gate.
+
+The three checks cover exact G/H/G deployment selection, retained original
+Base/Kernel/boot policy, writable root/local backing mounts, eight persistent
+marker locations, temporary-file removal after reboot, read-only Base/System
+files, and working Ports/Neovim. The report is the owner's confirmation; the
+SSD evidence bundle and a separate shutdown transcript were not imported. No
+shutdown problem was reported. This is not a different-Base/Kernel matrix or
+a new old-F recovery boot claim. Existing boot entries and user data remain
+retained; no cleanup or state/schema rollback was performed.

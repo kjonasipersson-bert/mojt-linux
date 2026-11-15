@@ -108,8 +108,12 @@ subsequently passed [owner A/B/A boot/return and clean shutdown](system-boot-acc
 on 2026-11-09, preserving exact Base/Kernel and persistent state. Public active-v2
 staging and request integration remain.
 
-The new writable-root increment has separate [G/H/G hardware instructions](writable-root-hardware-test.md).
-Its private real-mount and refusal tests do not establish a physical boot.
+The new writable-root increment has separate [G/H/G hardware instructions and owner acceptance](writable-root-hardware-test.md#recorded-owner-acceptance--2026-11-15).
+The owner reported every step PASS on 2026-11-15 with delivery `d3bd849f`,
+covering physical G/H/G boot and return, persistent root/local state, cleared
+temporary files, read-only release mounts and working Ports. The collaborator
+did not run tests on the owner's machine or import its full evidence/shutdown
+transcript; no different-Base/Kernel matrix or old-F recovery boot is claimed.
 
 MBT must subsequently reuse these installation/handover APIs for bootstrap and
 the existing build environment, Kernel build and native packaging. The destination

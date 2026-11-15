@@ -16,9 +16,11 @@ runtime dependencies remain separate, versioned content.
 **Implementation scope:** the writable-root layout is implemented for newly
 prepared native-v2 System handovers carrying the new boot code. Existing boot
 entries keep their embedded boot code and mount behavior. Selecting an old entry
-does not upgrade its layout. Local mount/refusal tests and CI validation are
-separate from acceptance on the owner's machine; a physical boot of this layout
-is still required. Earlier bootstrap and legacy images can still have read-only
+does not upgrade its layout. The owner reported PASS for the physical G/H/G
+boot, persistence and return checks on 2026-11-15, in addition to the local
+mount/refusal tests and CI validation. This is a bounded test with the retained
+Base and Kernel, not a complete compatibility matrix. Earlier bootstrap and
+legacy images can still have read-only
 `/` until a deployment using the new handover is prepared and booted.
 
 ## 5.1. The running filesystem

@@ -20,8 +20,10 @@ read-only root. Data/schema rollback is not automatic. See the
 [Handbook path and persistence tables](../doc/handbook/part-iii/filesystem-layout.md)
 and [handover contract](native-system-handover.md).
 
-This is an implemented increment under test, not physical writable-root boot
-acceptance or a claim that older installed tooling has already changed.
+The owner reported PASS for the [G/H/G writable-root boot and persistence checks](writable-root-hardware-test.md#recorded-owner-acceptance--2026-11-15)
+on 2026-11-15, using delivery `d3bd849f`. This establishes the bounded physical
+boot/change/return gate with the retained Base/Kernel; it does not upgrade old
+boot entries or establish a complete hardware/compatibility matrix.
 
 ## Explicit boot generations (2026-10-25 experiment)
 

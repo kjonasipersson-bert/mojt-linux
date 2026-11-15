@@ -126,16 +126,17 @@ projected read-only, and persistent `state/local` at `/usr/local`. Existing
 only on boot, not stage, and old entries retain their embedded mount behavior.
 The [Handbook filesystem chapter](../doc/handbook/part-iii/filesystem-layout.md)
 records what survives generation changes, what follows releases and what is
-temporary. Private real-mount/refusal tests cover the new projection; actual
-System boot/return and shutdown acceptance use the pinned
-[G/H/G hardware test](writable-root-hardware-test.md) and remain required. Service/state
-migrations are outside this increment.
+temporary. The owner reported all steps PASS for the pinned
+[G/H/G hardware test](writable-root-hardware-test.md#recorded-owner-acceptance--2026-11-15)
+on 2026-11-15: physical boot, writable-root persistence across System change
+and return, cleared temporary files, read-only Base/System and working Ports.
+No shutdown problem was reported; a separate transcript was not imported.
+The bounded writable-root gate is closed. Service/state migrations and a wider
+Base/Kernel/hardware matrix remain outside this increment.
 The kernel/firmware/MBT items below remain proposals for discussion.
 
 ### Proposals for discussion, not scheduled commitments
 
-- Complete the authorized writable-root increment above, including owner boot,
-  generation-return persistence and clean shutdown acceptance.
 - Build a kernel on the target installation using a Debian-derived Kconfig,
   extending the earlier controlled native-build proof into the installed flow.
 - Broaden System firmware coverage for installation on many machines; define
