@@ -13,6 +13,7 @@ from pathlib import Path
 import tempfile
 import tomllib
 
+import mpm_ui as ui
 import mpm_request_plan as planning
 import mpm_requests as wishes
 from mpm_selection import Catalog, parse_selector, resolve
@@ -20,6 +21,30 @@ from mpm_selection import Catalog, parse_selector, resolve
 NAME = 'nixpkgs'
 POLICY = 'system-pinned-nixpkgs-v1'
 require = wishes.require
+
+
+from mpm_nix_binary import NixBinaryAdapter
+
+
+class NixPortsAdapter(NixBinaryAdapter):
+    def documentation(self,ref,source,role):
+        output=self.identity(ref)['output'];catalog=source['catalogs'][role];metadata=[]
+        for name,row in catalog['sources'].items():
+            identity=row['identity']
+            if identity.get('manual_policy')=='exact-output-manuals-v1' and any(
+                    c['source']==name and c['artifact']==output for c in catalog['candidates']):
+                metadata.append(identity)
+        if not metadata:return None
+        require(len(metadata)==1,'ambiguous manual source')
+        docs=metadata[0];require(type(docs['manual_outputs']) is list,'invalid manual output inventory')
+        references=[]
+        for path in docs['manual_outputs']:
+            found=[o['reference'] for o in source['offers'] if o['artifact']==path and o['backend']=='nix']
+            require(len(found)==1,'missing exact manual output')
+            self.identity(found[0]);references.append(found[0])
+        program=docs['manual_program']
+        require(program is None or type(program) is str,'invalid manual program')
+        return dict(references=references,program=program)
 
 
 def exporter():
@@ -49,7 +74,10 @@ def prepare(runtime, args, sources, platform):
         return None
     selected = [parse_selector(s) for s in args.names] if args.action == 'install' else []
     missing = sorted({p.name for p in selected} - set(sources.get(NAME, {}).get('catalogs', {})))
-    if args.action == 'install' and not missing:
+    refresh=sorted({p.name for p in selected if p.name in sources.get(NAME,{}).get('catalogs',{})
+        and any(i['identity'].get('discovery')==POLICY and i['identity'].get('manual_policy')!='exact-output-manuals-v1'
+                for i in sources[NAME]['catalogs'][p.name]['sources'].values())})
+    if args.action == 'install' and not missing and not refresh:
         return None
     require(runtime.source.is_file(), 'installed System has no pinned Ports source manifest; use --sources FILE')
     module = exporter(); backend = module.load_backend()
@@ -63,9 +91,15 @@ def prepare(runtime, args, sources, platform):
         require(identities and all(i.get('discovery') == POLICY and
                 all(i.get(k) == v for k, v in source.items()) for i in identities),
                 'accepted Ports metadata has another source pin; use an explicit --sources update')
+    manuals=callable(getattr(backend,'resolve_manuals',None))
+    if not manuals:refresh=[]
     rows = []
-    for name in missing:
+    for name in sorted(set(missing+refresh)):
         row = backend.resolve_package(source, name, name)
+        if manuals:row['_manuals']=backend.resolve_manuals(source,name)
+        if name in refresh:
+            require(any(c['artifact']==row['output'] for c in sources[NAME]['catalogs'][name]['candidates']),
+                    'manual refresh would change the accepted binary; use explicit upgrade instead')
         try:
             backend.selection_core().components(row['version']); scheme = 'dotted-v1'
         except ValueError:
@@ -83,12 +117,13 @@ def prepare(runtime, args, sources, platform):
             if parse_selector(selector).name == name:
                 resolve(catalog, selector, platform=platform)
         rows.append(row)
-    return dict(module=module, backend=backend, source=source, manifest=runtime.source, rows=rows)
+    return dict(module=module, backend=backend, source=source, manifest=runtime.source, rows=rows, refresh_manuals=refresh)
 
 
 def preview(prepared):
     return dict(format='mojt-ports-provider-preview-v1', source=prepared['source'],
-        packages=[dict(name=r['name'], release=r['version'], output=r['output']) for r in prepared['rows']],
+        packages=[dict(name=r['name'], release=r['version'], output=r['output'],
+            manuals=r.get('_manuals',{}).get('outputs',[])) for r in prepared['rows']],
         binary_only=True, command_inventory='after-binary-acquisition', publication=False)
 
 
@@ -105,21 +140,32 @@ def materialize(prepared, sources, stack):
         work = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix='mojt-ports-discovery-')))
         for index, row in enumerate(prepared['rows']):
             # argv[0] deliberately remains nix-store, even for a multicall Nix.
-            backend.run('nix-store', '--realise', row['output'], '--add-root', str(work / str(index)),
-                '--indirect', '--option', 'max-jobs', '0', '--option', 'builders', '',
-                '--option', 'require-sigs', 'true')
-            catalog = module.prepare_catalog(backend, [(NAME, prepared['manifest'])], row['name'], row['attribute'],
-                catalog_name=row['name'], stability='stable')
+            with ui.phase('Acquire '+row['name']+' binaries and manuals'):
+                outputs=sorted({row['output'],*row.get('_manuals',{}).get('outputs',[])})
+                for number,output in enumerate(outputs):
+                    backend.run('nix-store','--realise',output,'--add-root',str(work/(str(index)+'-'+str(number))),
+                        '--indirect','--option','max-jobs','0','--option','builders','',
+                        '--option','require-sigs','true')
+            options=dict(catalog_name=row['name'],stability='stable')
+            if '_manuals' in row:options['manuals']=True
+            catalog=module.prepare_catalog(backend,[(NAME,prepared['manifest'])],row['name'],row['attribute'],**options)
             identity = catalog['sources'][NAME]['identity']
             require(all(identity.get(k) == v for k,v in prepared['source'].items()), 'provider source changed during acquisition')
             require(len(catalog['candidates']) == 1 and catalog['candidates'][0]['artifact'] == row['output']
                     and catalog['candidates'][0]['release_id'] == row['version'], 'provider output changed during acquisition')
+            if '_manuals' in row:
+                require(identity['manual_outputs']==[p for p in row['_manuals']['outputs'] if p!=row['output']]
+                        and identity['manual_program']==row['_manuals']['main_program'],'manual outputs changed during acquisition')
             identity['discovery'] = POLICY
             bundle = module.prepare_bundle(backend, catalog, row['name'])
             view = bundle['description']['sources']['local']
             catalogs[row['name']] = view['catalogs'][row['name']]
             for offer in view['offers']:
                 key = wishes.digest(offer['reference'])
-                require(key not in offers or offers[key] == offer, 'conflicting discovered provider offer')
+                if key in offers and offers[key]!=offer:
+                    old=offers[key]
+                    require(all(old[k]==offer[k] for k in old if k!='dependencies')
+                            and all(d in offer['dependencies'] for d in old['dependencies']),
+                            'conflicting discovered provider offer')
                 offers[key] = offer
     return planning.sources_view({NAME:source_view(catalogs, [offers[k] for k in sorted(offers)])})

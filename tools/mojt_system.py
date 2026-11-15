@@ -77,7 +77,7 @@ VERSION = "0.2"
 MPM_FILES = (
     "mpm", "mpm-system", "mpm_cli.py", "mpm_catalog.py", "mpm_selection.py", "mpm_boot_selection.py", "mpm_boot_update.py",
     "mpm_selector_ports.py", "mpm_system.py", "mpm_system_model.py", "mpm_system_cli.py", "mpm_system_source.py", "mpm_system_transition.py", "mpm_boot_v2.py", "mpm_boot_v2_store.py", "mpm_boot_inventory.py", "mpm_boot_early.py", "mpm_boot_constructor.py", "mpm_boot_base.py", "mpm_boot_handover.py", "mpm_nix_boot.py", "mpm_boot_status.py", "mpm_base.py", "mpm_base_transition.py", "mpm_base_boot.py", "mpm_base_cli.py", "mpm_base_source.py", "mpm_base_status.py",
-    "mpm_native_io.py", "mojt-base-install", "mpm_kernel.py", "mpm_kernel_source.py", "mpm_deployment.py", "mpm_kernel_boot.py",
+    "mpm_native_io.py", "mpm_ui.py", "mpm_man.py", "mojt-base-install", "mpm_kernel.py", "mpm_kernel_source.py", "mpm_deployment.py", "mpm_kernel_boot.py",
     "mpm_transaction.py", "mpm_defaults.py", "mpm_management.py", "mpm_requests.py", "mpm_request_plan.py", "mpm_sources.py", "mpm_sources_cli.py",
     "mpm_ports_profile.py", "mpm_ports_cli.py", "mpm_ports_nix_source.py", "mpm_nix_binary.py", "mpm_native_cache.py", "mojt_artifact.py", "mojt_boot.py", "mojt_system.py",
     "mojt_system_manifest.py", "mojt_native_image.py", "mojt-vm-build.py",
@@ -802,6 +802,12 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
     if step >= 9:
         export("man", "man-db", "bin/man")
         export("manpath", "man-db", "bin/manpath")
+        spec=importlib.util.spec_from_file_location('mojt_man_wrapper',repo/'tools/mpm_man.py')
+        manual=importlib.util.module_from_spec(spec);spec.loader.exec_module(manual)
+        for program in ("man","manpath"):
+            target=system/"bin"/program
+            retained=os.readlink(target);target.unlink()
+            write(target,manual.wrapper(retained),0o755)
         write(system / "share/man/man1/mpm.1", (repo / "man/mpm.1").read_text())
         if with_build_tools:write(system / "share/man/man1/mbt.1",(repo / "man/mbt.1").read_text())
         write(system / "manual-path", ":".join(["/run/mojt-system/share/man"] + manual_paths(payload, record)) + "\n")

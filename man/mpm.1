@@ -111,8 +111,9 @@ references record repeatable choices, not dependencies on exactly those versions
 The accepted ordinary boot-area flow is install, select/activate, then deliberate
 reboot. Normal installation should finish preparation when a complete boot
 context is available. stage remains an advanced explicit preparation command and
-an internal MPM/MBT/bootstrap operation. Current content installation still leaves
-preparation separate; automatic integration is not yet implemented.
+an internal MPM/MBT/bootstrap operation. Live native-v2 System installation now
+includes preparation. --content-only and offline imports leave it separate;
+Base/Kernel installation integration is still pending.
 .SH SYSTEM CONTENT
 .BI "system install --from-file " "GENERATION --expected-id sha256:FULL_ID"
 imports a native System generation and exact components, safely unpacks each
@@ -136,12 +137,18 @@ uses one accepted source snapshot and the common cache for the generation and
 its exact native components. Source --dry-run is metadata-only and creates no
 cache/profile; --snapshot pins accepted metadata. Controlled profile links are
 retained. Late-created privileged helpers remain unavailable runtime requirements;
-installation does not create them or establish boot readiness. See docs/system-packaging.md.
+installation does not create them. On a live native-v2 target, normal public
+System installation prepares a boot deployment with the selected Base/Kernel.
+It leaves next boot unchanged; activate chooses the prepared entry separately.
+--content-only and explicit --disk-root targets import without preparation.
+Preparation failure returns failure with content retained and next boot unchanged;
+repeat install to retry. Base/Kernel installs still require separate preparation.
+See docs/system-packaging.md.
 .PP
 .BI "{base,system,kernel} activate --artifact " "sha256:FULL_ID"
 selects an already prepared native-v2 boot entry atomically. It does not build
 initramfs, scan content or run provider helpers. Missing preparation is an error:
-run stage first. upgrade --artifact ID prepares and selects an explicit installed
+imported content can be prepared with stage first. upgrade --artifact ID prepares and selects an explicit installed
 update target. --dry-run previews without writing
 runtime bundles, slots, boot trees or selection. There is no system plan command.
 Base preparation requires --base-context FILE declaring exact Kernel bounds.
@@ -177,7 +184,10 @@ reports installed generations, retained incomplete generations, components and
 explicit running/next-boot identities separately. A matching human label does
 not identify a native artifact. --verify audits retained archives and profile
 content; --json returns mpm-system-status-v1. Plain status creates no registry
-or locks and needs no codec. Installation does not imply boot readiness.
+or locks and needs no codec. Human status shows readable Running, Next boot and
+Prepared boot entries, short identities and pending reboot. Content-only import
+does not imply boot readiness. Long preparation reports phase start/completion
+on stderr; --json stdout remains machine-readable.
 .PP
 System actions use --disk-root DIRECTORY, with the same installed/offline target
 rules as Base. Global --root is rejected. Installation requires an administrator,
@@ -559,3 +569,13 @@ require --verify, and a failed audit prevents publication. With --dry-run that
 flag audits the preview without publishing. system install --verify audits
 archive payloads, reused objects, profiles and provider closures; ordinary
 installation performs required materialization without these scrubs.
+
+.PP
+The System man/manpath wrappers search manuals of active Ports versions at each
+invocation. Normal pinned-provider installation imports separate manual outputs
+when supplied upstream. Repeat an existing install wish after updating an older
+System to add manuals without changing its accepted binary or active version.
+Explicit catalogs must provide their own manual dependencies. No manuals are
+invented for packages without them. Neovim's upstream page is nvim(1); the package
+role neovim is accepted for simple queries when metadata declares that main program.
+The underlying man-db still handles sections, paging and explicit -M overrides.

@@ -7,7 +7,11 @@ SPDX-License-Identifier: GPL-2.0-only
 # From an assembled System profile to a local native kit
 
 This joins existing System assembly, native packaging, named sources/cache and
-the content installer. It does not assemble or select a boot deployment.
+the content installer. Kit production and the low-level content installer do not
+assemble or select a boot deployment. The public live native-v2 `mpm system
+install` frontend additionally prepares a boot entry; `--content-only` and
+explicit offline targets skip that step. Installation never selects it. See
+[the ordinary installation/activation flow](system-transition.md).
 
 ## Input and packaging
 

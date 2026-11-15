@@ -345,7 +345,9 @@ class SystemVmTests(unittest.TestCase):
         self.assertEqual(system.tree_hash(self.tree / "base"), before)
         self.assertEqual((self.tree / "state/etc/localtime").read_text(), "existing timezone")
         self.assertEqual((self.tree / "state/etc/timezone").read_text(), "Existing/Zone\n")
-        self.assertTrue((directory / "bin/man").is_symlink())
+        self.assertFalse((directory / "bin/man").is_symlink())
+        self.assertIn("/run/mojt-system/tools/mpm_man.py",(directory/"bin/man").read_text())
+        self.assertIn(record["packages"]["man-db"]["output"]+"/bin/man",(directory/"bin/man").read_text())
         self.assertEqual((directory / "tests/run-mpm-selectors.py").read_bytes(),
                          (REPO / "tests/run-mpm-selectors.py").read_bytes())
         self.assertEqual((directory / "tests/run-mpm-nix-upgrade.py").read_bytes(),

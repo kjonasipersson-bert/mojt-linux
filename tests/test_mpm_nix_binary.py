@@ -114,6 +114,34 @@ class NixAdapterTests(unittest.TestCase):
         self.assertEqual(ref['identity']['closure'],self.ref['identity']['closure'])
         self.assertEqual(self.calls,[])
 
+    def test_catalog_manual_output_is_an_exact_dependency_not_an_application(self):
+        import types
+        import mpm_ports_nix_source as discovery
+        import mpm_selection as selection
+        import mpm_requests as wishes
+        exporter=discovery.exporter();manual=self.output+'-man'
+        identity=dict(manual_policy='exact-output-manuals-v1',manual_outputs=[manual],manual_program='hello')
+        catalog=dict(format=selection.FORMAT,area='ports',name='hello',channel='stable',platform='x86_64-linux',
+            sources=dict(pinned=dict(backend='nix',identity=identity)),candidates=[dict(name='hello',release_id='2.12.3',
+            upstream_version='2.12.3',version_scheme='dotted-v1',stability='stable',source='pinned',artifact=self.output,
+            integrity=dict(closure=self.ref['identity']['closure']))])
+        def run(*args):
+            self.assertEqual(args[:2],('nix-store','--query'))
+            return manual if '--requisites' in args else self.hash
+        backend=types.SimpleNamespace(selection_core=lambda:selection,require=wishes.require,
+            discover_commands=lambda r:['hello'],store_path=lambda p:None,run=run)
+        with mock.patch.object(Path,'is_dir',lambda p:str(p)==manual):
+            bundle=exporter.prepare_bundle(backend,catalog,'hello')
+        view=bundle['description']['sources']['local'];application=next(o for o in view['offers'] if o['artifact']==self.output)
+        doc=next(o for o in view['offers'] if o['artifact']==manual)
+        self.assertEqual(application['reference']['identity']['format'],'mojt-nix-output-v1')
+        self.assertEqual(application['dependencies'],[doc['reference']]);self.assertEqual(doc['reference']['identity']['commands'],[])
+        description=discovery.NixPortsAdapter('/nonexecuted').documentation(application['reference'],view,'hello')
+        self.assertEqual(description,dict(references=[doc['reference']],program='hello'))
+        # Catalog producer must bind every declared manual exactly.
+        view['offers'].remove(doc)
+        with self.assertRaisesRegex(ValueError,'missing exact manual'):discovery.NixPortsAdapter('/nonexecuted').documentation(application['reference'],view,'hello')
+
     def test_real_symlink_keeps_argv0_and_pins_executable_for_both_frontends(self):
         import types
         import mpm_ports_cli as frontend

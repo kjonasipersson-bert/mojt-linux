@@ -578,11 +578,14 @@ def status(root, *, verify=False, running_record=None, adapters=None):
         matched = [row for row in installed if row['manifest'] == d['manifest']]
         require(len(matched) <= 1, 'ambiguous exact System identity')
         return dict(state='known', artifact=matched[0]['artifact'] if matched else None, manifest=d['manifest'], label=d['generation'],
-                    deployment=record['id'], artifact_evidence='exact installed manifest' if matched else 'native artifact unknown; label is not identity')
+                    deployment=record['id'], version=matched[0]['version'] if matched else {}, artifact_evidence='exact installed manifest' if matched else 'native artifact unknown; label is not identity')
     from mpm_boot_selection import present, available
     staged = available(root)[0] if root.exists() and present(root) else {}
     return dict(format='mpm-system-status-v1', target=str(root), installation=info['installation'] if info else None,
-        staged_deployments=[dict(deployment=k,artifact=description(v['record'])['system']['artifact'],label=description(v['record'])['system']['generation']) for k,v in sorted(staged.items())],
+        staged_deployments=[dict(deployment=k,artifact=description(v['record'])['system']['artifact'],
+            label=description(v['record'])['system']['generation'],
+            version=next((r['version'] for r in installed if r['artifact']==description(v['record'])['system']['artifact']),{}),
+            base_release=description(v['record'])['base']['release'],kernel_release=description(v['record'])['kernel']['release']) for k,v in sorted(staged.items())],
         installed=installed, components=components, retained=retained, incomplete=sorted(incomplete),
         selected=observation(observed['record'], observed['reason']),
         running=observation(running_record, 'offline target or no authoritative running record'),

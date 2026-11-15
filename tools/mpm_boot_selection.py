@@ -21,6 +21,7 @@ import mpm_boot_v2_store as store
 import mpm_management as management
 import mpm_native_io as io
 import mpm_transaction as tx
+import mpm_ui as ui
 from mpm_boot_v2 import record
 
 READY = 'mojt-boot-stage-receipt-v1'
@@ -109,14 +110,17 @@ def _admit(root, item, built, *, adapters):
 
 def stage(root, source, runtime_directory, busybox, work, *, bounds, adapters, contract, runtime_value=None):
     """MBT/image preparation API: construct, retain and admit; never select."""
-    built = constructor.build(root,source,runtime_directory,busybox,work,bounds=bounds,adapters=adapters,handover=contract,reuse_payload=True,runtime_value=runtime_value)
+    with ui.phase('Construct boot files'):
+        built = constructor.build(root,source,runtime_directory,busybox,work,bounds=bounds,adapters=adapters,handover=contract,reuse_payload=True,runtime_value=runtime_value)
     root = store.target(root);i = model.inputs(source)
     image = root/'kernel/installed'/i['kernel']['artifact'][7:]/'payload/boot'/('vmlinuz-'+i['kernel']['release'])
     item = model.compose(source,built['binding'],image.stat().st_size)
     archive = Path(work)/'completed-initramfs.cpio.gz'
     with archive.open('xb') as stream:stream.write(built['archive']);os.fchmod(stream.fileno(),0o444);os.fsync(stream.fileno())
-    store.retain(root,item,image,archive,bounds=bounds,adapters=adapters)
-    receipt = _admit(root,item,built,adapters=adapters)
+    with ui.phase('Retain boot files'):
+        store.retain(root,item,image,archive,bounds=bounds,adapters=adapters)
+    with ui.phase('Admit prepared boot entry'):
+        receipt = _admit(root,item,built,adapters=adapters)
     return dict(deployment=item['id'],stage_receipt=receipt['id'],selection_changed=False,boot_ready=False,
                 initramfs_payload=dict(inputs=built['payload_key'],reused=built['payload_reused']),
                 scope='Complete handover staged; next-boot selection and owner boot acceptance are separate.')
@@ -176,7 +180,7 @@ def initialize(root, identifier):
         _publish(root,value,entries,raw);return value
 
 
-def select(root, identifier=None, *, expected_selected, rollback=False, dry_run=False, yes=False, area='system', verify=False):
+def select(root, identifier=None, *, expected_selected, rollback=False, dry_run=False, yes=False, area='system', verify=False, running_record=None):
     require(os.geteuid() == 0,'boot selection requires an administrator');model.identity(expected_selected)
     require(area in ('base','system','kernel'),'unsupported boot selection area')
     root = store.target(root)
@@ -197,7 +201,9 @@ def select(root, identifier=None, *, expected_selected, rollback=False, dry_run=
     with read_locks(root):value,entries,raw = prepare(audit=verify and dry_run)
     changed = value['description']['selected'] != expected_selected
     report = dict(selected=value['description']['selected'],previous=value['description']['previous'],changed=changed and not dry_run,
-                  dry_run=dry_run,running_changed=False,requests_changed=False,owner_boot_acceptance='pending')
+                  dry_run=dry_run,running_changed=False,requests_changed=False,owner_boot_acceptance='pending',
+                  next_boot=ui.combination(entries[value['description']['selected']]['record']))
+    if changed:ui.preview(root,entries[expected_selected]['record'],entries[value['description']['selected']]['record'],running=running_record)
     if dry_run:return report
     if changed and not yes:require(input('Select this exact '+area+' deployment for next boot? [y/N] ').strip().lower() in ('y','yes'),'selection cancelled')
     with locked(root):

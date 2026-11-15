@@ -42,7 +42,7 @@ def tooling_review(selected, candidate):
     changed = sorted(p for p in set(before) | set(after) if before.get(p) != after.get(p))
     blocked = []
     for path in changed:
-        allowed = (path.startswith(('tools/', 'tests/')) or path in ('tools', 'tests', 'bin/mpm', 'bin/mojt-system-inspect', 'bin/mbt', 'share/man/man1/mpm.1',
+        allowed = (path.startswith(('tools/', 'tests/')) or path in ('tools', 'tests', 'bin/mpm', 'bin/man', 'bin/manpath', 'bin/mojt-system-inspect', 'bin/mbt', 'share/man/man1/mpm.1',
                    'share/man/man1/mbt.1','mbt-runtime.json','share/mbt/kernel-first-build.json') + paths.MBT_SOURCE_FILES
                    or path.startswith('bin/') and path not in before and path in after
                    or path in ('share', 'share/man', 'share/man/man1') and path not in before and after.get(path, {}).get('directory') is True

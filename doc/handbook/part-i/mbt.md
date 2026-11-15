@@ -135,7 +135,7 @@ mpm kernel install --from-file /path/to/reported-kernel.tar.zst \
   --expected-id sha256:FULL_REPORTED_ARTIFACT_ID
 ```
 
-Continue with [MPM preparation and activation](mpm.md#38-prepare-activate-and-reboot)
+Continue with [MPM preparation and activation](mpm.md#38-activate-and-reboot)
 to prepare the new boot choice, inspect it, activate it and reboot deliberately.
 Retain the previous working Kernel and deployment for a compatible return.
 

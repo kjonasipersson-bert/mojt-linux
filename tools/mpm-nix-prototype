@@ -48,6 +48,15 @@ in assert pkgs.lib.isDerivation p; {
   description = p.meta.description or "";
 }
 '''
+MANUALS = IMPORT + r'''
+  p = pkgs.lib.attrByPath (pkgs.lib.splitString "." r.attribute)
+    (throw "MPM: attribute missing from pinned Nixpkgs") pkgs;
+  manual = pkgs.lib.getOutput "man" (p // { outputSpecified = false; });
+in assert pkgs.lib.isDerivation p; {
+  outputs = [ manual.outPath ];
+  main_program = p.meta.mainProgram or null;
+}
+'''
 SEARCH = IMPORT + r'''
   scope = if r.scope == "" then pkgs else
     pkgs.lib.attrByPath (pkgs.lib.splitString "." r.scope) {} pkgs;
@@ -152,6 +161,16 @@ def resolve_package(source, name, attribute):
     if Path(record["output"]).exists():
         record["commands"] = discover_commands(record)
     return record
+
+
+def resolve_manuals(source, attribute):
+    require(re.fullmatch(ATTRIBUTE,attribute),"unsupported Nix attribute path")
+    value=evaluate(MANUALS,source=source,attribute=attribute)
+    require(type(value['outputs']) is list and len(value['outputs'])<=16,'invalid manual outputs')
+    for output in value['outputs']:store_path(output)
+    program=value['main_program']
+    require(program is None or type(program) is str and re.fullmatch(COMMAND,program),'invalid manual program')
+    return dict(outputs=sorted(set(value['outputs'])),main_program=program)
 
 
 def catalog_from_manifest(path):

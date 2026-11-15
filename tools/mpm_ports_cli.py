@@ -38,7 +38,7 @@ def executor_identity(runtime):
     files = ('mpm_cli.py', 'mpm_ports_cli.py', 'mpm_requests.py',
              'mpm_request_plan.py', 'mpm_ports_profile.py', 'mpm_nix_binary.py',
              'mpm_selection.py', 'mpm_transaction.py', 'mpm_ports_nix_source.py',
-             'mpm-nix-catalog.py', 'mpm-nix-prototype')
+             'mpm-nix-catalog.py', 'mpm-nix-prototype', 'mpm_ui.py')
     directory = Path(__file__).parent
     return dict(provider='mpm-runtime', identity=dict(format='mojt-mpm-executor-v1',
         files={name: hashlib.sha256((directory / name).read_bytes()).hexdigest() for name in files},
@@ -54,9 +54,9 @@ def adapters_for(sources, previous, runtime):
     require(providers <= {'nix'}, 'unsupported Ports provider: ' + ', '.join(sorted(providers - {'nix'})))
     if not providers:
         return {}
-    from mpm_nix_binary import NixBinaryAdapter
+    from mpm_ports_nix_source import NixPortsAdapter
     binary = runtime.system_bin / 'nix-store' if runtime else Path(shutil.which('nix-store') or '/nonexistent/nix-store')
-    return {'nix': NixBinaryAdapter(binary.absolute())}
+    return {'nix': NixPortsAdapter(binary.absolute())}
 
 
 def installed_choice(state, request, platform):
@@ -268,8 +268,10 @@ def _main(argv, *, root, runtime, adapters, stack):
         adapters = adapters_for(sources, previous, runtime)
     options = dict(platform=platform, executor=executor_identity(runtime),
         target_identity=wishes.digest(dict(root=str(root), installation=installation)))
+    refresh=[c['key'] for c in state['description']['claims'] if c['source']=='nixpkgs'
+             and c['role'] in (prepared.get('refresh_manuals',[]) if prepared else [])]
     plan = profiles.preview(root, state, sources, adapters, **options, advance=advance,
-                            auto_select=not getattr(args, 'no_activate', False))
+                            auto_select=not getattr(args, 'no_activate', False),refresh_dependencies=refresh)
     if args.dry_run:
         print(json.dumps(dict(dry_run=True, changed=False, plan=plan), indent=2)); return 0
     if not args.yes:

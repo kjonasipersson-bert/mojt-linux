@@ -11,6 +11,7 @@ import argparse
 import importlib.machinery
 import importlib.util
 import json
+import os
 from pathlib import Path
 import sys
 import tomllib
@@ -24,7 +25,7 @@ def load_backend():
     return backend
 
 
-def prepare_catalog(backend, sources, name, attribute, *, catalog_name="ports-main", preferred_source=None, stability="unknown"):
+def prepare_catalog(backend, sources, name, attribute, *, catalog_name="ports-main", preferred_source=None, stability="unknown", manuals=False):
     backend.require(sources, "provide at least one explicitly pinned source")
     core = backend.selection_core()
     records, candidates, platform = {}, [], None
@@ -49,6 +50,10 @@ def prepare_catalog(backend, sources, name, attribute, *, catalog_name="ports-ma
         records[source_id] = dict(backend="nix", identity=dict(source,
                                     attribute=attribute, output_selection="lib.getBin",
                                     evaluation=dict(config={}, overlays=[])))
+        if manuals:
+            docs=backend.resolve_manuals(source,attribute)
+            records[source_id]['identity'].update(manual_policy='exact-output-manuals-v1',
+                manual_outputs=[p for p in docs['outputs'] if p!=record['output']],manual_program=docs['main_program'])
         version = record["version"]
         try:
             core.components(version)
@@ -88,6 +93,23 @@ def prepare_bundle(backend, catalog, name):
         NixBinaryAdapter('/nonexecuted/nix-store').describe(ref, Path('/nonexecuted'))
         offer = dict(backend='nix', artifact=output, integrity=copy.deepcopy(candidate['integrity']),
             reference=ref, dependencies=[], transport_sha256=None)
+        manual_refs=[]
+        for manual in catalog['sources'][candidate['source']]['identity'].get('manual_outputs',[]):
+            backend.store_path(manual);backend.require(Path(manual).is_dir(),'manual output is not local: '+manual)
+            closure=sorted(backend.run('nix-store','--query','--requisites',manual).splitlines())
+            hashes=backend.run('nix-store','--query','--hash',*closure).splitlines()
+            backend.require(manual in closure and len(closure)==len(hashes),'invalid manual closure evidence')
+            directory=Path(manual)/'bin'
+            commands=sorted(p.name for p in directory.iterdir() if p.is_file() and os.access(p,os.X_OK)) if directory.is_dir() else []
+            docref=dict(provider='nix',identity=dict(format='mojt-nix-output-v1',output=manual,
+                closure=[dict(path=p,nar_hash=h) for p,h in zip(closure,hashes)],commands=commands))
+            NixBinaryAdapter('/nonexecuted/nix-store').describe(docref,Path('/nonexecuted'))
+            docoffer=dict(backend='nix',artifact=manual,integrity=dict(closure=copy.deepcopy(docref['identity']['closure'])),
+                          reference=docref,dependencies=[],transport_sha256=None)
+            doc_key=wishes.digest(docref)
+            backend.require(doc_key not in offers or offers[doc_key]==docoffer,'conflicting manual binding')
+            offers[doc_key]=docoffer;manual_refs.append(docref)
+        offer['dependencies']=manual_refs
         key = wishes.digest(ref)
         backend.require(key not in offers or offers[key] == offer, 'conflicting exact output bindings')
         offers[key] = offer
