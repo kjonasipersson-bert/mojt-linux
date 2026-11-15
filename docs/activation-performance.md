@@ -124,5 +124,7 @@ System generations. It is not an isolated payload benchmark. Roughly four
 minutes remains unacceptable; remove repeated broad content audits from ordinary
 preparation while preserving required metadata, compatibility, safe construction
 and atomic publication checks. The current measurements do not attribute every
-remaining second to those audits. Automatic preparation inside normal install
-remains separate integration work.
+remaining second to those audits. The next step is
+[coarse profiling of the unchanged installed stage path](stage-profiling.md),
+before choosing further optimizations. Automatic preparation inside normal
+install remains separate integration work.

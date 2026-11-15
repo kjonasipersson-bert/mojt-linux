@@ -84,8 +84,12 @@ not reported. This one comparison saves about 58 s (20%); roughly four minutes
 of preparation remains unacceptable, and remaining phase costs are not yet
 individually measured.
 
-Next separate repeated integrity scans from necessary construction and integrate
-preparation into ordinary install. Keep explicit `--verify` audits available,
+Next [profile the installed stage phases](stage-profiling.md), as requested by
+the owner, to identify the remaining cost before changing verification policy.
+The standalone diagnostic observes unchanged installed code and can prepare
+retained E using running F and the existing warm payload, without a new System
+package or reboot. Then separate repeated integrity scans from necessary
+construction and integrate preparation into ordinary install. Keep explicit `--verify` audits available,
 required metadata/compatibility checks and safe atomic publication intact, and
 the accepted Base/System independence and selection boundary explicit.
 This work does not authorize sweeping writable-root or service/state changes.
