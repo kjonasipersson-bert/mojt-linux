@@ -134,6 +134,12 @@ class ManualReader(unittest.TestCase):
                  mock.patch('mpm_nix_binary.NixBinaryAdapter.identity',side_effect=lambda r:r['identity']):
                 paths,aliases=manuals.manual_paths(base)
                 self.assertEqual(paths,[str(active/'share/man'),str(doc/'share/man')]);self.assertEqual(aliases,{'neovim':'nvim'})
+                # A dependency manual must not outrank a directly active output.
+                a['identity']['closure'].append(dict(path=str(inactive)))
+                d['identity']['closure'].append(dict(path=str(inactive)))
+                paths,_=manuals.manual_paths(base)
+                self.assertEqual(paths,[str(active/'share/man'),str(doc/'share/man'),str(inactive/'share/man')])
+                a['identity']['closure'].pop();d['identity']['closure'].pop()
                 (doc/'share/man').rmdir();(doc/'share/man').symlink_to(inactive/'share/man')
                 with self.assertRaisesRegex(ValueError,'escapes'):manuals.manual_paths(base)
 

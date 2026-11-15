@@ -18,7 +18,7 @@ def manual_paths(root):
     from mpm_nix_binary import NixBinaryAdapter
     selected=profiles.current(root)
     if selected is None:return [],{}
-    d=selected['record']['description'];paths=[];aliases={}
+    d=selected['record']['description'];paths=[];primary=[];aliases={}
     objects={profiles.planning.key(row['reference']):row['reference'] for row in d['objects']}
     parser=NixBinaryAdapter('/nonexecuted/nix-store')
     for role,ref in sorted(d['active'].items()):
@@ -35,7 +35,10 @@ def manual_paths(root):
                 if not point.is_dir():continue
                 resolved=point.resolve();require(any(str(resolved)==p or str(resolved).startswith(p+'/') for p in allowed),'manual directory escapes its exact closure')
                 if str(point) not in paths:paths.append(str(point))
-    return paths,aliases
+                if name==i['output'] and str(point) not in primary:primary.append(str(point))
+    # Direct active/manual outputs outrank incidental dependency manuals from
+    # another active application's closure.
+    return [*primary,*(path for path in paths if path not in primary)],aliases
 
 
 def environment(root, inherited):
