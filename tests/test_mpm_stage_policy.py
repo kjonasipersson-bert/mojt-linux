@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import sqlite3
 import sys
 import tempfile
 import unittest
@@ -88,34 +89,79 @@ class PolicyTests(unittest.TestCase):
                 if verify:args+=['--verify']
                 self.assertEqual(update.main('system',args),0);self.assertIs(stage.call_args.kwargs['verify'],verify)
 
-    def test_nix_inspection_preserves_metadata_errors_and_never_scrubs_content(self):
+    def test_nix_queries_reuse_despite_database_writes_and_bin_alias(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root=Path(temporary);output=root/'output';(output/'bin').mkdir(parents=True)
-            command=output/'bin/tool';command.write_text('fixture');command.chmod(0o755)
+            root=Path(temporary);output=root/'output';commands=root/'commands';commands.mkdir()
+            output.mkdir();(output/'bin').symlink_to(commands)
+            command=commands/'tool';command.write_text('fixture');command.chmod(0o755)
             retained=root/'retained/nix';retained.mkdir(parents=True);(retained/output.name).symlink_to(output)
-            database=root/'db';database.mkdir();(database/'db.sqlite').write_bytes(b'initial')
-            identity=dict(output=str(output),closure=[dict(path=str(output),nar_hash='hash')],commands=['tool'])
-            def run(args):
-                self.assertNotIn('--verify-path',args)
-                return str(output) if '--requisites' in args else 'hash'
-            runner=mock.Mock(side_effect=run);adapter=nix.NixBootAdapter(sys.executable,runner)
+            dependency=root/'dependency';dependency.mkdir()
+            identity=dict(output=str(output),closure=[dict(path=str(p),nar_hash='hash') for p in sorted([output,dependency])],commands=['tool'])
+            with sqlite3.connect(root/'db.sqlite') as database:
+                database.execute('PRAGMA journal_mode=WAL');database.execute('CREATE TABLE changes (n)')
+                def run(args):
+                    self.assertNotIn('--verify-path',args)
+                    database.execute('INSERT INTO changes VALUES (1)');database.commit()
+                    return '\n'.join(row['path'] for row in identity['closure']) if '--requisites' in args else 'hash\nhash'
+                runner=mock.Mock(side_effect=run);adapter=nix.NixBootAdapter(sys.executable,runner)
+                adapter.identity=lambda ref:identity
+                with mock.patch.object(nix,'store_path',side_effect=Path):
+                    with io.preparation():
+                        # General metadata-cache saturation must not crowd out provider queries.
+                        for n in range(512):io.preparation_cached(('fixture',n),[],lambda:True,cost=1)
+                        for unused in range(7):adapter.inspect({},root)
+                        self.assertEqual(runner.call_count,2)
+                        database.execute('INSERT INTO changes VALUES (2)');database.commit()
+                        adapter.inspect({},root);self.assertEqual(runner.call_count,2)
+                        command.chmod(0o644)
+                        with self.assertRaisesRegex(ValueError,'command inventory'):adapter.inspect({},root)
+                        command.chmod(0o755);dependency.rmdir()
+                        with self.assertRaisesRegex(ValueError,'object missing'):adapter.inspect({},root)
+                        dependency.mkdir()
+                        (retained/output.name).unlink();(retained/output.name).symlink_to(root/'elsewhere')
+                        with self.assertRaisesRegex(ValueError,'retention conflict'):adapter.inspect({},root)
+                        (retained/output.name).unlink();(retained/output.name).symlink_to(output)
+                    with io.preparation():adapter.inspect({},root)
+                    self.assertEqual(runner.call_count,4)  # A new stage queries again.
+                    with io.preparation(verify=True):
+                        adapter.inspect({},root);adapter.inspect({},root)
+                    self.assertEqual(runner.call_count,8)
+                    adapter.inspect({},root);adapter.inspect({},root)
+                    self.assertEqual(runner.call_count,12)  # No scope means no reuse.
+
+    def test_nix_query_failures_identity_changes_and_helper_rebinding(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);output=root/'output';output.mkdir()
+            retained=root/'retained/nix';retained.mkdir(parents=True);(retained/output.name).symlink_to(output)
+            helper=root/'helper';helper.symlink_to(Path(sys.executable).resolve())
+            identity=dict(output=str(output),closure=[dict(path=str(output),nar_hash='hash')],commands=[])
+            runner=mock.Mock(return_value='bad');adapter=nix.NixBootAdapter(helper,runner)
             adapter.identity=lambda ref:identity
-            with mock.patch.object(nix,'NIX_DATABASE',database),mock.patch.object(nix,'store_path',side_effect=Path),io.preparation():
-                adapter.inspect({},root);adapter.inspect({},root);self.assertEqual(runner.call_count,2)
-                (database/'db.sqlite').write_bytes(b'changed')
-                adapter.inspect({},root);self.assertEqual(runner.call_count,4)
-                (database/'db.sqlite').write_bytes(b'force fresh query')
-                def checkpoint(args):
-                    (database/'db.sqlite').write_bytes(os.urandom(16))
-                    return run(args)
-                runner.side_effect=checkpoint
-                adapter.inspect({},root);adapter.inspect({},root)
-                self.assertEqual(runner.call_count,8)  # Changing DB status refuses reuse, not the valid query.
-                (database/'db.sqlite').write_bytes(b'changed again')
-                runner.side_effect=lambda args:'bad'
-                with self.assertRaisesRegex(ValueError,'closure differs'):adapter.inspect({},root)
-                (retained/output.name).unlink();(retained/output.name).symlink_to(root/'elsewhere')
-                with self.assertRaisesRegex(ValueError,'retention conflict'):adapter.inspect({},root)
+            with mock.patch.object(nix,'store_path',side_effect=Path),io.preparation():
+                for unused in range(2):
+                    with self.assertRaisesRegex(ValueError,'closure differs'):adapter.inspect({},root)
+                self.assertEqual(runner.call_count,2)  # Failed checks are never remembered.
+                runner.side_effect=lambda args:str(output) if '--requisites' in args else 'hash'
+                adapter.inspect({},root);adapter.inspect({},root);self.assertEqual(runner.call_count,4)
+                identity['closure'][0]['nar_hash']='different'
+                with self.assertRaisesRegex(ValueError,'registered hashes'):adapter.inspect({},root)
+                identity['closure'][0]['nar_hash']='hash'
+                helper.unlink();helper.symlink_to('/missing-nix-helper')
+                with self.assertRaisesRegex(ValueError,'helper binding'):adapter.inspect({},root)
+
+    def test_provider_query_cache_is_bounded_and_resets_after_failure(self):
+        check=mock.Mock(return_value=True)
+        with self.assertRaisesRegex(ValueError,'stop'):
+            with io.preparation():
+                io.preparation_provider_check('large',check,cost=32*1024**2+1)
+                io.preparation_provider_check('large',check,cost=32*1024**2+1)
+                self.assertEqual(check.call_count,2)
+                io.preparation_provider_check('small',check,cost=1)
+                io.preparation_provider_check('small',check,cost=1)
+                self.assertEqual(check.call_count,3)
+                raise ValueError('stop')
+        with io.preparation():io.preparation_provider_check('small',check,cost=1)
+        self.assertEqual(check.call_count,4)
 
     def test_retained_proofs_reuse_exact_artifacts_only_and_full_mode_measures_again(self):
         with tempfile.TemporaryDirectory() as temporary:

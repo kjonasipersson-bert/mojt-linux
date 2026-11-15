@@ -102,9 +102,14 @@ elapsed time than the 233.777 s profile. Both operations exited 0 with no Nix
 `--verify-path` calls and unchanged boot choice; warm payload reuse took 0.285 s.
 Nix metadata queries remain at 253 calls of each type (13.197 s total), and link
 checks take 10.767 s. Query-cache misses are not diagnosed by the summary.
-Repeated metadata checks remain the next measured target; installed-tooling
-delivery and integration into ordinary install remain open. No new boot is
-claimed by this private-code test.
+The final performance follow-up caches successful exact Nix provider queries
+once per ordinary stage, independently of database file status and the general
+metadata cache. Live root/helper bindings, closure existence and command
+inventory remain checked each time; explicit audits keep their full path.
+This follow-up has regression coverage but no new SSD measurement. Performance
+tuning stops here before returning to the roadmap. Installed-tooling delivery
+and integration into ordinary install remain open. No new boot is claimed by
+this private-code test, and its pinned helper predates the query-cache follow-up.
 Keep explicit `--verify` audits available,
 required metadata/compatibility checks and safe atomic publication intact, and
 the accepted Base/System independence and selection boundary explicit.

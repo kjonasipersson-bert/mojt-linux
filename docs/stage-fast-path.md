@@ -45,12 +45,18 @@ atomic publication. A full byte audit is not silently claimed by normal stage.
   uses it instead of `--verify-path`. Its base Ports adapter and inherited full
   `verify` implementation are unchanged. Providers lacking inspection retain
   their full verifier as a conservative fallback.
-- Unchanged provider metadata checks are reusable for the exact reference,
-  helper and installation. Dependencies include the closure roots/bin directories
-  and Nix database/WAL status. The GC-root/helper binding is checked on every
-  call. Query failures or changed closure/registered hashes remain errors.
-  A database checkpoint during a valid query prevents caching that result;
-  the next phase queries it again instead of treating a cache update as failure.
+- Successful Nix closure/hash queries are reusable for the exact reference,
+  helper and installation during one ordinary stage. A separate bounded cache
+  (512 entries / 32 MiB charged identity data) is independent of general metadata
+  cache occupancy, symlink aliases and database/WAL file status. A database write
+  does not itself invalidate the already checked immutable provider identity.
+  The retention-root/helper bindings, existence of every closure directory and
+  current command inventory are checked on every call, including cache hits.
+  Query failures are not cached. New or changed identities query again; the
+  cache is discarded on return or failure. Outside stage, or under `--verify`,
+  queries are not reused; the full verifier remains unchanged. This deliberately
+  reuses a check from earlier in the same operation, without claiming a fresh
+  database read or content audit at every phase.
 - Parsed metadata, metadata-only Base/System/Kernel object checks and repeated
   code hashes are reusable only while their dependency signatures match. Each
   lookup restats files and ancestors, including inode/device, owner, permissions,
@@ -89,7 +95,13 @@ profile: 71.6% shorter warm elapsed time. Both calls exited 0 with zero
 `--verify-path` commands. Warm payload reuse took 0.285 s. Nix metadata queries
 still ran 253 times each; the intended query cache did not reduce that count on
 this machine, and the summary does not identify the cache guard responsible.
-Repeated metadata/link checks remain measured optimization targets.
+The final performance follow-up replaces that stat-dependent provider cache
+with the operation-local query cache above. Regression tests exercise seven
+passes with two queries total despite real SQLite WAL writes, a symlinked bin
+directory and a full general metadata cache. They also cover missing objects,
+root/helper rebinding, changed identities, query errors, scope reset and explicit
+audit bypass. No new SSD timing is claimed for this follow-up. Further performance
+work is deferred so development can return to the roadmap.
 
 The [short SSD test](stage-fast-hardware-test.md) runs the reviewed new manager
 in a private complete code bundle using F's installed interpreter/runtime. It prepares retained alternatives
@@ -97,3 +109,6 @@ without installing another System, changing next boot or rebooting. This is an
 explicit maintenance test of new code, not a claim that installed F already
 contains it. The ordinary installed profiler remains available for final
 measurement after the normal tooling update.
+The pinned short-test helper intentionally retains the previously measured
+revision; it does not deliver the final query-cache follow-up. Preserve its
+existing evidence rather than rerunning it to test newer code.

@@ -9,7 +9,6 @@ from mpm_nix_binary import NixBinaryAdapter, store_path
 from mpm_ports_profile import require
 from mpm_transaction import protected_directory, sync_directory
 import mpm_native_io as io
-NIX_DATABASE=Path('/nix/var/nix/db')
 
 
 class NixBootAdapter(NixBinaryAdapter):
@@ -18,27 +17,25 @@ class NixBootAdapter(NixBinaryAdapter):
         i=self.identity(ref);paths=[row['path'] for row in i['closure']]
         gcroot=Path(root)/'retained/nix'/store_path(i['output']).name
         def check():
-            protected_directory(gcroot.parent,label='Nix retention')
-            require(gcroot.is_symlink() and os.readlink(gcroot)==i['output'] and Path(i['output']).is_dir(),
-                    'Nix output/root missing')
             require(sorted(self.runner([self.binary,'--query','--requisites',i['output']]).splitlines())==paths,
                     'Nix closure differs from accepted identity')
             require(self.runner([self.binary,'--query','--hash',*paths]).splitlines()==[r['nar_hash'] for r in i['closure']],
                     'Nix registered hashes differ')
-            directory=Path(i['output'])/'bin'
-            commands=sorted(p.name for p in directory.iterdir() if p.is_file() and os.access(p,os.X_OK)) if directory.is_dir() else []
-            require(commands==i['commands'],'Nix command inventory differs')
             return True
         # A symlink is intentionally checked every time; its target belongs to
         # the exact immutable closure. Cache only after rechecking that binding.
         protected_directory(gcroot.parent,label='Nix retention')
         require(gcroot.is_symlink() and os.readlink(gcroot)==i['output'],'Nix retention conflict')
-        key=('nix-metadata',str(root),self.binary,tuple((r['path'],r['nar_hash']) for r in i['closure']),tuple(i['commands']),i['output'])
-        database=NIX_DATABASE
         require(str(Path(self.binary).resolve())==self.executable,'Nix helper binding changed')
-        return io.preparation_cached(key,[Path(self.executable),*map(Path,paths),
-            *(Path(path)/'bin' for path in paths),database/'db.sqlite',database/'db.sqlite-wal'],check,
-            cost=1024+sum(len(r['path'])+len(r['nar_hash']) for r in i['closure']),require_stable=False)
+        require(Path(self.executable).is_file() and os.access(self.executable,os.X_OK),'Nix helper missing')
+        require(all(Path(path).is_dir() for path in paths),'Nix closure object missing')
+        directory=Path(i['output'])/'bin'
+        commands=sorted(p.name for p in directory.iterdir() if p.is_file() and os.access(p,os.X_OK)) if directory.is_dir() else []
+        require(commands==i['commands'],'Nix command inventory differs')
+        key=(str(Path(root).absolute()),self.binary,self.executable,
+             tuple((r['path'],r['nar_hash']) for r in i['closure']),tuple(i['commands']),i['output'])
+        return io.preparation_provider_check(key,check,
+            cost=1024+sum(len(r['path'])+len(r['nar_hash']) for r in i['closure']))
 
     def install(self,ref,root):
         """Retain System binaries without the optional full provider scrub.

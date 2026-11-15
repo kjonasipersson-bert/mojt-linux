@@ -25,7 +25,7 @@ _PREPARATION = ContextVar('mpm_preparation',default=None)
 @contextmanager
 def preparation(*, verify=False):
     """One stage call; no durable cache and no reuse of mutable state checks."""
-    token=_PREPARATION.set(dict(verify=verify,values={},size=0))
+    token=_PREPARATION.set(dict(verify=verify,values={},size=0,providers={},provider_size=0))
     try:yield
     finally:_PREPARATION.reset(token)
 
@@ -34,6 +34,22 @@ def preparation_verify():
     """Other callers keep their existing full-verification default."""
     active=_PREPARATION.get()
     return True if active is None else active['verify']
+
+
+def preparation_provider_check(key, check, *, cost):
+    """Remember successful immutable-provider queries for one ordinary stage.
+
+    Callers must recheck live roots, object existence and helper bindings before
+    each lookup. Database file status is deliberately not a dependency: this is
+    a checked identity within one call, not a fresh database or byte audit.
+    """
+    active=_PREPARATION.get()
+    if active is None or active['verify']:return check()
+    if key in active['providers']:return True
+    result=check()
+    if result is True and len(active['providers'])<512 and active['provider_size']+cost<=32*1024**2:
+        active['providers'][key]=True;active['provider_size']+=cost
+    return result
 
 
 def preparation_cached(key, paths, read, *, cost=None, require_stable=True):
