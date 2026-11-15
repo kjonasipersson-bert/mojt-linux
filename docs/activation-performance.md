@@ -124,5 +124,14 @@ System generations. It is not an isolated payload benchmark. Roughly four
 minutes remains unacceptable; remove repeated broad content audits from ordinary
 preparation while preserving required metadata, compatibility, safe construction
 and atomic publication checks. The current measurements do not attribute every
-remaining second to those audits. Automatic preparation inside normal install
-remains separate integration work.
+remaining second to those audits. The subsequent
+[owner phase profile](stage-profiling.md#owner-phase-profile--2026-11-15)
+measured 233.777 s total: 759 Nix commands used 99.074 s, including 253 full
+`--verify-path` calls at 85.721 s. File hashing alone used another 33.238 s over
+52,487 calls. The planner ran five times and some identical tree scans recur;
+the payload cache itself took 0.455 s. These results prioritize repeated provider
+and retained-content checks before further payload construction work. The Nix
+breakdown is included in its subtotal; inclusive phase durations must not be
+added to their own-time entries. No audit-policy change is implemented by the
+profiling diagnostic. Automatic preparation inside normal install remains
+separate integration work.
