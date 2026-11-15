@@ -106,8 +106,13 @@ The final performance follow-up caches successful exact Nix provider queries
 once per ordinary stage, independently of database file status and the general
 metadata cache. Live root/helper bindings, closure existence and command
 inventory remain checked each time; explicit audits keep their full path.
-This follow-up has regression coverage but no new SSD measurement. Performance
-tuning stops here before returning to the roadmap. Installed-tooling delivery
+The [final owner measurement](stage-fast-hardware-test.md#final-nix-query-cache-measurement--2026-11-15)
+passed: warm stage 55.171 s wall / 54.713 s CPU, with 72 Nix query commands in
+1.887 s. Cold stage took 110.759 s wall / 109.951 s CPU. Both calls exited 0;
+the helper guards exact warm reuse, unchanged running/menu state and zero full
+Nix scrubs. Warm elapsed time fell a further 16.9%, or 76.4% from the original
+233.777 s profile. Performance tuning stops here before returning to the roadmap.
+Installed-tooling delivery
 and integration into ordinary install remain open. No new boot is claimed by
 this private-code test. A separately pinned follow-up measurement uses
 `/var/lib/mojt/stage-nix-57` and leaves the previous evidence intact.

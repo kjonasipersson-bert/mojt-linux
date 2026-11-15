@@ -100,8 +100,13 @@ with the operation-local query cache above. Regression tests exercise seven
 passes with two queries total despite real SQLite WAL writes, a symlinked bin
 directory and a full general metadata cache. They also cover missing objects,
 root/helper rebinding, changed identities, query errors, scope reset and explicit
-audit bypass. No new SSD timing is claimed for this follow-up. Further performance
-work is deferred so development can return to the roadmap.
+audit bypass. The [final SSD measurement](stage-fast-hardware-test.md#final-nix-query-cache-measurement--2026-11-15)
+confirms 36 queries of each type (72 commands, 1.887 s) and warm stage at
+55.171 s wall / 54.713 s CPU, compared with 66.369 s before this last fix.
+Both measured calls exited 0, with exact warm reuse and unchanged selection
+guarded by the helper. This is a 16.9% further reduction; no new installed-tooling
+delivery or physical boot is claimed. Further performance work is deferred so
+development can return to the roadmap.
 
 The [short SSD test](stage-fast-hardware-test.md) runs the reviewed new manager
 in a private complete code bundle using F's installed interpreter/runtime. It prepares retained alternatives

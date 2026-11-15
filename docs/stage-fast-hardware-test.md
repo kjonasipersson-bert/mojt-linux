@@ -133,3 +133,38 @@ already cheap on the warm path.
 This establishes bounded private-code preparation/performance only. It does not
 claim a new physical boot or replacement of installed F tooling. No further
 reboot is needed to interpret this result.
+
+## Final Nix query-cache measurement — 2026-11-15
+
+The owner returned `summary-nix57.txt` (SHA256
+`120b4fb666a3e8783cc3c7314fd7b4567841b05d9af105a32f95db2f66a2f54b`)
+for functional revision `47001725` using delivery `8d7470b3`. All three CI jobs
+passed on that delivery (run 43718894439). Both measured MPM calls exited 0.
+
+| Measurement | Before final fix | After final fix |
+| --- | ---: | ---: |
+| Cold stage, wall / CPU seconds | 134.812 / 125.894 | 110.759 / 109.951 |
+| Warm stage, wall / CPU seconds | 66.369 / 65.992 | 55.171 / 54.713 |
+| Warm Nix query commands | 506 | 72 |
+| Warm Nix query wall seconds | 13.197 | 1.887 |
+| Warm payload reuse, wall seconds | 0.285 | 0.287 |
+
+Warm stage is 11.198 s (16.9%) shorter than the previous private-code run and
+76.4% shorter than the original 233.777 s installed profile. Nix query time
+dropped 85.7%; both cold and warm runs made 36 hash and 36 requisite queries,
+with zero `--verify-path` calls. This confirms operation-local query reuse on
+the owner's SSD. Cold payload work remains 56.985 s, including 43.341 s of gzip
+compression. Warm payload reuse remains cheap.
+
+As above, the combined summary is published only after both samples pass the
+helper's fresh-deployment, policy, exact warm-key reuse, unchanged running/menu
+and final-F checks. This delivery additionally requires reduced, equal positive
+query counts. The imported evidence is the summary rather than the complete
+JSON/log bundle. Timings remain an engineering comparison, not a controlled
+cold-cache experiment; no new installed-tooling delivery or physical boot is
+claimed.
+
+Remaining warm own costs include link checks at 10.864 s over seven calls,
+transition preparation at 7.438 s over five calls, and JSON encoding at 6.154 s.
+They are recorded for context; further performance tuning is deferred. This
+completes the owner's final performance increment before returning to the roadmap.

@@ -144,3 +144,12 @@ Both metadata query types still ran 253 times; the cause of missed reuse is not
 established by this summary. This tests private code and unchanged boot choice,
 not new installed tooling or another physical boot. Automatic preparation inside
 normal install remains separate work.
+
+The [final Nix query-cache measurement](stage-fast-hardware-test.md#final-nix-query-cache-measurement--2026-11-15)
+then measured 110.759 s cold and 55.171 s warm (54.713 s warm CPU), with 36
+queries of each type: 72 Nix commands in 1.887 s instead of 506 in 13.197 s.
+Warm stage is a further 16.9% shorter, or 76.4% shorter than the original
+233.777 s profile. Both MPM calls exited 0 and the delivery guards exact payload
+reuse, unchanged running/menu state and zero `--verify-path` calls. These remain
+private-code preparation measurements. The owner's performance increment is
+complete; further tuning is deferred in favor of the roadmap.
