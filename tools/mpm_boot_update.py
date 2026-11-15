@@ -20,6 +20,7 @@ import mpm_boot_v2 as model
 import mpm_system as system
 import mpm_system_transition as transition
 import mpm_native_io as io
+import mpm_ui as ui
 
 require = artifact.require
 
@@ -77,7 +78,9 @@ def _stage(root, area, identifier, *, bounds=None, adapters=None, runtime=None,
     require(os.geteuid() == 0,'boot updates require an administrator')
     started = time.monotonic()
     print('Checking exact '+area+' candidate and compatibility...',file=sys.stderr,flush=True)
-    root = system.target(root);plan = prepare(root,area,identifier,bounds=bounds,adapters=adapters)
+    root = system.target(root)
+    with ui.phase('Check candidate and compatibility'):
+        plan = prepare(root,area,identifier,bounds=bounds,adapters=adapters)
     print('Candidate checks: %.2f s' % (time.monotonic()-started),file=sys.stderr,flush=True)
     require(expected_preflight is None or plan['id'] == expected_preflight,'boot inputs changed after approval; repeat preview')
     p = plan['description'];require(p['checks']['compatible'],'boot update blocked: '+'; '.join(p['checks']['errors']))
@@ -98,7 +101,8 @@ def _stage(root, area, identifier, *, bounds=None, adapters=None, runtime=None,
         ref,interpreter = None,None
     else:
         ref,interpreter = runtime_reference(root,runtime,adapters)
-        measured = constructor.describe_runtime(root,ref,interpreter,adapters=adapters)
+        with ui.phase('Inspect boot runtime'):
+            measured = constructor.describe_runtime(root,ref,interpreter,adapters=adapters)
     require(busybox is not None or runtime is not None,'offline construction requires an explicit static BusyBox')
     busybox = Path(busybox) if busybox is not None else runtime.system_bin.parent/'busybox'
     require(busybox == busybox.absolute() and busybox == busybox.resolve(),'canonical static BusyBox required')
@@ -120,7 +124,8 @@ def _stage(root, area, identifier, *, bounds=None, adapters=None, runtime=None,
     print('Preparing exact '+area+' deployment'+(' with full content verification' if io.preparation_verify() else '')+'...',file=sys.stderr,flush=True)
     with tempfile.TemporaryDirectory(prefix='mojt-boot-update-') as temporary:
         work = Path(temporary)
-        contract = handover.prepare(root,source,plan,adapters=adapters,tar=tar)
+        with ui.phase('Prepare Base and machine handover'):
+            contract = handover.prepare(root,source,plan,adapters=adapters,tar=tar)
         result = selection.stage(root,source,runtime_directory,busybox,work/'construction',
                                  bounds=p['kernel_bounds'],adapters=adapters,contract=contract,runtime_value=measured)
     payload = result['initramfs_payload']
@@ -141,7 +146,9 @@ def upgrade(root, area, identifier, *, expected_selected=None, dry_run=False, ye
     # composes several existing low-level operations.
     preview = stage(root,area,identifier,dry_run=True,verify=verify,**options)
     require(preview['selected'] == selected,'selection changed during update preview')
-    if dry_run:return dict(preview,action='activate',selection_would_change=preview['deployment'] != selected)
+    if dry_run:
+        show_preview(root,area,identifier,preview)
+        return dict(preview,action='activate',selection_would_change=preview['deployment'] != selected)
     if preview['deployment'] == selected:return dict(preview,dry_run=False,action='no-change',selection_would_change=False)
     show_preview(root,area,identifier,preview)
     if not yes:require(input('Select this exact '+area+' update for NEXT boot? [y/N] ').strip().lower() in ('y','yes'),'activation cancelled')
@@ -160,7 +167,7 @@ def upgrade(root, area, identifier, *, expected_selected=None, dry_run=False, ye
                 selection_changed=chosen['changed'],selected=chosen['selected'],previous=chosen['previous'])
 
 
-def activate(root, area, identifier, *, expected_selected=None, dry_run=False, yes=False, verify=False):
+def activate(root, area, identifier, *, expected_selected=None, dry_run=False, yes=False, verify=False, running_record=None):
     """Select an already admitted entry; never construct or audit content by default."""
     require(os.geteuid() == 0,'boot activation requires an administrator')
     root = system.target(root);model.identity(identifier)
@@ -181,9 +188,8 @@ def activate(root, area, identifier, *, expected_selected=None, dry_run=False, y
         candidate = matches[deployment]['record']['description']['inputs']['description'][area]
     preview = dict(area=area,artifact=identifier,release=candidate.get('generation',candidate.get('release')),
                    selected=selected,deployment=deployment)
-    if not dry_run and deployment != selected:show_preview(root,area,identifier,preview)
     chosen = selection.select(root,deployment,area=area,expected_selected=selected,
-                              dry_run=dry_run,yes=yes,verify=verify)
+                              dry_run=dry_run,yes=yes,verify=verify,running_record=running_record)
     return dict(preview | chosen,action='activate',selection_changed=chosen['changed'],
                 selection_would_change=deployment != selected,running_changed=False,persistent_state_changed=False)
 
@@ -191,10 +197,17 @@ def activate(root, area, identifier, *, expected_selected=None, dry_run=False, y
 def choose_artifact(root, area, *, prepared=False):
     """Metadata-only installed inventory; compatibility is checked after choice."""
     if prepared:
+        value,current_entries,_ = selection.current(root)
+        require(value is not None,'native-v2 initial selection is missing')
+        before=current_entries[value['description']['selected']]['record']['description']['inputs']['description']
         entries,_ = selection.available(root)
+        preserved=[key for key in ('base','system','kernel','platform','boot','firmware','state_requirements') if key!=area]
+        entries={key:item for key,item in entries.items() if all(item['record']['description']['inputs']['description'][field]==before[field] for field in preserved)}
         candidates = {item['record']['description']['inputs']['description'][area]['artifact']:
                       item['record']['description']['inputs']['description'][area] for item in entries.values()}
-        rows = [dict(artifact=key,version=dict(release_id=row.get('generation',row.get('release')))) for key,row in sorted(candidates.items())]
+        installed=system.status(root)['installed'] if area=='system' else []
+        rows = [dict(artifact=key,label=row.get('generation',row.get('release')),
+            version=next((r['version'] for r in installed if r['artifact']==key),dict(release_id=row.get('generation',row.get('release'))))) for key,row in sorted(candidates.items())]
     elif area == 'kernel':
         import mpm_kernel
         rows = mpm_kernel.status(root/'kernel')['installed']
@@ -206,7 +219,7 @@ def choose_artifact(root, area, *, prepared=False):
     require(rows,'no '+('prepared' if prepared else 'installed')+' '+area+' candidates; '+('run stage first' if prepared else 'install content first'))
     print(('Prepared' if prepared else 'Installed')+' '+area+' candidates:',file=sys.stderr)
     for number,row in enumerate(rows,1):
-        print('  %d. %s / %s' % (number,row['version']['release_id'],row['artifact']),file=sys.stderr)
+        print('  %d. %s [%s]' % (number,ui.name(row),ui.short(row['artifact'])),file=sys.stderr)
     while True:
         answer = input('Candidate number, or q to cancel: ').strip()
         require(answer.lower() != 'q','candidate selection cancelled')
@@ -216,10 +229,12 @@ def choose_artifact(root, area, *, prepared=False):
 
 
 def show_preview(root, area, identifier, preview):
-    print('Target: '+str(root)+'\nArea: '+area+'\nCandidate: '+str(preview.get('release'))+
-          ' / '+identifier+'\nCurrent next boot: '+preview['selected']+
-          '\nCandidate for NEXT boot.'+
-          '\nRunning system unchanged. Previous deployment retained. No automatic reboot.',file=sys.stderr,flush=True)
+    from mpm_boot_status import description
+    value,entries,unused=selection.current(root)
+    before=description(entries[preview['selected']]['record']);after=copy.deepcopy(before)
+    after[area]['artifact']=identifier
+    after[area]['generation' if area=='system' else 'release']=preview['release']
+    ui.input_preview(root,before,after,before_id=preview['selected'],after_id=preview.get('deployment'))
 
 
 def main(area, argv, *, runtime=None):
@@ -251,11 +266,14 @@ def main(area, argv, *, runtime=None):
         require(args.disk_root is not None or runtime is not None,'specify --disk-root for an offline target')
         root = args.disk_root or runtime.disk
         live = runtime if args.disk_root is None else None
+        from mpm_boot_status import read_running
+        running=read_running(live) if live is not None else None
         if live is not None:require(os.path.ismount(root),'running installation disk is unavailable')
         require(selection.present(root),'this operation requires native-v2 boot selection')
         if args.action in ('select','rollback'):
             result = selection.select(root,getattr(args,'deployment',None),area=area,expected_selected=args.expected_selected,
-                rollback=args.action == 'rollback',dry_run=args.dry_run,yes=args.yes,verify=args.verify)
+                rollback=args.action == 'rollback',dry_run=args.dry_run,yes=args.yes,verify=args.verify,
+                running_record=running)
         else:
             if args.artifact is None:
                 require(not args.yes and not args.json and sys.stdin.isatty(),
@@ -263,7 +281,7 @@ def main(area, argv, *, runtime=None):
                 args.artifact = choose_artifact(root,area,prepared=True) if args.action == 'activate' else choose_artifact(root,area)
             if args.action == 'activate':
                 result = activate(root,area,args.artifact,expected_selected=args.expected_selected,
-                                  verify=args.verify,dry_run=args.dry_run,yes=args.yes)
+                                  verify=args.verify,dry_run=args.dry_run,yes=args.yes,running_record=running)
             else:
                 from mpm_system_cli import ProviderAdapters
                 adapters = ProviderAdapters(live)
@@ -276,13 +294,14 @@ def main(area, argv, *, runtime=None):
                     result['action'] = 'upgrade' if result['action'] != 'no-change' else 'no-change'
         if args.json:print(json.dumps(result,sort_keys=True,indent=2))
         else:
-            if result.get('artifact'):print('Candidate:',result['release'],'/',result['artifact'])
+            if result.get('artifact'):print('Candidate:',result['release'],'['+ui.short(result['artifact'])+']')
             if args.dry_run:
                 print('Preview only; no content or boot selection written.')
                 if result.get('action') == 'no-change':print('No changes.')
             elif not result['changed']:print('No changes.')
-            elif args.action == 'stage':print('Prepared boot:',result['deployment'],'\nNext boot unchanged.')
-            else:print('Next boot:',result['selected'],'\nRunning system unchanged. Reboot when ready.')
+            elif args.action == 'stage':print('Prepared boot:',result.get('release',''),'['+ui.short(result['deployment'])+']\nNext boot unchanged.')
+            else:print('Next boot:',', '.join(k+' '+v for k,v in result.get('next_boot',{}).items()) or result.get('release',''),
+                       '['+ui.short(result['selected'])+']\nRunning system unchanged. Reboot when ready.')
         return 0
     except (OSError,ValueError,KeyError,TypeError,RecursionError,EOFError,subprocess.CalledProcessError,tarfile.TarError) as error:
         print('mpm '+area+': '+str(error),file=sys.stderr)

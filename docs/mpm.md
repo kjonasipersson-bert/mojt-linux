@@ -180,10 +180,13 @@ a separate mandatory end-user command is not an architectural requirement. Pure
 content import into an incomplete/offline target may finish before boot context
 exists and must report that distinction accurately.
 
-**Current implementation limit:** native content installation still leaves boot
-preparation separate. The following `stage`/`activate` description documents that
-implemented path, not a permanent three-command requirement. Automatic preparation
-inside normal installation is a next integration step, not already implemented.
+**Implemented:** normal public `mpm system install` on a live native-v2 target
+finishes boot preparation using the selected Base/Kernel context. It does not
+select the entry or reboot. `--content-only`, explicit offline targets and the
+low-level installation API remain content imports. A preparation failure returns
+failure with content retained and selection unchanged; repeating install retries
+preparation even if the content is already present. Base and Kernel install
+integration remains separate; their explicit stage/activate flow still applies.
 Reusable initramfs work must key construction to actual early-boot inputs; a new
 System/Base selection alone should not force a rebuild of unchanged runtime and
 driver payloads. A Kernel change is an important input change, alongside required

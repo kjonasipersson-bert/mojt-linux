@@ -76,20 +76,9 @@ def _main(argv,*,runtime=None):
                                 tar=str(runtime.helpers/'tar') if runtime else 'tar')
     if args.json or args.action in ('install','stage','select','rollback'):print(json.dumps(result,indent=2,sort_keys=True))
     else:
-        print('Base on:',result['target'])
-        for label,key in (('Running','running'),('Next boot','selected')):
-            row=result[key]
-            print(label+':',f"{row['release']} / {row['artifact']} / deployment {row['deployment']}" if row['state']=='known' else 'unknown ('+row['reason']+')')
-            if row.get('retention')=='not-in-this-store':print('  Retention: not installed in this Base store')
-        print('Installed:')
-        for row in result['installed']:
-            print(' ',row['version']['release_id'],'/',row['artifact'],
-                  ', '.join(label for label in ('running','next_boot') if row[label]) or 'not selected')
-        if not result['installed']:print('  none')
-        if result['retained']:print('Retained, not installed:',', '.join(r['artifact'] for r in result['retained']))
-        if result['incomplete']:print('Incomplete:',', '.join(result['incomplete']))
-        print('Integrity:', 'verified now' if args.verify else 'verified at installation; --verify rechecks content')
-        print(result['compatibility'])
+        import mpm_ui as ui
+        result['staged_deployments']=ui.prepared_rows(root,'base',result['installed'])
+        ui.status('base',result)
     return 0
 
 

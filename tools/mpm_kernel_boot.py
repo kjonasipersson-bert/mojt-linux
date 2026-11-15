@@ -547,7 +547,18 @@ def main(argv=None):
                             rollback=args.action == "rollback", dry_run=args.dry_run, yes=args.yes)
         else:
             result = status(args.disk_root, baseline=args.baseline, running_record=args.running_record)
-        print(json.dumps(result, indent=2, sort_keys=True))
+        if args.action=='status' and not args.json and result['format']=='mpm-native-v2-status-v1':
+            import mpm_ui as ui
+            rows=result['installed'];running=result['running'];selected=result['selected_kernel']
+            def observed(artifact,release,deployment):
+                return dict(state='known' if artifact else 'unknown',artifact=artifact,release=release,deployment=deployment,
+                    reason='no authoritative boot record',version=next((r['version'] for r in rows if r['artifact']==artifact),{}))
+            view=dict(target=str(args.disk_root),installed=rows,incomplete=result['incomplete'],
+                running=observed(running['artifact'],running['release'],running['deployment']),
+                selected=observed(selected['artifact'],selected['release'],result['selected']) if selected else dict(state='unknown',reason='no selected deployment'),
+                staged_deployments=ui.prepared_rows(args.disk_root,'kernel',rows))
+            ui.status('kernel',view)
+        else:print(json.dumps(result, indent=2, sort_keys=True))
     except (OSError, ValueError, KeyError, TypeError, RecursionError, EOFError,
             tarfile.TarError, subprocess.CalledProcessError) as error:
         print("mpm kernel boot: " + str(error), file=sys.stderr)

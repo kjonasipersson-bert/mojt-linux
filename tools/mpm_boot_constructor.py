@@ -20,6 +20,7 @@ import mpm_kernel_boot as archive
 import mpm_native_io as io
 import mpm_system as system
 import mpm_transaction as tx
+import mpm_ui as ui
 from mpm_request_plan import reference
 from mpm_boot_v2 import record
 
@@ -346,7 +347,8 @@ def build(root, source, runtime_directory, busybox, work, *, bounds, adapters, h
         reused = False;key = None
         if reuse_payload:
             key = payload_key(source,runtime,handover=handover is not None)
-            raw,reused = cached_payload(root,key,make_payload)
+            with ui.phase('Build or reuse early-boot runtime and drivers'):
+                raw,reused = cached_payload(root,key,make_payload)
             overlay = work/'overlay';overlay.mkdir(mode=0o755);overlay.chmod(0o755)
             controls(overlay,source,runtime,trees,handover)
             (overlay/'init').write_text(script(source,runtime_d['interpreter'],handover=handover is not None),encoding='ascii');(overlay/'init').chmod(0o755)

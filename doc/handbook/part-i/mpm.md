@@ -41,8 +41,13 @@ mpm ports list
 mpm ports history
 ```
 
-Boot status distinguishes installed, running and next-boot identities. A prepared
-or selected deployment is not evidence that it has booted successfully.
+Boot status shows **Running**, **Next boot** and **Prepared boot entries** with
+readable generation/release names and short identities. Installed content without
+a boot entry is marked **not prepared**. Prepared entries include their Base and
+Kernel, and tags show which entry is running or selected. **Reboot: pending**
+means next boot differs from running. Offline inspection reports the running
+identity as unknown. A prepared or selected deployment is not evidence that it
+has booted successfully; names alone do not distinguish different builds.
 Use machine-readable output when you need complete records:
 
 ```sh
@@ -98,6 +103,37 @@ Search does not query the entire remote Nixpkgs collection. A name absent from
 this local view may still be discoverable by an explicit install against the
 pinned provider. The frontend imports available binary substitutes only;
 unavailable binaries fail without starting a source build.
+
+### Read a Port's manual
+
+```sh
+man git
+man nvim
+man neovim
+man ncdu
+manpath
+```
+
+The System's `man` and `manpath` wrappers add manuals for the active Ports
+versions at invocation, so an existing shell needs no new login. MPM imports
+separate provider manual outputs along with binaries when available. The
+upstream page can have a different name: Neovim provides `nvim(1)`; `man neovim`
+also works when its pinned package metadata declares that main program. MPM
+does not invent manuals for packages without one; use their `--help` or upstream
+documentation. An explicit `man -M DIRECTORY` still overrides the search path.
+
+After updating from an older System, repeat the existing install wishes to
+complete their manual dependencies, for example:
+
+```sh
+mpm ports install neovim git ncdu mdbook
+```
+
+This repair uses the same pinned source and keeps accepted exact binaries,
+active choices and version policies. It refuses a changed binary rather than
+silently upgrading. An unavailable manual substitute fails before changing the
+active profile. Previously accepted explicit catalog bundles are not silently
+supplemented; their producer must include the manual dependencies.
 
 ## 3.4. Choose a version policy
 
@@ -222,24 +258,41 @@ installed exact components can be reused. Installation retains the content;
 it leaves next boot and the running system unchanged. Exact imports do not
 create moving upgrade wishes.
 
-## 3.8. Prepare, activate and reboot
+On the running native-v2 installation, normal **System** installation also
+checks compatibility and prepares its boot entry using the current Base and
+Kernel. Long work prints phase starts and completion times on stderr, without
+estimated percentages. Next boot stays unchanged. If preparation fails, the
+command fails, reports that content is retained, and leaves the selection alone;
+fix the reported problem and repeat installation to retry preparation. `--verify`
+adds full content audits; it is not required for ordinary installation.
+
+Use `mpm system install ... --content-only` to import without preparation.
+Explicit `--disk-root` targets are offline and also remain content-only. Base and
+Kernel installation still require separate preparation in this implementation.
+A dry-run does not install, construct or promise a boot-ready entry.
+
+## 3.8. Activate and reboot
 
 For an installed compatible System generation on a native-v2 installation:
 
 ```sh
-mpm system stage --artifact sha256:FULL_SYSTEM_ID --dry-run
-mpm system stage --artifact sha256:FULL_SYSTEM_ID
 mpm system status
 mpm system activate --artifact sha256:FULL_SYSTEM_ID --dry-run
 mpm system activate --artifact sha256:FULL_SYSTEM_ID
 mpm system status
 ```
 
-`stage` checks compatibility and constructs an admitted boot deployment, retaining
-Base and Kernel. Preparation can take time. `activate` selects an already
-prepared entry for next boot; it does not construct one. A missing prepared
+The ordinary flow is **install → activate → deliberate reboot**. `activate`
+selects an already prepared entry for next boot; it does not construct one.
+Before approval it shows the old and new Base, System and Kernel, explicitly
+marks unchanged parts, and explains whether a reboot is needed. A short artifact
+ID distinguishes different builds with the same readable name. A missing prepared
 candidate is an error. On installed Systems, `mpm system activate` without an
-artifact opens an interactive chooser of prepared choices; `q` cancels it.
+artifact opens an interactive chooser of prepared choices compatible with the
+other currently selected areas; `q` cancels it. A standalone `stage --artifact ID`
+remains an advanced preparation/retry command for content-only imports,
+alternatives, bootstrap and build tools. It is not a mandatory extra step after
+normal live System installation.
 
 After checking next-boot status, reboot deliberately and inspect the result:
 
@@ -252,7 +305,7 @@ mpm kernel status
 ```
 
 The exact running identities should now match the intended selected deployment.
-Base and Kernel use the same stage/activate shape. Base preparation additionally
+Base and Kernel currently use the explicit stage/activate shape. Base preparation additionally
 requires an accepted context file declaring exact Kernel bounds:
 
 ```sh
@@ -273,7 +326,7 @@ mpm system upgrade --artifact sha256:FULL_SYSTEM_ID --dry-run
 mpm system upgrade --artifact sha256:FULL_SYSTEM_ID
 ```
 
-Use this as an alternative to the separate stage/activate sequence. It works
+Use this when explicitly joining preparation and the next-boot choice. It works
 with an explicit installed artifact. General moving-policy Base/System/Kernel
 resolution and automatic migrations are not implemented.
 

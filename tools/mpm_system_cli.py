@@ -12,6 +12,7 @@ import tarfile
 
 import mpm_base as base
 import mpm_system as system
+import mpm_ui as ui
 
 
 class ProviderAdapters(dict):
@@ -42,6 +43,7 @@ def main(argv, *, runtime=None):
         for name in ('sources-root', 'cache-root'):install.add_argument('--' + name, type=Path)
         install.add_argument('--dependency-file', type=Path, action='append', default=[])
         install.add_argument('--verify',action='store_true',help='explicitly audit archive payloads, retained objects and provider closures')
+        install.add_argument('--content-only',action='store_true',help='install content without preparing a boot deployment')
         install.add_argument('--dry-run', action='store_true');install.add_argument('-y', '--yes', action='store_true')
         status = sub.add_parser('status');status.add_argument('--verify', action='store_true')
         select = sub.add_parser('select');select.add_argument('--deployment',required=True)
@@ -61,32 +63,46 @@ def main(argv, *, runtime=None):
             result = choose(root,getattr(args,'deployment',None),expected_selected=args.expected_selected,
                             rollback=args.action=='rollback',dry_run=args.dry_run,yes=args.yes,verify=args.verify)
         elif args.action == 'install':
-            if args.source is not None:
-                base.require(args.archive_sha256 is not None and not args.dependency_file, '--source requires --archive-sha256 and obtains components from the same snapshot')
-                from mpm_system_source import install as acquire
-                result = acquire(root, args.sources_root or (runtime.sources if runtime else Path('/var/lib/mojt/sources')),
-                    args.cache_root or (runtime.cache if runtime else Path('/var/lib/mojt/cache')), args.source, args.expected_id,
-                    archive_sha256=args.archive_sha256, snapshot=args.snapshot, dry_run=args.dry_run, yes=args.yes, adapters=adapters, verify=args.verify)
-            else:
-                base.require(not any(v is not None for v in (args.archive_sha256, args.snapshot, args.sources_root, args.cache_root)), 'source/cache flags require --source')
-                result = system.install(root, args.from_file, args.expected_id, dependency_files=args.dependency_file, dry_run=args.dry_run, yes=args.yes, adapters=adapters, verify=args.verify)
+            from mpm_boot_selection import present
+            live=runtime is not None and args.disk_root is None and present(root)
+            if live and not args.content_only:
+                print('Installation includes boot preparation. Next boot stays unchanged; no automatic reboot.',file=sys.stderr,flush=True)
+            with ui.phase('Install System content'):
+                if args.source is not None:
+                    base.require(args.archive_sha256 is not None and not args.dependency_file, '--source requires --archive-sha256 and obtains components from the same snapshot')
+                    from mpm_system_source import install as acquire
+                    result = acquire(root, args.sources_root or (runtime.sources if runtime else Path('/var/lib/mojt/sources')),
+                        args.cache_root or (runtime.cache if runtime else Path('/var/lib/mojt/cache')), args.source, args.expected_id,
+                        archive_sha256=args.archive_sha256, snapshot=args.snapshot, dry_run=args.dry_run, yes=args.yes, adapters=adapters, verify=args.verify)
+                else:
+                    base.require(not any(v is not None for v in (args.archive_sha256, args.snapshot, args.sources_root, args.cache_root)), 'source/cache flags require --source')
+                    result = system.install(root, args.from_file, args.expected_id, dependency_files=args.dependency_file, dry_run=args.dry_run, yes=args.yes, adapters=adapters, verify=args.verify)
+            if not args.dry_run and not result.get('cancelled'):
+                if live and not args.content_only:
+                    from mpm_boot_update import stage
+                    try:
+                        with ui.phase('Prepare installed System for boot'):
+                            prepared=stage(root,'system',args.expected_id,adapters=adapters,runtime=runtime,
+                                tar=str(runtime.helpers/'tar'),yes=True,verify=args.verify)
+                        result=dict(result,content_changed=result['changed'],changed=result['changed'] or prepared['changed'],
+                                    preparation=prepared,prepared=True,selection_changed=False,running_changed=False)
+                    except (OSError,ValueError,KeyError,TypeError,subprocess.CalledProcessError,tarfile.TarError) as error:
+                        if args.json:print(json.dumps(dict(result,prepared=False,preparation_error=str(error),selection_changed=False),indent=2,sort_keys=True))
+                        raise ValueError('Content is installed; next boot unchanged. Boot preparation failed: '+str(error)) from error
+                else:result=dict(result,prepared=False,preparation_skipped='content-only requested' if args.content_only else 'no live native-v2 boot context')
         else:
             from mpm_boot_status import read_running
             running = read_running(runtime) if runtime is not None and args.disk_root is None else None
             result = system.status(root, verify=args.verify, running_record=running, adapters=adapters)
-        if args.json or args.action in ('install','select','rollback'):print(json.dumps(result, indent=2, sort_keys=True))
-        else:
-            print('System on:', result['target'])
-            for title, key in (('Running', 'running'), ('Next boot', 'selected')):
-                row = result[key]
-                print(title + ':', (row['label'] + ' / ' + row['manifest'] + ' / artifact ' + (row['artifact'] or 'unknown')) if row['state'] == 'known' else 'unknown (' + row['reason'] + ')')
-            print('Installed:')
-            for row in result['installed']:print(' ', row['label'], '/', row['version']['release_id'], '/', row['artifact'])
-            if not result['installed']:print('  none')
-            if result['retained']:print('Retained, not installed:', ', '.join(r['artifact'] for r in result['retained']))
-            if result['incomplete']:print('Incomplete:', ', '.join(result['incomplete']))
-            for row in result.get('staged_deployments',[]):print('Prepared boot:',row['label'],'/',row['deployment'])
-            print(result['compatibility'])
+        if args.json or args.action in ('select','rollback'):print(json.dumps(result, indent=2, sort_keys=True))
+        elif args.action=='install':
+            if result.get('cancelled'):print('Cancelled; next boot unchanged.')
+            elif args.dry_run:print('Preview only; no installation or boot preparation performed.')
+            elif result.get('prepared'):
+                print('System content installed and prepared for boot.' if result.get('content_changed') else 'Installed System is prepared for boot.')
+                print('Next boot is unchanged; use mpm system activate to choose it.')
+            else:print(('System content installed. ' if result.get('changed') else 'System content already installed. ')+'Boot preparation skipped: '+result['preparation_skipped']+'.')
+        else:ui.status('system',result)
         return 0
     except (OSError, ValueError, KeyError, TypeError, RecursionError, EOFError, subprocess.CalledProcessError, tarfile.TarError) as error:
         print('mpm system: ' + str(error), file=sys.stderr)
