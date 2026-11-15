@@ -37,7 +37,8 @@ class NixBootAdapter(NixBinaryAdapter):
         database=NIX_DATABASE
         require(str(Path(self.binary).resolve())==self.executable,'Nix helper binding changed')
         return io.preparation_cached(key,[Path(self.executable),*map(Path,paths),
-            *(Path(path)/'bin' for path in paths),database/'db.sqlite',database/'db.sqlite-wal'],check,cost=1024)
+            *(Path(path)/'bin' for path in paths),database/'db.sqlite',database/'db.sqlite-wal'],check,
+            cost=1024+sum(len(r['path'])+len(r['nar_hash']) for r in i['closure']),require_stable=False)
 
     def install(self,ref,root):
         """Retain System binaries without the optional full provider scrub.

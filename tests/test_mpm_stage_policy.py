@@ -103,6 +103,13 @@ class PolicyTests(unittest.TestCase):
                 adapter.inspect({},root);adapter.inspect({},root);self.assertEqual(runner.call_count,2)
                 (database/'db.sqlite').write_bytes(b'changed')
                 adapter.inspect({},root);self.assertEqual(runner.call_count,4)
+                (database/'db.sqlite').write_bytes(b'force fresh query')
+                def checkpoint(args):
+                    (database/'db.sqlite').write_bytes(os.urandom(16))
+                    return run(args)
+                runner.side_effect=checkpoint
+                adapter.inspect({},root);adapter.inspect({},root)
+                self.assertEqual(runner.call_count,8)  # Changing DB status refuses reuse, not the valid query.
                 (database/'db.sqlite').write_bytes(b'changed again')
                 runner.side_effect=lambda args:'bad'
                 with self.assertRaisesRegex(ValueError,'closure differs'):adapter.inspect({},root)

@@ -36,7 +36,7 @@ def preparation_verify():
     return True if active is None else active['verify']
 
 
-def preparation_cached(key, paths, read, *, cost=None):
+def preparation_cached(key, paths, read, *, cost=None, require_stable=True):
     """Reuse metadata only while all dependencies and protected ancestors match.
 
     File status is an invalidation guard, not a content-integrity proof. Required
@@ -65,7 +65,9 @@ def preparation_cached(key, paths, read, *, cost=None):
     if cached is not None:
         active['size']-=cached[2];del active['values'][key]
     value=read()
-    require(signature()==before,'metadata changed during preparation read')
+    if signature()!=before:
+        require(not require_stable,'metadata changed during preparation read')
+        return value  # Nix may checkpoint its database during a metadata query.
     charge=cost if cost is not None else sum(p.stat().st_size for p in paths if p.is_file() and p.suffix=='.json')
     if value is not None and len(active['values'])<512 and active['size']+charge<=32*1024**2:
         active['values'][key]=(before,copy.deepcopy(value),charge);active['size']+=charge
