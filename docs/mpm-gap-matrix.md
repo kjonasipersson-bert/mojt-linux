@@ -40,7 +40,7 @@ packages using the shared libraries. Kernel remains a System component with a
 separate update scope; environments and persistent state are not new layers.
 
 
-The [initial-format policy](./format-policy.md) supersedes earlier transition requirements: fresh installations only, no legacy migration/support obligation. Keep explicit format versions and refuse unknown required versions before mutation. Current-state integrity and safe recovery remain required.
+The [initial-format policy](format-policy.md) supersedes earlier transition requirements: fresh installations only, no legacy migration/support obligation. Keep explicit format versions and refuse unknown required versions before mutation. Current-state integrity and safe recovery remain required.
 
 ## Current review gate
 

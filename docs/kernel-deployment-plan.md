@@ -6,12 +6,8 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Read-only Kernel deployment planning
 
-The local Kernel install/status increment passed real owner acceptance and
-PR #29 merged. This next experimental increment adds `mpm kernel plan` in a
-checkout. It binds an installed native Kernel to a complete proposed boot
-deployment and checks explicit declarations without publishing or selecting it.
-It is not `activate`, an existing-disk updater, an initramfs builder or a claim
-that all required content is ready to boot.
+The read-only planner combines explicit installed Kernel, Base and System
+inputs without changing the running machine or its next-boot selection.
 
 ## Command and inputs
 
@@ -123,25 +119,20 @@ are not evaluated. There is no Base libc replacement or global library-path edit
 The legacy image builder emits format-1 `boot.json` and mounts modules/firmware from
 the System profile. Those records lack these exact references and are not
 automatically adopted. The new deployment record is not written over an old
-boot record or converted into a GRUB entry. A future builder must explicitly
-consume native Kernel content, mount the chosen modules, generate/bind the
-deployment-specific initramfs and verify Base/System payloads/dependencies.
-It must preserve the selected System userspace while composing the independent
-Kernel choice, without reusing an old System-name boot directory for new bytes.
-Only a separate transactional publication/selection operation may activate it.
+boot record or converted into a GRUB entry. The [native image builder](native-image-build.md) consumes installed content and
+binds a generated initramfs for a new image. Installed native-v2 updates use the
+separate [preparation/admission/selection workflow](system-transition.md).
 
 The [fresh native image builder](native-image-build.md) now connects this plan
 to one new serial UEFI disk: verified native Base input, copied installed Kernel,
 independent module mounts, generated/inspected initramfs and complete sidecars.
 Its explicit bootstrap selection is for that new image, not an existing-disk
-upgrade or automatic adoption of running state. The owner accepted the corrected
-[fresh-image result boot on 2026-10-30](native-image-build.md#owner-native-image-acceptance-2026-10-30);
-the standalone planner's limited readiness result remains unchanged.
+upgrade or automatic adoption of running state. The standalone planner's limited
+readiness result remains unchanged.
 
 The focused tests use real installed tar/zstd fixture packages and deliberately
 synthetic, nonbootable initramfs bytes. They cover complete identity and selected
 scope, every declaration gate, same-release builds, damaged/missing content,
 binding/byte mismatches, malformed input, provider-free CLI and unchanged inputs.
-CI is sufficient for this read-only increment. The first actual native-Kernel
-image builder has its separate focused build/boot acceptance above; no repeated
-account/generation loop was required for this read-only planner.
+A compatible read-only plan is not construction, admission or boot evidence.
+Only the separate execution path can publish a selectable deployment.

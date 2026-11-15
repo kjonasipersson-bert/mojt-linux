@@ -12,7 +12,7 @@ This register prevents a comprehensive behavior draft from being mistaken for
 a completely settled API, wire format or implemented distribution.
 
 
-The [initial-format policy](./format-policy.md) supersedes earlier transition requirements: fresh installations only, no legacy migration/support obligation. Keep explicit format versions and refuse unknown required versions before mutation. Current-state integrity and safe recovery remain required.
+The [initial-format policy](format-policy.md) supersedes earlier transition requirements: fresh installations only, no legacy migration/support obligation. Keep explicit format versions and refuse unknown required versions before mutation. Current-state integrity and safe recovery remain required.
 
 ## Established constraints to preserve
 
@@ -53,10 +53,10 @@ does not mark the decisions adopted or the runtime implemented.
 
 | Gate | Newly specified | Still required before the broader gate is closed |
 | --- | --- | --- |
-| [D2](#open-decisions-and-gates) | Immutable composition/store/receipts; workflow wishes, sources/acquisition/cache, locks and boot v2 records | Owner review; new Ports origin-state embedding; fresh native-v2 runtime/layout and realization implementation; large-catalog indexing |
-| [D3](#open-decisions-and-gates) | Fixed action types/versions/phases/parameters; dependency validation; handler/owner binding and first-version limits | Owner review; actual advertised handler implementations and integration/failure tests |
-| [D4](#open-decisions-and-gates) | Invocation/result chain, factual checks, state observations, saved plan/approval binding and publication ordering | Owner review; family-specific state readers/coordination; actual authorization/recovery/failure integration tests |
-| [D5](#open-decisions-and-gates) | Exact resolution locks and target/executor/scope-bound execution plans/local approvals | Build recipe/workspace/environment wire, provenance and M2 source coverage; MBT interface discussion remains separate |
+| [D2](distribution-decisions.md#open-decisions-and-gates) | Immutable composition/store/receipts; workflow wishes, sources/acquisition/cache, locks and boot v2 records | Owner review; new Ports origin-state embedding; fresh native-v2 runtime/layout and realization implementation; large-catalog indexing |
+| [D3](distribution-decisions.md#open-decisions-and-gates) | Fixed action types/versions/phases/parameters; dependency validation; handler/owner binding and first-version limits | Owner review; actual advertised handler implementations and integration/failure tests |
+| [D4](distribution-decisions.md#open-decisions-and-gates) | Invocation/result chain, factual checks, state observations, saved plan/approval binding and publication ordering | Owner review; family-specific state readers/coordination; actual authorization/recovery/failure integration tests |
+| [D5](distribution-decisions.md#open-decisions-and-gates) | Exact resolution locks and target/executor/scope-bound execution plans/local approvals | Build recipe/workspace/environment wire, provenance and M2 source coverage; MBT interface discussion remains separate |
 
 The first acquisition trust kind is explicit local-file trust. D7 remote trust
 is not implied by these receipts. D6 destructive migrations remain unsupported.

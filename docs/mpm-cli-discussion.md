@@ -6,6 +6,11 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # MPM syntax is retained; new-tool syntax belongs to MBT
 
+**Historical experiment/design record.** This page preserves its development
+context and observations. It is not the current interface/status reference;
+use the [Handbook](../doc/handbook/README.md), [architecture](architecture.md)
+and [roadmap](roadmap.md) for current behavior and priorities.
+
 The owner clarified on 2026-10-31 that the existing MPM syntax is satisfactory.
 The requested discussion concerns **MBT**, the Mojt Build/Bootstrap Tool. The
 earlier spelling `mpt` was not a request to rename MPM or add an alias.

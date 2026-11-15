@@ -6,6 +6,11 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Distribution contract: first consistency review
 
+**Historical experiment/design record.** This page preserves its development
+context and observations. It is not the current interface/status reference;
+use the [Handbook](../doc/handbook/README.md), [architecture](architecture.md)
+and [roadmap](roadmap.md) for current behavior and priorities.
+
 2026-11-01, against draft 1 in PR #35 at `3021ff0`. This is a documentation
 review/proposal, not runtime acceptance or independent reviewer approval.
 The owner approved continuing specification work; public MBT syntax and wire

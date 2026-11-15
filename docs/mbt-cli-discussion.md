@@ -6,6 +6,11 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # MBT command syntax: discussion before implementation
 
+**Historical experiment/design record.** This page preserves its development
+context and observations. It is not the current interface/status reference;
+use the [Handbook](../doc/handbook/README.md), [architecture](architecture.md)
+and [roadmap](roadmap.md) for current behavior and priorities.
+
 The [minimal frontend prototype](mbt-minimal.md), started after merged #50,
 provides a concrete smaller interface for review: `mbt env`, `mbt build kernel`
 and `mbt package`. It delegates to existing tools and is optionally delivered by

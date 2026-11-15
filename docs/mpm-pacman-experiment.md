@@ -6,6 +6,10 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Frozen binary environments with pacman
 
+**Historical experiment/test report.** This page records its pinned inputs,
+procedures and observations, including superseded behavior. For current usage,
+start with the [Handbook](../doc/handbook/README.md) and [documentation index](README.md).
+
 **Status:** experimental comparator to the [Nix probe](mpm-nix-experiment.md).
 The owner reported a completed real acceptance run with the September/October
 2026 snapshots after the initial historical-signature failure documented below.

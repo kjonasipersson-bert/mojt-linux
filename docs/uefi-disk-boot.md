@@ -6,10 +6,10 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # First self-booting Mojt disk
 
-The owner approved a simple UEFI/GPT/GRUB image on 2026-10-24. The new opt-in
-`--boot-mode uefi` uses one boot entry by default and the same host kernel source as the
-accepted direct-boot VM. It reuses the System step 5 payload, including Bash.
-The default `direct` mode remains available.
+The VM builder's `--boot-mode uefi` creates a GPT/GRUB disk with one boot entry
+by default, using the supplied System payload and Kernel/module inputs. Its
+`direct` mode remains a separate diagnostic boot option. For fresh native-v2
+bootstrap through the public build frontend, see [MBT](../doc/handbook/part-i/mbt.md).
 
 ## What the image contains
 
@@ -99,7 +99,7 @@ The launcher defaults to `/usr/share/OVMF/OVMF_CODE_4M.fd` and
 non-Secure-Boot pair through `OVMF_CODE` and `OVMF_VARS_TEMPLATE`. Keep the
 same pair for a given VM variable file. The GRUB menu and guest console use
 115200-baud serial. Terminal sizing remains the separate issue described in
-[the administration guide](system-admin-tools.md#serial-terminal-geometry-over-ssh-and-qemu).
+[the administration guide](system-admin-tools.md#interactive-shell-and-terminal-geometry).
 
 ## Acceptance inside the full Mojt VM
 
@@ -178,23 +178,3 @@ boot, pinned System, UUID discovery, repeat boot with `/etc` and `/var` state,
 and disk-only transfer to fresh variables passed. Device-node packaging used
 fakeroot in the constrained agent runtime; no host devices were created.
 This is boot-chain evidence, not full Mojt service/login/network acceptance.
-
-## Owner-reported disk-copy acceptance (2026-10-24)
-
-The owner reported that the final disk-copy test works after moving the copy
-directory into their home directory. The original attempt failed while creating
-the copy directory, before QEMU started; no image rebuild was needed. The
-successful recipe copies only the powered-off disk and firmware launcher,
-creates fresh firmware variables and starts the copied Mojt disk without
-external kernel/initramfs files. This completes the owner-reported disk-boot
-milestone. Individual login/service/network/Ports and history-check logs from
-this UEFI run were not supplied, so those checks are not separately attested
-by this report.
-
-The feature remains an experimental image builder, not a hardware installer,
-kernel release pipeline, System updater or automatic rollback mechanism.
-Persistent service state is not rolled back by a boot entry.
-
-References: [GNU GRUB standalone image tool](https://manpages.debian.org/bookworm/grub-common/grub-mkstandalone.1.en.html),
-[mtools image access](https://www.gnu.org/s/mtools/manual/mtools.html#Drive-letters),
-and [QEMU boot options](https://www.qemu.org/docs/master/system/qemu-manpage.html).

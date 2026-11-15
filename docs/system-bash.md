@@ -6,10 +6,9 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Interactive Bash in System
 
-The owner successfully installed `bashInteractive` through MPM in the running
-Mojt VM and approved Bash as a System component on 2026-10-24. System step 5
-adds that package to the cumulative step 4 payload. It uses the existing
-Nixpkgs pin; the agent verified Bash 5.3p20 from its signed binary cache.
+System supplies `bashInteractive` as its interactive shell. Base's `/bin/sh`
+retains its script/recovery role; changing an interactive shell does not replace
+Base or silently change an existing account's shell.
 
 Only `bash` is exported through `/run/mojt-system/bin`; Base's `/bin/sh` and
 Base contents are unchanged. The authenticated VM recipe explicitly selects
@@ -36,9 +35,9 @@ files may override the defaults. This adds no programmable completion package
 or user-account management framework.
 
 `checkwinsize` is enabled, but it reads the TTY's registered size; it does not
-query the remote terminal. It therefore cannot fix the reported `stty size`
+query the remote terminal. It therefore cannot fix a stale `stty size`
 value `0 0`. Continue using the manual rows/columns workaround described in
-[the administration guide](system-admin-tools.md#serial-terminal-geometry-over-ssh-and-qemu)
+[the administration guide](system-admin-tools.md#interactive-shell-and-terminal-geometry)
 until serial-size handling is implemented separately.
 
 ## Export step 5 in the Nix Distrobox
@@ -115,6 +114,3 @@ An agent-side PTY test with the real pinned Nix Bash and Mojt profile passed
 line editing, history recall, tab completion, per-prompt history append and
 history recall in a second shell. Test paths substituted temporary locations
 for the guest's `/run` and `/var`; this was not a Mojt boot/login test.
-
-The owner's Ports Bash trial passed. The new System step 5 login and reboot
-acceptance remain pending.

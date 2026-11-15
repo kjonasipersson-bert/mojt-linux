@@ -58,9 +58,9 @@ On a warm live update, the constructor skips freezing/cloning the runtime,
 decoding the early modules, creating the large initramfs tree and compressing
 that payload. It still generates the small member and final exact binding.
 The existing runtime description, preflight, retained-input audits, source-tree
-proofs, slot retention and final admission checks remain. The bounded owner
-measurement below does not establish a fixed speedup. Separating optional
-integrity scrubs from ordinary preparation remains subsequent work.
+proofs, slot retention and final admission checks remain. Ordinary preparation
+uses the [bounded metadata/audit policy](stage-fast-path.md); full integrity
+scrubs require explicit `--verify`. Cache reuse is not a new byte audit.
 
 ## Private content cache
 
@@ -91,27 +91,10 @@ built or reused. Selecting an already prepared deployment stays a fast metadata
 operation. Pure constructor callers can retain the previous monolithic mode;
 MPM/MBT's staged handover path uses the reusable payload.
 
-## Validation and remaining gates
+## Use in installation
 
-Focused tests cover Base/System-independent keys, dependency invalidation,
-corrupt-cache refusal, durable publication failure behavior, exact fresh bindings
-and real two-member archive bytes. A warm constructor test refuses any second
-runtime clone or heavy payload build. A small real-Kernel QEMU probe boots two
-different overlays over the same cached payload; full native-v2 constructor,
-reader, handover, selection and bootstrap regressions remain separate checks.
-The minimal probe is not full System, firmware or storage-driver acceptance.
-
-The [E/F owner acceptance](initramfs-payload-hardware-test.md#recorded-owner-acceptance--2026-11-1415)
-passed on 2026-11-14–15: F installation took 11.483 s wall / 4.996 s CPU,
-cold preparation 286.737 s / 276.351 s, and warm preparation approximately
-229 s / 219 s. The warm helper PASS checks reuse of the exact cold payload key
-for a newly prepared F deployment. Candidate checks (about 45 s) are included in
-the preparation totals. The owner reported activation at 4.2 s, then successful
-F boot and `after` PASS, including Ports/Neovim and preserved Base/Kernel.
-This closes the focused physical two-member boot/reuse gate, with about 20%
-less total preparation time in this one comparison. Preparation still takes
-nearly four minutes; performance remains open and remaining phase costs have
-not been individually measured. Optional E return was not reported.
-The previous C/D acceptance covers the earlier monolithic constructor.
-Future ordinary install/preparation integration must reuse this path and preserve
-the accepted fast atomic choice, explicit requirements and independent lifecycles.
+Normal live System installation and explicit stage/upgrade use this constructor.
+Only actual early-boot input changes invalidate the reusable member; each
+prepared deployment still gets exact fresh combination bindings. Activation
+selects an admitted entry and performs no construction. Performance measurements
+and test-fixture results are kept in [test reports](reports/README.md).

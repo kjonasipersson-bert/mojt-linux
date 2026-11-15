@@ -6,6 +6,11 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Accepted milestone: a self-booting disk
 
+**Historical experiment/design record.** This page preserves its development
+context and observations. It is not the current interface/status reference;
+use the [Handbook](../doc/handbook/README.md), [architecture](architecture.md)
+and [roadmap](roadmap.md) for current behavior and priorities.
+
 Status: approved by the owner on 2026-10-24. An experimental implementation
 and [build/acceptance guide](uefi-disk-boot.md) are now available. The real
 synthetic firmware-boot probe passed. The owner subsequently reported the final

@@ -1,0 +1,243 @@
+<!--
+Mojt Linux
+Copyright (C) 2026 Jonas Persson
+SPDX-License-Identifier: GPL-2.0-only
+-->
+
+# Project introduction and validation history
+
+Historical development and test record, preserved from commit `d9197b19aa02d6cf75f4ac6f757064aaef6d1c14`.
+This records the environment, observations and limitations at the time; its
+commands and pending-work statements are not the current interface contract.
+Single-letter generation labels identify local test inputs, not public releases.
+
+<!--
+Mojt Linux
+Copyright (C) 2026 Jonas Persson
+SPDX-License-Identifier: GPL-2.0-only
+-->
+
+# Mojt Linux
+
+```text
+       |  |  |
+   +---+--+--+---+
+ --|             |--
+ --|   .-----.   |--
+ --|  (  @@@  )  |--
+   |   '-----'   |
+   |   |||||||   |
+   +---+--+--+---+
+       |  |  |
+```
+
+**A small Linux base. Independently managed system components and applications.**
+
+*Mojt* is an engineering-slang word from Lund, Sweden, roughly meaning a gadget or contraption.
+
+Mojt is an experimental Linux distribution inspired by BSD's separation of the base operating system and ports. Its Base prototype is a versioned filesystem image, not a continuously updated package collection. System services and Ports are composed separately.
+
+Start with the [Mojt Handbook](../../doc/handbook/README.md) for concepts and practical
+MPM/MBT workflows. See [building the handbook website](../handbook-web.md)
+for local preview and the `handbook.mojt.org` hosting target.
+
+Read the [manifesto](../manifesto.md), [architecture notes](../architecture.md), [Base format specification](../base-format.md), and the draft [MPM package-management contract](../mpm.md).
+
+For the user-facing model of **MPM and MBT**, start with
+[the management workflow](../management-workflow.md). The
+[Base install/status contract](../mpm-base-contract.md) was agreed on 2026-11-06;
+its first [implementation](../base-installation.md) merged in PR #40.
+[Exact Base staging/selection/return](../base-boot-staging.md) is implemented
+in PR #41 with [owner boot/return acceptance](../base-boot-acceptance.md#recorded-owner-acceptance-2026-11-07)
+passed on 2026-11-07.
+Exact native-v2 Base/System/Kernel activation and upgrade are joined through
+MPM in merged PR #50. Moving-policy boot-area upgrades remain future work.
+A small [experimental MBT frontend](../mbt-minimal.md) now proposes the first
+environment/build/package interface; its syntax is under review.
+
+The accepted update model keeps Base as complete releases, System as coherent
+generations, and Ports as parallel program versions with active selections
+and transaction history. Shared MPM verbs preserve those different units of
+change. See the [roadmap](../roadmap.md) for completed experiments and the
+next priorities; these policies are broader than the implemented CLI.
+
+## Status
+
+**Experimental prototype with verified QEMU boot.** On x86-64/glibc, the current
+scripts bootstrap and package whole-image Base generations, preserve machine
+state, and compose a System VM using pinned Nixpkgs binaries and a host kernel.
+The owner has verified systemd boot, persistent `/etc` and `/var`, networking,
+and MPM/Nix binary imports with parallel Python versions inside Mojt.
+There is no production installer, System release format or signed release
+channel yet. See the [System guide](../system-nix-vm.md) for measured scope
+and remaining integration work.
+
+The owner has also verified explicit Base/System generation selection and
+return, persistent markers, authenticated serial-console access from SSH,
+and controlled new-image build interruption. The owner subsequently verified
+two different kernels with matching modules and retained machine state. Native
+Kernel install/stage/select/rollback on an existing managed VM disk is now
+accepted, including a source-installed exact Kernel boot with origin retained
+through PR #39. Generalized Base/System updates on an existing disk and the
+complete bootstrap/build integration remain work; see the
+[six-step consolidation plan](../mpm-consolidation-plan.md). The experimental
+[minimal MBT](../mbt-minimal.md) joins private tool environments, Kernel builds,
+packaging and fresh native-v2 image bootstrap. Its joined VM and physical-profile
+acceptance remain pending; imported prebuilt inputs are not a full source rebuild.
+
+## Requirements on the build/test host
+
+A Linux x86-64 host with Bash, Python 3.11+, `curl`, `tar`, `zstd`, `sha256sum`, `sudo`, and standard Unix tools. Tests involving `chroot`, `mount`, and `unshare` require appropriate root privileges. Base has no Python runtime requirement; the MPM/Nix System experiment supplies its own management Python. The System guide lists additional Nix preparation and VM-build requirements.
+
+## Quick start
+
+Run these in a trusted throwaway host or VM (the bootstrap invokes privileged package installation inside a chosen rootfs):
+
+```bash
+./bootstrap/void.sh
+
+LAB="$HOME/mojt-lab"
+sudo ./tools/mojt-base-pack \
+    "$LAB/rootfs" manifests/base-0.1.1.toml "$LAB/releases" \
+    --packages "$LAB/base-0.1-packages.txt"
+
+sudo ./tools/mojt-base-install install \
+    "$LAB/releases/base-0.1.1-x86_64" \
+    --target "$LAB/installation"
+
+./tools/mojt-base-install status --target "$LAB/installation"
+```
+
+An upgrade/rollback test can be run after the 0.1.1 bootstrap and release are available:
+
+```bash
+./tests/test-base-upgrade.sh
+```
+
+The test produces Base 0.1.2 with one additional default, then checks installation, preservation of `/etc` and `/var`, and rollback in a separate test target.
+
+## MPM/Nix Ports experiment
+
+The [ordinary Ports guide](../mpm-ports.md) covers `mpm ports search`,
+`info`, `install`, `list`, `activate` and `remove`, including history-based
+fallback and a new opt-in acceptance run. `tools/mpm` is the repository entry
+point; newly built step 3 guests expose the same CLI as `mpm`.
+
+The original `tools/mpm-nix-prototype` evaluates a small TOML selection from an already
+pinned Nixpkgs source, imports binary outputs and retains private command
+profiles. First installation activates the requested commands; later installs
+preserve existing activation. No Base/System files or host command paths are
+changed. See the [experiment guide](../mpm-nix-experiment.md) for the
+Distrobox acceptance run, scope and test limitations.
+
+```sh
+python3 -m unittest discover -s tests -p 'test_mpm_nix_prototype.py' -v
+```
+
+## Frozen pacman environment experiment
+
+`tools/mpm-pacman-prototype` compares original Arch binary packages in separate,
+frozen userspaces. Pacman resolves and installs; private profiles select complete
+runtime roots through Bubblewrap. See the [experiment guide](../mpm-pacman-experiment.md)
+for the dedicated Arch Distrobox setup, namespace preflight and opt-in real test.
+The owner completed the real environment-level acceptance run. Regression
+tests simulate the backend and namespace operations. Nix was subsequently
+selected for Ports; this adapter remains the comparison experiment.
+
+```sh
+python3 -m unittest discover -s tests -p 'test_mpm_pacman_prototype.py' -v
+```
+
+## System VM experiment
+
+The opt-in System work has three cumulative steps: systemd boot with persistent
+state, NetworkManager/D-Bus networking, and MPM/Nix inside Mojt. Nix binary
+inputs are exported from the existing Distrobox; the Debian VM build host does
+not need Nix installed. All three initial acceptance steps passed on the
+owner's Mojt VM, including native `hello`, Python 3.12/3.13 activation and a
+retained project reference. See the [System guide](../system-nix-vm.md) for
+preparation, evidence and limitations.
+
+An additive [System administration step](../system-admin-tools.md) supplies
+procps, util-linux, less and a small vi editor (nvi), with a new payload and
+an explicit `mojt-system-check admin` acceptance probe.
+
+[System step 5](../system-bash.md) adds interactive Bash, a console profile
+and persistent root history. Its new-VM recipe explicitly selects Bash for
+root login while retaining Base's `/bin/sh`. The opt-in
+[UEFI disk boot](../uefi-disk-boot.md) builds GPT, an EFI partition with GRUB,
+and a disk-contained kernel/initramfs pair. The default direct-boot mode remains
+available for comparison.
+
+The opt-in [ThinkPad USB profile](../thinkpad-usb-boot.md) prepares local
+console login, full versioned kernel modules and Debian firmware for an X1
+Carbon 3rd generation. System step 6 adds kmod and Wi-Fi userspace; the same
+disk can be probed with SATA and USB storage in QEMU before physical testing.
+
+[System step 7](../system-diagnostics.md) adds iputils, DNS client tools,
+ethtool, PCI/USB inspection and strace, plus ss/modinfo from existing packages.
+It provides separate local and network diagnostic probes and a two-kernel
+serial-VM recipe. The owner completed package export and VM acceptance.
+
+[System step 8](../system-console-time.md) integrates explicit terminal-size
+measurement, persistent bounded journal defaults and systemd-timesyncd.
+The owner verified both kernels, stable machine identity, retained journals,
+NTP synchronization and quiet login prompts.
+
+[System step 9](../system-environment.md) prepares timezone data, man-db and
+selected System manuals, retaining C.UTF-8 as the default. The owner verified
+export, local timezone, UTF-8 and manual rendering after correcting console
+SIGPIPE handling. A separate step 9 A/B run was explicitly deferred to the
+next System stage.
+
+[System step 10](../system-accounts.md) prepares local accounts, PAM console
+login, logind sessions and password-authenticated sudo on the separate home
+state layout. Privileged helpers are selected-generation copies in volatile
+storage; store objects and retained profiles remain without setuid bits.
+The owner verified binary export, PAM login, password changes, sudo authorization,
+clean logout and account/home/Ports preservation across A/B/A after the documented
+user-manager correction. The owner also confirmed that the superseded password
+was rejected after returning to A.
+
+For early Mojt versions, Nix remains exposed and supplies System packages as
+well as Ports through a shared store. Mojt controls System activation;
+host-service requirements belong to MPM's separate capability model. See the
+[accepted interim policy](architecture-history.md#accepted-early-nixsystem-policy-2026-10-23)
+for the decision and implementation boundaries.
+
+The [Base/System generation experiment](../boot-generations.md) composes
+several explicitly pinned boot pairs in one new UEFI image, with shared
+persistent state and retained System closures. It includes a compatible Base B
+recipe and manual A/A → A/B → B/B → A/A acceptance. This is image composition;
+updating an existing running installation remains future work.
+
+The [serial-console guide](../vm-serial-console.md) prepares a private copy
+of an existing VM for password login and guest commands directly from an SSH
+terminal, retaining its generations and persistent state.
+
+```sh
+python3 -m unittest discover -s tests -p 'test_system_vm.py' -v
+```
+
+The [persistent state layout](../state-layout.md) documents how the runtime
+`/etc`, `/var`, `/home` and `/root` paths attach to shared machine state, and
+how this differs from adding or selecting a boot generation. New home mounting
+was exercised in the account-stage A/B/A run.
+
+## Project layout
+
+```text
+bootstrap/      host-side bootstrap backends
+manifests/      source manifests used to create Base releases
+tools/          Base/VM tools and package-backend experiments
+tests/          integration tests
+doc/handbook/   user handbook
+docs/           manifesto, architecture, and format
+```
+
+## License and copyright
+
+Mojt's original tools and documentation are licensed under **GPL-2.0-only**. Copyright (C) 2026 **Jonas Persson**. See `LICENSE`.
+
+Packages and other third-party components included in Base images retain their **own** licenses and respective copyright holders; this repository's GPLv2 notice does not replace those terms. Future external contributors retain their rights unless separately agreed.
+
