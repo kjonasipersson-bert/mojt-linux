@@ -14,7 +14,7 @@ No physical acceptance is claimed until the owner completes these steps.
 
 Use the exact reviewed delivery's **`tools/mojt-usability-test.py`**, retaining
 that filename. Copy it by USB to **`/root/mojt-usability-test.py`**. Its functional
-inputs are pinned to `969a747a5fd550c44098298fcc3b626d93aee799`, with 17 file
+inputs are pinned to `8c3b4e1d5cd6c001aecad59a2a9efd76fdb82ebb`, with 17 file
 checksums and a checksum of the earlier native package/evidence driver. This is
 reviewed maintenance delivery, not a signed release.
 
