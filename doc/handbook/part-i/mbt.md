@@ -200,10 +200,10 @@ profile limits and mounted-target requirements remain in the technical guides.
 
 ## 4.7. Further reading
 
-See the [MBT manual](../../../man/mbt.1),
-[executable interface guide](../../../docs/mbt-minimal.md),
-[Kernel build records](../../../docs/kernel-build.md),
-[build environments](../../../docs/build-on-mojt.md) and
-[mounted-target implementation](../../../docs/mounted-installation.md).
+See the [MBT manual](https://github.com/kjonasipersson-bert/mojt-linux/blob/main/man/mbt.1),
+[executable interface guide](https://github.com/kjonasipersson-bert/mojt-linux/blob/main/docs/mbt-minimal.md),
+[Kernel build records](https://github.com/kjonasipersson-bert/mojt-linux/blob/main/docs/kernel-build.md),
+[build environments](https://github.com/kjonasipersson-bert/mojt-linux/blob/main/docs/build-on-mojt.md) and
+[mounted-target implementation](https://github.com/kjonasipersson-bert/mojt-linux/blob/main/docs/mounted-installation.md).
 
 [Previous: MPM](mpm.md) · [Next: Common tasks](../part-ii/README.md)

@@ -13,8 +13,8 @@ This chapter is reserved for a general installation guide once the supported
 procedure is ready to document.
 
 For now, the repository contains experiment-specific instructions, including
-[mounted installation](../../../docs/mounted-installation.md) and
-[native image construction](../../../docs/mbt-minimal.md#fresh-native-v2-bootstrap).
+[mounted installation](https://github.com/kjonasipersson-bert/mojt-linux/blob/main/docs/mounted-installation.md) and
+[native image construction](https://github.com/kjonasipersson-bert/mojt-linux/blob/main/docs/mbt-minimal.md#fresh-native-v2-bootstrap).
 These are technical references for their stated inputs and hardware profiles,
 rather than a general installer guide.
 
