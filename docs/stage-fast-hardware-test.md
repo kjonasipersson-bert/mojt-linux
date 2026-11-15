@@ -8,20 +8,21 @@ SPDX-License-Identifier: GPL-2.0-only
 
 Start with the accepted **F running and selected**, keeping the existing
 `/var/lib/mojt/initramfs-payload-55` checkpoint. This test uses functional code
-from `8b5c22b98f53587f79fbece136899b417343b3bb`, with per-file hashes, and the
+from `47001725fe2bb94b4c118566207de40bf00a4c29`, with per-file hashes, and the
 unchanged profiler from `1b825382610660fbfc2920b977963b7f7b454a57`.
-Use the exact reviewed delivery after its CI passes. This is reviewed maintenance
+The functional revision passed all three CI jobs (run 43718035722).
+Use the exact reviewed measurement delivery. This is reviewed maintenance
 code, not a signed native release.
 
 ## One command, two preparations
 
 Download the exact delivery's `tools/mojt-stage-fast-test.py` on the computer
-displaying the chat, save as **stage-fast.py**, and transfer it by USB to
-**/root/stage-fast.py**. Preserve `payload.py`, `stage-profile.py` and all previous
+displaying the chat, save as **stage-nix.py**, and transfer it by USB to
+**/root/stage-nix.py**. Preserve `payload.py`, `stage-profile.py` and all previous
 test evidence.
 
 ```sh
-python3 /root/stage-fast.py
+python3 /root/stage-nix.py
 ```
 
 Confirm with `y`. The helper checks F's running/selected identities and the E/F
@@ -45,13 +46,19 @@ The helper performs two real preparations without selecting them:
 2. Prepare retained D using the exact same new payload inputs. This is the warm
    sample. Expect `Early-boot runtime/drivers: reused` and a new deployment.
 
+The changed native-I/O file is part of the payload producer key; this follow-up
+therefore cannot reuse the earlier test payload. Keep all previous evidence under
+`/var/lib/mojt/stage-fast-57`; the new run uses `/var/lib/mojt/stage-nix-57`.
+
 Each sample must return success, make a newly prepared deployment, leave the
 running deployment/menu unchanged, report `verification_requested: false`, and
 perform **zero Nix `--verify-path` commands**. The second must reuse the exact
 first payload key. A no-op, unexpected full audit, cold reuse or different warm
 payload fails the test rather than becoming a misleading performance sample.
-Metadata queries, compatibility/current-state gates and command-error checks
-remain enabled. No cache clearing, repeated benchmark loop, boot selection,
+Both Nix query types must have the same positive count, each below the previous
+253 calls; otherwise the test refuses to report success. Expect approximately
+37 of each (74 commands) for this retained System. Metadata queries,
+compatibility/current-state gates and command-error checks remain enabled. No cache clearing, repeated benchmark loop, boot selection,
 System package installation or reboot occurs.
 
 ## Send the result
@@ -59,11 +66,12 @@ System package installation or reboot occurs.
 Expect `PASS` and send:
 
 ```text
-/var/lib/mojt/stage-fast-57/summary.txt
+/var/lib/mojt/stage-nix-57/summary.txt
 ```
 
 This contains both phase summaries. The **WARM STAGE** total is the relevant
-comparison with the previous approximately 234 s installed-stage measurement.
+comparison with the previous **66.369 s** warm private-code measurement.
+Compare the Nix query counts and time as well as the overall stage total.
 No fixed speedup is promised before the actual run. Setup, downloads, copying,
 code validation, startup, status checks and confirmations are outside the timed
 MPM phases; observer overhead and potentially warm filesystem caches remain.
@@ -84,7 +92,9 @@ evidence for inspection before any repeat.
 
 The owner returned `summary57.txt` (SHA256
 `b5ca9285d80c9e0d17ac5cc38bbb0ec3906ffbdf33e2cc4fee1d42950f91ac19`)
-from the private-code test pinned above. Both measured MPM calls exited 0.
+from the earlier private-code test pinned at
+`8b5c22b98f53587f79fbece136899b417343b3bb` (delivery `da8f3cb0`).
+These results predate the final query-cache follow-up. Both measured MPM calls exited 0.
 
 | Measurement | Wall seconds | Total CPU seconds |
 | --- | ---: | ---: |

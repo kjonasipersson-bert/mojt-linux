@@ -21,14 +21,14 @@ import subprocess
 import sys
 import tempfile
 
-REVISION='8b5c22b98f53587f79fbece136899b417343b3bb'
+REVISION='47001725fe2bb94b4c118566207de40bf00a4c29'
 PROFILER_REVISION='1b825382610660fbfc2920b977963b7f7b454a57'
-FILES={'mojt_artifact.py': '006dae0b917d61ade8b52f80510bf334334e70e8aa93be51f474f8073d289dc1', 'mpm_base.py': 'dd477271743b1771c9a0c28793c066d2e28f6d015dc7c1e39e84ecf4707a4403', 'mpm_boot_base.py': '359043d0b43ece16674feb0880921d150ebaaa2eb55aa2938bbf6d593f248428', 'mpm_boot_constructor.py': '6b716161948bca8644b019bb40457738def92f20af09f8ad814d0381ac5a076d', 'mpm_boot_handover.py': 'c6024b3ebd45a6b9f1c58523d94ecbfc0792b85909bc5efb1a84ea5699243d1c', 'mpm_boot_selection.py': '60b489bf69f08db42c03807c4953966bc9edde09f82fa6e2f9ecf936e667dac7', 'mpm_boot_update.py': '2cb3a95d5de05177047c8549d4daac12a40f40cbbf0b80f368960a9bb3305acc', 'mpm_boot_v2_store.py': 'd7ed98a995b68bd746a0141b16d27571dc629cec9e5c3d72098f5c4084c4545a', 'mpm_kernel.py': '888b5b20c3d44ddc6ec2d97307218da047986084da237dca89eeff63e1cb6f55', 'mpm_management.py': '55da4c44ac6e22540395e2ea1c0fa5017124b59124aff316ef174d53931abac4', 'mpm_native_io.py': '1473ada63fb3c35a5ad12e3aaf396384cb836359f1037df2497d1d4706136647', 'mpm_nix_boot.py': '6ac8c1c49d56edfc37d02973a7f23e32f1af246b619fd687324980d76a74dd96', 'mpm_system.py': 'a54c6277aa7d26bba998a45545035e89d556d94cb7cd3ec2c37604614f47c879', 'mpm_system_transition.py': 'b63a765492b69d13bd69af0f4d63d88f1f8109aa72b75b4c6fe47ea42afe7734'}
+FILES={'mojt_artifact.py': '006dae0b917d61ade8b52f80510bf334334e70e8aa93be51f474f8073d289dc1', 'mpm_base.py': 'dd477271743b1771c9a0c28793c066d2e28f6d015dc7c1e39e84ecf4707a4403', 'mpm_boot_base.py': '359043d0b43ece16674feb0880921d150ebaaa2eb55aa2938bbf6d593f248428', 'mpm_boot_constructor.py': '6b716161948bca8644b019bb40457738def92f20af09f8ad814d0381ac5a076d', 'mpm_boot_handover.py': 'c6024b3ebd45a6b9f1c58523d94ecbfc0792b85909bc5efb1a84ea5699243d1c', 'mpm_boot_selection.py': '60b489bf69f08db42c03807c4953966bc9edde09f82fa6e2f9ecf936e667dac7', 'mpm_boot_update.py': '2cb3a95d5de05177047c8549d4daac12a40f40cbbf0b80f368960a9bb3305acc', 'mpm_boot_v2_store.py': 'd7ed98a995b68bd746a0141b16d27571dc629cec9e5c3d72098f5c4084c4545a', 'mpm_kernel.py': '888b5b20c3d44ddc6ec2d97307218da047986084da237dca89eeff63e1cb6f55', 'mpm_management.py': '55da4c44ac6e22540395e2ea1c0fa5017124b59124aff316ef174d53931abac4', 'mpm_native_io.py': '88168a9b468835a99bffb0b9e2ce70ccab54d1ed97d66c65838c32f9e02d6d7a', 'mpm_nix_boot.py': 'c0faf2791c149c77474c1351841a0511f70fb90f32f73cc1326e04b8c2edb36e', 'mpm_system.py': 'a54c6277aa7d26bba998a45545035e89d556d94cb7cd3ec2c37604614f47c879', 'mpm_system_transition.py': 'b63a765492b69d13bd69af0f4d63d88f1f8109aa72b75b4c6fe47ea42afe7734'}
 PROFILER_SHA256='4cbc8dc3315f49d21bd8c5d2220200b5d1747c051fadf05a8c2a9db8dfdba980'
 ORIGIN='https://raw.githubusercontent.com/kjonasipersson-bert/mojt-linux/'
 SYSTEM=Path('/run/mojt-system')
 CHECKPOINT=Path('/var/lib/mojt/initramfs-payload-55')
-WORK=Path('/var/lib/mojt/stage-fast-57')
+WORK=Path('/var/lib/mojt/stage-nix-57')
 
 
 def require(ok,message):
@@ -156,6 +156,8 @@ def validate_result(report,*,warm=None):
             'incomplete stage sample; preserve the report and inspect status')
     require(report['result']['verification_requested'] is False,'unexpected full audit policy')
     require(not report['processes'].get('--verify-path',{}).get('calls',0),'normal stage ran a full Nix path audit')
+    counts=[report['processes'].get('--query '+verb,{}).get('calls',0) for verb in ('--hash','--requisites')]
+    require(0<counts[0]<253 and counts[0]==counts[1],'Nix query reuse not demonstrated; preserve the profile')
     payload=report['result']['initramfs_payload']
     require(payload['reused'] is (warm is not None),'unexpected cold/warm payload state')
     if warm is not None:require(payload['inputs']==warm['inputs'],'warm stage used a different payload')
@@ -176,7 +178,7 @@ def main(argv=None):
     saved=installed_status();protected(WORK)
     require(not os.path.lexists(WORK),'test evidence already exists; preserve it and inspect status before retrying')
     print('New MPM code in a private reviewed bundle; installed F remains running and selected.',flush=True)
-    print('Prepare retained E once, then retained D using the new warm payload. No reboot.',flush=True)
+    print('Final Nix query-cache measurement. Prepare retained E once, then retained D warm. No reboot.',flush=True)
     require(input('Prepare the code bundle and run both measured stages? [y/N] ').strip().lower() in ('y','yes'),'cancelled')
     WORK.mkdir(mode=0o700);downloads=WORK/'downloads';downloads.mkdir()
     for name,expected in FILES.items():
@@ -196,7 +198,7 @@ def main(argv=None):
     with (WORK/'summary.txt').open('x') as stream:
         for label in ('cold','warm'):
             stream.write(label.upper()+' STAGE\n'+(WORK/label/'summary.txt').read_text()+'\n')
-    print('\nPASS: new ordinary stage; exact warm payload reused; zero Nix --verify-path calls; F running/selected.',flush=True)
+    print('\nPASS: final Nix query reuse measured; exact warm payload reused; zero --verify-path calls; F running/selected.',flush=True)
     print('Send:',WORK/'summary.txt',flush=True)
     return 0
 

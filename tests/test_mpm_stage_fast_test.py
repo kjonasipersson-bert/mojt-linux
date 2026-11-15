@@ -19,12 +19,15 @@ delivery=importlib.util.module_from_spec(spec);spec.loader.exec_module(delivery)
 class ResultTests(unittest.TestCase):
     def test_only_complete_normal_samples_with_exact_warm_payload_can_pass(self):
         def result(reused,key='payload'):
-            return dict(ok=True,returncode=0,processes={},result=dict(changed=True,verification_requested=False,
+            return dict(ok=True,returncode=0,processes={name:{'calls':37} for name in ('--query --hash','--query --requisites')},result=dict(changed=True,verification_requested=False,
                         initramfs_payload=dict(inputs=key,reused=reused)))
         cold=delivery.validate_result(result(False))
         self.assertEqual(delivery.validate_result(result(True),warm=cold),dict(inputs='payload',reused=True))
         for report in (result(True),dict(result(False),ok=False),dict(result(False),returncode=1),
-                       dict(result(False),processes={'--verify-path':{'calls':1}})):
+                       dict(result(False),processes={'--verify-path':{'calls':1}}),
+                       dict(result(False),processes={}),
+                       dict(result(False),processes={name:{'calls':253} for name in ('--query --hash','--query --requisites')}),
+                       dict(result(False),processes={'--query --hash':{'calls':37},'--query --requisites':{'calls':38}})):
             with self.subTest(report=report),self.assertRaises(ValueError):delivery.validate_result(report)
         with self.assertRaisesRegex(ValueError,'different payload'):delivery.validate_result(result(True,'other'),warm=cold)
 

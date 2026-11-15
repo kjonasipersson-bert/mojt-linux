@@ -109,6 +109,7 @@ without installing another System, changing next boot or rebooting. This is an
 explicit maintenance test of new code, not a claim that installed F already
 contains it. The ordinary installed profiler remains available for final
 measurement after the normal tooling update.
-The pinned short-test helper intentionally retains the previously measured
-revision; it does not deliver the final query-cache follow-up. Preserve its
-existing evidence rather than rerunning it to test newer code.
+The short-test helper now pins the final query-cache follow-up at `47001725`
+and writes separate evidence under `/var/lib/mojt/stage-nix-57`. It requires
+reduced Nix query counts as well as exact warm reuse and unchanged selection.
+Preserve the previous measurement under `/var/lib/mojt/stage-fast-57`.

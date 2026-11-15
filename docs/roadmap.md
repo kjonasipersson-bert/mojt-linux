@@ -109,7 +109,8 @@ inventory remain checked each time; explicit audits keep their full path.
 This follow-up has regression coverage but no new SSD measurement. Performance
 tuning stops here before returning to the roadmap. Installed-tooling delivery
 and integration into ordinary install remain open. No new boot is claimed by
-this private-code test, and its pinned helper predates the query-cache follow-up.
+this private-code test. A separately pinned follow-up measurement uses
+`/var/lib/mojt/stage-nix-57` and leaves the previous evidence intact.
 Keep explicit `--verify` audits available,
 required metadata/compatibility checks and safe atomic publication intact, and
 the accepted Base/System independence and selection boundary explicit.
