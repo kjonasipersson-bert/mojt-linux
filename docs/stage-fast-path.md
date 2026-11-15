@@ -83,8 +83,13 @@ replacement and permission invalidation, same-size content changes with restored
 mtime, immutable metadata reuse, full-audit refusal of damaged payloads, provider
 query/root failures, exact proof reuse and missing-tree refusal. Existing
 constructor, admission, bootstrap, rollback and state gates remain regression
-checks. New ordinary-stage timing on the owner's SSD is pending; no speedup is
-claimed from the old profile alone.
+checks. The [owner SSD result](stage-fast-hardware-test.md#recorded-owner-result--2026-11-15)
+measured 134.812 s cold and 66.369 s warm, compared with the previous 233.777 s
+profile: 71.6% shorter warm elapsed time. Both calls exited 0 with zero
+`--verify-path` commands. Warm payload reuse took 0.285 s. Nix metadata queries
+still ran 253 times each; the intended query cache did not reduce that count on
+this machine, and the summary does not identify the cache guard responsible.
+Repeated metadata/link checks remain measured optimization targets.
 
 The [short SSD test](stage-fast-hardware-test.md) runs the reviewed new manager
 in a private complete code bundle using F's installed interpreter/runtime. It prepares retained alternatives

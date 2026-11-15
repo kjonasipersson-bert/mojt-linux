@@ -80,5 +80,46 @@ or a complete deployment. Do not remove cache/checkpoint files to force another
 sample. The helper refuses an existing work directory, preserving partial
 evidence for inspection before any repeat.
 
-Owner results are pending. This short test establishes preparation/performance
-only; it does not claim a new physical boot or installed-tooling delivery.
+## Recorded owner result — 2026-11-15
+
+The owner returned `summary57.txt` (SHA256
+`b5ca9285d80c9e0d17ac5cc38bbb0ec3906ffbdf33e2cc4fee1d42950f91ac19`)
+from the private-code test pinned above. Both measured MPM calls exited 0.
+
+| Measurement | Wall seconds | Total CPU seconds |
+| --- | ---: | ---: |
+| Previous installed stage profile | 233.777 | 223.577 |
+| New cold stage | 134.812 | 125.894 |
+| New warm stage | 66.369 | 65.992 |
+| New warm candidate preparation (included in total) | 9.027 | 8.985 |
+
+Warm elapsed time is 167.408 s shorter, a 71.6% reduction (3.52 times faster)
+in this engineering comparison. The warm CPU total is 52.778 s Python plus
+13.214 s children. Both profiles contain zero `--verify-path` commands.
+The combined summary is written only after both probe validations and the final
+installed-F status guard pass. Those validations require fresh deployments,
+unchanged running/menu state, normal verification policy and exact cold/warm
+payload-key reuse. The full JSON/log evidence was not imported.
+
+Cold payload work took 57.004 s, including 43.334 s of gzip compression.
+Warm payload work took only 0.285 s. The remaining warm costs include:
+
+| Observed own time | Wall seconds | Calls |
+| --- | ---: | ---: |
+| Nix subprocesses | 13.197 | 506 |
+| System link checks | 10.767 | 7 |
+| Transition preparation | 7.089 | 5 |
+| Canonical JSON encoding | 5.985 | 10,256 |
+| Selected-context checks | 4.854 | 6 |
+
+These are own times with observed child work subtracted; do not add inclusive
+phase durations to this table. Nix still runs 253 requisite queries and 253 hash
+queries, unchanged from the previous warm profile. Thus metadata-query reuse
+has not reduced subprocess counts on this machine. The summary does not expose
+which conservative cache guard prevented reuse, so no specific cause is claimed.
+Repeated metadata/link checks are the next measured targets; payload reuse is
+already cheap on the warm path.
+
+This establishes bounded private-code preparation/performance only. It does not
+claim a new physical boot or replacement of installed F tooling. No further
+reboot is needed to interpret this result.

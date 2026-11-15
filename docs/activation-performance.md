@@ -135,5 +135,12 @@ breakdown is included in its subtotal; inclusive phase durations must not be
 added to their own-time entries. The profiling diagnostic itself changes no
 audit policy. The subsequent [ordinary stage implementation](stage-fast-path.md)
 makes full content audits explicit and reuses unchanged metadata within each
-call, while retaining current-state and publication checks. Its new SSD timing
-is pending. Automatic preparation inside normal install remains separate work.
+call, while retaining current-state and publication checks. The subsequent
+[private-code SSD test](stage-fast-hardware-test.md#recorded-owner-result--2026-11-15)
+measured 134.812 s cold and 66.369 s warm, with no `--verify-path` calls: warm
+elapsed time fell 71.6% from 233.777 s. Warm payload reuse took 0.285 s; remaining
+own costs include 13.197 s of Nix metadata queries and 10.767 s of link checks.
+Both metadata query types still ran 253 times; the cause of missed reuse is not
+established by this summary. This tests private code and unchanged boot choice,
+not new installed tooling or another physical boot. Automatic preparation inside
+normal install remains separate work.
