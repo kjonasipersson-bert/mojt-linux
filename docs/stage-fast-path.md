@@ -49,6 +49,8 @@ atomic publication. A full byte audit is not silently claimed by normal stage.
   helper and installation. Dependencies include the closure roots/bin directories
   and Nix database/WAL status. The GC-root/helper binding is checked on every
   call. Query failures or changed closure/registered hashes remain errors.
+  A database checkpoint during a valid query prevents caching that result;
+  the next phase queries it again instead of treating a cache update as failure.
 - Parsed metadata, metadata-only Base/System/Kernel object checks and repeated
   code hashes are reusable only while their dependency signatures match. Each
   lookup restats files and ancestors, including inode/device, owner, permissions,
@@ -84,8 +86,8 @@ constructor, admission, bootstrap, rollback and state gates remain regression
 checks. New ordinary-stage timing on the owner's SSD is pending; no speedup is
 claimed from the old profile alone.
 
-The short delivery will run the reviewed new manager in a private complete code
-bundle using F's installed interpreter/runtime. It prepares retained alternatives
+The [short SSD test](stage-fast-hardware-test.md) runs the reviewed new manager
+in a private complete code bundle using F's installed interpreter/runtime. It prepares retained alternatives
 without installing another System, changing next boot or rebooting. This is an
 explicit maintenance test of new code, not a claim that installed F already
 contains it. The ordinary installed profiler remains available for final

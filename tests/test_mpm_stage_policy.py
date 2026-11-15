@@ -12,6 +12,7 @@ import tempfile
 import unittest
 from unittest import mock
 
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'tools'))
 import mojt_artifact as artifact
 import mpm_base as base
 import mpm_base_transition as common
