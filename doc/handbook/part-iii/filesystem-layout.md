@@ -16,12 +16,10 @@ runtime dependencies remain separate, versioned content.
 **Implementation scope:** the writable-root layout is implemented for newly
 prepared native-v2 System handovers carrying the new boot code. Existing boot
 entries keep their embedded boot code and mount behavior. Selecting an old entry
-does not upgrade its layout. The owner reported PASS for the physical G/H/G
-boot, persistence and return checks on 2026-11-15, in addition to the local
-mount/refusal tests and CI validation. This is a bounded test with the retained
-Base and Kernel, not a complete compatibility matrix. Earlier bootstrap and
-legacy images can still have read-only
-`/` until a deployment using the new handover is prepared and booted.
+does not upgrade its layout. Earlier bootstrap and legacy images can still
+have read-only `/` until a deployment using the writable-root handover is
+prepared and booted. Base changes must satisfy the supported root-projection
+and compatibility requirements described below.
 
 ## 5.1. The running filesystem
 
@@ -93,7 +91,7 @@ root projection. It is boot-owned metadata. Root aliases and mountpoint types
 are reserved, even though root can technically change them. A changed alias,
 unsafe path, incompatible Base top-level layout, or files placed in an underlying
 mountpoint that would be hidden cause a diagnostic refusal. They are not silently
-overwritten or deleted. This increment supports Base releases sharing that
+overwritten or deleted. The current layout supports Base releases sharing that
 projection; a changed projection needs an explicit future migration.
 
 ## 5.3. Generation changes and return

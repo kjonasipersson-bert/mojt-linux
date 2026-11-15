@@ -69,8 +69,7 @@ repeats verify and reuse retained output; concurrent repeats recheck under locks
 Staging does not change the GRUB menu, next boot or running deployment. Empty
 cooperating boot/Ports lock infrastructure may be initialized. It creates no
 requests, active Ports profile, configuration defaults or Base current pointer.
-The result is ready for a future selection operation, with boot acceptance still
-pending. Existing `mpm kernel select` refuses to use a Base-changing candidate as
+Preparation leaves the result available for explicit next-boot selection. Existing `mpm kernel select` refuses to use a Base-changing candidate as
 a Kernel-only update.
 
 ## Validation and next gate
@@ -81,13 +80,9 @@ next boot, no-op repeats, missing defaults/management, corruption, late input
 changes and publication uncertainty. Real root cases run in CI. Synthetic guest
 files are not a successful VM boot.
 
-Base next-boot selection/return and joined installed/next/running status are now
-implemented. The [focused owner acceptance](base-boot-acceptance.md#recorded-owner-acceptance-2026-11-07)
-passed on 2026-11-07: changed Base booted read-only with exact System/Kernel and
-state retained, then the previous deployment was restored. Retain the successful
-image/checkpoint. No repeated Kernel/hardware matrix is requested. Missing-default
-lifecycle actions and actual System installation remain separate integration gates.
-
+Base next-boot selection/return and joined installed/next/running status are
+implemented. Unsupported initialization/default migrations are refused rather
+than silently changing persistent machine state.
 
 ## Exact Base selection and return
 

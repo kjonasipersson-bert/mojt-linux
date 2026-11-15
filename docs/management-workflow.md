@@ -100,15 +100,15 @@ deployment is not automatically a successfully booted or initialized one.
 Failures explain what was published, what remains incomplete and which previous
 choice remains intact. Booting older code does not undo changed persistent data.
 
-## Review and implementation boundary
+## Implementation boundary
 
-The [Base command contract](mpm-base-contract.md) was agreed on 2026-11-06.
-The [first implementation](base-installation.md) merged in PR #40.
-[Base staging/selection/return](base-boot-staging.md) is implemented in PR #41,
-with [owner boot/return acceptance](base-boot-acceptance.md#recorded-owner-acceptance-2026-11-07)
-passed on 2026-11-07. MBT reuses the agreed meanings
-regardless of its final spelling.
-Detailed behavior remains in the [distribution contract](distribution-contract.md),
-open choices in the [decision register](distribution-decisions.md), and delivery
-order in the [six-step plan](mpm-consolidation-plan.md). This workflow does not authorize unknown schema adoption, automatic cleanup
-or an additional component cross-product VM matrix.
+[Base import/status](base-installation.md), [Base boot selection](base-boot-staging.md)
+and [native-v2 System updates](system-transition.md) use these distinct meanings.
+Normal live System install includes preparation; Base/Kernel preparation remains
+separate. MBT reuses the content/boot APIs instead of patching a running manager.
+
+The [MPM contract](mpm.md) describes implemented commands and limits. Broader
+lifecycle proposals and interface choices are explicitly marked in the
+[distribution contract](distribution-contract.md) and [decision register](distribution-decisions.md).
+Unsupported schema adoption, automatic cleanup and general service migrations
+are not authorized by the existence of a preparation API.

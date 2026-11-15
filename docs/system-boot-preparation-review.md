@@ -6,6 +6,11 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Native-v2 preparation review, 2026-11-09
 
+**Historical experiment/design record.** This page preserves its development
+context and observations. It is not the current interface/status reference;
+use the [Handbook](../doc/handbook/README.md), [architecture](architecture.md)
+and [roadmap](roadmap.md) for current behavior and priorities.
+
 The reviewed path is `prepare-system-boot.py` → the shared fresh-image preparer
 → `mojt-native-image.py` → isolated offline A/B construction → launcher
 publication → one installed-MPM A/B/A VM journey. This review starts from the

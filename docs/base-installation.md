@@ -6,12 +6,10 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Exact Base installation and status
 
-First implementation of the [owner-agreed Base contract](mpm-base-contract.md),
-2026-11-06, merged in PR #40. Installation means retained exact content **and** a
-validated rootfs realization. It changes neither machine configuration nor boot
-selection. Existing-disk [Base staging/selection/return](base-boot-staging.md)
-is implemented separately in PR #41; bounded owner boot/return acceptance
-passed on 2026-11-07.
+[Base installation](mpm-base-contract.md) means retained exact content **and**
+a validated rootfs realization. It changes neither machine configuration nor
+boot selection. [Base staging/selection/return](base-boot-staging.md) operates on
+that installed content as a separate step.
 
 ## One target and two inputs
 
@@ -109,10 +107,9 @@ integrity means verified at installation; `--verify` rechecks retained archives,
 wrapper and rootfs inventory. Unsupported/corrupt required records fail visibly.
 Status creates no store, target, lock or selection and performs no cleanup.
 
-The new Base trees are not yet boot targets. Catalog selectors, persisted Base
-upgrade wishes, `base upgrade`, generalized deployment, lifecycle/defaults
-preparation and System import remain subsequent roadmap work. MBT public syntax
-remains deferred; bootstrap must reuse these installation functions.
+Installation alone does not prepare a selectable boot entry. Use the
+[Base deployment workflow](base-boot-staging.md) with the declared Kernel bounds.
+Moving-policy acquisition and general lifecycle migrations remain separate work.
 
 ## Validation
 
@@ -122,13 +119,6 @@ It covers read-only/offline inspection, malformed paths/archives/identity, bound
 expansion, same-label build coexistence, full content realization, original-byte
 independent repeats, corruption, partial publication/retry and publication
 uncertainty. Real root ownership/extraction cases run under sudo in focused CI.
-These installation tests alone do not prove boot readiness. The later
-[changed-Base deployment path](base-boot-acceptance.md) passed its focused
-owner VM boot/return acceptance on 2026-11-07.
-
-
-For implemented Base boot staging, explicit selection/return and joined status,
-see [Base boot staging](base-boot-staging.md). These actions remain separate from
-installation. The first subset refuses missing defaults. The accepted
-[owner VM result](base-boot-acceptance.md#recorded-owner-acceptance-2026-11-07)
-is recorded separately from automated installation coverage.
+These installation tests alone do not establish boot readiness. Base
+preparation/selection and return use their own deployment gates; see
+[Base boot staging](base-boot-staging.md).

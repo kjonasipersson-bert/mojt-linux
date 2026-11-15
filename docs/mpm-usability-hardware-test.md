@@ -10,7 +10,8 @@ Start as root on the accepted SSD with writable-root **G or H running and
 selected**, and keep `/var/lib/mojt/writable-root-60/state.json`. This test
 retains Base, Kernel, firmware, provider/startup policy, persistent data and the
 original recovery entries. It does not format a disk or reboot automatically.
-No physical acceptance is claimed until the owner completes these steps.
+The acceptance result is recorded separately below; the commands here describe
+the pinned test procedure.
 
 Use the exact reviewed delivery's **`tools/mojt-usability-test.py`**, retaining
 that filename. Copy it by USB to **`/root/mojt-usability-test.py`**. Its functional
@@ -96,3 +97,18 @@ that directory; do not remove checkpoints, force preparation or replace an
 installed manager. The old G/H and earlier F recovery entries are retained.
 An older System's original man wrapper will not gain the new search behavior,
 although the added documentation and Ports state remain retained.
+
+
+## Recorded acceptance — 2026-11-15
+
+The project owner confirmed completion of the entire I/J guide and the manual
+MPM commands, and reported that everything worked. This covers the readable
+running/next/prepared status, normal System installation with preparation,
+manual-page acquisition/lookup/rendering, public chooser/change preview and
+reboot checks. The tested delivery is `e688d62c740ec4d7cc111447b2672b5b538f9b05`,
+with functional inputs pinned by its helper to
+`8c3b4e1d5cd6c001aecad59a2a9efd76fdb82ebb`. Result: **PASS**.
+
+This records the reported complete procedure, including the manual commands;
+no additional acceptance round is pending for this increment. It does not add a
+new timing measurement or expand the hardware/Base/Kernel compatibility matrix.

@@ -6,6 +6,10 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # ThinkPad X1 Carbon 3rd generation: first USB boot
 
+**Historical experiment/test report.** This page records its pinned inputs,
+procedures and observations, including superseded behavior. For current usage,
+start with the [Handbook](../doc/handbook/README.md) and [documentation index](README.md).
+
 For the current joined MPM/MBT route, use
 [`mbt bootstrap --hardware-profile thinkpad-x1-carbon-3`](mbt-minimal.md#thinkpad-image-profile).
 That native-v2 path keeps Kernel/modules in the separate exact Kernel artifact

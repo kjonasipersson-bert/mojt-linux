@@ -34,7 +34,7 @@ claims and graph/retention references replace a single package-origin flag.
 Exact wire fields are review proposals; existing MPM metadata is not rewritten.
 
 
-The [initial-format policy](./format-policy.md) supersedes earlier transition requirements: fresh installations only, no legacy migration/support obligation. Keep explicit format versions and refuse unknown required versions before mutation. Current-state integrity and safe recovery remain required.
+The [initial-format policy](format-policy.md) supersedes earlier transition requirements: fresh installations only, no legacy migration/support obligation. Keep explicit format versions and refuse unknown required versions before mutation. Current-state integrity and safe recovery remain required.
 
 ## 1. Responsibilities and invariants (OWN)
 

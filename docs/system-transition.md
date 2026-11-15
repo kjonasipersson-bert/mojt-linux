@@ -158,30 +158,17 @@ It does not report service health or a bootable candidate. Service upgrades,
 provider runtime changes and state migrations need separate supported contracts,
 not a user flag bypassing these gates.
 
-## Remaining deployment work
+## Preflight and execution boundaries
 
-The existing assembled System's flat `defaults/journald.conf` and
-`defaults/timesyncd.conf` are resources linked from `/etc/systemd`; observation
-checks those actual persistent paths, without creating unused top-level copies
-or replacing local configuration. A linked `systemd` parent is refused.
+The assembled System's flat `defaults/journald.conf` and `defaults/timesyncd.conf`
+are resources linked from `/etc/systemd`. Observation checks those actual
+persistent paths without creating unused top-level copies or replacing local
+configuration. A linked `systemd` parent is refused.
 
-Both `stage_ready` and `boot_ready` remain false. This reader observes the
-existing verified v1 layout and the active native-v2 selection through separate
-explicit result formats; it does not convert either record format. The [native-v2 record/storage layer](native-boot-v2.md) validates inputs,
-binding and deployment, and atomically retains a complete immutable slot without
-selection. It does not yet consume this preflight as execution authorization.
-The [diagnostic constructor/early reader](native-initramfs-reader.md) now verifies
-exact trees from its trusted private runtime. The [System handover mode](native-system-handover.md) now joins this preflight,
-current-state checks and a separate boot Base to runtime/shutdown handover.
-[Prepared-candidate admission/selection/status](native-system-selection.md) is
-implemented. Active-v2 planning is implemented; staging a new generation from
-that plan and request-to-boot integration remain before complete administration.
-No backward migration is required.
-
-The [prepared single A/B/A owner test](system-boot-acceptance.md) now exercises the
-new-image constructor and installed selection/status frontend. The owner
-completed its A/B/A boot/return and clean-shutdown acceptance on 2026-11-09 with
-exact Base/Kernel and persistent state retained. These synthetic preflight tests
-are separate from that real VM evidence. Three focused cases cover tooling/provider preservation,
-real root retained-content inspection without writes, and refusal of changed
-service/provider contracts plus stale persistent-account evidence.
+Preflight reports compatibility rather than successful construction or boot.
+Its `stage_ready` and `boot_ready` flags remain false: admission requires the
+trusted constructor's completed in-process result, exact immutable slot and
+current-state rechecks. Native-v2 stage uses this preflight and handover;
+activation consumes the admitted entry. The metadata reader itself neither
+executes a candidate nor converts v1 records into v2 records. See the
+[selection contract](native-system-selection.md).

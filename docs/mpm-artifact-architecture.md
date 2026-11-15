@@ -368,7 +368,7 @@ Existing fresh-image tests do not establish existing-disk boot publication.
    common container for Base/System/Kernel/Port, category-rooted members and an
    embedded descriptor, with a matching-build Kernel export adapter. Four-kind
    fixtures and source/configuration evidence checks pass. The owner's
-   [real Kernel package acceptance](native-artifact-format.md#owner-native-package-acceptance-2026-10-29)
+   [real Kernel package acceptance](reports/native-artifact-format-history.md#owner-native-package-acceptance-2026-10-29)
    also passed on 2026-10-29: Mojt export and independent Debian verification of
    the same exact artifact preserved existing build/configuration evidence,
    without recompilation. This does not implement installation or activation.

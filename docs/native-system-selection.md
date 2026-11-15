@@ -6,11 +6,8 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Native-v2 System staging, selection and status
 
-This joins the [handover constructor](native-system-handover.md) to one atomic
-next-boot authority. It remains consolidation step 3, on the path to M1 joined
-administration and M2 native self-hosting. Prepared-candidate owner A/B/A boot,
-return and clean static-exitrd shutdown passed on 2026-11-09; see the
-[recorded acceptance](system-boot-acceptance.md#owner-acceptance-2026-11-09).
+The [handover constructor](native-system-handover.md) feeds one atomic next-boot
+authority. Running identity remains separate from the selected deployment.
 
 ## Retained content is not a selectable System
 
@@ -99,18 +96,10 @@ old recovery reader/writer. V1 boot writers explicitly refuse a v2 authority;
 Base/Kernel content import remains separate, and v2 Base/Kernel boot changes are
 not silently routed through an unused legacy menu.
 
-## Focused evidence and next gate
+## Validation boundary
 
-The existing actual-archive root/chroot case now admits two native System
-generations, initializes the private hook/menu, previews/selects/returns, and
-checks distinct selected/running identities. It covers stale expected selection,
-no-op, retained entries, refusal of v1 fallback and failures before/after menu
-replacement. This is not a real firmware/Kernel/System boot or owner Debian test.
-
-The [disposable A/B/A VM preparation and checkpointed owner test](system-boot-acceptance.md)
-use these manager APIs. Owner boot/return passed with exact Base/Kernel/state,
-selected/running identities and the previous journal retained. Next close
-active-v2 preflight/staging and
-request/configuration joins before MBT bootstrap reuses the same code. Self-hosting
-still requires pinned source recipes for Base and Mojt-owned System code, plus
-the joined build/package/install/boot cycle; the new menu alone does not prove it.
+Archive/chroot fixtures cover admitted generations, stale-selection guards,
+retained entries, v1 refusal and publication failures. Their simulated boot
+inputs do not establish firmware/Kernel/System runtime behavior. Dedicated
+[test reports](reports/README.md) retain boot/return and failure observations
+separately from this API contract.

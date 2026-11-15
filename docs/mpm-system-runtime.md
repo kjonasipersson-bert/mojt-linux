@@ -99,10 +99,7 @@ status, and inspect actual System runtime delivery and helper selection/refusal.
 The fixture's running release is simulated; these are integration tests, not a
 new physical Kernel boot or a libc compatibility proof.
 
-No repeated owner VM/account loop is required before this integration. A future
-single complete bootstrap/build/install/boot acceptance tests the installed
-commands on the real Mojt runtime. Base/System mutation commands, trusted native
-repository acquisition and the unified build/bootstrap interface remain separate
-work. Existing MPM syntax is retained. The separate new-tool interface discussion
-concerns [MBT](mbt-cli-discussion.md). The [gap matrix](mpm-gap-matrix.md) records
-the remaining joins to the complete installed-machine workflow.
+The runtime is used by installed Base/System/Kernel operations and the MBT
+build/bootstrap frontend. Packaging a new cohort does not patch an existing
+System. See [current integration boundaries](mpm-consolidation-plan.md) and
+[the roadmap](roadmap.md) for unsupported distribution and migration features.

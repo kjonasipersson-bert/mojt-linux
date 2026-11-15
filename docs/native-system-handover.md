@@ -90,34 +90,18 @@ existing persistent files are never rolled back or removed.
 Runtime evidence is separately versioned at `/run/mojt/native-v2.json`, with the
 complete deployment/input identity. It is never forged as v1. [Atomic selection/status](native-system-selection.md) now consumes admitted
 constructor results and preserves the distinct runtime identity. V1 writers refuse
-a v2 authority; the complete installed stage/request workflow remains unfinished.
+a v2 authority. The public native-v2 install/preparation/activation workflow is
+described in [boot updates](system-transition.md).
 
 `/run/mojt/boot-checks.json` separately records normal/full-audit mode and the
 metadata-reader/current-state durations. Normal mode reports
 `content_verified=false`: the runtime identity is not a new payload integrity
 attestation. It does not write verification results into persistent state.
 
-## Acceptance and self-hosting
+## Scope
 
-Focused CI reuses the actual-archive chroot test for exact reader and System
-state gates, including refusal of a changed layout. One additional root case
-checks Base-copy reuse, unchanged menu/state and reverse cleanup after an injected
-late mount failure. Mount/exec calls are injected; these CI cases alone are not
-real System boot or shutdown evidence. The admitted v2 selection/status join
-subsequently passed [owner A/B/A boot/return and clean shutdown](system-boot-acceptance.md#owner-acceptance-2026-11-09)
-on 2026-11-09, preserving exact Base/Kernel and persistent state. Public active-v2
-staging and request integration remain.
-
-The new writable-root increment has separate [G/H/G hardware instructions and owner acceptance](writable-root-hardware-test.md#recorded-owner-acceptance--2026-11-15).
-The owner reported every step PASS on 2026-11-15 with delivery `d3bd849f`,
-covering physical G/H/G boot and return, persistent root/local state, cleared
-temporary files, read-only release mounts and working Ports. The collaborator
-did not run tests on the owner's machine or import its full evidence/shutdown
-transcript; no different-Base/Kernel matrix or old-F recovery boot is claimed.
-
-MBT must subsequently reuse these installation/handover APIs for bootstrap and
-the existing build environment, Kernel build and native packaging. The destination
-is **M2 native self-hosting**: Mojt builds Base and Mojt-owned System components
-from pinned sources/recipes and installs/boots them. M1 joined administration is
-the prerequisite. Importing tools or assembling prebuilt Base/System images alone
-does not establish M2. Full third-party source coverage is the separate M3 gate.
+The handover gate preserves startup/services and provider runtime dependencies;
+it does not authorize arbitrary hooks, general service upgrades or schema
+migrations. MBT reuses the native installation/handover APIs for fresh bootstrap.
+Complete source builds of Base and Mojt-owned System components remain separate
+from assembling retained prebuilt inputs. See the [roadmap](roadmap.md).

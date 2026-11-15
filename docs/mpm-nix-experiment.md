@@ -6,6 +6,10 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # MPM/Nix Ports experiment
 
+**Historical experiment/test report.** This page records its pinned inputs,
+procedures and observations, including superseded behavior. For current usage,
+start with the [Handbook](../doc/handbook/README.md) and [documentation index](README.md).
+
 **2026-10-24 extension:** see [Using MPM for ordinary Ports](mpm-ports.md)
 for attribute lookup without per-package manifests, automatic command
 discovery, inspection commands and logical removal with historical fallback.
@@ -56,7 +60,7 @@ from all host services or a working Mojt System. These tests inspected GC
 registrations without destructive garbage collection. Production project
 locks and upgrade policies remain pending. Execution inside Mojt was verified
 separately in System 0.2-step3 / Base 0.1.3; see the
-[recorded VM acceptance](system-nix-vm.md#recorded-step-3-acceptance-2026-10-23).
+[recorded VM acceptance](reports/system-nix-vm-history.md#recorded-step-3-acceptance-2026-10-23).
 
 ## Manifest and local catalog
 
@@ -263,7 +267,7 @@ cleanup and power-loss durability are not implemented.
 The ordinary-Ports extension now flushes profile files/directories around
 publication and reports uncertainty for a failure after the selection rename.
 This remains short of complete power-loss recovery for backend state; see
-the current [validation limits](mpm-ports.md#agent-side-validation-2026-10-24).
+the current [validation limits](reports/mpm-ports-history.md#agent-side-validation-2026-10-24).
 
 Use a new/empty dedicated root. The probe refuses unmanaged directories,
 modified profile aliases, command collisions and missing retention links.

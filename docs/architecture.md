@@ -4,422 +4,116 @@ Copyright (C) 2026 Jonas Persson
 SPDX-License-Identifier: GPL-2.0-only
 -->
 
-# Mojt Architecture (experimental)
+# Mojt architecture
 
-## Writable root and independent persistent state (2026-11-15)
-
-New native-v2 handovers use persistent `state/rootfs` for writable `/`, with
-selected Base trees/files projected read-only. `/usr/local` has a separate
-persistent `state/local` bind; existing `/etc`, `/var`, `/home` and `/root`
-mappings remain. Local `/opt`, `/srv` and administrator-created root paths
-survive compatible generation changes. `/run` and `/tmp` remain tmpfs.
-Initialization is additive and occurs only on first boot of the new handover,
-with an installation/projection marker and no silent adoption or overwrites.
-Existing embedded boot code remains unchanged; old entries can still have
-read-only root. Data/schema rollback is not automatic. See the
-[Handbook path and persistence tables](../doc/handbook/part-iii/filesystem-layout.md)
-and [handover contract](native-system-handover.md).
-
-The owner reported PASS for the [G/H/G writable-root boot and persistence checks](writable-root-hardware-test.md#recorded-owner-acceptance--2026-11-15)
-on 2026-11-15, using delivery `d3bd849f`. This establishes the bounded physical
-boot/change/return gate with the retained Base/Kernel; it does not upgrade old
-boot entries or establish a complete hardware/compatibility matrix.
-
-## Explicit boot generations (2026-10-25 experiment)
-
-New UEFI builds pin both Base and System in each boot pair, independently of
-their `current` links. The builder can compose multiple pairs in a fresh image;
-each pair has its own initramfs and a GRUB entry naming both selections. The
-same `/etc`, `/var` and Nix store are used by every pair. This does not roll
-back state, introduce a System release format or update existing boot disks.
-See [the generation experiment](boot-generations.md) for the conservative ABI
-gate, filesystem layout, build recipe and acceptance boundaries.
-
-This document records **current decisions and open questions**, not stable promises. For the enduring design goals, see [the manifesto](manifesto.md).
-
-## Mojt-owned catalogs and optional providers (2026-10-28 direction)
-
-Mojt must own the catalog and artifact model for its complete Base releases,
-Kernel builds and System components, including content not supplied by Nix or
-another distribution. Building, publication, acquisition/installation and
-activation are separate responsibilities. MPM's core must support local native
-catalogs and artifacts without Nix or a live external service.
-
-The [artifact architecture manifesto](mpm-artifact-architecture.md) starts this
-design: a versioned catalog describes offered artifacts before they are on the
-machine; retained/installed, selected and running state remain distinct. External
-providers become explicit optional adapters. This is the user-directed model;
-the detailed descriptor, trust, storage and migration formats remain proposals.
-Today's Nix-backed System and Ports implementation remains in use while those
-native paths are developed.
-
-The [native artifact format prototype](native-artifact-format.md) uses the same
-versioned descriptor/container for Base, System, Kernel and Port packages. All
-logical tar members stay under their single kind directory, including the
-descriptor; this archive namespace is separate from installation destinations.
-The packer preserves existing Base release images and Kernel build evidence,
-with explicit version/revision/build identities. Acquisition, installation,
-repository trust and boot activation remain separate work.
-
-The [roadmap](roadmap.md) records completed Base/System and different-kernel
-VM experiments and the next System/MPM work. The
-[System completeness and account proposal](system-completeness-proposal.md)
-is a discussion document; its home, authentication and privilege policies
-are not yet architecture decisions or implemented capabilities.
+Mojt separates release-owned code from machine-owned state. Base, System and
+Ports have independent lifecycles; Kernel has its own MPM selection scope within
+the operating system. The [manifesto](manifesto.md) describes the design goals.
 
 ## Layers
 
-| Layer | Purpose | Intended lifecycle |
+| Area | Responsibility | Update unit |
 | --- | --- | --- |
-| Base | Minimal glibc-based Unix userspace; shell, core tools, standard system files | Whole-image releases, versioned and rollback-capable |
-| System | Kernel, init, firmware, networking, drivers, services and deployment profiles | Independent, but tested for Base ABI compatibility |
-| Ports | Applications, libraries, developer toolchains and profiles | Independent versions, pinned environments, optional sandbox execution |
-| State | Local configuration, service data and user data | Persists across Base upgrades and rollbacks |
+| Base | Small glibc-based Unix userspace, utilities, libraries and release defaults | Whole immutable release |
+| System | systemd, networking, accounts, services, administration and management tools, firmware and retained runtime dependencies | Coherent immutable generation |
+| Kernel | Kernel image and matching version-specific modules | Exact build |
+| Ports | Applications, libraries and toolchains | Parallel installed versions and active command choices |
+| State | Configuration, databases, homes and local files | Persistent machine data |
 
-The current Base prototype has no kernel, init, or desktop. The experimental
-System implementation uses systemd. BusyBox remains an early-boot/rescue component and
-a temporary console-login tool in the VM experiment.
+Base contains no Kernel, init, desktop or Python requirement. System supplies
+MPM's Python runtime and uses systemd as PID 1. Static BusyBox supplies early boot,
+recovery and final shutdown, independently of the interactive System shell.
 
-## Base/System composability — accepted direction, 2026-11-14
+## Base and System compatibility
 
-Base and System have independent release lifecycles. The architectural ambition
-is broad composability: installed Base and System versions should normally be
-freely combinable within their actual compatibility requirements. They are not
-released or upgraded as compulsory matched pairs. A different version label,
-build date or origin is not itself an incompatibility.
+Base and System should normally combine within their actual ABI/capability
+requirements, rather than being released as compulsory matched pairs. A System
+binary using Base's libc can require a newer ABI than an older Base provides.
+A retained provider closure with its own libc does not acquire that Base-libc
+dependency merely by belonging to System. Kernel capabilities, modules and
+supported persistent-state formats can impose additional requirements.
 
-Real constraints remain explicit exceptions: for example, a System executable
-that uses Base's libc may require a newer libc/ABI than an older Base provides.
-An executable whose retained provider closure supplies its own libc does not
-acquire that Base-libc dependency merely because it belongs to System. Kernel
-capabilities, external modules and supported persistent-state formats can impose
-other specific constraints. Report an unsatisfied requirement with its reason;
-do not silently replace another layer or claim every combination is valid.
+Exact boot references record repeatable **choices**, not a dependency on exactly
+those release versions. Preparation constructs a requested supported combination;
+it does not build every possible cross-product of retained releases. Unsatisfied
+requirements are reported rather than silently replacing another area.
 
-A boot deployment records **exact chosen identities** so the machine can start
-the same combination again. Those references are a reproducible selection,
-not a declaration that the System release depends on precisely that Base release.
-Preparation should produce the requested compatible combination on demand,
-without constructing a Cartesian product of all retained releases.
+## Installed, prepared, selected and running
 
-The accepted ordinary boot-area user journey is install, choose next boot, then
-reboot deliberately. When a running installation supplies a complete boot
-context, normal installation should finish the necessary preparation and make
-the new version selectable without requiring a manual `stage` step. Content-only
-import remains meaningful before the other components or target context exist.
-`stage` remains an advanced explicit preparation operation and an internal API
-for MPM/MBT/bootstrap. Selection remains a fast atomic choice of completed work.
-See [the MPM operation contract](mpm.md#2-operations) for the implementation gap.
+Installed content is retained on disk. A prepared deployment includes an admitted
+Kernel/initramfs slot and exact Base/System/Kernel bindings. Next boot is an
+atomic selection of a completed deployment. Running identifies what actually
+booted, independently of a pending next-boot choice.
 
-## Accepted update units and activation model (2026-10-26)
+On a live native-v2 installation, normal public System installation also prepares
+an entry using the selected Base/Kernel context. It leaves next boot unchanged.
+`--content-only`, explicit offline targets and low-level import APIs keep content
+import separate. Base/Kernel installation still requires explicit preparation.
+`stage` remains an advanced operation and internal API, not a mandatory extra
+command after normal live System installation.
 
-Each layer uses the unit appropriate to its responsibility:
+Activation selects prepared content, with a concrete change/reboot preview. It
+does not construct initramfs, scrub payloads, switch running services or reboot.
+Explicit `--verify` requests full audits. A content-changing System update retains
+previous generations for recovery. Retained generations are not upgrade wishes.
+Moving-policy boot-area upgrades and general service/schema migrations remain
+unimplemented. The current System transition gate permits reviewed tooling
+changes while preserving startup/services and provider dependencies.
 
-- **Base:** one complete, immutable, versioned release. It may be built from
-  packages or sources; individual runtime Base package upgrades are outside
-  the model. A new installation retains the previous Base release.
-- **System:** a content-changing upgrade publishes a new coherent generation
-  with exact component/dependency references. Old generations remain historical
-  snapshots, rather than independent requests to upgrade. A no-op need not
-  create a new content generation.
-- **Ports:** parallel application versions, explicit active choices and
-  upgrade policies, with readable transaction history. A per-program upgrade
-  does not require a user-managed generation of the entire Ports collection.
-  Atomic internal profile snapshots remain an implementation option.
+See [MPM operations](mpm.md#2-operations), [boot update behavior](system-transition.md)
+and [native-v2 selection](native-system-selection.md).
 
-A boot deployment binds exact Base, System userspace and Kernel build
-identities to matching modules and boot artifacts. Kernel is architecturally
-part of System, but has a separate MPM upgrade scope. A System upgrade
-preserves Base/Kernel selections; a Kernel upgrade preserves Base/System
-userspace selections. Any required cross-area changes need an explicit plan.
-These are accepted semantics; the independent Kernel/deployment formats are
-not implemented by the current fresh-image builder.
+## Ports and providers
 
-Boot-area activation selects the next boot, without automatically restarting
-the machine or changing its running services. Further changes start from the
-selected deployment, even if an older one is still running. Status and plans
-must distinguish installed, selected and running content. Users must be able
-to inspect explicit System choices, dependencies and changes between
-generations, rather than relying on opaque generation numbers.
+Ports keeps independent configuration and interactive wishes, exact accepted
+references, active choices and transaction history. Additional versions preserve
+an existing active default. Following choices may advance with their upgrade
+wish; exact pins remain fixed. Activation affects new program starts, not
+already-running processes. Atomic internal profiles are implementation records,
+not a user requirement to manage a generation of every application together.
 
-Ports selection affects new program starts; existing processes can continue
-using earlier content. Returning to an installed application version uses
-explicit activation. Additional installation preserves the existing active
-choice; the accepted first-install convenience exception still applies.
-A general Ports transaction-undo command and retention/GC policy remain
-future work. Persistent configuration and application/service data are not
-automatically restored by any content selection change.
+Nix currently supplies System/Ports binaries and dependency objects in a shared
+store. MPM owns the logical area model, requests and selection policy. Provider
+closures used by retained System profiles remain immutable during normal use.
+Core native Base/System/Kernel artifact operations do not require Nix unless
+the particular content declares a Nix dependency.
 
-The [MPM contract](mpm.md#2-operations) defines the shared verbs, pins, preview
-requirements and the boundary between accepted policy and working commands.
+Ports manuals follow active exact application versions, including separate
+provider manual outputs. The System's `man`/`manpath` wrappers compute the search
+path at invocation. [The Ports guide](mpm-ports.md) covers usage.
 
-## Existing prototype pipeline
+## Configuration and persistent filesystems
 
-```text
-bootstrap/void.sh
-       |
-       v
-rootfs (from selected Void packages)
-       |
-       v
-tools/mojt-base-pack + manifests/base-0.1.1.toml
-       |
-       v
-versioned release (rootfs.tar.zst, manifest.toml, optional packages.txt)
-       |
-       v
-tools/mojt-base-install
-       |
-       +--> base/<version>/
-       +--> base/current -> <version>
-       +--> state/etc/
-       +--> state/var/
-       +--> state/home/
-       +--> state/root/
-```
+Native-v2 handover mounts persistent `state/rootfs` as writable `/` and projects
+selected Base trees/files read-only. `/usr/local` has a separate persistent
+`state/local` bind. `/etc`, `/var`, `/home` and `/root` retain their own machine
+state. Local `/opt`, `/srv` and administrator-created root paths survive
+compatible generation changes. `/run` and `/tmp` are temporary filesystems.
 
-The prototype bootstrap currently selects eleven Void packages and uses a pinned static XBPS utility as a host-side construction tool. The assembled runtime image strips XBPS executables and package databases. Base alone has no boot stack; the tested System VM composes it with a kernel, initramfs and services.
+Initialization happens on first boot of this layout, not during preparation.
+An installation/projection marker prevents silent adoption of an unknown root,
+reserved-alias changes, unsafe mountpoints or incompatible Base top-level
+layouts. Existing entries retain their embedded boot code: older read-only-root
+entries do not gain the new mount behavior just by being selected.
 
-## Configuration and state
+Release defaults live under `/usr/etc`; existing persistent configuration is not
+silently overwritten or removed. `/etc/os-release` is a relative link to Base's
+`/usr/lib/os-release`. Returning to older code does not revert databases, machine
+configuration, local software or user files. Read the
+[filesystem/persistence tables](../doc/handbook/part-iii/filesystem-layout.md)
+and [handover contract](native-system-handover.md).
 
-The Base image carries package defaults in `/usr/etc`. During installation, missing defaults are added to a persistent `state/etc` tree. Existing entries are preserved. `/etc/os-release` is a relative symlink to `/usr/lib/os-release`, which the Base packer generates from its version manifest.
+## Building and distribution
 
-Persistent `state/var` is kept across Base generations. Host-side tests bind
-the state directories over `/etc` and `/var` in a separate mount namespace.
-The System VM implements these mounts before starting services, and the owner
-has verified both state directories across guest boots.
+MPM handles installed content and choices. MBT coordinates explicit build
+workspaces, tool environments, Kernel builds, packaging and fresh native-v2 image
+bootstrap. Void with static XBPS is a Base bootstrap backend; it is not a runtime
+package-manager commitment. Provider recipes and binaries are construction inputs,
+not the definition of Mojt's release format.
 
-The accepted home extension gives `/home` and `/root` their own persistent
-`state/home` and `state/root` directories, rather than placing homes under `/var`.
-New VM images mount them before starting login or services. The storage method
-is an implementation choice and may later use other filesystems or subvolumes;
-the stable user-facing paths and state-preservation policy remain the same.
-See [state layout and migration limits](state-layout.md). Owner VM acceptance
-of the new home mounts is pending.
-
-Rollback does **not** revert persistent state or database formats. Future compatibility checks and explicit state migrations will be necessary.
-
-## MPM front-end contract (partial implementation)
-
-The accepted user-facing package model is documented in
-[the MPM contract](mpm.md). It specifies `mpm <area> <action>`,
-metadata-only `update`, explicit installation versus activation,
-independent Base/System/Kernel/Ports transactions, and versioned Ports
-selectors. The CLI meaning of `gimp@3.0` as the latest eligible stable
-release in the 3.0 line and `gimp@=3.0` as an exact release identifier
-is implemented on the selector branch with an initial dotted-numeric adapter.
-The [selector/catalog contract](mpm-selectors.md) documents pure policy and
-Nix transaction integration, series aliases and explicit format-3 adoption.
-Other version adapters and [libc integration](mpm-libc-policy.md) remain deferred.
-
-Nix is the current experimental Ports provider after the binary-import and pacman
-comparisons; it is not a required dependency of the future MPM core. The full selector/project-lock policies remain design requirements. For early Mojt versions, Nix is
-also selected for System package acquisition and dependency storage, using a
-shared store. The current CLI implements Ports installation, activation,
-removal, inspection, recorded attribute upgrades and committed transaction
-history. Exact active selections remain pinned while following selections may
-advance. Format-2 native requests remain supported; explicit format-3 adoption
-adds selectors without reinterpreting old policy. Older MPM writers refuse it.
-Metadata compatibility limits are documented in the
-[Ports guide](mpm-ports.md); `mpm(1)` is maintained in the repository and bundled
-with manual-enabled System builds. Base/System/Kernel areas remain unimplemented.
-System release and deployment formats require separate evaluation, including
-compatibility between the selected System's MPM and persistent metadata.
-
-## Accepted early Nix/System policy (2026-10-23)
-
-This records the early provider choice. The later Mojt-owned artifact/catalog
-direction above keeps that integration while making external providers optional
-to the future core; it does not rebind existing requests or replace installed
-runtime dependencies automatically.
-
-The owner approved the following policy after the three-step System VM run:
-
-- Keep the Nix CLI exposed in early Mojt versions for direct administration
-  and experimentation.
-- Use Nix for System packages for now, with System and Ports sharing the Nix
-  store and its object/reference database.
-- Keep System generation selection, service configuration and activation
-  under Mojt control. A direct Nix profile change is not a Mojt System update.
-- Describe host-service requirements separately in MPM, for example a
-  requirement for a compatible logind service on the system D-Bus.
-
-The shared database records exact store objects and references; it is not the
-authority for the active System generation or MPM's area policies. System and
-Ports retain separate manifests/catalog choices and activation state. One
-immutable object may satisfy references from both areas. A different build
-identity remains a different object even if its package name/version matches.
-
-File dependencies and host capabilities are distinct. Nix supplies a port's
-exact library closure, reusing already registered System objects when their
-identities match. A library from systemd does not by itself establish that
-logind is available, and installing a service's files does not configure or
-activate that service. Mojt must describe and verify the capabilities required
-by the port; it must not claim a host capability from a package name alone.
-
-This is an interim backend choice, not adoption of NixOS or a final System
-release format. The current experiment already shares registered objects,
-roots System content and uses Mojt-owned activation. Host-capability metadata
-and enforcement, supported direct-Nix operation boundaries, and reconciliation
-of changes outside MPM remain implementation/design work. Root can bypass
-ordinary file protections; the exposed CLI is not an MPM authorization boundary.
-
-## Ports direction
-
-Ports should support:
-
-- multiple installed versions and version-specific dependencies;
-- profiles that activate selected versions via links or a similarly simple mechanism;
-- project lockfiles that protect compilers and build dependencies from ordinary updates;
-- native execution by default for ordinary command-line tools;
-- optional security sandboxes for programs or build processes where useful.
-
-Nix supplies the Ports store and dependency objects; MPM owns Mojt's user-facing
-selection and activation policy. The narrow adapter has passed real Distrobox
-imports and parallel-version tests, followed by hello and parallel-Python
-acceptance inside the booted Mojt VM.
-See [the Nix experiment](mpm-nix-experiment.md).
-
-## First System implementation
-
-The owner approved three incremental steps: systemd boot with persistent state,
-NetworkManager/D-Bus networking, and MPM/Nix imports inside the booted VM.
-All three initial steps passed on the owner's Mojt VM. See
-[the System experiment](system-nix-vm.md) for preparation/build support,
-recorded real acceptance and remaining integration limits.
-
-The experiment obtains System binaries from the same pinned Nixpkgs source
-and keeps them separate from Base. A System profile supplies unit files and
-runtime tools; persistent machine configuration retains precedence. Nix/MPM
-and their management runtime belong to System. The initial root-operated
-binary-import test is not a production package-manager service/permission model.
-
-## Accepted interactive System shell (2026-10-24)
-
-After successfully installing interactive Bash through MPM in the running VM,
-the owner approved including it in System. Step 5 uses `bashInteractive` from
-the same pinned Nixpkgs source. Bash supplies the interactive console shell;
-Base's `/bin/sh` retains its POSIX script role and recovery use.
-
-The VM builder can explicitly select `/run/mojt-system/bin/bash` in the new
-VM's copied root account. It does not silently rewrite an existing account
-choice or modify the source installation. Mojt supplies an interactive prompt,
-editing/history defaults and private root history in persistent `/var`.
-Existing local startup files retain precedence. See [System Bash](system-bash.md)
-for the build recipe, validation and serial-terminal limitations.
-
-## Accepted initial disk boot (2026-10-24)
-
-The owner approved UEFI/GPT/GRUB, keeping the first image simple with one boot
-entry and the already tested kernel source. Opt-in `--boot-mode uefi` now
-builds a regular GPT image with a FAT32 EFI partition and the Mojt ext4
-partition. A standalone GRUB EFI loader lives at the fallback path; the build
-does not run host `grub-install`, change NVRAM or use loop devices/mounts.
-
-The disk owns a versioned kernel/initramfs pair and an input-hash record.
-Early init locates ext4 by UUID and pins the exact System generation named by
-that boot pair, including System identity reads. It does not follow a changed
-`system/current`. QEMU supplies firmware and a private variable file, without
-external kernel/initramfs arguments. Direct-kernel mode remains a diagnostic
-path. See [disk boot](uefi-disk-boot.md) for construction and acceptance.
-
-A real synthetic static-guest probe passed firmware boot, repeat boot with
-persistent state and disk-only transfer to fresh firmware variables. On
-2026-10-24 the owner also reported the final Mojt disk-copy boot test working
-after creating the copy in their home directory. Individual UEFI service,
-network, Ports and history-check logs were not supplied. This first image
-build does not implement a System updater, automatic fallback or state rollback.
-
-## Explicitly unresolved
-
-- Source-based/self-hosted Base build and verifiable reproducibility
-- Signature verification and trusted release channels
-- Crash-safe activation and `fsync` durability guarantees
-- Production boot selection/deployment, complete shutdown storage detachment,
-  and kernel/module release/versioning policy
-- ABI policy between Base, System, and Ports
-- State migration/rollback guarantees for system services
-- Alternative bootstrap backends and platform support
-
-## System scope and larger component groups (open)
-
-The first QEMU boot uses a host-provided kernel and minimal initramfs;
-it does **not** establish a permanent System package format. System may
-eventually include desktop environments such as GNOME, rather than limiting
-System to the kernel, firmware and low-level services. That choice remains
-open for reconsideration. A substantial System desktop/profile would likely
-need explicit, versioned dependencies and compatibility checks; a lightweight
-component dependency resolver or use of existing tooling may be appropriate.
-Do not assume that all desktop components must belong to Ports.
-
-The VM prototype intentionally postpones package dependency resolution,
-System-versus-Ports desktop placement, and the mechanism that exposes
-independently installed System files inside the active Base filesystem.
-
-## Experimental VM PID 1 (System, not Base)
-
-The earlier boot prototype uses a **System-owned static BusyBox init**,
-provided by the image builder in `system/prototype-init` and made available
-under `/run/mojt-system` at boot. BusyBox init supervises the serial console
-and provides a minimal poweroff path. This is **development-only**: BusyBox
-is suitable for the prototype, rescue media and embedded contexts, but it is
-**not** the planned permanent init for the Mojt distribution. The current
-System experiment has verified systemd as PID 1; BusyBox remains an early-boot/rescue tool.
-
-Account databases (`/etc/passwd`, `/etc/group`, `/etc/shadow`) are persistent
-machine state. The earlier development console bypasses login entirely.
-The builder also supplies authenticated password mode and host-side credential
-provisioning, described below and used in the accepted System VM runs.
-Production installer/account policy remains open. Never install a universal
-default password or overwrite existing machine credentials.
-
-## Experimental System console login (not production authentication)
-
-The VM prototype may use a static BusyBox `getty` and `login` from
-`system/prototype-init` (legacy) or the selected versioned System profile,
-separate from Base, to authenticate the local
-serial-console root account. Password creation happens during **host-side
-VM staging** from an interactive terminal. The salted password hash and
-account files are placed only in the VM copy of persistent `/etc`.
-
-This is not an architecture commitment to BusyBox login, or a replacement
-for the eventual installer and System authentication stack. A production
-System may use PAM and other established account-management packages.
-Root should normally be locked when a configured administrative user is
-available. Persistent home directories and UID/GID handling remain open.
-
-The development VM console is deliberately unauthenticated; enabling a
-root password without changing the console's login process does not secure
-it. The builder's authenticated mode refuses a conflicting existing
-`inittab`, leaves pre-existing shadow credentials unchanged and avoids
-embedding plaintext credentials in code, manifests or process arguments.
-
-## Identity, issue, MOTD, and independent version numbers
-
-Mojt keeps **Base version** separate from **System version**. A login banner
-may show `Mojt Linux 0.1/0.1.3`: System `0.1`, Base `0.1.3`. These are
-independent lifecycles, not a single combined release version.
-
-The Base packer generates a neutral fallback `/usr/etc/issue`
-(`Mojt Linux Base <base-version>`) for **newly packed** Base releases,
-including Base-only containers. It replaces the bootstrap backend's Void
-branding **inside the staged release only**. Installed `/etc/issue` remains
-persistent administrator state; the installer adds defaults only if missing.
-The raw Base filesystem's `/etc` remains empty by design.
-
-A System boot is responsible for constructing the **combined** identity
-from System release metadata and the currently selected Base. In the
-initial VM prototype, the System component declares `version = 0.1`
-using a simple text metadata file and records the **VM assembly time**
-in UTC. This is not yet a versioned System release format. Early boot
-writes volatile `/run/mojt/issue` and `/run/mojt/motd`; authenticated
-`getty` uses the former with `-f`. Base does not have to be rebuilt
-on every System upgrade, nor System on every Base upgrade.
-
-Existing machine-local `/etc/issue`, `/etc/motd`, and `/etc/hostname`
-are never silently overwritten. The VM image builder places a missing
-hostname default `mojt` into **copied VM state**, sets the kernel
-hostname at boot, and links a **missing** `/etc/motd` to the generated
-runtime file. An existing local MOTD always takes precedence; runtime
-information remains available explicitly at `/run/mojt/motd`.
-No change is made to existing Base generations or the source installation.
+Native artifacts describe content, dependencies, platform, version and integrity.
+Local source policies and hashes do not authenticate a remote publisher. Signed
+release distribution, alternative bootstrap backends, complete native source
+self-hosting, generalized migrations and wider hardware coverage remain open.
+See the [artifact format](native-artifact-format.md), [MBT chapter](../doc/handbook/part-i/mbt.md)
+and [roadmap](roadmap.md).

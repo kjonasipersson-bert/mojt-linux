@@ -6,6 +6,11 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Base/System boot generation experiment
 
+**Historical experiment/design record.** This page preserves its development
+context and observations. It is not the current interface/status reference;
+use the [Handbook](../doc/handbook/README.md), [architecture](architecture.md)
+and [roadmap](roadmap.md) for current behavior and priorities.
+
 For terminal-based operation of an already built VM, see the
 [SSH/serial console and interruption guide](vm-serial-console.md). It retains
 the tested image's state in a separate copy and avoids graphical command entry.
@@ -16,7 +21,7 @@ Kernel builds, combined in a boot deployment. The builder below is a
 fresh-image experiment: its System labels also bind kernel inputs, and its
 on-disk layout is not the final independent Kernel/deployment interface.
 A subsequent owner VM test changed the kernel and matching modules and returned
-to the retained pair; see [the measured result](#owner-different-kernel-acceptance-2026-10-26)
+to the retained pair; see [the measured result](boot-generations.md#owner-different-kernel-acceptance-2026-10-26)
 and the [roadmap](roadmap.md).
 
 The UEFI builder can compose a **new** image containing several explicit
