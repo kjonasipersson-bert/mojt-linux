@@ -1,7 +1,7 @@
 # Mojt Linux
 # Copyright (C) 2026 Jonas Persson
 # SPDX-License-Identifier: GPL-2.0-only
-"""Successor delivery: real archives and installed-command evidence, no physical boot."""
+"""Payload successor: real archives and installed-command evidence, no physical boot."""
 import contextlib
 import copy
 import hashlib
@@ -72,6 +72,49 @@ class DeliveryTests(Fixture):
 
 
 class Boundaries(unittest.TestCase):
+    def test_cold_and_warm_stage_use_public_mpm_and_preserve_selection(self):
+        before = dict(selected='E-slot',selection='menu-E',installation='disk',preserved={'base':'B'},
+                      status=dict(staged_deployments=[],running={'artifact':'E'}))
+        state = dict(origin=dict(artifact='D'),probe=dict(artifact='F'))
+        cold = dict(changed=True,deployment='D-new-slot',initramfs_payload=dict(inputs='payload-key',reused=False))
+        warm = dict(changed=True,deployment='F-slot',initramfs_payload=dict(inputs='payload-key',reused=True))
+        with mock.patch.object(delivery,'check',return_value=before), \
+             mock.patch.object(delivery,'tools_match'),mock.patch.object(delivery,'confirm'), \
+             mock.patch.object(delivery,'read',return_value=cold), \
+             mock.patch.object(delivery,'snapshot',return_value=before),mock.patch.object(delivery,'save'), \
+             mock.patch.object(delivery,'run',side_effect=[dict(result=cold),dict(result=warm)]) as run, \
+             contextlib.redirect_stdout(io.StringIO()):
+            delivery.exercise('prime',state);delivery.exercise('stage',state)
+        self.assertEqual([c.args for c in run.call_args_list],[
+            ('prime','system','stage','--artifact','D','-y','--json'),
+            ('stage','system','stage','--artifact','F','-y','--json')])
+        # A no-op, another cache key or a rebuilt payload cannot pass as warm reuse.
+        for bad in (dict(warm,changed=False),dict(warm,initramfs_payload=dict(inputs='different',reused=True)),
+                    dict(warm,initramfs_payload=dict(inputs='payload-key',reused=False))):
+            with self.subTest(result=bad),mock.patch.object(delivery,'check',return_value=before), \
+                 mock.patch.object(delivery,'tools_match'),mock.patch.object(delivery,'confirm'), \
+                 mock.patch.object(delivery,'read',return_value=cold), \
+                 mock.patch.object(delivery,'run',return_value=dict(result=bad)), \
+                 contextlib.redirect_stdout(io.StringIO()),self.assertRaisesRegex(ValueError,'expected|reuse'):
+                delivery.exercise('stage',state)
+
+    def test_cold_sample_refuses_existing_cache_and_missing_prime_blocks_warm_run(self):
+        before=dict(selected='E-slot',selection='menu-E',installation='disk',preserved={'base':'B'},
+                    status=dict(staged_deployments=[],running={'artifact':'E'}))
+        state=dict(origin=dict(artifact='D'),probe=dict(artifact='F'))
+        reused=dict(changed=True,initramfs_payload=dict(inputs='key',reused=True))
+        with mock.patch.object(delivery,'check',return_value=before), \
+             mock.patch.object(delivery,'tools_match'),mock.patch.object(delivery,'confirm'), \
+             mock.patch.object(delivery,'run',return_value=dict(result=reused)), \
+             contextlib.redirect_stdout(io.StringIO()),self.assertRaisesRegex(ValueError,'cold'):
+            delivery.exercise('prime',state)
+        with mock.patch.object(delivery,'check',return_value=before), \
+             mock.patch.object(delivery,'tools_match'), \
+             mock.patch.object(delivery,'read',side_effect=FileNotFoundError('prime-result.json')), \
+             mock.patch.object(delivery,'run') as run,self.assertRaises(FileNotFoundError):
+            delivery.exercise('stage',state)
+        run.assert_not_called()
+
     def test_baseline_accepts_original_test_ssd_and_refuses_installer_or_pending_selection(self):
         snap = dict(selected='old',status=dict(running=dict(label='system-activation-A',deployment='old')))
         with mock.patch.object(delivery,'snapshot',return_value=snap):

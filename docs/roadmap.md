@@ -63,10 +63,33 @@ provider dependencies were retained. Optional C return was not reported.
 The bounded activation/chooser/boot gate is closed. **Preparation performance
 remains open**: about 4 minutes 36 seconds wall and 265.932 s CPU in `stage`,
 including 43.16 s candidate checks. This is separate from accepted activation.
-The next bounded investigation is to separate repeated integrity scans from
-necessary boot construction, then reduce normal preparation work with focused
-regression checks. It does not authorize sweeping writable-root or service/state
-changes. The kernel/firmware/MBT items below remain proposals for discussion.
+The next increment follows the accepted Base/System composability direction:
+release versions normally combine freely within their actual ABI/capability
+requirements; exact boot references record choices rather than compulsory release
+pairing. The ordinary user model is install -> select/activate -> reboot, with
+preparation completed by normal installation when the boot context is available.
+`stage` remains an advanced explicit operation and internal MPM/MBT API. Automatic
+installation/preparation integration is still pending.
+
+The first separation of reusable early-boot runtime/driver payloads from small
+exact combination metadata is implemented in #55. Heavy construction follows
+actual inputs rather than a System/Base selection, preserving exact boot bindings
+and the existing selection path. The [E/F owner acceptance](initramfs-payload-hardware-test.md#recorded-owner-acceptance--2026-11-1415)
+passed on 2026-11-14–15: F installation 11.483 s wall / 4.996 s CPU, cold
+preparation 286.737 s / 276.351 s, warm preparation approximately 229 s / 219 s,
+and activation 4.2 s elapsed. Candidate checks (about 45 s) are included in the
+preparation totals. Warm exact-key reuse and subsequent F boot/after-check passed,
+including retained Base/Kernel and working Ports/Neovim. Optional E return was
+not reported. This one comparison saves about 58 s (20%); roughly four minutes
+of preparation remains unacceptable, and remaining phase costs are not yet
+individually measured.
+
+Next separate repeated integrity scans from necessary construction and integrate
+preparation into ordinary install. Keep explicit `--verify` audits available,
+required metadata/compatibility checks and safe atomic publication intact, and
+the accepted Base/System independence and selection boundary explicit.
+This work does not authorize sweeping writable-root or service/state changes.
+The kernel/firmware/MBT items below remain proposals for discussion.
 
 ### Proposals for discussion, not scheduled commitments
 

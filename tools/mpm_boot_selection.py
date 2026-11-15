@@ -106,9 +106,9 @@ def _admit(root, item, built, *, adapters):
         return value
 
 
-def stage(root, source, runtime_directory, busybox, work, *, bounds, adapters, contract):
+def stage(root, source, runtime_directory, busybox, work, *, bounds, adapters, contract, runtime_value=None):
     """MBT/image preparation API: construct, retain and admit; never select."""
-    built = constructor.build(root,source,runtime_directory,busybox,work,bounds=bounds,adapters=adapters,handover=contract)
+    built = constructor.build(root,source,runtime_directory,busybox,work,bounds=bounds,adapters=adapters,handover=contract,reuse_payload=True,runtime_value=runtime_value)
     root = store.target(root);i = model.inputs(source)
     image = root/'kernel/installed'/i['kernel']['artifact'][7:]/'payload/boot'/('vmlinuz-'+i['kernel']['release'])
     item = model.compose(source,built['binding'],image.stat().st_size)
@@ -117,6 +117,7 @@ def stage(root, source, runtime_directory, busybox, work, *, bounds, adapters, c
     store.retain(root,item,image,archive,bounds=bounds,adapters=adapters)
     receipt = _admit(root,item,built,adapters=adapters)
     return dict(deployment=item['id'],stage_receipt=receipt['id'],selection_changed=False,boot_ready=False,
+                initramfs_payload=dict(inputs=built['payload_key'],reused=built['payload_reused']),
                 scope='Complete handover staged; next-boot selection and owner boot acceptance are separate.')
 
 

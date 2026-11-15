@@ -98,3 +98,31 @@ Preparation remains the known performance issue. Investigate its repeated
 retained-content/provider scans and construction separately; keep its cost
 visible rather than adding it back to ordinary activation. The proposals for
 writable-root layout, kernel building, firmware and MBT remain distinct work.
+
+
+## Reusable construction and owner result — 2026-11-14–15
+
+The [reusable initramfs payload](reusable-initramfs.md) separates runtime/drivers
+from the small exact-deployment member. Base/System identity changes alone no
+longer require rebuilding that large member. A warm update reuses its compressed
+bytes and skips runtime freezing/copying, module decoding and large-payload
+compression. Existing preparation/admission integrity checks still run.
+
+The [E/F owner acceptance](initramfs-payload-hardware-test.md#recorded-owner-acceptance--2026-11-1415)
+records F installation without `--verify` at 11.483 s wall / 4.996 s CPU,
+cold preparation at 286.737 s / 276.351 s, and warm preparation at approximately
+229 s / 219 s. Candidate checks were about 45 s within each preparation total.
+Warm preparation passed the helper's exact payload-key reuse check. The owner
+reported activation at 4.2 s elapsed, then successful F reboot and `after` PASS
+with original Base/Kernel and working Ports/Neovim. Activation CPU time and
+optional return were not reported. Measurements come from photographs/reports;
+the SSD evidence bundle was not imported.
+
+This closes the bounded physical reuse/boot gate. In this one run, warm total
+preparation was about 58 s (20%) shorter than cold preparation, with different
+System generations. It is not an isolated payload benchmark. Roughly four
+minutes remains unacceptable; remove repeated broad content audits from ordinary
+preparation while preserving required metadata, compatibility, safe construction
+and atomic publication checks. The current measurements do not attribute every
+remaining second to those audits. Automatic preparation inside normal install
+remains separate integration work.

@@ -61,6 +61,37 @@ The current Base prototype has no kernel, init, or desktop. The experimental
 System implementation uses systemd. BusyBox remains an early-boot/rescue component and
 a temporary console-login tool in the VM experiment.
 
+## Base/System composability — accepted direction, 2026-11-14
+
+Base and System have independent release lifecycles. The architectural ambition
+is broad composability: installed Base and System versions should normally be
+freely combinable within their actual compatibility requirements. They are not
+released or upgraded as compulsory matched pairs. A different version label,
+build date or origin is not itself an incompatibility.
+
+Real constraints remain explicit exceptions: for example, a System executable
+that uses Base's libc may require a newer libc/ABI than an older Base provides.
+An executable whose retained provider closure supplies its own libc does not
+acquire that Base-libc dependency merely because it belongs to System. Kernel
+capabilities, external modules and supported persistent-state formats can impose
+other specific constraints. Report an unsatisfied requirement with its reason;
+do not silently replace another layer or claim every combination is valid.
+
+A boot deployment records **exact chosen identities** so the machine can start
+the same combination again. Those references are a reproducible selection,
+not a declaration that the System release depends on precisely that Base release.
+Preparation should produce the requested compatible combination on demand,
+without constructing a Cartesian product of all retained releases.
+
+The accepted ordinary boot-area user journey is install, choose next boot, then
+reboot deliberately. When a running installation supplies a complete boot
+context, normal installation should finish the necessary preparation and make
+the new version selectable without requiring a manual `stage` step. Content-only
+import remains meaningful before the other components or target context exist.
+`stage` remains an advanced explicit preparation operation and an internal API
+for MPM/MBT/bootstrap. Selection remains a fast atomic choice of completed work.
+See [the MPM operation contract](mpm.md#2-operations) for the implementation gap.
+
 ## Accepted update units and activation model (2026-10-26)
 
 Each layer uses the unit appropriate to its responsibility:

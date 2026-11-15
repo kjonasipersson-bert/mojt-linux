@@ -4,6 +4,8 @@
 """Manager-owned v2 verification initramfs; no target code execution or selection."""
 import hashlib
 import os
+import stat
+import tempfile
 from pathlib import Path
 
 import mojt_artifact as artifact
@@ -17,6 +19,7 @@ import mpm_boot_v2_store as store
 import mpm_kernel_boot as archive
 import mpm_native_io as io
 import mpm_system as system
+import mpm_transaction as tx
 from mpm_request_plan import reference
 from mpm_boot_v2 import record
 
@@ -181,15 +184,94 @@ def decode_modules(modules, directory):
     return result
 
 
-def build(root, source, runtime_directory, busybox, work, *, bounds, adapters, handover=None):
-    """Return actual gzip/newc and binding; leave the installation untouched."""
+PAYLOAD_KEY = 'mojt-initramfs-payload-inputs-v1'
+PAYLOAD_RECORD = 'mojt-initramfs-payload-v1'
+PAYLOAD_INIT = '#!/bin/sh\necho "Mojt: deployment overlay missing" >&2\nexec /bin/busybox sh </dev/console >/dev/console 2>&1\n'
+
+
+def payload_key(source, runtime, *, handover):
+    """Heavy payload inputs deliberately exclude selected Base/System identities."""
+    d = model.inputs(source);early.runtime(runtime)
+    producer = d['constructor']['identity']
+    names = ('mpm_boot_constructor.py','mpm_boot_inventory.py','mpm_native_io.py',
+             'mpm_kernel_boot.py','mojt-vm-build.py','mojt_hardware.py','mojt_native_image.py')
+    return record(PAYLOAD_KEY,dict(platform=d['platform'],kernel=d['kernel'],runtime=runtime['id'],
+        busybox_sha256=producer['busybox_sha256'],profile=d['boot']['profile'],handover=handover,
+        shutdown_sha256=hashlib.sha256(paths.SHUTDOWN.encode()).hexdigest() if handover else None,
+        applets=sorted({'findfs','cat','env'} | (paths.SHUTDOWN_APPLETS-{'cp','ln'} if handover else set())),
+        producer={name:producer['code'][name] for name in names}))
+
+
+def cached_payload(root, key, create):
+    """Private immutable content cache; a payload alone never admits a deployment.
+
+    Existing store read locks protect its inputs; this separate lock serializes
+    only cache publication. Corrupt entries fail instead of being overwritten.
+    """
+    model.envelope(key,PAYLOAD_KEY)
+    parent = root/'boot/mpm/initramfs-payloads'
+    tx.protected_directory(parent,write=True,label='initramfs payload cache')
+    parent.mkdir(mode=0o755,exist_ok=True);io.sync_directory(parent.parent)
+    with tx.file_lock(parent/'.lock'):
+        destination = parent/key['id'][7:]
+        if os.path.lexists(destination):
+            info = io.directory(destination)
+            require(info.st_uid == 0 and stat.S_IMODE(info.st_mode) == 0o555
+                    and {p.name for p in destination.iterdir()} == {'payload.json','initramfs.cpio.gz'},'unsafe/incomplete cached boot payload')
+            for name in ('payload.json','initramfs.cpio.gz'):
+                item = io.regular(destination/name)
+                require(item.st_uid == 0 and stat.S_IMODE(item.st_mode) == 0o444,'unprotected cached boot payload')
+            saved = early.read(destination/'payload.json');d = model.envelope(saved,PAYLOAD_RECORD)
+            artifact.fields(d,('inputs','archive'));model.archive(d['archive'])
+            require(d['inputs'] == key,'cached boot payload inputs differ')
+            path = destination/'initramfs.cpio.gz'
+            require(path.stat().st_size == d['archive']['size'],'cached boot payload size differs')
+            raw = path.read_bytes()
+            require(hashlib.sha256(raw).hexdigest() == d['archive']['sha256'],'cached boot payload bytes damaged')
+            io.sync_directory(destination);io.sync_directory(parent)
+            return raw,True
+        require(sum(1 for p in parent.iterdir() if not p.name.startswith('.')) < model.MAX_ENTRIES,'boot payload cache limit')
+        raw = create();require(0 < len(raw) <= model.MAX_BOOT,'boot payload exceeds size limit')
+        stage = Path(tempfile.mkdtemp(prefix='.payload-',dir=parent))
+        try:
+            with (stage/'initramfs.cpio.gz').open('xb') as stream:
+                stream.write(raw);os.fchmod(stream.fileno(),0o444);os.fsync(stream.fileno())
+            value = record(PAYLOAD_RECORD,dict(inputs=key,archive=dict(sha256=hashlib.sha256(raw).hexdigest(),size=len(raw))))
+            io.write_json(stage/'payload.json',value);stage.chmod(0o555);io.sync_directory(stage)
+            tx.publish(stage,destination)
+        finally:io.clean_stage(stage)
+        return raw,False
+
+
+def controls(root, source, runtime, trees, handover):
+    """Small per-deployment member, following the unchanged early-reader contract."""
+    d = source['description'];folder = root/'mojt';folder.mkdir();folder.chmod(0o755)
+    code = folder/'code';code.mkdir();code.chmod(0o755)
+    for name,checksum in d['constructor']['identity']['code'].items():
+        actual,size = io.frozen_copy(Path(__file__).with_name(name),code/name,maximum=model.MAX_BOOT)
+        require(actual == checksum,'constructor code changed: '+name)
+    io.write_json(folder/'inputs.json',source);io.write_json(folder/'trees.json',trees)
+    io.write_json(folder/'runtime.json',runtime)
+    if handover is not None:io.write_json(folder/'handover.json',handover)
+    (folder/'launch.py').write_text(LAUNCH);(folder/'launch.py').chmod(0o444)
+
+
+def build(root, source, runtime_directory, busybox, work, *, bounds, adapters, handover=None,
+          reuse_payload=False, runtime_value=None):
+    """Build exact boot bytes; optional payload cache never selects next boot."""
     require(os.geteuid() == 0, 'initramfs construction requires an administrator')
     root = store.target(root);work = Path(work).absolute()
     require(work == work.resolve() and not os.path.lexists(work), 'constructor work must be new')
     require(root != work and root not in work.parents and work not in root.parents, 'constructor work overlaps target')
-    runtime_directory = Path(runtime_directory).absolute()
-    require(runtime_directory == runtime_directory.resolve(), 'linked bootstrap bundle')
-    runtime = early.read(runtime_directory/'runtime.json');runtime_d = early.runtime(runtime)
+    if runtime_directory is not None:
+        runtime_directory = Path(runtime_directory).absolute()
+        require(runtime_directory == runtime_directory.resolve(), 'linked bootstrap bundle')
+        runtime = early.read(runtime_directory/'runtime.json')
+        require(runtime_value is None or runtime_value == runtime,'frozen runtime descriptor differs')
+    else:
+        require(reuse_payload and runtime_value is not None,'missing explicit constructor runtime')
+        runtime = runtime_value
+    runtime_d = early.runtime(runtime)
     d = model.inputs(source);require(d['constructor'] == constructor(runtime,busybox,handover=handover is not None), 'constructor/runtime differs from boot inputs')
     from mpm_base_transition import read_locks
     with read_locks(root):
@@ -208,36 +290,58 @@ def build(root, source, runtime_directory, busybox, work, *, bounds, adapters, h
         vm.validate_busybox_applets(frozen_busybox,'password',extra=extra)
         payload = root/'kernel/installed'/d['kernel']['artifact'][7:]/'payload'
         module_tree = payload/'lib/modules'/d['kernel']['release']
-        if d['boot']['profile'] == model.HARDWARE_PROFILE:
-            vm.module_paths(d['kernel']['release'],module_tree,names=hardware.RUNTIME_MODULES)
-            modules = vm.module_paths(d['kernel']['release'],module_tree,names=hardware.EARLY_MODULES)
-        else:modules = vm.module_paths(d['kernel']['release'],module_tree,network=True)
-        for module in modules:
-            require(module == module.resolve() and payload/'lib/modules' in module.parents, 'early module outside exact Kernel tree')
-        modules = decode_modules(modules,work/'decoded-modules')
-        def assemble(initroot):
-            check_runtime_links(runtime_directory/'tree',runtime)
-            for name,rows in runtime_d['trees'].items():
-                original = inventory.path(runtime_directory/'tree',name)
-                require(inventory.snapshot(original,maximum=model.MAX_BOOT) == rows, 'bootstrap bundle changed')
-                destination = initroot/name;destination.parent.mkdir(mode=0o755,parents=True,exist_ok=True)
-                require(destination == destination.resolve(), 'linked initramfs runtime destination')
-                inventory.clone_runtime(original,destination,rows)
-            controls = initroot/'mojt';controls.mkdir();code = controls/'code';code.mkdir()
-            for name,checksum in d['constructor']['identity']['code'].items():
-                actual,size = io.frozen_copy(Path(__file__).with_name(name),code/name,maximum=model.MAX_BOOT)
-                require(actual == checksum, 'constructor code changed: '+name)
-            io.write_json(controls/'inputs.json',source);io.write_json(controls/'trees.json',trees)
-            io.write_json(controls/'runtime.json',runtime)
-            if handover is not None:io.write_json(controls/'handover.json',handover)
-            (controls/'launch.py').write_text(LAUNCH)
-            return archive.write_initramfs(initroot)
-        raw = vm.make_initramfs(work/'initroot',frozen_busybox,modules,script(source,runtime_d['interpreter'],handover=handover is not None),
-                               paths.SHUTDOWN if handover is not None else None,extra_applets=extra,archive_writer=assemble)
+        def make_payload():
+            nonlocal runtime_directory
+            if runtime_directory is None:
+                runtime_directory = work/'runtime'
+                frozen = freeze_runtime(root,runtime_d['reference'],runtime_d['interpreter'],runtime_directory,adapters=adapters)
+                require(frozen == runtime,'manager runtime changed before construction')
+            if d['boot']['profile'] == model.HARDWARE_PROFILE:
+                vm.module_paths(d['kernel']['release'],module_tree,names=hardware.RUNTIME_MODULES)
+                modules = vm.module_paths(d['kernel']['release'],module_tree,names=hardware.EARLY_MODULES)
+            else:modules = vm.module_paths(d['kernel']['release'],module_tree,network=True)
+            for module in modules:
+                require(module == module.resolve() and payload/'lib/modules' in module.parents,'early module outside exact Kernel tree')
+            modules = decode_modules(modules,work/'decoded-modules')
+            def assemble(initroot):
+                check_runtime_links(runtime_directory/'tree',runtime)
+                for name,rows in runtime_d['trees'].items():
+                    original = inventory.path(runtime_directory/'tree',name)
+                    require(inventory.snapshot(original,maximum=model.MAX_BOOT) == rows,'bootstrap bundle changed')
+                    destination = initroot/name;destination.parent.mkdir(mode=0o755,parents=True,exist_ok=True)
+                    require(destination == destination.resolve(),'linked initramfs runtime destination')
+                    inventory.clone_runtime(original,destination,rows)
+                if not reuse_payload:controls(initroot,source,runtime,trees,handover)
+                return archive.write_initramfs(initroot)
+            mask = os.umask(0o022)
+            try:
+                return vm.make_initramfs(work/'initroot',frozen_busybox,modules,
+                        PAYLOAD_INIT if reuse_payload else script(source,runtime_d['interpreter'],handover=handover is not None),
+                        paths.SHUTDOWN if handover is not None else None,extra_applets=extra,archive_writer=assemble)
+            finally:os.umask(mask)
+        reused = False;key = None
+        if reuse_payload:
+            key = payload_key(source,runtime,handover=handover is not None)
+            raw,reused = cached_payload(root,key,make_payload)
+            overlay = work/'overlay';overlay.mkdir(mode=0o755);overlay.chmod(0o755)
+            controls(overlay,source,runtime,trees,handover)
+            (overlay/'init').write_text(script(source,runtime_d['interpreter'],handover=handover is not None),encoding='ascii');(overlay/'init').chmod(0o755)
+            # Linux unpacks concatenated gzip/newc archives in order. Both
+            # members are independently inspected against their generated trees.
+            addition = archive.write_initramfs(overlay)
+            # Each independently inspected member is below 256 MiB, so its
+            # gzip ISIZE is exact (not wrapped). Preserve the previous total
+            # expansion limit as well as the compressed boot-file limit.
+            expanded = int.from_bytes(raw[-4:],'little') + int.from_bytes(addition[-4:],'little')
+            require(expanded <= archive.native.MAX_INITRAMFS,'combined initramfs expansion exceeds size limit')
+            raw += addition
+            require(len(raw) <= model.MAX_BOOT,'combined initramfs exceeds size limit')
+        else:raw = make_payload()
         # The frozen original module inventory is rechecked after decompression.
         require(inventory.measure(payload/'lib/modules') == trees['description']['modules']['measurement'], 'Kernel modules changed during construction')
         binding = record(model.BINDING,dict(inputs=source['id'],constructor=d['constructor'],archive=dict(sha256=hashlib.sha256(raw).hexdigest(),size=len(raw))))
         model.binding(binding,source)
         return CompletedBuild(dict(archive=raw,binding=binding,proof=trees,boot_ready=False,selection_changed=False,handover_enabled=handover is not None,
+                    payload_key=key['id'] if key else None,payload_reused=reused,
                     scope='System handover enabled; authoritative selection/status and owner boot acceptance remain.' if handover is not None else
                           'Verification initramfs only; initialization, mount handover and boot publication remain required.'),handover)
