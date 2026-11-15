@@ -251,6 +251,7 @@ def status(root, *, verify=False):
             require(re.fullmatch(r"[0-9a-f]{64}", path.name) and directory(path).st_uid == owner, "unknown installed entry")
             body, record = object_record(path, "sha256:" + path.name, verify=verify)
             rows.append(dict(artifact=body["id"], version=body["version"], kernel_release=body["metadata"]["kernel_release"],
+                label=body["metadata"].get("kernel_name",body["metadata"]["kernel_release"]),
                 platform=body["platform"], installed_utc=record["installed_utc"], path=str(path),
                 integrity="verified-now" if verify else "verified-at-installation", trust=record["trust"],
                 acquisition=record.get("acquisition"), release_matches_running=body["metadata"]["kernel_release"] == running))

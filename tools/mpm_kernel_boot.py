@@ -552,6 +552,7 @@ def main(argv=None):
             rows=result['installed'];running=result['running'];selected=result['selected_kernel']
             def observed(artifact,release,deployment):
                 return dict(state='known' if artifact else 'unknown',artifact=artifact,release=release,deployment=deployment,
+                    label=next((r.get('label',release) for r in rows if r['artifact']==artifact),release),
                     reason='no authoritative boot record',version=next((r['version'] for r in rows if r['artifact']==artifact),{}))
             view=dict(target=str(args.disk_root),installed=rows,incomplete=result['incomplete'],
                 running=observed(running['artifact'],running['release'],running['deployment']),

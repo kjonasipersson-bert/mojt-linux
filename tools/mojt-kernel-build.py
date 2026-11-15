@@ -16,6 +16,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 
 # Commands used by the driver and upstream config/Kbuild scripts. Keep this
 # independent of the package backend and reject incomplete private PATHs early.
@@ -39,7 +40,8 @@ def sha(path):
 
 def read_plan(path):
     p=json.loads(Path(path).read_text())
-    require(set(p)=={'format','source','version','localversion','configuration'} and p['format']=='mojt-kernel-plan-v1','unsupported kernel plan')
+    require(set(p) in ({'format','source','version','localversion','configuration'}, {'format','source','version','localversion','configuration','track'}) and p['format']=='mojt-kernel-plan-v1','unsupported kernel plan')
+    require('track' not in p or p['track'] in ('linux-kernel-lts','linux-kernel'),'unsupported Kernel track')
     require(set(p['source'])=={'url','tag','commit'} and p['source']['url']=='https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git','unsupported source policy')
     require(re.fullmatch(r'[0-9a-f]{40}',p['source']['commit']) and p['source']['tag']=='v'+p['version'],'invalid source identity')
     require(re.fullmatch(r'[0-9]+(?:\.[0-9]+){2}',p['version']) and re.fullmatch(r'-[a-zA-Z0-9._-]+',p['localversion']),'invalid kernel release')
@@ -115,10 +117,12 @@ def build(args):
         existing_source=existing_source.resolve(strict=True)
         require(existing_source.is_dir() and (existing_source/'.git').is_dir(),'source must be an existing Git checkout')
     for p in (args.config.resolve(),args.plan.resolve(),environment,*([existing_source] if existing_source else [])):
-        require(output!=p and output not in p.parents and p not in output.parents,'output and input paths must be separate')
+        owned_resume_source=resume and p==output/'source' and p==existing_source
+        require(owned_resume_source or output!=p and output not in p.parents and p not in output.parents,'output and input paths must be separate')
     missing=[x for x in REQUIRED_COMMANDS if not
              ((environment/'bin'/x).is_file() and os.access(environment/'bin'/x, os.X_OK))]
     require(not missing,'kernel tools missing or not executable: '+', '.join(missing))
+    print('Track: '+plan.get('track','legacy exact plan'))
     print('Plan: '+plan['source']['tag']+' -> '+plan['version']+plan['localversion'])
     print('Output: '+str(output)+'; jobs: '+str(args.jobs))
     if resume:print('Resume: reapply frozen config and policy; reuse objects through Kbuild dependency checks')
@@ -135,15 +139,22 @@ def build(args):
     objects=output/'objects';staged=output/'root'
     if not resume:objects.mkdir();staged.mkdir()
     # Every external command starts through the static clean launcher.
-    def command(parts, capture=False):
-        p=subprocess.run([str(environment/'run'),*map(str,parts)],check=True,text=True,
-                         stdout=subprocess.PIPE if capture else None)
+    def command(parts, capture=False, phase=None):
+        started=time.monotonic()
+        if phase:print(phase+'...',flush=True)
+        try:
+            p=subprocess.run([str(environment/'run'),*map(str,parts)],check=True,text=True,
+                             stdout=subprocess.PIPE if capture else None)
+        except BaseException:
+            if phase:print(phase+': failed after %.2f s' % (time.monotonic()-started),flush=True)
+            raise
+        if phase:print(phase+': done (%.2f s)' % (time.monotonic()-started),flush=True)
         return p.stdout.strip() if capture else None
     git=environment/'bin/git'
     if not existing_source:
         command([git,'-C',source,'init'])
         command([git,'-C',source,'remote','add','origin',plan['source']['url']])
-        command([git,'-C',source,'fetch','--depth=1','origin','refs/tags/'+plan['source']['tag']])
+        command([git,'-C',source,'fetch','--depth=1','origin','refs/tags/'+plan['source']['tag']],phase='Fetch pinned Kernel source')
     commit=command([git,'-C',source,'rev-parse','HEAD^{commit}' if existing_source else 'FETCH_HEAD^{commit}'],True)
     require(commit==plan['source']['commit'],'fetched source commit differs from plan')
     if existing_source:
@@ -159,7 +170,7 @@ def build(args):
     for key,value in dict(plan['configuration']['strings'],LOCALVERSION=plan['localversion']).items():
         command(conf+['--set-str',key,value])
     make=lambda *targets:make_command(source,objects,environment,args.jobs,*targets)
-    command(make('olddefconfig'))
+    command(make('olddefconfig'),phase='Generate configuration from Debian seed')
     (output/'config.diff').write_text(''.join(difflib.unified_diff(copied.read_text().splitlines(True),
         (objects/'.config').read_text().splitlines(True),fromfile='debian.config',tofile='mojt.config')))
     check_config(objects/'.config',plan)
@@ -171,9 +182,9 @@ def build(args):
     require(release_output,'kernelrelease returned no identity')
     release=release_output.splitlines()[-1]
     require(release==plan['version']+plan['localversion'],'unexpected compiled kernel release: '+release)
-    command(make(*identity,'bzImage','modules'))
+    command(make(*identity,'bzImage','modules'),phase='Compile Kernel and modules')
     command(make(*identity,'INSTALL_MOD_PATH='+str(staged),'INSTALL_MOD_STRIP=1',
-                 'DEPMOD='+str(environment/'bin/depmod'),'modules_install'))
+                 'DEPMOD='+str(environment/'bin/depmod'),'modules_install'),phase='Stage matching modules')
     command([environment/'bin/depmod','-b',staged,'-a',release])
     boot=staged/'boot';boot.mkdir()
     kernel=boot/('vmlinuz-'+release);shutil.copyfile(objects/'arch/x86/boot/bzImage',kernel)
@@ -206,12 +217,17 @@ def build(args):
 
 def main(argv=None, *, prog=None):
     p=argparse.ArgumentParser(prog=prog,description=__doc__)
-    for name in ('plan','config','environment','output'):p.add_argument('--'+name,type=Path,required=True)
+    choice=p.add_mutually_exclusive_group(required=True)
+    choice.add_argument('--plan',type=Path,help='explicit pinned build plan')
+    choice.add_argument('--track',choices=('linux-kernel-lts','linux-kernel'),help='bundled pinned LTS or stable recipe')
+    for name in ('config','environment','output'):p.add_argument('--'+name,type=Path,required=True)
     p.add_argument('--source',type=Path,help='reuse a clean checkout at the pinned commit; no source fetch')
     p.add_argument('--resume',action='store_true',help='resume an incomplete pre-staging output with --source; revalidate inputs and regenerate config')
     p.add_argument('--config-sha256',required=True);p.add_argument('--jobs',type=int,default=2)
     p.add_argument('--dry-run',action='store_true');p.add_argument('-y','--yes',action='store_true')
     args=p.parse_args(argv)
+    if args.track:
+        args.plan=Path(__file__).resolve().parents[1]/'manifests'/('kernel-lts.json' if args.track=='linux-kernel-lts' else 'kernel-stable.json')
     try:build(args)
     except (ValueError,OSError,KeyError,TypeError,subprocess.CalledProcessError) as error:
         p.exit(1,'mojt-kernel-build: '+str(error)+'\nIncomplete new output is retained; never activate it.\n')

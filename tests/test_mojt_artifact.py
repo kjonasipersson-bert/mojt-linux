@@ -373,6 +373,14 @@ class PackageTests(unittest.TestCase):
             self.assertEqual(archive.extractfile("./kernel/provenance/kernel.json").read(), raw)
         self.assertEqual(result["artifact"]["provenance"]["kernel_build_id"], record["id"])
         self.assertEqual((build / "kernel.json").read_bytes(), raw)
+        for track in ('linux-kernel-lts','linux-kernel'):
+            record['plan']['track']=track;record.pop('id');record['id']=artifact.digest(record)
+            (build/'kernel.json').write_text(json.dumps(record)+'\n')
+            value,attachments=artifact.kernel_input(build,1)
+            self.assertEqual(value['name'],'linux')  # Existing registry/recovery readers remain compatible.
+            self.assertEqual(value['metadata']['kernel_name'],track)
+            packed,tracked=self.package(value,attachments=attachments)
+            self.assertEqual(artifact.verify(packed)['metadata']['kernel_name'],track)
         (build / "debian.config").write_text("changed seed\n")
         with self.assertRaisesRegex(ValueError, "seed config"):
             artifact.kernel_input(build, 1)

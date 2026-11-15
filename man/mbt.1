@@ -126,3 +126,11 @@ named-environment registry, GC or source rebuild of the entire distribution.
 Runtime closure checks are not a universal libc/plugin compatibility guarantee.
 .SH SEE ALSO
 .BR mpm (1)
+
+.PP
+build kernel accepts either --plan FILE or --track linux-kernel-lts / linux-kernel.
+Tracks select bundled exact source recipes, not a network latest-version lookup.
+Use a frozen Debian configuration with --config and --config-sha256, a prepared
+kernel environment and a separate --output for each build. Compile as an ordinary
+user. A result retains its track, exact source, config diff and matching modules;
+packaging, installation, preparation and next-boot choice remain separate.

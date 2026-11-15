@@ -4,10 +4,24 @@ Copyright (C) 2026 Jonas Persson
 SPDX-License-Identifier: GPL-2.0-only
 -->
 
-# First own-built kernel: native build and VM acceptance
+# Kernel source builds and pinned track recipes
 
 The Kernel builder uses pinned source/configuration and a private tool environment.
 Native packaging retains the exact build provenance and matching module tree.
+
+## Track recipes
+
+`mbt build kernel --track linux-kernel-lts` selects the bundled 6.18.63 recipe;
+`--track linux-kernel` selects 7.3.4. Their source tags and peeled commits are
+pinned in `manifests/kernel-lts.json` and `manifests/kernel-stable.json`.
+The first 6.12 recipe remains available through explicit `--plan`.
+
+The build result retains its track in the frozen plan. Native packaging records
+its readable `kernel_name` as additive metadata and keeps the canonical artifact
+name `linux` for existing registry/recovery readers. Package/schema format is
+unchanged; exact content IDs and version-specific module paths distinguish builds.
+Human status and candidate lists show the track label when present. A track name
+is not yet a moving installation or upgrade wish.
 
 ## Locked first target
 

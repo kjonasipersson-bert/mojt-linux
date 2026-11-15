@@ -35,6 +35,7 @@ ROLES = {
     8: {},
     9: {"tzdata": "tzdata", "man-db": "man-db"},
     10: {"shadow": "shadow", "pam": "pam", "sudo": "sudo"},
+    11: {"openssh": "openssh"},
 }
 ADMIN_COMMANDS = {
     "procps": ("ps", "top", "free", "pgrep", "uptime"),
@@ -77,7 +78,7 @@ VERSION = "0.2"
 MPM_FILES = (
     "mpm", "mpm-system", "mpm_cli.py", "mpm_catalog.py", "mpm_selection.py", "mpm_boot_selection.py", "mpm_boot_update.py",
     "mpm_selector_ports.py", "mpm_system.py", "mpm_system_model.py", "mpm_system_cli.py", "mpm_system_source.py", "mpm_system_transition.py", "mpm_boot_v2.py", "mpm_boot_v2_store.py", "mpm_boot_inventory.py", "mpm_boot_early.py", "mpm_boot_constructor.py", "mpm_boot_base.py", "mpm_boot_handover.py", "mpm_nix_boot.py", "mpm_boot_status.py", "mpm_base.py", "mpm_base_transition.py", "mpm_base_boot.py", "mpm_base_cli.py", "mpm_base_source.py", "mpm_base_status.py",
-    "mpm_native_io.py", "mpm_ui.py", "mpm_man.py", "mojt-base-install", "mpm_kernel.py", "mpm_kernel_source.py", "mpm_deployment.py", "mpm_kernel_boot.py",
+    "mpm_native_io.py", "mpm_ui.py", "mojt_sshd.py", "mpm_man.py", "mojt-base-install", "mpm_kernel.py", "mpm_kernel_source.py", "mpm_deployment.py", "mpm_kernel_boot.py",
     "mpm_transaction.py", "mpm_defaults.py", "mpm_management.py", "mpm_requests.py", "mpm_request_plan.py", "mpm_sources.py", "mpm_sources_cli.py",
     "mpm_ports_profile.py", "mpm_ports_cli.py", "mpm_ports_nix_source.py", "mpm_nix_binary.py", "mpm_native_cache.py", "mojt_artifact.py", "mojt_boot.py", "mojt_system.py",
     "mojt_system_manifest.py", "mojt_native_image.py", "mojt-vm-build.py",
@@ -92,7 +93,7 @@ MBT_FILES = ('mbt','mbt_cli.py','mojt-build-env.py','mojt-kernel-build.py',
 # Fixed assembly inputs at their repository-relative paths, so an installed
 # builder can assemble its successor without carrying a checkout.
 MBT_SOURCE_FILES = ('tests/check-mojt-system.sh','manifests/mpm-release-example.json',
-                    'manifests/kernel-first-build.json','man/mpm.1','man/mbt.1')
+                    'manifests/kernel-first-build.json','manifests/kernel-lts.json','manifests/kernel-stable.json','man/mpm.1','man/mbt.1')
 
 BASH_RC = r'''# Mojt System interactive Bash defaults; user startup files may override these.
 case $- in *i*) ;; *) return 0 ;; esac
@@ -126,12 +127,13 @@ def require(condition, message):
 
 
 def roles(step):
-    require(type(step) is int and step in ROLES, "System step must be an integer from 1 to 10")
+    require(type(step) is int and step in ROLES, "System step must be an integer from 1 to 11")
     result = {key: value for n in range(1, step + 1) for key, value in ROLES[n].items()}
     if step >= 9:
         result.update(MANUAL_ROLES)
     if step >= 10:
         result.update({"manual-" + name: name for name in ("shadow", "pam", "sudo")})
+    if step >= 11:result["manual-openssh"]="openssh"
     return result
 
 
@@ -402,6 +404,9 @@ def load_payload(path):
         manual_paths(path, record)
     if record["step"] >= 10:
         account_inputs(path, record)
+    if record["step"] >= 11:
+        executable(path,record,"openssh","bin/sshd","sbin/sshd")
+        executable(path,record,"openssh","bin/ssh-keygen")
     return record
 
 
@@ -812,6 +817,11 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
         if with_build_tools:write(system / "share/man/man1/mbt.1",(repo / "man/mbt.1").read_text())
         write(system / "manual-path", ":".join(["/run/mojt-system/share/man"] + manual_paths(payload, record)) + "\n")
         write(system / "zoneinfo-path", record["packages"]["tzdata"]["output"] + "/share/zoneinfo\n")
+    if step >= 11:
+        export("sshd", "openssh", "bin/sshd", "sbin/sshd")
+        export("systemd-run", "systemd", "bin/systemd-run")
+        export("ssh-keygen", "openssh", "bin/ssh-keygen")
+        write(system/"bin/mojt-sshd", "#!/bin/sh\nexec /run/mojt-system/bin/python3 -I -B /run/mojt-system/tools/mojt_sshd.py \"$@\"\n", 0o755)
     if step >= 10:
         wanted += accounts.install(tree, system, account_inputs(payload, record), repo,
                                    write, add_default, put_unit, unit)

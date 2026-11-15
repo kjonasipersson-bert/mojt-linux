@@ -531,5 +531,8 @@ def kernel_input(build, revision):
                                 base_config_sha256=record["base_config_sha256"],
                                 compiler_environment_sha256=record.get("compiler_environment_sha256")),
                 metadata=dict(kernel_release=release))
+    if 'track' in plan:
+        require(plan['track'] in ('linux-kernel-lts','linux-kernel'),'unsupported Kernel track')
+        spec['metadata']['kernel_name']=plan['track']
     attachments = {name: build / name for name in ("kernel.json", "debian.config", "config.diff")}
     return spec, attachments
