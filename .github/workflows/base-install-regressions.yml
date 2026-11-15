@@ -69,6 +69,10 @@ jobs:
           python3 -B -m unittest discover -s tests -p 'test_system_boot_prepare.py' -v
           sudo env PYTHONPATH=tests python3 -B -m unittest test_system_boot_prepare.NamespaceTests -v
           python3 -m py_compile tests/prepare-system-boot.py tests/run-system-boot-acceptance.py
+      - name: Check pinned writable-root delivery and checked candidate launcher
+        run: |
+          python3 -B -m unittest discover -s tests -p 'test_system_writable_root.py' -v
+          sudo env PYTHONPATH=tests python3 -B -m unittest test_system_writable_root -v
       - name: Check installed stage profiling preserves results, refusals and constructor identity
         run: |
           python3 -B -m unittest discover -s tests -p 'test_mpm_stage_*.py' -v

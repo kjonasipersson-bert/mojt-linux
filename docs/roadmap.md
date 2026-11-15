@@ -127,7 +127,8 @@ only on boot, not stage, and old entries retain their embedded mount behavior.
 The [Handbook filesystem chapter](../doc/handbook/part-iii/filesystem-layout.md)
 records what survives generation changes, what follows releases and what is
 temporary. Private real-mount/refusal tests cover the new projection; actual
-System boot/return and shutdown acceptance remain required. Service/state
+System boot/return and shutdown acceptance use the pinned
+[G/H/G hardware test](writable-root-hardware-test.md) and remain required. Service/state
 migrations are outside this increment.
 The kernel/firmware/MBT items below remain proposals for discussion.
 

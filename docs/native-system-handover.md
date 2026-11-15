@@ -108,6 +108,9 @@ subsequently passed [owner A/B/A boot/return and clean shutdown](system-boot-acc
 on 2026-11-09, preserving exact Base/Kernel and persistent state. Public active-v2
 staging and request integration remain.
 
+The new writable-root increment has separate [G/H/G hardware instructions](writable-root-hardware-test.md).
+Its private real-mount and refusal tests do not establish a physical boot.
+
 MBT must subsequently reuse these installation/handover APIs for bootstrap and
 the existing build environment, Kernel build and native packaging. The destination
 is **M2 native self-hosting**: Mojt builds Base and Mojt-owned System components
