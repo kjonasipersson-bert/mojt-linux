@@ -2,7 +2,11 @@
 # Mojt Linux
 # Copyright (C) 2026 Jonas Persson
 # SPDX-License-Identifier: GPL-2.0-only
-"""Explicit local OpenSSH configuration using retained System binaries."""
+"""Legacy key-only helper retained for immutable delivery regression fixtures.
+
+Not exported or included in current System management runtimes. Configure
+OpenSSH directly with sshd_config and systemctl instead.
+"""
 import argparse
 import base64
 import ipaddress

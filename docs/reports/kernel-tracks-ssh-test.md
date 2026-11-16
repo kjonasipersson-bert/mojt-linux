@@ -59,37 +59,40 @@ System or change next boot. A completed preparation checkpoint is refused; this
 option cannot reset an installation or boot selection. After `READY`, continue
 with `enter` as above.
 
-## 2. Configure and test SSH
+## 2. Configure and test ordinary OpenSSH
 
-On the client, choose an existing SSH key or create one with OpenSSH:
+Copy the reviewed `tests/setup-openssh.sh` to `/root/setup-openssh.sh`.
+It is a one-time test setup, not an installed administration command. It creates
+ordinary `/etc/ssh/sshd_config`, host keys, PAM/sysusers configuration and
+`sshd.service`, then validates and enables that service. This test explicitly
+permits root password login using the existing root password. It refuses
+pre-existing configuration rather than replacing it, including an earlier
+`mojt-sshd` setup.
+
+On Mojt as root:
 
 ```sh
-ssh-keygen -t ed25519 -f mojt-test
-```
-
-Retain the private `mojt-test` file on the client. Copy only `mojt-test.pub` to
-`/root/client.pub` on Mojt, for example by USB. On Mojt:
-
-```sh
-mojt-sshd configure --user root --authorized-key /root/client.pub
-mojt-sshd enable
-mojt-sshd status
+sh /root/setup-openssh.sh
 ip -brief address
 ```
 
-The helper prints the host-key fingerprint. Compare it on first connection.
-From the client, replacing the address:
+From the client, replace the address and enter the existing root password:
 
 ```sh
-ssh -i mojt-test root@MOJT_ADDRESS
-ssh -i mojt-test root@MOJT_ADDRESS 'mpm system status'
-sftp -i mojt-test root@MOJT_ADDRESS
+ssh root@MOJT_ADDRESS
+ssh root@MOJT_ADDRESS 'mpm system status'
+sftp root@MOJT_ADDRESS
 ```
 
-Check interactive login, the remote MPM command and one harmless file transfer.
-No password login is enabled. If an ordinary administrative account is preferred,
-configure that existing account instead and use sudo for privileged test actions.
-Keep console access available while first establishing remote administration.
+Compare the host-key fingerprint, check interactive login, the remote MPM command
+and one harmless file transfer. Use `systemctl status sshd.service`,
+`journalctl -u sshd.service -b` and `/etc/ssh/sshd_config` for ordinary
+administration. No new generation or reboot is required for this setup.
+
+This pinned K fixture retains its earlier immutable code/resource cohort. Its
+unused old helper is not modified or invoked. Current System assembly no longer
+exports that wrapper; the [Handbook](../../doc/handbook/part-iii/ssh.md) documents
+the standard OpenSSH interfaces.
 
 ## 3. Create a build user and compiler environment
 

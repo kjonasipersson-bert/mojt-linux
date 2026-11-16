@@ -78,7 +78,7 @@ VERSION = "0.2"
 MPM_FILES = (
     "mpm", "mpm-system", "mpm_cli.py", "mpm_catalog.py", "mpm_selection.py", "mpm_boot_selection.py", "mpm_boot_update.py",
     "mpm_selector_ports.py", "mpm_system.py", "mpm_system_model.py", "mpm_system_cli.py", "mpm_system_source.py", "mpm_system_transition.py", "mpm_boot_v2.py", "mpm_boot_v2_store.py", "mpm_boot_inventory.py", "mpm_boot_early.py", "mpm_boot_constructor.py", "mpm_boot_base.py", "mpm_boot_handover.py", "mpm_nix_boot.py", "mpm_boot_status.py", "mpm_base.py", "mpm_base_transition.py", "mpm_base_boot.py", "mpm_base_cli.py", "mpm_base_source.py", "mpm_base_status.py",
-    "mpm_native_io.py", "mpm_ui.py", "mojt_sshd.py", "mpm_man.py", "mojt-base-install", "mpm_kernel.py", "mpm_kernel_source.py", "mpm_deployment.py", "mpm_kernel_boot.py",
+    "mpm_native_io.py", "mpm_ui.py", "mpm_man.py", "mojt-base-install", "mpm_kernel.py", "mpm_kernel_source.py", "mpm_deployment.py", "mpm_kernel_boot.py",
     "mpm_transaction.py", "mpm_defaults.py", "mpm_management.py", "mpm_requests.py", "mpm_request_plan.py", "mpm_sources.py", "mpm_sources_cli.py",
     "mpm_ports_profile.py", "mpm_ports_cli.py", "mpm_ports_nix_source.py", "mpm_nix_binary.py", "mpm_native_cache.py", "mojt_artifact.py", "mojt_boot.py", "mojt_system.py",
     "mojt_system_manifest.py", "mojt_native_image.py", "mojt-vm-build.py",
@@ -821,7 +821,6 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
         export("sshd", "openssh", "bin/sshd", "sbin/sshd")
         export("systemd-run", "systemd", "bin/systemd-run")
         export("ssh-keygen", "openssh", "bin/ssh-keygen")
-        write(system/"bin/mojt-sshd", "#!/bin/sh\nexec /run/mojt-system/bin/python3 -I -B /run/mojt-system/tools/mojt_sshd.py \"$@\"\n", 0o755)
     if step >= 10:
         wanted += accounts.install(tree, system, account_inputs(payload, record), repo,
                                    write, add_default, put_unit, unit)
