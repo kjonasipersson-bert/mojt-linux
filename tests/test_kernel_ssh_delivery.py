@@ -8,6 +8,7 @@ import importlib.util
 import json
 import os
 import stat
+import sys
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
@@ -75,6 +76,51 @@ class ResourceTests(unittest.TestCase):
 
 @unittest.skipUnless(os.geteuid()==0 and original.shutil.which('zstd'),'numeric-root native packaging requires zstd')
 class PackageTests(unittest.TestCase):
+    def test_incomplete_preparation_retry_retains_files_and_refuses_a_completed_checkpoint(self):
+        work=self.f.work/'preparation'
+        with mock.patch.object(delivery,'WORK',work):
+            delivery.start_preparation(False)
+            (work/'downloaded-input').write_bytes(b'retain evidence')
+            with self.assertRaisesRegex(ValueError,'test evidence exists'):
+                delivery.start_preparation(False)
+            delivery.start_preparation(True)
+            previous=list(work.parent.glob('preparation.failed-prepare-*'))
+            self.assertEqual(len(previous),1)
+            self.assertEqual((previous[0]/'downloaded-input').read_bytes(),b'retain evidence')
+            self.assertEqual(list(work.iterdir()),[])
+            (work/'state.json').write_text('{}')
+            with self.assertRaisesRegex(ValueError,'checkpoint exists'):
+                delivery.start_preparation(True)
+            self.assertTrue((work/'state.json').is_file())
+
+    def test_main_prepare_creates_real_package_and_checkpoint_without_installing(self):
+        f=self.f;work=f.work/'preparation';before=tree(f.root)
+        baseline={'selected':'original-boot','status':{'running':{'artifact':f.body['id'],'deployment':'original-boot'}}}
+        bridge=mock.Mock(write_data=self.bridge.write_data,specification=self.bridge.specification)
+        bridge.snapshot.return_value=baseline
+        bridge.save.side_effect=lambda name,value:(work/name).write_text(json.dumps(value))
+        def download(command,**unused):
+            Path(command[command.index('--output')+1]).write_bytes(b'fixture package driver')
+        with mock.patch.object(delivery,'ROOT',f.root),mock.patch.object(delivery,'RUNTIME',self.runtime), \
+             mock.patch.object(delivery,'WORK',work),mock.patch.object(delivery,'driver',return_value=bridge), \
+             mock.patch.object(delivery,'fetch',return_value=(self.data,f.work/'code',{})), \
+             mock.patch.object(delivery,'plain',return_value={'candidate':{'artifact':f.body['id']},'probe':{'artifact':f.body['id']}}), \
+             mock.patch.object(delivery,'acquire_ssh',return_value=self.extra), \
+             mock.patch.object(delivery.subprocess,'run',side_effect=download), \
+             mock.patch.object(delivery.os.path,'ismount',return_value=True), \
+             mock.patch.object(delivery.sys,'executable',str(self.runtime/'bin/python3')), \
+             mock.patch.object(delivery.sys,'flags',SimpleNamespace(**({k:getattr(sys.flags,k) for k in dir(sys.flags) if not k.startswith('_')}|{'isolated':1}))), \
+             mock.patch.object(delivery.sys,'dont_write_bytecode',True), \
+             mock.patch.object(delivery.sys,'path',list(sys.path)),mock.patch.dict(os.environ):
+            mask=os.umask(0o077)
+            try:self.assertEqual(delivery.main(['prepare']),0)
+            finally:os.umask(mask)
+        saved=json.loads((work/'state.json').read_text())
+        self.assertEqual(saved['baseline'],baseline)
+        self.assertEqual(saved['candidate']['label'],'system-build-K')
+        artifact.verify(work/'candidate'/saved['candidate']['generation'],expected_id=saved['candidate']['artifact'])
+        self.assertEqual(before,tree(f.root));bridge.run.assert_not_called()
+
     def test_compiler_inputs_are_readable_without_modifying_store_targets(self):
         with tempfile.TemporaryDirectory() as t:
             env=Path(t)/'environment';env.mkdir(mode=0o700)

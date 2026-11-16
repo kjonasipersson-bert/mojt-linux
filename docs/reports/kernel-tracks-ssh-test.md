@@ -43,6 +43,22 @@ python3 /root/mojt-kernel-ssh-test.py check
 Expect `system-build-K` running/selected and the original Kernel, with writable
 root and the delivered code/resources verified.
 
+### Retry an incomplete preparation
+
+If `prepare` failed before creating `/var/lib/mojt/kernel-ssh-63/state.json`,
+copy the corrected helper to the same `/root/mojt-kernel-ssh-test.py` path and run:
+
+```sh
+python3 /root/mojt-kernel-ssh-test.py prepare --retry-prepare
+```
+
+The helper retains the entire previous attempt in a sibling directory named
+`kernel-ssh-63.failed-prepare-TIMESTAMP` and starts a fresh preparation. Existing
+OpenSSH store content is reused by Nix. It does not remove packages, install a
+System or change next boot. A completed preparation checkpoint is refused; this
+option cannot reset an installation or boot selection. After `READY`, continue
+with `enter` as above.
+
 ## 2. Configure and test SSH
 
 On the client, choose an existing SSH key or create one with OpenSSH:

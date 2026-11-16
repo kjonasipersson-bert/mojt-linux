@@ -409,11 +409,28 @@ def activate_kernel(bridge,args):
     print('READY: retained Kernel selected. Reboot deliberately, then run check --track '+args.track)
 
 
+def start_preparation(retry):
+    """Retain incomplete preparation evidence before an explicit fresh attempt."""
+    protected(WORK)
+    if os.path.lexists(WORK):
+        require(retry,'test evidence exists; use prepare --retry-prepare only for an incomplete preparation')
+        require(WORK.is_dir() and not os.path.lexists(WORK/'state.json'),
+                'preparation checkpoint exists; preserve it and inspect status instead of retrying')
+        previous=WORK.with_name(WORK.name+'.failed-prepare-'+str(time.time_ns()))
+        require(not os.path.lexists(previous),'retry evidence destination exists')
+        WORK.rename(previous)
+        print('Previous incomplete preparation retained: '+str(previous),flush=True)
+    WORK.mkdir(mode=0o700)
+
+
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('action',choices=('prepare','enter','check','environment','build','result','install','choose','activate','status','_stage'))
     p.add_argument('--track',choices=('linux-kernel-lts','linux-kernel'),default='linux-kernel-lts')
     p.add_argument('--user',default='mojtbuild');p.add_argument('--config',type=Path);p.add_argument('--jobs',type=int,choices=range(1,5),default=2)
-    p.add_argument('--resume',action='store_true');args=p.parse_args(argv)
+    p.add_argument('--resume',action='store_true')
+    p.add_argument('--retry-prepare',action='store_true',help='retain an incomplete preparation and start prepare again')
+    args=p.parse_args(argv)
+    require(not args.retry_prepare or args.action=='prepare','--retry-prepare is only valid with prepare')
     require(os.geteuid()==0 and os.path.ismount(ROOT) and os.path.ismount(RUNTIME),'run as root on the installed Mojt target')
     python=(RUNTIME/'bin/python3').resolve(strict=True)
     if Path(sys.executable).resolve()!=python or not sys.flags.isolated or not sys.dont_write_bytecode:
@@ -422,8 +439,7 @@ def main(argv=None):
     if args.action=='_stage':return private_stage()
     protected(WORK)
     if args.action=='prepare':
-        require(not os.path.lexists(WORK),'test evidence exists; preserve it and inspect status')
-        WORK.mkdir(mode=0o700);target=WORK/'package-driver.py'
+        start_preparation(args.retry_prepare);target=WORK/'package-driver.py'
         subprocess.run([str(RUNTIME/'bin/curl'),'--fail','--show-error','--silent','--location','--proto','=https','--proto-redir','=https',
             '--max-time','180','--max-filesize',str(4*1024**2),'--output',str(target),
             'https://raw.githubusercontent.com/kjonasipersson-bert/mojt-linux/'+REVISION+'/tools/mojt-system-fast-test.py'],check=True)
@@ -468,10 +484,10 @@ def main(argv=None):
         tools_match();subprocess.run([str(RUNTIME/'bin/mpm'),'system','status'],check=True);subprocess.run([str(RUNTIME/'bin/mpm'),'kernel','status'],check=True)
         label='lts' if args.track=='linux-kernel-lts' else 'stable'
         if (WORK/('selected-'+label+'.json')).exists():
-            package=bridge.read('package-'+label+'.json');from mpm_boot_status import description,read_running
+            built_package=bridge.read('package-'+label+'.json');from mpm_boot_status import description,read_running
             from mpm_cli import Runtime
-            running=description(read_running(Runtime()));require(running['kernel']['artifact']==package['artifact']['id'],'boot the selected exact Kernel first')
-            require(running['kernel']['release']==os.uname().release==package['artifact']['metadata']['kernel_release'],'Kernel/module release differs')
+            running=description(read_running(Runtime()));require(running['kernel']['artifact']==built_package['artifact']['id'],'boot the selected exact Kernel first')
+            require(running['kernel']['release']==os.uname().release==built_package['artifact']['metadata']['kernel_release'],'Kernel/module release differs')
             require((Path('/lib/modules')/os.uname().release/'modules.dep').is_file(),'matching modules unavailable')
         require(os.path.samefile('/',ROOT/'state/rootfs'),'writable-root mapping differs')
         bridge.save('checked-'+label+'.json',snapshot);print('PASS: exact System/Kernel, writable root and status. Check the SSH reconnect and Ports manually.')
