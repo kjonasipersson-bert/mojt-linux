@@ -25,8 +25,11 @@ From a repository checkout, use `python3 tools/mbt`. Its supported operations ar
 | `mbt package` | A native archive from prepared inputs, or archive verification |
 | `mbt bootstrap` | A fresh image or installation onto explicitly prepared mounted partitions |
 
-This chapter gives a Kernel build journey and a bootstrap preview. It assumes
-accepted inputs already exist. The general installation procedure belongs in
+For a complete installed-system journey, including background compilation over
+SSH, installation, next-boot selection and return, see
+[Building and installing a Kernel](../part-iii/kernel.md). This chapter gives
+the build interfaces and a bootstrap preview. It assumes accepted inputs already
+exist. The general installation procedure belongs in
 the future [installation chapter](installing-mojt.md).
 
 ## 4.2. Prepare a private compiler environment
@@ -149,8 +152,8 @@ mpm kernel install --from-file /path/to/reported-kernel.tar.zst \
   --expected-id sha256:FULL_REPORTED_ARTIFACT_ID
 ```
 
-Continue with [MPM preparation and activation](mpm.md#38-activate-and-reboot)
-to prepare the new boot choice, inspect it, activate it and reboot deliberately.
+Continue with [Kernel preparation and selection](../part-iii/kernel.md#75-prepare-and-select-next-boot)
+to prepare/select the new boot choice, inspect it and reboot deliberately.
 Retain the previous working Kernel and deployment for a compatible return.
 
 The same packager also accepts an already prepared Base release or System tree.

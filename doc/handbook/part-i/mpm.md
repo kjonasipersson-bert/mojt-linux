@@ -305,7 +305,8 @@ mpm kernel status
 ```
 
 The exact running identities should now match the intended selected deployment.
-Base and Kernel currently use the explicit stage/activate shape. Base preparation additionally
+Base and Kernel separate content installation from boot preparation. Their
+explicit stage/activate operations remain available. Base preparation additionally
 requires an accepted context file declaring exact Kernel bounds:
 
 ```sh
@@ -324,11 +325,15 @@ The exact upgrade convenience joins preparation and selection:
 ```sh
 mpm system upgrade --artifact sha256:FULL_SYSTEM_ID --dry-run
 mpm system upgrade --artifact sha256:FULL_SYSTEM_ID
+mpm kernel upgrade --artifact sha256:FULL_KERNEL_ID --dry-run
+mpm kernel upgrade --artifact sha256:FULL_KERNEL_ID
 ```
 
 Use this when explicitly joining preparation and the next-boot choice. It works
 with an explicit installed artifact. General moving-policy Base/System/Kernel
 resolution and automatic migrations are not implemented.
+For the complete source-to-boot journey, see
+[Building and installing a Kernel](../part-iii/kernel.md).
 
 ## 3.9. Return to a retained deployment
 
