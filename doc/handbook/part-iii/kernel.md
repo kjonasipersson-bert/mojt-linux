@@ -12,6 +12,9 @@ not required. Ordinary-user builds are recommended; root can also build, for
 example on an experimental machine. MBT neither changes users nor elevates
 privileges automatically. Shared installation and boot selection require root.
 
+Builder-enabled Systems also export the retained `zstd` command for packaging;
+the compiler itself remains in its separate tool environment.
+
 This procedure assumes a builder-enabled System and an existing native-v2
 installation. Retain the previous working Kernel and complete boot entry.
 

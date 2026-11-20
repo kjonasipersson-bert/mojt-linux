@@ -373,7 +373,7 @@ class PackageTests(unittest.TestCase):
             self.assertEqual(archive.extractfile("./kernel/provenance/kernel.json").read(), raw)
         self.assertEqual(result["artifact"]["provenance"]["kernel_build_id"], record["id"])
         self.assertEqual((build / "kernel.json").read_bytes(), raw)
-        shutil.copytree(build,self.work/'kernel-result')
+        (self.work/'kernel-result').symlink_to(build,target_is_directory=True)
         short=subprocess.run([sys.executable,str(REPO/'tools/mojt-artifact-pack.py'),'kernel'],
                              cwd=self.work,text=True,capture_output=True)
         self.assertEqual(short.returncode,0,short.stderr)

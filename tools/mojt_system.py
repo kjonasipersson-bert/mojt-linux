@@ -651,6 +651,9 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
         (system / "libexec/mpm/bin/tar").symlink_to(tar_helper)
         if helper is not None:
             (system / "libexec/mpm/bin/zstd").symlink_to(helper)
+        if with_build_tools:
+            require(helper is not None, "builder System needs retained zstd for native packaging")
+            (system / "bin/zstd").symlink_to(helper)
         write(system / "mpm-runtime.json", json.dumps(dict(
             format="mojt-mpm-runtime-v1", python=python, files=list(MPM_FILES),
             helpers={"zstd": helper, "tar": tar_helper}, ports_root="/var/lib/mojt/ports",

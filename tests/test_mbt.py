@@ -84,10 +84,14 @@ class BuilderDeliveryTests(unittest.TestCase):
         import test_system_vm as fixtures
         fixture=fixtures.SystemVmTests();fixture.setUp();self.addCleanup(fixture.doCleanups)
         model=fixtures.system;record=fixture.fixture(10)
+        codec=fixture.payload/record['packages']['python']['output'].lstrip('/')/'bin/zstd'
+        model.write(codec,'#!/bin/sh\nexit 0\n',0o755)
         successor=fixture.root/'successor';shutil.copytree(fixture.tree,successor,symlinks=True)
         with mock.patch.object(model.os,'chown'):
             key=model.install(fixture.tree,fixture.payload,record,fixture.busybox,'password',REPO,with_build_tools=True)
         profile=fixture.tree/'system'/key;self.assertTrue(key.endswith('-builder'))
+        self.assertTrue((profile/'bin/zstd').is_symlink())
+        self.assertEqual((profile/'bin/zstd').readlink(),(profile/'libexec/mpm/bin/zstd').readlink())
         wrapper=(profile/'bin/mbt').read_text()
         self.assertIn(' -I -B /run/mojt-system/tools/mbt',wrapper)
         self.assertNotIn('/var/lib/mojt/ports',wrapper)
