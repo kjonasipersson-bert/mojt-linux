@@ -56,6 +56,13 @@ class FrontendTests(unittest.TestCase):
             result=subprocess.run(command,capture_output=True,text=True)
             self.assertNotEqual(result.returncode,0);self.assertIn('hash differs',result.stderr)
             self.assertFalse(output.exists())
+            short=[sys.executable,'-I','-B',str(REPO/'tools/mbt'),'build','kernel',
+                   '--environment',str(environment),'--dry-run']
+            result=subprocess.run(short,cwd=root,capture_output=True,text=True)
+            self.assertEqual(result.returncode,0,result.stderr)
+            self.assertIn('Config: bundled mojt.config',result.stdout)
+            self.assertFalse((root/'mojt.config').exists())
+            self.assertFalse((root/'kernel-result').exists())
             (root/'mojt.config').write_bytes(config.read_bytes())
             result=subprocess.run([sys.executable,'-I','-B',str(REPO/'tools/mbt'),'build','kernel',
                                    '--environment',str(environment),'--dry-run'],cwd=root,capture_output=True,text=True)

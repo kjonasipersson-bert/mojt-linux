@@ -145,7 +145,8 @@ class PackageTests(unittest.TestCase):
         patch=mock.patch.object(original.Provider,'contains',lambda adapter,ref,path:str(path).startswith(str(self.ssh)+'/') or str(path).startswith(str(self.runtime)+'/'),create=True)
         patch.start();self.addCleanup(patch.stop)
         self.bridge=SimpleNamespace(write_data=original.delivery.write_data,specification=original.delivery.specification)
-        self.data={name:(REPO/name).read_bytes() for name in delivery.FILES}
+        import mbt_runtime
+        self.data={name:(REPO/name).read_bytes() for name in set(delivery.FILES)|set(mbt_runtime.resources(REPO))}
         patch=mock.patch.object(delivery,'FILES',{name:hashlib.sha256(data).hexdigest() for name,data in self.data.items()})
         patch.start();self.addCleanup(patch.stop)
         self.extra=dict(provider='fixture',identity=dict(output=str(self.ssh),closure='added SSH binaries'))

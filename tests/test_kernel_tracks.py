@@ -16,6 +16,37 @@ import mojt_system as system
 
 
 class TrackTests(unittest.TestCase):
+    def test_bundled_config_matches_lts_policy_and_is_delivered_with_build_tools(self):
+        config=fixtures.REPO/'manifests/mojt.config'
+        fixtures.kernel.check_config(config,fixtures.kernel.read_plan(fixtures.REPO/'manifests/kernel-lts.json'))
+        self.assertIn('manifests/mojt.config',system.MBT_SOURCE_FILES)
+
+    def test_empty_workspace_uses_bundled_config_without_writing_a_local_copy(self):
+        with tempfile.TemporaryDirectory() as t,contextlib.chdir(t):
+            with mock.patch.object(fixtures.kernel,'build') as build:
+                fixtures.kernel.main(['--dry-run'])
+            args=build.call_args.args[0]
+            self.assertEqual(args.config,fixtures.REPO/'manifests/mojt.config')
+            self.assertEqual(args.config_sha256,fixtures.kernel.sha(args.config))
+            self.assertEqual(list(Path('.').iterdir()),[])
+
+    def test_explicit_config_takes_precedence_over_workspace_and_bundled_configs(self):
+        with tempfile.TemporaryDirectory() as t,contextlib.chdir(t):
+            Path('mojt.config').write_text('CONFIG_X86_64=y\n')
+            Path('custom.config').write_text('CONFIG_X86_64=y\nCONFIG_MODULES=y\n')
+            with mock.patch.object(fixtures.kernel,'build') as build:
+                fixtures.kernel.main(['--config','custom.config','--dry-run'])
+            args=build.call_args.args[0]
+            self.assertEqual(args.config,Path('custom.config'))
+            self.assertEqual(args.config_sha256,fixtures.kernel.sha(args.config))
+
+    def test_broken_workspace_config_is_not_silently_replaced_by_bundled_defaults(self):
+        with tempfile.TemporaryDirectory() as t,contextlib.chdir(t):
+            Path('mojt.config').symlink_to('missing.config')
+            with mock.patch.object(fixtures.kernel,'build') as build:
+                with self.assertRaises(SystemExit):fixtures.kernel.main(['--dry-run'])
+            build.assert_not_called()
+
     def test_short_build_uses_local_mojt_config_and_pinned_lts_defaults(self):
         with tempfile.TemporaryDirectory() as t,contextlib.chdir(t):
             Path('mojt.config').write_text('CONFIG_X86_64=y\n')

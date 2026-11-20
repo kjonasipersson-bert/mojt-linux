@@ -46,7 +46,9 @@ the ordinary builder. MBT does not grant store writes or start a provider daemon
 .B build kernel
 Compile a separate versioned Kernel and matching modules as the caller.
 No dedicated account is required. Defaults are the pinned LTS recipe,
-./mojt.config, /var/lib/mojt/kernel-build/environment and ./kernel-result.
+the bundled manifests/mojt.config, /var/lib/mojt/kernel-build/environment
+and ./kernel-result. A local ./mojt.config overrides the bundled file;
+--config FILE overrides both.
 The input hash is measured/frozen automatically; --config-sha256 requires an
 expected value instead. Explicit source, config, environment and output flags
 remain available.
@@ -135,7 +137,7 @@ Runtime closure checks are not a universal libc/plugin compatibility guarantee.
 .PP
 build kernel accepts either --plan FILE or --track linux-kernel-lts / linux-kernel.
 Tracks select bundled exact source recipes, not a network latest-version lookup.
-Use a reviewed configuration (default ./mojt.config), an optional expected
+Use the bundled Mojt configuration or a reviewed local/explicit override, an optional expected
 --config-sha256 and a prepared
 kernel environment and a separate output for each build. Use your existing
 account. A result retains its track, exact source, config diff and matching modules;

@@ -11,7 +11,7 @@ Native packaging retains the exact build provenance and matching module tree.
 
 ## Short workspace flow
 
-With a reviewed `./mojt.config` and a prepared compiler environment at
+With the bundled `manifests/mojt.config` and a prepared compiler environment at
 `/var/lib/mojt/kernel-build/environment`, `mbt build kernel` uses the pinned LTS
 recipe and creates a new `./kernel-result`. The input hash is measured/frozen
 automatically unless an expected `--config-sha256` is supplied.
@@ -21,7 +21,23 @@ identity; no dedicated account or privilege change is required.
 
 The v1 provenance format still names its frozen input copy `debian.config` for
 reader compatibility; that internal filename does not require a Debian-branded
-input file. A complete Mojt hardware configuration is not yet bundled.
+input file. An explicit `--config FILE` takes precedence over a local
+`./mojt.config`, which takes precedence over the bundled baseline.
+
+## Mojt configuration baseline
+
+`manifests/mojt.config` is the versioned full x86-64 starting configuration for
+`olddefconfig`. Its initial Linux 6.18.63 selections derive from the existing
+Debian seed and Mojt LTS policy. The selected recipe still applies its required
+options and local version, including when this baseline is used for another
+Kernel track. Generated compiler-detection values are refreshed for the selected
+source/toolchain. Firmware stays in System.
+
+The imported configuration had SHA256
+`d50eb989d678a52d234851b745832271fee6010585c1575d3b976c32b078dbd5`.
+The repository copy adds only a Mojt license/comment header. Configuration changes
+are explicit source changes; each build records the exact selected config digest
+and resulting diff. This is not a universal hardware or Secure Boot guarantee.
 
 ## Track recipes
 

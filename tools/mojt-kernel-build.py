@@ -124,6 +124,8 @@ def build(args):
     require(not missing,'kernel tools missing or not executable: '+', '.join(missing))
     print('Track: '+plan.get('track','legacy exact plan'))
     print('Plan: '+plan['source']['tag']+' -> '+plan['version']+plan['localversion'])
+    bundled=Path(__file__).resolve().parents[1]/'manifests/mojt.config'
+    print('Config: '+('bundled mojt.config' if args.config==bundled else str(args.config))+' [sha256:'+args.config_sha256+']')
     print('Output: '+str(output)+'; jobs: '+str(args.jobs))
     if resume:print('Resume: reapply frozen config and policy; reuse objects through Kbuild dependency checks')
     if existing_source:print('Reuse source (commit and clean tree checked before config/build): '+str(existing_source))
@@ -170,7 +172,7 @@ def build(args):
     for key,value in dict(plan['configuration']['strings'],LOCALVERSION=plan['localversion']).items():
         command(conf+['--set-str',key,value])
     make=lambda *targets:make_command(source,objects,environment,args.jobs,*targets)
-    command(make('olddefconfig'),phase='Generate configuration from Debian seed')
+    command(make('olddefconfig'),phase='Generate configuration from selected baseline')
     (output/'config.diff').write_text(''.join(difflib.unified_diff(copied.read_text().splitlines(True),
         (objects/'.config').read_text().splitlines(True),fromfile='debian.config',tofile='mojt.config')))
     check_config(objects/'.config',plan)
@@ -220,7 +222,7 @@ def main(argv=None, *, prog=None):
     choice=p.add_mutually_exclusive_group()
     choice.add_argument('--plan',type=Path,help='explicit pinned build plan')
     choice.add_argument('--track',choices=('linux-kernel-lts','linux-kernel'),help='bundled pinned LTS or stable recipe')
-    p.add_argument('--config',type=Path,default=Path('mojt.config'),help='starting config (default: ./mojt.config)')
+    p.add_argument('--config',type=Path,help='starting config (default: ./mojt.config if present, otherwise bundled Mojt config)')
     p.add_argument('--environment',type=Path,default=Path('/var/lib/mojt/kernel-build/environment'),help='prepared compiler environment')
     p.add_argument('--output',type=Path,default=Path('kernel-result'),help='new build output (default: ./kernel-result)')
     p.add_argument('--source',type=Path,help='reuse a clean checkout at the pinned commit; no source fetch')
@@ -229,6 +231,9 @@ def main(argv=None, *, prog=None):
     p.add_argument('--jobs',type=int,default=2)
     p.add_argument('--dry-run',action='store_true');p.add_argument('-y','--yes',action='store_true')
     args=p.parse_args(argv)
+    if args.config is None:
+        local=Path('mojt.config')
+        args.config=local if os.path.lexists(local) else Path(__file__).resolve().parents[1]/'manifests/mojt.config'
     if args.plan is None and args.track is None:args.track='linux-kernel-lts'
     if args.track:
         args.plan=Path(__file__).resolve().parents[1]/'manifests'/('kernel-lts.json' if args.track=='linux-kernel-lts' else 'kernel-stable.json')

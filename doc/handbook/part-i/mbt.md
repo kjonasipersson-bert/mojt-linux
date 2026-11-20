@@ -67,7 +67,8 @@ it is not a security sandbox.
 
 ## 4.3. Build a Kernel as an ordinary user
 
-Use a reviewed starting configuration named `mojt.config` in your workspace.
+The default starting configuration is the bundled `manifests/mojt.config`.
+A reviewed `mojt.config` in your workspace overrides it.
 Its digest is measured and frozen automatically; an explicit `--config-sha256`
 can require a previously reviewed value. With no track/plan option, the pinned
 LTS recipe is selected. Builder-enabled Systems include two track recipes:
@@ -83,7 +84,7 @@ building either leaves the running Kernel unchanged. `--plan FILE` instead
 selects an explicit recipe, including the retained initial 6.12 example. It is
 mutually exclusive with `--track`.
 
-Select the accepted starting config with `--config` or the `./mojt.config` default.
+An explicit `--config FILE` overrides both the local and bundled configuration.
 The builder checks and records its digest,
 applies the recipe policy, runs `olddefconfig` and retains the complete config
 diff. It does not silently choose `/proc/config.gz` or a host config.

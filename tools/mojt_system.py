@@ -93,7 +93,7 @@ MBT_FILES = ('mbt','mbt_cli.py','mojt-build-env.py','mojt-kernel-build.py',
 # Fixed assembly inputs at their repository-relative paths, so an installed
 # builder can assemble its successor without carrying a checkout.
 MBT_SOURCE_FILES = ('tests/check-mojt-system.sh','manifests/mpm-release-example.json',
-                    'manifests/kernel-first-build.json','manifests/kernel-lts.json','manifests/kernel-stable.json','man/mpm.1','man/mbt.1')
+                    'manifests/kernel-first-build.json','manifests/kernel-lts.json','manifests/kernel-stable.json','manifests/mojt.config','man/mpm.1','man/mbt.1')
 
 BASH_RC = r'''# Mojt System interactive Bash defaults; user startup files may override these.
 case $- in *i*) ;; *) return 0 ;; esac

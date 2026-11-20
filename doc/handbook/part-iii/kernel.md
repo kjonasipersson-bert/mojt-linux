@@ -25,10 +25,21 @@ The bundled recipes pin exact upstream commits:
 | `linux-kernel` | 7.3.4 | `7.3.4-mojt1` |
 
 These versions are explicit recipes, not automatic "latest" lookups. Use a
-separate working directory for each build. Put your reviewed x86-64 Kernel
-configuration in that directory as **`mojt.config`**. An accepted configuration
-from a previous build can be the starting point; preserve its provenance.
-A complete distribution-wide hardware configuration is not currently bundled.
+separate working directory for each build. MBT supplies the versioned x86-64
+**`manifests/mojt.config`** baseline. It is a broad starting configuration derived
+from a Debian seed with Mojt policy applied. Firmware remains part of System;
+this baseline does not establish support for every machine.
+
+To customize a build, place a reviewed `mojt.config` in its working directory,
+or select another file with `--config FILE`. An explicit file takes precedence
+over the local file, which takes precedence over the bundled baseline. A broken
+local file is an error, rather than a reason to fall back silently.
+
+On an installed builder, start a local customization with:
+
+```sh
+cp /run/mojt-system/manifests/mojt.config ./mojt.config
+```
 
 MBT freezes the selected file, records its digest, applies the recipe policy,
 runs `olddefconfig` and retains the configuration diff. You can supply a different
@@ -65,7 +76,7 @@ output is refused. Use `--environment DIRECTORY` if tools are prepared elsewhere
 
 ## 7.3. Build
 
-In your working directory, with `mojt.config` in place:
+In a new working directory, with the compiler environment prepared:
 
 ```sh
 mbt build kernel --dry-run
@@ -97,7 +108,7 @@ systemd-run --unit=kernel-build --working-directory="$PWD" \
 journalctl -fu kernel-build
 ```
 
-The build uses the current directory's `mojt.config`. Ctrl-C leaves the journal
+The same configuration precedence applies to the background build. Ctrl-C leaves the journal
 viewer; SSH disconnection does not cancel the service. `-y` accepts the build
 already reviewed in the preview. For an ordinary account, use your existing
 persistent terminal session, or a user service when a user manager is available.
