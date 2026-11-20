@@ -67,8 +67,10 @@ it is not a security sandbox.
 
 ## 4.3. Build a Kernel as an ordinary user
 
-You need a pinned recipe, a frozen Debian starting configuration and its
-SHA256. Builder-enabled Systems include two track recipes:
+Use a reviewed starting configuration named `mojt.config` in your workspace.
+Its digest is measured and frozen automatically; an explicit `--config-sha256`
+can require a previously reviewed value. With no track/plan option, the pinned
+LTS recipe is selected. Builder-enabled Systems include two track recipes:
 
 | `--track` | Pinned upstream version | Kernel/module release |
 | --- | --- | --- |
@@ -81,7 +83,8 @@ building either leaves the running Kernel unchanged. `--plan FILE` instead
 selects an explicit recipe, including the retained initial 6.12 example. It is
 mutually exclusive with `--track`.
 
-Supply the accepted starting config explicitly. The builder checks its digest,
+Select the accepted starting config with `--config` or the `./mojt.config` default.
+The builder checks and records its digest,
 applies the recipe policy, runs `olddefconfig` and retains the complete config
 diff. It does not silently choose `/proc/config.gz` or a host config.
 
@@ -97,7 +100,8 @@ mbt build kernel \
 
 Replace `FULL_CONFIG_SHA256` with the accepted file digest. The preview validates
 local prerequisites; it fetches no source and executes no compiler. Repeat the
-same command without `--dry-run` to compile as the ordinary build user.
+same command without `--dry-run` to compile as your current user. A dedicated
+build account is not required; root builds are also permitted.
 Source, object files and staged output remain in the workspace, rather than
 replacing the running Kernel or its `/lib/modules` tree.
 
@@ -125,7 +129,9 @@ checked checkout during resume.
 
 ## 4.4. Package and verify the result
 
-After a successful build, package it as the build user:
+After a successful build, package it as your current user. With default paths,
+`mbt package kernel` reads `kernel-result`, uses revision 1 and creates
+`kernel-package`. An explicit invocation is:
 
 ```sh
 mbt package kernel --build "$HOME/build/kernel-result" \

@@ -90,8 +90,8 @@ def make_command(source, output, environment, jobs, *targets):
 def build(args):
     plan=read_plan(args.plan)
     require(type(args.jobs) is int and 1<=args.jobs<=4,'initial kernel build uses 1-4 jobs')
-    require(re.fullmatch(r'[0-9a-f]{64}',args.config_sha256 or ''),'provide the frozen Debian config SHA256')
-    require(sha(args.config)==args.config_sha256,'Debian config hash differs')
+    require(re.fullmatch(r'[0-9a-f]{64}',args.config_sha256 or ''),'provide the starting config SHA256')
+    require(sha(args.config)==args.config_sha256,'starting config hash differs')
     require(config_values(args.config).get('X86_64')=='y','first kernel requires an x86_64 base config')
     environment=args.environment.resolve(strict=True)
     require(not (environment/'.preparing').exists(),'compiler environment incomplete')
@@ -217,18 +217,24 @@ def build(args):
 
 def main(argv=None, *, prog=None):
     p=argparse.ArgumentParser(prog=prog,description=__doc__)
-    choice=p.add_mutually_exclusive_group(required=True)
+    choice=p.add_mutually_exclusive_group()
     choice.add_argument('--plan',type=Path,help='explicit pinned build plan')
     choice.add_argument('--track',choices=('linux-kernel-lts','linux-kernel'),help='bundled pinned LTS or stable recipe')
-    for name in ('config','environment','output'):p.add_argument('--'+name,type=Path,required=True)
+    p.add_argument('--config',type=Path,default=Path('mojt.config'),help='starting config (default: ./mojt.config)')
+    p.add_argument('--environment',type=Path,default=Path('/var/lib/mojt/kernel-build/environment'),help='prepared compiler environment')
+    p.add_argument('--output',type=Path,default=Path('kernel-result'),help='new build output (default: ./kernel-result)')
     p.add_argument('--source',type=Path,help='reuse a clean checkout at the pinned commit; no source fetch')
     p.add_argument('--resume',action='store_true',help='resume an incomplete pre-staging output with --source; revalidate inputs and regenerate config')
-    p.add_argument('--config-sha256',required=True);p.add_argument('--jobs',type=int,default=2)
+    p.add_argument('--config-sha256',help='expected starting-config hash; otherwise measured from the selected file')
+    p.add_argument('--jobs',type=int,default=2)
     p.add_argument('--dry-run',action='store_true');p.add_argument('-y','--yes',action='store_true')
     args=p.parse_args(argv)
+    if args.plan is None and args.track is None:args.track='linux-kernel-lts'
     if args.track:
         args.plan=Path(__file__).resolve().parents[1]/'manifests'/('kernel-lts.json' if args.track=='linux-kernel-lts' else 'kernel-stable.json')
-    try:build(args)
+    try:
+        if args.config_sha256 is None:args.config_sha256=sha(args.config)
+        build(args)
     except (ValueError,OSError,KeyError,TypeError,subprocess.CalledProcessError) as error:
         p.exit(1,'mojt-kernel-build: '+str(error)+'\nIncomplete new output is retained; never activate it.\n')
 

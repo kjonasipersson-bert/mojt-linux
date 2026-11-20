@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """Thin experimental interface over the existing build and packaging tools."""
 import importlib.util
-import os
 from pathlib import Path
 import sys
 
@@ -43,8 +42,6 @@ def dispatch(args):
             return 0
         if rest[0] != 'kernel':raise ValueError('only build kernel is supported')
         rest = rest[1:];name,prog = 'kernel','mbt build kernel'
-        if os.geteuid() == 0 and not any(arg in rest for arg in ('--help','-h','--dry-run')):
-            raise ValueError('compile as an ordinary user in a private workspace; installation is a separate MPM operation')
     else:raise ValueError('unknown command; use mbt --help')
     from mbt_runtime import enter
     prepared=enter(args)

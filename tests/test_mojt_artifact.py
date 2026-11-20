@@ -373,6 +373,13 @@ class PackageTests(unittest.TestCase):
             self.assertEqual(archive.extractfile("./kernel/provenance/kernel.json").read(), raw)
         self.assertEqual(result["artifact"]["provenance"]["kernel_build_id"], record["id"])
         self.assertEqual((build / "kernel.json").read_bytes(), raw)
+        shutil.copytree(build,self.work/'kernel-result')
+        short=subprocess.run([sys.executable,str(REPO/'tools/mojt-artifact-pack.py'),'kernel'],
+                             cwd=self.work,text=True,capture_output=True)
+        self.assertEqual(short.returncode,0,short.stderr)
+        packaged=json.loads(short.stdout)
+        self.assertEqual(packaged['artifact']['id'],result['artifact']['id'])
+        artifact.verify(self.work/'kernel-package'/packaged['archive']['file'],result['artifact']['id'])
         for track in ('linux-kernel-lts','linux-kernel'):
             record['plan']['track']=track;record.pop('id');record['id']=artifact.digest(record)
             (build/'kernel.json').write_text(json.dumps(record)+'\n')

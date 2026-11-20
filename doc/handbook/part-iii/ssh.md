@@ -141,7 +141,7 @@ Host keys and configuration under `/etc/ssh`, `/etc/pam.d/sshd`,
 compatible generation changes. `/run/sshd` is temporary and recreated by systemd.
 An older System without OpenSSH cannot serve this service.
 
-Compile Kernels as an ordinary user in a separate workspace, as described in
+Compile Kernels under your existing account in a separate workspace, as described in
 the [MBT chapter](../part-i/mbt.md#43-build-a-kernel-as-an-ordinary-user).
 A transient system service can run a long build independently of the SSH
 session. Installation and next-boot selection remain administrator operations.

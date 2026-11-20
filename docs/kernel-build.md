@@ -9,6 +9,20 @@ SPDX-License-Identifier: GPL-2.0-only
 The Kernel builder uses pinned source/configuration and a private tool environment.
 Native packaging retains the exact build provenance and matching module tree.
 
+## Short workspace flow
+
+With a reviewed `./mojt.config` and a prepared compiler environment at
+`/var/lib/mojt/kernel-build/environment`, `mbt build kernel` uses the pinned LTS
+recipe and creates a new `./kernel-result`. The input hash is measured/frozen
+automatically unless an expected `--config-sha256` is supplied.
+`mbt package kernel` reads that result and creates `./kernel-package` at revision 1.
+All explicit input/output overrides remain supported. Builds use the caller's
+identity; no dedicated account or privilege change is required.
+
+The v1 provenance format still names its frozen input copy `debian.config` for
+reader compatibility; that internal filename does not require a Debian-branded
+input file. A complete Mojt hardware configuration is not yet bundled.
+
 ## Track recipes
 
 `mbt build kernel --track linux-kernel-lts` selects the bundled 6.18.63 recipe;

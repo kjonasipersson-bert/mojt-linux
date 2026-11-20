@@ -20,8 +20,8 @@ def main(argv=None, *, prog=None):
     generic.add_argument("--spec", type=Path, required=True)
     generic.add_argument("--attachment", action="append", default=[], metavar="NAME=FILE")
     kernel = commands.add_parser("kernel")
-    kernel.add_argument("--build", type=Path, required=True)
-    kernel.add_argument("--revision", type=int, required=True)
+    kernel.add_argument("--build", type=Path, default=Path("kernel-result"))
+    kernel.add_argument("--revision", type=int, default=1)
     kernel.add_argument("--attachment", action="append", default=[], metavar="NAME=FILE")
     base = commands.add_parser("base")
     base.add_argument("--release", type=Path, required=True)
@@ -34,7 +34,8 @@ def main(argv=None, *, prog=None):
     system.add_argument("--revision", type=int, required=True)
     system.add_argument("--nix-store", type=Path, required=True)
     for command in (generic, kernel, base, system):
-        command.add_argument("--output", type=Path, required=True)
+        command.add_argument("--output", type=Path, required=command is not kernel,
+                             default=Path("kernel-package") if command is kernel else None)
     verify = commands.add_parser("verify")
     verify.add_argument("archive", type=Path)
     verify.add_argument("--expected-id")

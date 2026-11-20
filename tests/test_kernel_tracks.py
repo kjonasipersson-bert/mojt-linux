@@ -2,6 +2,8 @@
 # Copyright (C) 2026 Jonas Persson
 # SPDX-License-Identifier: GPL-2.0-only
 """Pinned track selection and additive, backward-compatible package metadata."""
+import contextlib
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -14,6 +16,19 @@ import mojt_system as system
 
 
 class TrackTests(unittest.TestCase):
+    def test_short_build_uses_local_mojt_config_and_pinned_lts_defaults(self):
+        with tempfile.TemporaryDirectory() as t,contextlib.chdir(t):
+            Path('mojt.config').write_text('CONFIG_X86_64=y\n')
+            with mock.patch.object(fixtures.kernel,'build') as build:
+                fixtures.kernel.main(['--dry-run'])
+            args=build.call_args.args[0]
+            self.assertEqual(args.plan,fixtures.REPO/'manifests/kernel-lts.json')
+            self.assertEqual(args.config,Path('mojt.config'))
+            self.assertEqual(args.config_sha256,hashlib.sha256(Path('mojt.config').read_bytes()).hexdigest())
+            self.assertEqual(args.output,Path('kernel-result'))
+            self.assertEqual(args.environment,Path('/var/lib/mojt/kernel-build/environment'))
+            self.assertEqual(list(Path('.').iterdir()),[Path('mojt.config')])
+
     def test_both_tracks_pin_exact_commits_and_separate_module_releases(self):
         lts=fixtures.kernel.read_plan(fixtures.REPO/'manifests/kernel-lts.json')
         stable=fixtures.kernel.read_plan(fixtures.REPO/'manifests/kernel-stable.json')
