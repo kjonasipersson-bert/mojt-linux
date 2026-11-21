@@ -24,10 +24,12 @@ interfaces. The [architecture](architecture.md) defines the area boundaries.
 
 ## Next work for planning
 
-1. Broaden firmware coverage. Define a supported hardware set and include the
-   required firmware in System, rather than promising universal support.
-   Keep firmware ownership and licensing explicit, and preserve independent
-   Kernel selection and a retained recovery deployment.
+1. Validate the generic PC hardware profile on representative physical machines.
+   The profile includes broader firmware inputs, udev probing and NVMe/SATA/USB
+   early drivers; emulated boots do not establish physical firmware coverage.
+   Existing ThinkPad selections retain their machine policy. Firmware data and
+   the fixed optional QEMU guest service have a bounded transition contract;
+   live machine-profile changes and other service migrations remain separate work.
 2. Continue focused usability work and MBT development against the installed
    workflows. Keep activation a bounded atomic choice; construction belongs to
    preparation, and full audits remain explicit.

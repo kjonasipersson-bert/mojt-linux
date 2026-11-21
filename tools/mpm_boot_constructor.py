@@ -321,9 +321,10 @@ def build(root, source, runtime_directory, busybox, work, *, bounds, adapters, h
                 runtime_directory = work/'runtime'
                 frozen = freeze_runtime(root,runtime_d['reference'],runtime_d['interpreter'],runtime_directory,adapters=adapters)
                 require(frozen == runtime,'manager runtime changed before construction')
-            if d['boot']['profile'] == model.HARDWARE_PROFILE:
-                vm.module_paths(d['kernel']['release'],module_tree,names=hardware.RUNTIME_MODULES)
-                modules = vm.module_paths(d['kernel']['release'],module_tree,names=hardware.EARLY_MODULES)
+            if d['boot']['profile'] in model.HARDWARE_PROFILES:
+                machine = hardware.profile_for_boot(d['boot']['profile'])
+                vm.module_paths(d['kernel']['release'],module_tree,names=hardware.runtime_modules(machine))
+                modules = vm.module_paths(d['kernel']['release'],module_tree,names=hardware.early_modules(machine))
             else:modules = vm.module_paths(d['kernel']['release'],module_tree,network=True)
             for module in modules:
                 require(module == module.resolve() and payload/'lib/modules' in module.parents,'early module outside exact Kernel tree')

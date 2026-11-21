@@ -225,7 +225,7 @@ def construct(root, runtime, value, work, *, adapter=None):
         system=dict(artifact=identifier,composition=realized['description']['composition'],manifest=realized['description']['manifest'],generation=old['system']['generation']),
         kernel=dict(deployment.kernel_identity(kernel_body),upstream=kernel_body['version']['upstream']),firmware=[],
         boot=dict(root_uuid=old['boot']['root_uuid'],console=old['boot']['console'],
-                  profile=model.HARDWARE_PROFILE if old['boot']['console'] == 'local' else model.PROFILE,extra_args=['quiet']),
+                  profile=native.hardware.boot_profile(base.read(runtime/'hardware.json')['profile']) if old['boot']['console'] == 'local' else model.PROFILE,extra_args=['quiet']),
         constructor=constructor.constructor(python,runtime/'busybox',handover=True),state_requirements=[],management_required=selection.MANAGEMENT_SUPPORT))
     contract = handover.prepare(root,source,plan,adapters=adapters,tar=str(runtime/'libexec/mpm/bin/tar'))
     staged = selection.stage(root,source,bundle,runtime/'busybox',work/'construction',bounds=bounds,adapters=adapters,contract=contract)
@@ -303,7 +303,7 @@ def build(args):
         checks=preflight(args,preview)
         return dict(format='mojt-bootstrap-preview-v1',layout='native-v2',base=preview['base']['id'],kernel=preview['kernel']['id'],
             system_payload=artifact.digest(preview['system_record']),system_version=artifact.version(version),
-            boot_profile=model.HARDWARE_PROFILE if preview['hardware'] is not None else model.PROFILE,hardware_inputs=preview['hardware'],
+            boot_profile=native.hardware.boot_profile(args.hardware_profile) if preview['hardware'] is not None else model.PROFILE,hardware_inputs=preview['hardware'],
             output=str(Path(args.output).absolute()),preflight=checks,image_written=False,boot_acceptance=False)
     def finish(**values):return finalize(system_version=args.system_version,system_revision=args.system_revision,**values)
     def check(evidence):

@@ -20,6 +20,8 @@ DEPLOYMENT = 'mojt-boot-deployment-v2'
 SELECTION = 'mojt-boot-selection-v2'
 PROFILE = 'qemu-uefi-virtio-v1'
 HARDWARE_PROFILE = 'thinkpad-x1-carbon-3-v1'
+PC_PROFILE = 'pc-x86_64-v1'
+HARDWARE_PROFILES = (HARDWARE_PROFILE, PC_PROFILE)
 HEADER = '# Mojt native boot selection v2\n'
 MAX_BOOT = 256 * 1024 * 1024
 MAX_ENTRIES = 128
@@ -111,7 +113,7 @@ def inputs(value):
     require(d['state_requirements'] == [], 'state-schema requirements need a supported native-v2 handler')
     policy = d['boot'];artifact.fields(policy, ('root_uuid', 'console', 'profile', 'extra_args'))
     boot.fs_uuid(policy['root_uuid'])
-    require((policy['console'],policy['profile']) in (('serial',PROFILE),('local',HARDWARE_PROFILE)), 'unsupported native-v2 boot profile')
+    require((policy['console'],policy['profile']) in (('serial',PROFILE),*(('local',p) for p in HARDWARE_PROFILES)), 'unsupported native-v2 boot profile')
     arguments(policy['extra_args']);reference(d['constructor'])
     rows = d['management_required']
     require(type(rows) is list and len(rows) <= MAX_ENTRIES, 'unbounded management requirements')

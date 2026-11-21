@@ -168,11 +168,10 @@ candidate without native System format support cannot silently ignore it; an
 incomplete import must be completed/diagnosed before a transition. This does not
 select the most recently installed generation or write an upgrade wish.
 
-Current profile packaging and named-source/cache installation are now joined.
-Next: System-scoped deployment and authorized initialization/service
-gating. The [verified System plan](system-transition.md) now binds exact inputs
-and implements the first unchanged-startup/tooling-only review, with no effects
-or boot publication. Generalized boot v2 and the final joined MBT/bootstrap/build flow remain
-separate roadmap steps. No new manual A/B/A run is required for native
-content-only installation; focused VM acceptance is needed when an actual new
-System can be selected and booted.
+Profile packaging and named-source/cache installation use the same native
+content path. The [verified System plan](system-transition.md) binds exact inputs
+and reviews tooling, bounded firmware data and the fixed optional QEMU guest
+service without effects or boot publication. Normal live installation then
+prepares a native-v2 deployment; selection and actual boot remain separate.
+General service/state migrations and broader MBT source builds remain roadmap
+work.

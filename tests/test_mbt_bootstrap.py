@@ -155,7 +155,13 @@ class ConstructionTests(unittest.TestCase):
     def test_mounted_target_reuses_native_constructor_without_image_creation_and_carries_input_data(self):
         self.hardware_construction(mounted=True)
 
-    def hardware_construction(self, *, mounted):
+    def test_pc_image_binds_generic_profile_and_all_firmware_families(self):
+        self.hardware_construction(mounted=False,hardware_profile=bootstrap.native.hardware.PC_PROFILE)
+
+    def test_pc_mounted_target_preserves_generic_profile_in_portable_inputs(self):
+        self.hardware_construction(mounted=True,hardware_profile=bootstrap.native.hardware.PC_PROFILE)
+
+    def hardware_construction(self, *, mounted, hardware_profile=bootstrap.native.hardware.PROFILE, after_construct=None):
         import test_native_image as fixtures
         import test_system_vm as system_fixtures
         import test_hardware_boot as hardware_fixtures
@@ -173,8 +179,8 @@ class ConstructionTests(unittest.TestCase):
         hw=hardware_fixtures.HardwareTests();hw.setUp();self.addCleanup(hw.doCleanups)
         f.args.system_payload=source.payload;f.args.login_mode='password'
         foreign_home=f.work/'caller-home';foreign_home.mkdir(mode=0o700);f.args.output=foreign_home/'image'
-        f.args.hardware_profile=bootstrap.native.hardware.PROFILE
-        f.args.firmware_root=hw.firmware();f.args.with_build_tools=True
+        f.args.hardware_profile=hardware_profile
+        f.args.firmware_root=hw.firmware(hardware_profile);f.args.with_build_tools=True
         if mounted:
             f.args.with_installer_inputs=True;f.args.system_version='0.2';f.args.system_revision=1
             # Real exports contain absolute guest links even without host Nix.
@@ -207,6 +213,7 @@ class ConstructionTests(unittest.TestCase):
                  mock.patch.object(constructor.archive,'vm_module',return_value=fixtures.fixtures.vm):
                 outcome=bootstrap.construct(tree,runtime,value,prep/'work',adapter=adapter)
             bootstrap.record_result(tree,result,outcome);d=outcome['description'];seen.append(d)
+            if after_construct is not None:after_construct(tree,d,adapter)
             profile=tree/'realizations/system'/d['system'][7:]/'profile'
             self.assertTrue((profile/'units/mojt-console.service').is_file())
             self.assertEqual(bootstrap.native.hardware.native_firmware(profile),profile/'kernel/lib/firmware')
@@ -260,6 +267,8 @@ class ConstructionTests(unittest.TestCase):
                 self.assertFalse((target/installer.MARKER).exists())
                 kit,record=kits.read(target/kits.LOCATION)
                 self.assertEqual(record['base'],f.base['id']);self.assertEqual(record['kernel'],f.kernel['id'])
+                self.assertEqual(record['defaults']['hardware_profile'],hardware_profile)
+                self.assertEqual(entries[built['deployment']]['record']['description']['inputs']['description']['boot']['profile'],bootstrap.native.hardware.boot_profile(hardware_profile))
                 self.assertTrue((kit/'system-payload'/python_output.lstrip('/')/'lib/guest-runtime').is_symlink())
                 self.assertTrue((target/'state/var/lib/mojt/mounted-builder-runtime.json').is_file())
                 self.assertFalse((target/'disk.img').exists())
@@ -272,7 +281,7 @@ class ConstructionTests(unittest.TestCase):
         # Handoff has made this caller-owned evidence, not privileged Base
         # metadata. Verification above deliberately precedes that boundary.
         self.assertEqual(artifact.parse_json((image/'builder-runtime.json').read_bytes()),execution)
-        self.assertEqual(d['deployment']['description']['inputs']['description']['boot']['profile'],model.HARDWARE_PROFILE)
+        self.assertEqual(d['deployment']['description']['inputs']['description']['boot']['profile'],bootstrap.native.hardware.boot_profile(hardware_profile))
         self.assertEqual(json.loads((image/'build.json').read_bytes())['boot_layout'],'native-v2')
         self.assertFalse((image/'run-qemu-direct.sh').exists())
         self.assertEqual(bootstrap.paths.tree_hash(f.args.firmware_root),firmware_before)

@@ -5,6 +5,8 @@
 """Hardware staging, local-console selection, and input rejection contracts."""
 
 import importlib.util
+import contextlib
+import io
 import json
 import os
 from pathlib import Path
@@ -37,14 +39,57 @@ class HardwareTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
 
-    def firmware(self):
+    def firmware(self, profile=hw.PROFILE):
         root = self.root / "firmware-root"
         system.write(root / "usr/lib/firmware/iwlwifi-7265D-29.ucode", "synthetic firmware")
         for name in ("regulatory.db-debian", "regulatory.db.p7s-debian"):
             system.write(root / "usr/lib/firmware" / name, "synthetic regulatory database")
-        for package in hw.LICENSE_PACKAGES:
+        if profile == hw.PC_PROFILE:
+            for name in ('i915/test.bin','amdgpu/test.bin','rtl_nic/test.bin',
+                         'ath10k/test/firmware.bin','mediatek/test.bin','brcm/test.bin'):
+                system.write(root / 'usr/lib/firmware' / name, 'synthetic firmware')
+        for package in hw.license_packages(profile):
             system.write(root / "usr/share/doc" / package / "copyright", "synthetic license")
         return root
+
+    def test_pc_profile_binds_firmware_licenses_and_probes_present_devices_without_intel_requirements(self):
+        firmware=self.firmware(hw.PC_PROFILE)
+        # The generic policy accepts another Intel Wi-Fi generation, not only 7265.
+        (firmware/'usr/lib/firmware/iwlwifi-7265D-29.ucode').rename(firmware/'usr/lib/firmware/iwlwifi-test.ucode')
+        modules=self.root/'lib/modules/test';system.write(modules/'kernel/test.ko','synthetic module')
+        tree=self.root/'pc-image';(tree/'base/b/usr/lib').mkdir(parents=True)
+        (tree/'base/current').symlink_to('b');(tree/'base/b/lib').symlink_to('usr/lib')
+        profile=tree/'system/pc';(profile/'units').mkdir(parents=True)
+        row=hw.stage(tree,'pc',modules,'test',firmware,system,native_kernel=True,hardware_profile=hw.PC_PROFILE)
+        self.assertEqual(row['runtime_modules'],[])
+        self.assertTrue({'nvme','virtio_scsi','ahci','usb_storage','ext4'} <= set(row['early_modules']))
+        self.assertEqual(hw.native_firmware(profile,hw.boot_profile(hw.PC_PROFILE)),profile/'kernel/lib/firmware')
+        with self.assertRaisesRegex(ValueError,'bound boot profile'):
+            hw.native_firmware(profile,hw.boot_profile(hw.PROFILE))
+        script=(profile/'load-hardware').read_text();self.assertNotIn('modprobe ',script)
+        self.assertIn('After=mojt-setup.service systemd-udevd.service',(profile/'units/mojt-hardware.service').read_text())
+        commands=self.root/'commands';commands.mkdir();log=self.root/'events';knob=self.root/'printk';knob.write_text('7\n')
+        system.write(commands/'udevadm','#!/bin/sh\nprintf "%s\\n" "$*" >>"$EVENT_LOG"\n[ -z "${FAIL_PROBE-}" ]\n',0o755)
+        driver=script.replace('. /run/mojt-system/environment',f'PATH="{commands}:$PATH"\nexport PATH').replace('/proc/sys/kernel/printk',str(knob))
+        env={**os.environ,'EVENT_LOG':str(log),'FAIL_PROBE':''}
+        subprocess.run(['sh'],input=driver,text=True,env=env,check=True)
+        self.assertEqual(log.read_text().splitlines(),['trigger --action=add --type=subsystems --settle','trigger --action=add --type=devices --settle'])
+        self.assertEqual(knob.read_text(),'3\n')
+        knob.write_text('7\n')
+        self.assertNotEqual(subprocess.run(['sh'],input=driver,text=True,env={**env,'FAIL_PROBE':'1'}).returncode,0)
+        self.assertEqual(knob.read_text(),'7\n')
+        (profile/'kernel/licenses/firmware-realtek/copyright').unlink()
+        with self.assertRaisesRegex(ValueError,'license'):hw.native_firmware(profile)
+
+    def test_pc_firmware_freeze_preserves_all_declared_families_and_refuses_missing_payload(self):
+        root=self.firmware(hw.PC_PROFILE)
+        expected=hw.input_identity(root,'test',system,hw.PC_PROFILE)
+        copied=self.root/'pc-frozen'
+        hw.freeze_inputs(root,copied,'test',system,expected,hw.PC_PROFILE)
+        self.assertEqual(hw.input_identity(copied,'test',system,hw.PC_PROFILE),expected)
+        (root/'usr/lib/firmware/amdgpu/test.bin').unlink()
+        with self.assertRaisesRegex(ValueError,'firmware-amd-graphics'):
+            hw.firmware_inputs(root,hw.PC_PROFILE)
 
     def test_staging_keeps_complete_module_tree_and_licenses_without_source_changes(self):
         modules = self.root / "kernel/lib/modules/test"
@@ -145,6 +190,50 @@ class HardwareTests(unittest.TestCase):
             subprocess.run(["bash", "-n"], input=script, text=True, check=True)
         with self.assertRaises(ValueError):
             vm.boot.terminal("invalid")
+
+    def test_nvme_launcher_is_only_exported_for_generic_pc_policy(self):
+        script=vm.boot.run_script(local_console=True,hardware_profile=hw.PC_PROFILE)
+        self.assertIn('nvme,drive=mojt,serial=mojt-test,bootindex=1',script)
+        self.assertNotIn('nvme)',vm.boot.run_script(local_console=True,hardware_profile=hw.PROFILE))
+        subprocess.run(['bash','-n'],input=script,text=True,check=True)
+
+    def test_readiness_probe_only_resolves_drivers_and_enumerates_devices(self):
+        probe=load('pc_readiness','../tests/check-pc-hardware.py')
+        modules=self.root/'lib/modules/test';modules.mkdir(parents=True)
+        commands=[]
+        def run(args,**kwargs):
+            commands.append(args)
+            if args[0] == 'modprobe':
+                self.assertIn('--show-depends',args)
+                self.assertEqual(args[1:3],['--config','/dev/null'])
+                return subprocess.CompletedProcess(args,0,stdout='builtin test\n')
+            self.assertEqual(args,['udevadm','trigger','--dry-run','--verbose','--action=add','--type=devices'])
+            return subprocess.CompletedProcess(args,0,stdout='/sys/devices/test\n')
+        before=system.tree_hash(self.root)
+        with mock.patch.object(subprocess,'run',side_effect=run),contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(probe.main(['--modules-dir',str(modules)]),0)
+        self.assertEqual([args[-1] for args in commands[:-1]],list(hw.PC_EARLY_MODULES))
+        self.assertIn('NOT TESTED: new firmware inputs',output.getvalue())
+        self.assertEqual(system.tree_hash(self.root),before)
+        with mock.patch.object(subprocess,'run',side_effect=subprocess.CalledProcessError(1,['modprobe'])),contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(subprocess.CalledProcessError):probe.main(['--modules-dir',str(modules)])
+
+    def test_module_planning_ignores_host_nvme_options_and_keeps_exact_dependency_order(self):
+        modules=self.root/'lib/modules/test'
+        core=modules/'kernel/nvme-core.ko';device=modules/'kernel/nvme.ko'
+        system.write(core,'core');system.write(device,'device')
+        def run(args,**kwargs):
+            self.assertIn('--show-depends',args)
+            self.assertEqual(args[args.index('--dirname')+1],str(self.root))
+            self.assertEqual(args[args.index('--set-version')+1],'test')
+            self.assertEqual(args[1:3],['--config','/dev/null'])
+            return subprocess.CompletedProcess(args,0,stdout=f'insmod {core} io_timeout=4294967295\ninsmod {device}\n')
+        with mock.patch.object(vm.subprocess,'run',side_effect=run):
+            self.assertEqual(vm.module_paths('test',modules,names=('nvme',)),[core,device])
+        for output in (f'install /bin/not-a-dependency\n',f'insmod {core} /outside\n'):
+            with mock.patch.object(vm.subprocess,'run',return_value=subprocess.CompletedProcess([],0,stdout=output)):
+                with self.assertRaisesRegex(ValueError,'unexpected modprobe'):
+                    vm.module_paths('test',modules,names=('nvme',))
 
     def test_physical_development_console_is_rejected_before_staging(self):
         args = types.SimpleNamespace(boot_mode="uefi", hardware_profile=hw.PROFILE,

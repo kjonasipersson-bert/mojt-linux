@@ -459,7 +459,7 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
     require(type(with_build_tools) is bool and (not with_build_tools or step >= 3), "builder tools require System step 3+ management runtime")
     require(step < 10 or login_mode == "password", "account stage requires password login")
     require(console in ("serial", "local"), "unsupported console")
-    require(hardware_profile in (None, "thinkpad-x1-carbon-3"), "unsupported hardware profile")
+    require(hardware_profile in (None, "thinkpad-x1-carbon-3", "pc-x86_64"), "unsupported hardware profile")
     key = VERSION + "-step" + str(step)
     if with_build_tools:key += "-builder"
     if hardware_profile:
