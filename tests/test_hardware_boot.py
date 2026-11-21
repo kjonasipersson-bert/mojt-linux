@@ -205,6 +205,7 @@ class HardwareTests(unittest.TestCase):
             commands.append(args)
             if args[0] == 'modprobe':
                 self.assertIn('--show-depends',args)
+                self.assertEqual(args[1:3],['--config','/dev/null'])
                 return subprocess.CompletedProcess(args,0,stdout='builtin test\n')
             self.assertEqual(args,['udevadm','trigger','--dry-run','--verbose','--action=add','--type=devices'])
             return subprocess.CompletedProcess(args,0,stdout='/sys/devices/test\n')
@@ -216,6 +217,23 @@ class HardwareTests(unittest.TestCase):
         self.assertEqual(system.tree_hash(self.root),before)
         with mock.patch.object(subprocess,'run',side_effect=subprocess.CalledProcessError(1,['modprobe'])),contextlib.redirect_stdout(io.StringIO()):
             with self.assertRaises(subprocess.CalledProcessError):probe.main(['--modules-dir',str(modules)])
+
+    def test_module_planning_ignores_host_nvme_options_and_keeps_exact_dependency_order(self):
+        modules=self.root/'lib/modules/test'
+        core=modules/'kernel/nvme-core.ko';device=modules/'kernel/nvme.ko'
+        system.write(core,'core');system.write(device,'device')
+        def run(args,**kwargs):
+            self.assertIn('--show-depends',args)
+            self.assertEqual(args[args.index('--dirname')+1],str(self.root))
+            self.assertEqual(args[args.index('--set-version')+1],'test')
+            self.assertEqual(args[1:3],['--config','/dev/null'])
+            return subprocess.CompletedProcess(args,0,stdout=f'insmod {core} io_timeout=4294967295\ninsmod {device}\n')
+        with mock.patch.object(vm.subprocess,'run',side_effect=run):
+            self.assertEqual(vm.module_paths('test',modules,names=('nvme',)),[core,device])
+        for output in (f'install /bin/not-a-dependency\n',f'insmod {core} /outside\n'):
+            with mock.patch.object(vm.subprocess,'run',return_value=subprocess.CompletedProcess([],0,stdout=output)):
+                with self.assertRaisesRegex(ValueError,'unexpected modprobe'):
+                    vm.module_paths('test',modules,names=('nvme',))
 
     def test_physical_development_console_is_rejected_before_staging(self):
         args = types.SimpleNamespace(boot_mode="uefi", hardware_profile=hw.PROFILE,

@@ -273,7 +273,7 @@ jobs:
 
           os.umask(0o022)
           temporary = Path(sys.argv[1])
-          for scenario in ("sata", "usb", "sata-to-usb", "generations", "serial", "shutdown-legacy", "shutdown-corrected", "initramfs-payload"):
+          for scenario in ("sata", "usb", "sata-to-usb", "generations", "serial", "pc-nvme-to-usb", "shutdown-legacy", "shutdown-corrected", "initramfs-payload"):
               source = temporary / ("mojt-hardware-" + scenario)
               if not source.is_dir():
                   continue

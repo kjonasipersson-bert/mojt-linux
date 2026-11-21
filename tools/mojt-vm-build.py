@@ -529,7 +529,7 @@ def kernel_release_from_path(path):
 
 
 def module_paths(release, modules_dir, network=False, names=None):
-    """Use kmod on the host for dependency ordering; do not load modules."""
+    """Resolve exact Kernel dependencies without host modprobe.d policy or loading."""
     root = modules_dir.resolve(strict=True)
     if root.name != release or root.parent.name != "modules" or root.parent.parent.name != "lib":
         fail("modules directory must end in lib/modules/<kernel-release>")
@@ -538,7 +538,7 @@ def module_paths(release, modules_dir, network=False, names=None):
     for name in (names if names is not None else
                  ("virtio_pci", "virtio_blk", "ext4") + (("virtio_net",) if network else ())):
         result = subprocess.run(
-            ["modprobe", "--dirname", str(root.parents[2]),
+            ["modprobe", "--config", "/dev/null", "--dirname", str(root.parents[2]),
              "--set-version", release, "--show-depends", name],
             check=True, capture_output=True, text=True,
         )
@@ -546,8 +546,12 @@ def module_paths(release, modules_dir, network=False, names=None):
             words = shlex.split(line)
             if not words or words[0] == "builtin":
                 continue
-            if len(words) != 2 or words[0] != "insmod":
+            if len(words) < 2 or words[0] != "insmod":
                 fail(f"unexpected modprobe dependency instruction: {line!r}")
+            # kmod can also report options from the host Kernel command line.
+            # This plan copies only module files, never those host parameters.
+            if any(not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_.-]*(?:=.*)?', option) for option in words[2:]):
+                fail(f"unexpected modprobe module option: {line!r}")
             path = Path(words[1]).resolve(strict=True)
             if root not in path.parents:
                 fail(f"module outside selected kernel tree: {path}")
