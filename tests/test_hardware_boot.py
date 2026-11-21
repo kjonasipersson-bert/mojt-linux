@@ -206,7 +206,7 @@ class HardwareTests(unittest.TestCase):
             if args[0] == 'modprobe':
                 self.assertIn('--show-depends',args)
                 return subprocess.CompletedProcess(args,0,stdout='builtin test\n')
-            self.assertEqual(args,['udevadm','trigger','--dry-run','--action=add','--type=devices'])
+            self.assertEqual(args,['udevadm','trigger','--dry-run','--verbose','--action=add','--type=devices'])
             return subprocess.CompletedProcess(args,0,stdout='/sys/devices/test\n')
         before=system.tree_hash(self.root)
         with mock.patch.object(subprocess,'run',side_effect=run),contextlib.redirect_stdout(io.StringIO()) as output:

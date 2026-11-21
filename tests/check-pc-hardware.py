@@ -30,7 +30,7 @@ def main(argv=None):
     paths = vm.module_paths(modules.name, modules, names=names)
     print(f'PASS: {len(names)} early driver requests resolve ({len(paths)} module files; built-ins need no copy).')
     print('Checking udev device enumeration (dry run)...', flush=True)
-    result = subprocess.run(['udevadm', 'trigger', '--dry-run', '--action=add', '--type=devices'],
+    result = subprocess.run(['udevadm', 'trigger', '--dry-run', '--verbose', '--action=add', '--type=devices'],
                             check=True, capture_output=True, text=True)
     print(f'PASS: udev dry run enumerated {len(result.stdout.splitlines())} device paths.')
     if args.firmware_root:
