@@ -205,8 +205,8 @@ def choose_artifact(root, area, *, prepared=False):
         entries={key:item for key,item in entries.items() if all(item['record']['description']['inputs']['description'][field]==before[field] for field in preserved)}
         candidates = {item['record']['description']['inputs']['description'][area]['artifact']:
                       item['record']['description']['inputs']['description'][area] for item in entries.values()}
-        installed=system.status(root)['installed'] if area=='system' else []
-        rows = [dict(artifact=key,label=row.get('generation',row.get('release')),
+        installed=system.status(root)['installed'] if area=='system' else __import__('mpm_kernel').status(root/'kernel')['installed'] if area=='kernel' else []
+        rows = [dict(artifact=key,label=next((r.get('label',row.get('generation',row.get('release'))) for r in installed if r['artifact']==key),row.get('generation',row.get('release'))),
             version=next((r['version'] for r in installed if r['artifact']==key),dict(release_id=row.get('generation',row.get('release'))))) for key,row in sorted(candidates.items())]
     elif area == 'kernel':
         import mpm_kernel

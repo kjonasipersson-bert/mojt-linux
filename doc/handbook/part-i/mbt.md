@@ -25,8 +25,11 @@ From a repository checkout, use `python3 tools/mbt`. Its supported operations ar
 | `mbt package` | A native archive from prepared inputs, or archive verification |
 | `mbt bootstrap` | A fresh image or installation onto explicitly prepared mounted partitions |
 
-This chapter gives a Kernel build journey and a bootstrap preview. It assumes
-accepted inputs already exist. The general installation procedure belongs in
+For a complete installed-system journey, including background compilation over
+SSH, installation, next-boot selection and return, see
+[Building and installing a Kernel](../part-iii/kernel.md). This chapter gives
+the build interfaces and a bootstrap preview. It assumes accepted inputs already
+exist. The general installation procedure belongs in
 the future [installation chapter](installing-mojt.md).
 
 ## 4.2. Prepare a private compiler environment
@@ -64,17 +67,33 @@ it is not a security sandbox.
 
 ## 4.3. Build a Kernel as an ordinary user
 
-You need a reviewed build recipe, its frozen starting configuration and the
-configuration's SHA256. Builder Systems include the initial example recipe at
-`/run/mojt-system/share/mbt/kernel-first-build.json`; it pins a particular source
-commit rather than following the latest Kernel. Supply your accepted config
-file explicitly. It is not inferred from the running machine.
+The default starting configuration is the bundled `manifests/mojt.config`.
+A reviewed `mojt.config` in your workspace overrides it.
+Its digest is measured and frozen automatically; an explicit `--config-sha256`
+can require a previously reviewed value. With no track/plan option, the pinned
+LTS recipe is selected. Builder-enabled Systems include two track recipes:
+
+| `--track` | Pinned upstream version | Kernel/module release |
+| --- | --- | --- |
+| `linux-kernel-lts` | 6.18.63 | `6.18.63-mojt-lts1` |
+| `linux-kernel` | 7.3.4 | `7.3.4-mojt1` |
+
+The names select bundled exact commits, not a live "latest" lookup. Updating a
+recipe is explicit. The tracks use separate output directories and module trees;
+building either leaves the running Kernel unchanged. `--plan FILE` instead
+selects an explicit recipe, including the retained initial 6.12 example. It is
+mutually exclusive with `--track`.
+
+An explicit `--config FILE` overrides both the local and bundled configuration.
+The builder checks and records its digest,
+applies the recipe policy, runs `olddefconfig` and retains the complete config
+diff. It does not silently choose `/proc/config.gz` or a host config.
 
 With the prepared environment available to this user:
 
 ```sh
 mbt build kernel \
-  --plan /run/mojt-system/share/mbt/kernel-first-build.json \
+  --track linux-kernel-lts \
   --config "$HOME/build/kernel.config" --config-sha256 FULL_CONFIG_SHA256 \
   --environment "$HOME/build/kernel-env" \
   --output "$HOME/build/kernel-result" --jobs 2 --dry-run
@@ -82,7 +101,8 @@ mbt build kernel \
 
 Replace `FULL_CONFIG_SHA256` with the accepted file digest. The preview validates
 local prerequisites; it fetches no source and executes no compiler. Repeat the
-same command without `--dry-run` to compile as the ordinary build user.
+same command without `--dry-run` to compile as your current user. A dedicated
+build account is not required; root builds are also permitted.
 Source, object files and staged output remain in the workspace, rather than
 replacing the running Kernel or its `/lib/modules` tree.
 
@@ -96,7 +116,7 @@ before module staging, explicit continuation uses the original inputs and output
 
 ```sh
 mbt build kernel \
-  --plan /run/mojt-system/share/mbt/kernel-first-build.json \
+  --track linux-kernel-lts \
   --config "$HOME/build/kernel.config" --config-sha256 FULL_CONFIG_SHA256 \
   --environment "$HOME/build/kernel-env" \
   --output "$HOME/build/kernel-result" --jobs 2 \
@@ -104,11 +124,15 @@ mbt build kernel \
 ```
 
 Review the resume preview before repeating without `--dry-run`. Resume is limited
-to supported incomplete work; it does not adopt arbitrary or completed output.
+to supported incomplete work; it does not adopt arbitrary or completed output. If the original build fetched
+its own source, `--source "$HOME/build/kernel-result/source"` can reuse that
+checked checkout during resume.
 
 ## 4.4. Package and verify the result
 
-After a successful build, package it as the build user:
+After a successful build, package it as your current user. With default paths,
+`mbt package kernel` reads `kernel-result`, uses revision 1 and creates
+`kernel-package`. An explicit invocation is:
 
 ```sh
 mbt package kernel --build "$HOME/build/kernel-result" \
@@ -135,8 +159,8 @@ mpm kernel install --from-file /path/to/reported-kernel.tar.zst \
   --expected-id sha256:FULL_REPORTED_ARTIFACT_ID
 ```
 
-Continue with [MPM preparation and activation](mpm.md#38-activate-and-reboot)
-to prepare the new boot choice, inspect it, activate it and reboot deliberately.
+Continue with [Kernel preparation and selection](../part-iii/kernel.md#75-prepare-and-select-next-boot)
+to prepare/select the new boot choice, inspect it and reboot deliberately.
 Retain the previous working Kernel and deployment for a compatible return.
 
 The same packager also accepts an already prepared Base release or System tree.

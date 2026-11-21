@@ -35,6 +35,7 @@ ROLES = {
     8: {},
     9: {"tzdata": "tzdata", "man-db": "man-db"},
     10: {"shadow": "shadow", "pam": "pam", "sudo": "sudo"},
+    11: {"openssh": "openssh"},
 }
 ADMIN_COMMANDS = {
     "procps": ("ps", "top", "free", "pgrep", "uptime"),
@@ -92,7 +93,7 @@ MBT_FILES = ('mbt','mbt_cli.py','mojt-build-env.py','mojt-kernel-build.py',
 # Fixed assembly inputs at their repository-relative paths, so an installed
 # builder can assemble its successor without carrying a checkout.
 MBT_SOURCE_FILES = ('tests/check-mojt-system.sh','manifests/mpm-release-example.json',
-                    'manifests/kernel-first-build.json','man/mpm.1','man/mbt.1')
+                    'manifests/kernel-first-build.json','manifests/kernel-lts.json','manifests/kernel-stable.json','manifests/mojt.config','man/mpm.1','man/mbt.1')
 
 BASH_RC = r'''# Mojt System interactive Bash defaults; user startup files may override these.
 case $- in *i*) ;; *) return 0 ;; esac
@@ -126,12 +127,13 @@ def require(condition, message):
 
 
 def roles(step):
-    require(type(step) is int and step in ROLES, "System step must be an integer from 1 to 10")
+    require(type(step) is int and step in ROLES, "System step must be an integer from 1 to 11")
     result = {key: value for n in range(1, step + 1) for key, value in ROLES[n].items()}
     if step >= 9:
         result.update(MANUAL_ROLES)
     if step >= 10:
         result.update({"manual-" + name: name for name in ("shadow", "pam", "sudo")})
+    if step >= 11:result["manual-openssh"]="openssh"
     return result
 
 
@@ -402,6 +404,9 @@ def load_payload(path):
         manual_paths(path, record)
     if record["step"] >= 10:
         account_inputs(path, record)
+    if record["step"] >= 11:
+        executable(path,record,"openssh","bin/sshd","sbin/sshd")
+        executable(path,record,"openssh","bin/ssh-keygen")
     return record
 
 
@@ -646,6 +651,9 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
         (system / "libexec/mpm/bin/tar").symlink_to(tar_helper)
         if helper is not None:
             (system / "libexec/mpm/bin/zstd").symlink_to(helper)
+        if with_build_tools:
+            require(helper is not None, "builder System needs retained zstd for native packaging")
+            (system / "bin/zstd").symlink_to(helper)
         write(system / "mpm-runtime.json", json.dumps(dict(
             format="mojt-mpm-runtime-v1", python=python, files=list(MPM_FILES),
             helpers={"zstd": helper, "tar": tar_helper}, ports_root="/var/lib/mojt/ports",
@@ -812,6 +820,10 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
         if with_build_tools:write(system / "share/man/man1/mbt.1",(repo / "man/mbt.1").read_text())
         write(system / "manual-path", ":".join(["/run/mojt-system/share/man"] + manual_paths(payload, record)) + "\n")
         write(system / "zoneinfo-path", record["packages"]["tzdata"]["output"] + "/share/zoneinfo\n")
+    if step >= 11:
+        export("sshd", "openssh", "bin/sshd", "sbin/sshd")
+        export("systemd-run", "systemd", "bin/systemd-run")
+        export("ssh-keygen", "openssh", "bin/ssh-keygen")
     if step >= 10:
         wanted += accounts.install(tree, system, account_inputs(payload, record), repo,
                                    write, add_default, put_unit, unit)

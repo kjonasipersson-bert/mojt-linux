@@ -4,10 +4,54 @@ Copyright (C) 2026 Jonas Persson
 SPDX-License-Identifier: GPL-2.0-only
 -->
 
-# First own-built kernel: native build and VM acceptance
+# Kernel source builds and pinned track recipes
 
 The Kernel builder uses pinned source/configuration and a private tool environment.
 Native packaging retains the exact build provenance and matching module tree.
+
+## Short workspace flow
+
+With the bundled `manifests/mojt.config` and a prepared compiler environment at
+`/var/lib/mojt/kernel-build/environment`, `mbt build kernel` uses the pinned LTS
+recipe and creates a new `./kernel-result`. The input hash is measured/frozen
+automatically unless an expected `--config-sha256` is supplied.
+`mbt package kernel` reads that result and creates `./kernel-package` at revision 1.
+All explicit input/output overrides remain supported. Builds use the caller's
+identity; no dedicated account or privilege change is required.
+
+The v1 provenance format still names its frozen input copy `debian.config` for
+reader compatibility; that internal filename does not require a Debian-branded
+input file. An explicit `--config FILE` takes precedence over a local
+`./mojt.config`, which takes precedence over the bundled baseline.
+
+## Mojt configuration baseline
+
+`manifests/mojt.config` is the versioned full x86-64 starting configuration for
+`olddefconfig`. Its initial Linux 6.18.63 selections derive from the existing
+Debian seed and Mojt LTS policy. The selected recipe still applies its required
+options and local version, including when this baseline is used for another
+Kernel track. Generated compiler-detection values are refreshed for the selected
+source/toolchain. Firmware stays in System.
+
+The imported configuration had SHA256
+`d50eb989d678a52d234851b745832271fee6010585c1575d3b976c32b078dbd5`.
+The repository copy adds only a Mojt license/comment header. Configuration changes
+are explicit source changes; each build records the exact selected config digest
+and resulting diff. This is not a universal hardware or Secure Boot guarantee.
+
+## Track recipes
+
+`mbt build kernel --track linux-kernel-lts` selects the bundled 6.18.63 recipe;
+`--track linux-kernel` selects 7.3.4. Their source tags and peeled commits are
+pinned in `manifests/kernel-lts.json` and `manifests/kernel-stable.json`.
+The first 6.12 recipe remains available through explicit `--plan`.
+
+The build result retains its track in the frozen plan. Native packaging records
+its readable `kernel_name` as additive metadata and keeps the canonical artifact
+name `linux` for existing registry/recovery readers. Package/schema format is
+unchanged; exact content IDs and version-specific module paths distinguish builds.
+Human status and candidate lists show the track label when present. A track name
+is not yet a moving installation or upgrade wish.
 
 ## Locked first target
 

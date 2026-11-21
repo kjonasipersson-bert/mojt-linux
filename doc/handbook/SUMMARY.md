@@ -23,6 +23,8 @@ SPDX-License-Identifier: GPL-2.0-only
 
 - [Overview](part-iii/README.md)
 - [5. Filesystem layout and persistent state](part-iii/filesystem-layout.md)
+- [6. Remote administration with SSH](part-iii/ssh.md)
+- [7. Building and installing a Kernel](part-iii/kernel.md)
 
 # Part IV. Development
 

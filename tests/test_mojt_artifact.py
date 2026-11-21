@@ -373,6 +373,21 @@ class PackageTests(unittest.TestCase):
             self.assertEqual(archive.extractfile("./kernel/provenance/kernel.json").read(), raw)
         self.assertEqual(result["artifact"]["provenance"]["kernel_build_id"], record["id"])
         self.assertEqual((build / "kernel.json").read_bytes(), raw)
+        (self.work/'kernel-result').symlink_to(build,target_is_directory=True)
+        short=subprocess.run([sys.executable,str(REPO/'tools/mojt-artifact-pack.py'),'kernel'],
+                             cwd=self.work,text=True,capture_output=True)
+        self.assertEqual(short.returncode,0,short.stderr)
+        packaged=json.loads(short.stdout)
+        self.assertEqual(packaged['artifact']['id'],result['artifact']['id'])
+        artifact.verify(self.work/'kernel-package'/packaged['archive']['file'],result['artifact']['id'])
+        for track in ('linux-kernel-lts','linux-kernel'):
+            record['plan']['track']=track;record.pop('id');record['id']=artifact.digest(record)
+            (build/'kernel.json').write_text(json.dumps(record)+'\n')
+            value,attachments=artifact.kernel_input(build,1)
+            self.assertEqual(value['name'],'linux')  # Existing registry/recovery readers remain compatible.
+            self.assertEqual(value['metadata']['kernel_name'],track)
+            packed,tracked=self.package(value,attachments=attachments)
+            self.assertEqual(artifact.verify(packed)['metadata']['kernel_name'],track)
         (build / "debian.config").write_text("changed seed\n")
         with self.assertRaisesRegex(ValueError, "seed config"):
             artifact.kernel_input(build, 1)

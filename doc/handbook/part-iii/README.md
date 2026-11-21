@@ -10,7 +10,10 @@ SPDX-License-Identifier: GPL-2.0-only
 
 Start with [Filesystem layout and persistent state](filesystem-layout.md) for
 the writable root, Base/System mounts and the effects of a generation change.
-Additional administration chapters will follow as workflows become established.
+[Remote administration with SSH](ssh.md) describes explicit server setup and
+persistent host identity for remote commands and file transfers.
+[Building and installing a Kernel](kernel.md) follows the public build, package,
+install, next-boot selection and return workflow on an existing installation.
 
 For the current model of updates and persistent state, see
 [Introduction](../part-i/introduction.md) and [MPM](../part-i/mpm.md).

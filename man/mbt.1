@@ -1,7 +1,7 @@
 .\" Mojt Linux
 .\" Copyright (C) 2026 Jonas Persson
 .\" SPDX-License-Identifier: GPL-2.0-only
-.TH MBT 1 "2026-11-12" "Mojt Linux" "User Commands"
+.TH MBT 1 "2026-11-20" "Mojt Linux" "User Commands"
 .SH NAME
 mbt \- prepare private build tools and create Mojt build/package results
 .SH SYNOPSIS
@@ -9,8 +9,8 @@ mbt \- prepare private build tools and create Mojt build/package results
 [--profile image|kernel] --source-manifest FILE --output DIRECTORY [--dry-run] [-y]
 .PP
 .B mbt build kernel
---plan FILE --config FILE --config-sha256 SHA256 --environment DIRECTORY
---output DIRECTORY [--source DIRECTORY] [--resume] [--jobs N] [--dry-run] [-y]
+[--plan FILE | --track NAME] [--config FILE] [--config-sha256 SHA256]
+[--environment DIRECTORY] [--output DIRECTORY] [--source DIRECTORY] [--resume] [--jobs N] [--dry-run] [-y]
 .PP
 .B mbt package
 {kernel|base|system|pack|verify} ...
@@ -44,15 +44,22 @@ needs an administrator to import tools; make that pinned environment readable by
 the ordinary builder. MBT does not grant store writes or start a provider daemon.
 .TP
 .B build kernel
-Compile a separate versioned Kernel and matching modules as an ordinary user.
-Source, configuration hash, policy and private environment remain explicit.
+Compile a separate versioned Kernel and matching modules as the caller.
+No dedicated account is required. Defaults are the pinned LTS recipe,
+the bundled manifests/mojt.config, /var/lib/mojt/kernel-build/environment
+and ./kernel-result. A local ./mojt.config overrides the bundled file;
+--config FILE overrides both.
+The input hash is measured/frozen automatically; --config-sha256 requires an
+expected value instead. Explicit source, config, environment and output flags
+remain available.
 --dry-run validates inputs without fetching sources, compiling or writing output.
 --resume requires the same verified inputs and an eligible incomplete workspace;
 it does not repair arbitrary failed output. No automatic privilege escalation.
 .TP
 .B package
 Create and independently verify a native archive from a complete build or
-retained release. Packaging revision and original build provenance are distinct.
+retained release. For kernel, the defaults are --build kernel-result, --revision 1 and
+--output kernel-package. Packaging revision and original build provenance are distinct.
 verify checks an existing archive without installing it. Packaging has no
 --dry-run option in this initial interface; it writes a new explicit output.
 .TP
@@ -126,3 +133,12 @@ named-environment registry, GC or source rebuild of the entire distribution.
 Runtime closure checks are not a universal libc/plugin compatibility guarantee.
 .SH SEE ALSO
 .BR mpm (1)
+
+.PP
+build kernel accepts either --plan FILE or --track linux-kernel-lts / linux-kernel.
+Tracks select bundled exact source recipes, not a network latest-version lookup.
+Use the bundled Mojt configuration or a reviewed local/explicit override, an optional expected
+--config-sha256 and a prepared
+kernel environment and a separate output for each build. Use your existing
+account. A result retains its track, exact source, config diff and matching modules;
+packaging, installation, preparation and next-boot choice remain separate.

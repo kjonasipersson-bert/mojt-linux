@@ -15,6 +15,9 @@ preserve upstream licenses.
 
 - Preserve the independent Base, System, Kernel upgrade scope, Ports and
   persistent-state lifecycles. Base is a whole versioned userspace release.
+- Use standard tools through their upstream commands, configuration files and
+  conventional service names. Do not add Mojt-specific management wrappers around
+  tools such as OpenSSH. Bootstrap/test setup scripts may write ordinary config.
 - Prefer existing Unix mechanisms and tools, small changes and explicit effects.
   Installing, preparing a boot entry, selecting next boot and running code are
   distinct states; reflect the implemented command flow accurately.

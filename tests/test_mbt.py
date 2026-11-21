@@ -21,14 +21,20 @@ import mbt_cli as mbt
 
 
 class FrontendTests(unittest.TestCase):
-    def test_help_unknown_commands_and_root_build_never_load_tools(self):
+    def test_help_and_unknown_commands_never_load_tools(self):
         with mock.patch.object(mbt,'helper',side_effect=AssertionError('helper loaded')):
             for args in ([],['--help'],['build','--help']):
                 with contextlib.redirect_stdout(io.StringIO()):self.assertEqual(mbt.main(args),0)
             with contextlib.redirect_stderr(io.StringIO()):
                 for args in (['plan'],['unknown'],['build','other']):self.assertEqual(mbt.main(args),1)
-                with mock.patch.object(mbt.os,'geteuid',return_value=0):
-                    self.assertEqual(mbt.main(['build','kernel','--output','/absent']),1)
+
+    def test_build_uses_the_callers_identity_without_a_dedicated_account(self):
+        import mbt_runtime
+        for uid in (0,1000):
+            helper=mock.Mock();helper.main.return_value=0
+            with mock.patch('os.geteuid',return_value=uid),mock.patch.object(mbt_runtime,'enter',return_value=None),mock.patch.object(mbt,'helper',return_value=helper):
+                self.assertEqual(mbt.main(['build','kernel']),0)
+            helper.main.assert_called_once_with([],prog='mbt build kernel')
 
     def test_real_kernel_preview_creates_no_workspace_and_checks_frozen_config(self):
         kernel=mbt.helper('kernel')
@@ -50,6 +56,19 @@ class FrontendTests(unittest.TestCase):
             result=subprocess.run(command,capture_output=True,text=True)
             self.assertNotEqual(result.returncode,0);self.assertIn('hash differs',result.stderr)
             self.assertFalse(output.exists())
+            short=[sys.executable,'-I','-B',str(REPO/'tools/mbt'),'build','kernel',
+                   '--environment',str(environment),'--dry-run']
+            result=subprocess.run(short,cwd=root,capture_output=True,text=True)
+            self.assertEqual(result.returncode,0,result.stderr)
+            self.assertIn('Config: bundled mojt.config',result.stdout)
+            self.assertFalse((root/'mojt.config').exists())
+            self.assertFalse((root/'kernel-result').exists())
+            (root/'mojt.config').write_bytes(config.read_bytes())
+            result=subprocess.run([sys.executable,'-I','-B',str(REPO/'tools/mbt'),'build','kernel',
+                                   '--environment',str(environment),'--dry-run'],cwd=root,capture_output=True,text=True)
+            self.assertEqual(result.returncode,0,result.stderr)
+            self.assertIn('Preview only',result.stdout)
+            self.assertFalse((root/'kernel-result').exists())
 
     def test_each_helper_has_scoped_help_without_loading_a_provider(self):
         for args,usage in ((['env','--help'],'mbt env'),(['bootstrap','--help'],'mbt bootstrap'),(['build','kernel','--help'],'mbt build kernel'),
@@ -65,10 +84,14 @@ class BuilderDeliveryTests(unittest.TestCase):
         import test_system_vm as fixtures
         fixture=fixtures.SystemVmTests();fixture.setUp();self.addCleanup(fixture.doCleanups)
         model=fixtures.system;record=fixture.fixture(10)
+        codec=fixture.payload/record['packages']['python']['output'].lstrip('/')/'bin/zstd'
+        model.write(codec,'#!/bin/sh\nexit 0\n',0o755)
         successor=fixture.root/'successor';shutil.copytree(fixture.tree,successor,symlinks=True)
         with mock.patch.object(model.os,'chown'):
             key=model.install(fixture.tree,fixture.payload,record,fixture.busybox,'password',REPO,with_build_tools=True)
         profile=fixture.tree/'system'/key;self.assertTrue(key.endswith('-builder'))
+        self.assertTrue((profile/'bin/zstd').is_symlink())
+        self.assertEqual((profile/'bin/zstd').readlink(),(profile/'libexec/mpm/bin/zstd').readlink())
         wrapper=(profile/'bin/mbt').read_text()
         self.assertIn(' -I -B /run/mojt-system/tools/mbt',wrapper)
         self.assertNotIn('/var/lib/mojt/ports',wrapper)

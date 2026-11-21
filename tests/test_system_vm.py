@@ -62,11 +62,12 @@ class SystemVmTests(unittest.TestCase):
                 "systemd": ["lib/systemd/systemd", "bin/systemctl", "bin/journalctl",
                             "bin/udevadm", "bin/systemd-sysusers", "bin/timedatectl", "bin/systemd-cat", "bin/systemd-machine-id-setup",
                             "lib/systemd/systemd-timesyncd", "lib/systemd/systemd-logind",
-                            "lib/systemd/systemd-user-runtime-dir", "lib/systemd/systemd-sysctl", "bin/loginctl"],
+                            "lib/systemd/systemd-user-runtime-dir", "lib/systemd/systemd-sysctl", "bin/loginctl", "bin/systemd-run"],
                 "dbus": ["bin/dbus-daemon"], "networkmanager": ["bin/NetworkManager", "bin/nmcli"],
                 "curl": ["bin/curl"], "cacert": [], "iproute2": ["bin/ip", "bin/ss"],
                 "nix": ["bin/nix", "bin/nix-store", "bin/nix-instantiate"], "python": ["bin/python3"], "tar": ["bin/tar"],
                 "shell": ["bin/bash"], "tzdata": [], "man-db": ["bin/man", "bin/manpath"],
+                "openssh": ["bin/sshd", "bin/ssh-keygen"],
                 "shadow": ["bin/" + n for n in system.accounts.COMMANDS],
                 "pam": ["bin/unix_chkpwd"], "sudo": ["bin/sudo", "sbin/visudo"],
                 "kmod": ["bin/modprobe", "bin/lsmod", "bin/modinfo"],
@@ -146,9 +147,19 @@ class SystemVmTests(unittest.TestCase):
         self.assertEqual(set(system.roles(1)), {"systemd"})
         self.assertTrue(set(system.roles(1)) < set(system.roles(2)) < set(system.roles(3))
                         < set(system.roles(4)) < set(system.roles(5)) < set(system.roles(6)) < set(system.roles(7)))
-        for value in (0, 11, True, "1"):
+        for value in (0, 12, True, "1"):
             with self.assertRaises(ValueError):
                 system.roles(value)
+
+    def test_step11_exposes_ssh_tools_without_enabling_or_configuring_a_server(self):
+        directory,record=self.install(11,"password")
+        self.assertTrue((directory/'bin/sshd').is_symlink())
+        self.assertTrue((directory/'bin/ssh-keygen').is_symlink())
+        self.assertFalse((directory/'bin/mojt-sshd').exists())
+        self.assertFalse((directory/'tools/mojt_sshd.py').exists())
+        self.assertFalse((directory/'units/mojt-sshd.service').exists())
+        self.assertFalse((self.tree/'state/etc/ssh/mojt').exists())
+        self.assertNotIn('sshd',(directory/'sysusers.conf').read_text())
 
     def test_step3_creates_protected_mpm_state_parent_on_fresh_image(self):
         parent = self.tree/'state/var/lib/mojt'

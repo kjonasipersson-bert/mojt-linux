@@ -36,12 +36,13 @@ names the existing versioned build recipe; it is not an MBT planning operation.
 
 Filesystem paths name environments and workspaces. No global environment-name
 registry, automatic compiler activation or saved-plan execution is needed.
-Compilation through MBT requires an ordinary user; root may preview, but the
-frontend does not silently run a build through sudo or change workspace ownership.
+Compilation uses the caller's existing identity, including root when explicitly
+invoked as root. No dedicated account is required; the frontend does not run sudo
+or change workspace ownership.
 A private environment is not a security sandbox. Tool acquisition uses the
 provider's store permissions: on Mojt's current root-owned single-user Nix store,
 an administrator imports the tools into a directory traversable/readable by the
-builder, and the ordinary user then compiles with it. MBT does not grant ordinary
+builder. Use your existing ordinary account, or root on an experimental system. MBT does not grant ordinary
 users shared-store write access or silently start a provider daemon.
 
 ## Concrete journey

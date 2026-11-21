@@ -61,7 +61,7 @@ def prepared_rows(root,area,installed):
     for identifier,item in sorted(available(root)[0].items()):
         d=description(item['record']);entry=d[area]
         rows.append(dict(deployment=identifier,artifact=entry['artifact'],
-            label=entry['generation'] if area=='system' else entry['release'],
+            label=entry['generation'] if area=='system' else next((r.get('label',entry['release']) for r in installed if r['artifact']==entry['artifact']),entry['release']),
             version=next((r['version'] for r in installed if r['artifact']==entry['artifact']),{}),
             base_release=d['base']['release'],kernel_release=d['kernel']['release']))
     return rows
