@@ -72,7 +72,7 @@ def read(directory):
                 'installer input changed: ' + name)
     defaults = value['defaults']
     artifact.fields(defaults, ('system_generation','system_version','system_revision','with_build_tools','hardware_profile'))
-    require(type(defaults['with_build_tools']) is bool and defaults['hardware_profile'] in (None,hardware.PROFILE),
+    require(type(defaults['with_build_tools']) is bool and defaults['hardware_profile'] in (None,*hardware.PROFILES),
             'unsupported installer defaults')
     require(('firmware' in value['resources']) == (defaults['hardware_profile'] is not None), 'installer firmware policy differs')
     for name in ('base','kernel'):

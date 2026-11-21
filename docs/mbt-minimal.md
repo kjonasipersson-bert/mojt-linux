@@ -200,6 +200,17 @@ rebuild of Base, the Kernel or third-party System packages. A resulting builder
 can separately acquire a private compiler environment, build/package a Kernel,
 and install/activate it with MPM.
 
+### Generic PC image profile
+
+`--hardware-profile pc-x86_64 --firmware-root EXTRACTED_FIRMWARE_ROOT` uses
+UEFI/local password login, includes NVMe and VirtIO SCSI alongside SATA/USB early
+drivers, and probes runtime devices through standard udev rules. It requires the
+broader fixed firmware/license set described in the Handbook's
+[hardware chapter](../doc/handbook/part-iii/hardware.md). Firmware remains part of
+System; the selected Kernel retains its complete module tree. This is a separate
+machine policy from the legacy ThinkPad profile, not an automatic migration of
+an existing selection. Its image launcher also accepts `QEMU_DISK_BUS=nvme`.
+
 ### ThinkPad image profile
 
 `--hardware-profile thinkpad-x1-carbon-3 --firmware-root EXTRACTED_FIRMWARE_ROOT`

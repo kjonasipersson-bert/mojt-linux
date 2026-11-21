@@ -276,6 +276,7 @@ def build(args):
     require(args.efi_directory is not None, '--target-root requires --efi-directory')
     value = inspect(args.target_root, args.efi_directory)
     supported = {'virtio_blk'} if getattr(args,'hardware_profile',None) is None else {'virtio_blk','ahci','usb-storage','uas'}
+    if getattr(args,'hardware_profile',None) == native.hardware.PC_PROFILE:supported.update({'nvme','virtio_scsi'})
     require(bool(supported & set(value['storage_drivers'])),
             'target storage driver is outside the selected initial boot profile: '+', '.join(value['storage_drivers']))
     if args.expected_root_uuid is not None:

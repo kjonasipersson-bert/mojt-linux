@@ -244,6 +244,10 @@ jobs:
             --kernel "$kernel" --modules-dir "/lib/modules/$release" \
             --hardware-profile thinkpad-x1-carbon-3 --disk-bus usb --generations --serial-login \
             --output "$RUNNER_TEMP/mojt-hardware-serial"
+          sudo python3 tests/run-uefi-smoke.py \
+            --kernel "$kernel" --modules-dir "/lib/modules/$release" \
+            --hardware-profile pc-x86_64 --disk-bus nvme --switch-bus usb \
+            --output "$RUNNER_TEMP/mojt-hardware-pc-nvme-to-usb"
       - name: Reproduce mapped-file shutdown failure and verify corrected final unmount
         run: |
           kernel_package="$MOJT_CI_KERNEL_PACKAGE"

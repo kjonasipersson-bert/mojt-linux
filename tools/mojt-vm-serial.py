@@ -291,7 +291,8 @@ def prepare(source, output):
         print('Serial copy: verifying reconstructed partition bytes...',flush=True)
         verify_partition(copy,root,offset,length)
         launcher = boot.run_script(network=record.get("system_step", 0) >= 2,
-                                   local_console=bool(record.get("hardware")))
+                                   local_console=bool(record.get("hardware")),
+                                   hardware_profile=(record.get("hardware") or {}).get("profile"))
         launcher = launcher.replace('${QEMU_DISPLAY:-gtk}', '${QEMU_DISPLAY:-none}')
         (result / "run-qemu.sh").write_text(launcher, encoding="ascii")
         (result / "run-qemu.sh").chmod(0o755)

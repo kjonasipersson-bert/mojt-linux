@@ -56,6 +56,7 @@ Existing dedicated reports retain their original paths:
 - [Writable-root boot and persistence](../writable-root-hardware-test.md)
 - [MPM interaction and manual-page checks](../mpm-usability-hardware-test.md)
 - [Kernel tracks and SSH acceptance procedure](kernel-tracks-ssh-test.md)
+- [Generic PC hardware readiness and acceptance](pc-hardware-test.md)
 - [Ports frontend/adapter](../ports-profile-acceptance.md)
 - [Activation measurements](../activation-fast-hardware-test.md)
 - [Initramfs payload reuse](../initramfs-payload-hardware-test.md)

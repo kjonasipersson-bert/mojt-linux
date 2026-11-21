@@ -86,9 +86,9 @@ def main():
     parser.add_argument("--modules-dir", type=Path, required=True)
     parser.add_argument("--busybox", type=Path, default=Path("/usr/bin/busybox"))
     parser.add_argument("--output", type=Path, required=True, help="new retained test directory")
-    parser.add_argument("--hardware-profile", choices=("thinkpad-x1-carbon-3",))
-    parser.add_argument("--disk-bus", choices=("sata", "usb"), default="sata")
-    parser.add_argument("--switch-bus", choices=("sata", "usb"),
+    parser.add_argument("--hardware-profile", choices=("thinkpad-x1-carbon-3", "pc-x86_64"))
+    parser.add_argument("--disk-bus", choices=("sata", "usb", "nvme"), default="sata")
+    parser.add_argument("--switch-bus", choices=("sata", "usb", "nvme"),
                         help="second boot changes bus while retaining the same disk and OVMF variables")
     parser.add_argument("--firmware-root", type=Path,
                         help="optional real extracted Debian firmware root instead of the synthetic fixture")
@@ -107,13 +107,15 @@ def main():
     if args.serial_login:
         vm.validate_busybox_applets(args.busybox, "password", extra=("id",))
     physical = bool(args.hardware_profile)
+    if 'nvme' in (args.disk_bus,args.switch_bus) and args.hardware_profile != vm.hardware.PC_PROFILE:
+        parser.error('NVMe requires the pc-x86_64 profile')
     if args.serial_login and not physical:
         parser.error("--serial-login adapts a local-console hardware-profile fixture")
     if args.switch_bus and not physical:
         parser.error("--switch-bus requires --hardware-profile")
     console = "local" if physical else "serial"
     modules = vm.module_paths(release, args.modules_dir,
-                             names=vm.hardware.EARLY_MODULES if physical else None)
+                             names=vm.hardware.early_modules(args.hardware_profile) if physical else None)
     output = args.output.absolute()
     output.mkdir(mode=0o700)  # Never reuse an existing test disk.
     selected, base, root_uuid = "smoke-system", "smoke-base", str(uuid.uuid4())
@@ -166,10 +168,14 @@ def main():
                 system.write(fw / "usr/lib/firmware/iwlwifi-7265D-29.ucode", "synthetic fixture")
                 for name in ("regulatory.db-debian", "regulatory.db.p7s-debian"):
                     system.write(fw / "usr/lib/firmware" / name, "synthetic fixture")
-                for package in vm.hardware.LICENSE_PACKAGES:
+                if args.hardware_profile == vm.hardware.PC_PROFILE:
+                    for name in ('i915/test.bin','amdgpu/test.bin','rtl_nic/test.bin',
+                                 'ath10k/test/firmware.bin','mediatek/test.bin','brcm/test.bin'):
+                        system.write(fw / 'usr/lib/firmware' / name, 'synthetic fixture')
+                for package in vm.hardware.license_packages(args.hardware_profile):
                     system.write(fw / "usr/share/doc" / package / "copyright", "synthetic fixture")
             (profile / "units").mkdir()
-            vm.hardware.stage(tree, selected, args.modules_dir, release, fw, system)
+            vm.hardware.stage(tree, selected, args.modules_dir, release, fw, system,hardware_profile=args.hardware_profile)
         # A deliberately unusable current link proves that the boot pair pins System.
         (tree / "system/current").symlink_to("unselected-and-absent")
         (profile / "start").write_text('''#!/bin/sh
@@ -260,7 +266,7 @@ echo MOJT_HARDWARE_MOUNTS_PASS'''.replace("@RELEASE@", release) if physical else
     # No external kernel, initramfs, filesystem tree or payload survives into boot.
     launcher = active / "run-qemu.sh"
     if not args.serial_login:
-        launcher.write_text(vm.boot.run_script(local_console=physical))
+        launcher.write_text(vm.boot.run_script(local_console=physical,hardware_profile=args.hardware_profile))
     launcher.chmod(0o755)
     order = (0, 1, 2, 0) if args.generations else ((0, 0) if args.serial_login else (None, None))
     for number, index in enumerate(order, 1):
@@ -291,7 +297,7 @@ echo MOJT_HARDWARE_MOUNTS_PASS'''.replace("@RELEASE@", release) if physical else
     fresh = output / "disk-only-copy"
     fresh.mkdir()
     subprocess.run(["cp", "--sparse=always", str(active / "disk.img"), str(fresh / "disk.img")], check=True)
-    (fresh / "run-qemu.sh").write_text(vm.boot.run_script(local_console=physical))
+    (fresh / "run-qemu.sh").write_text(vm.boot.run_script(local_console=physical,hardware_profile=args.hardware_profile))
     run = firmware_boot(fresh / "run-qemu.sh", {**os.environ, "QEMU_DISPLAY": "none",
                         "QEMU_DISK_BUS": args.switch_bus or args.disk_bus},
                         2 if args.generations else (0 if args.serial_login else None), login=password)
