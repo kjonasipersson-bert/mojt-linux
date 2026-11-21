@@ -163,7 +163,13 @@ class ConstructionTests(unittest.TestCase):
         import mojt_system_package as packer
         import mpm_boot_constructor as constructor
         f=fixtures.NativeImageTests();f.account_base=True;f.setUp();self.addCleanup(f.doCleanups)
-        source=system_fixtures.SystemVmTests();source.setUp();self.addCleanup(source.doCleanups);source.fixture(10)
+        source=system_fixtures.SystemVmTests();source.setUp();self.addCleanup(source.doCleanups);record=source.fixture(10)
+        python_output=record['packages']['python']['output']
+        python_tree=source.payload/python_output.lstrip('/')
+        system_fixtures.system.write(python_tree/'bin/zstd','#!/bin/sh\nexit 0\n',0o755)
+        for item in record['objects']:
+            if item['path']==python_output:item['tree_sha256']=bootstrap.paths.tree_hash(python_tree)
+        (source.payload/'system.json').write_text(json.dumps(record))
         hw=hardware_fixtures.HardwareTests();hw.setUp();self.addCleanup(hw.doCleanups)
         f.args.system_payload=source.payload;f.args.login_mode='password'
         foreign_home=f.work/'caller-home';foreign_home.mkdir(mode=0o700);f.args.output=foreign_home/'image'
