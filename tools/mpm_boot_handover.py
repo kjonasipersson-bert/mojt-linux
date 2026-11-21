@@ -154,7 +154,7 @@ def check(root, source, trees, value, *, provider_roots=None, cache=None, verify
     profile = inventory.path(root,'realizations/system/'+i['system']['artifact'][7:]+'/profile')
     candidate = manifests.validate(base.read(profile/'manifest.json'))
     require(candidate['id'] == i['system']['manifest'],'handover System manifest differs')
-    review = transition.tooling_review(d['baseline_manifest'],candidate)
+    review = transition.profile_review(d['baseline_manifest'],candidate,profile)
     require(review == d['preflight']['description']['checks']['startup'] and review['description']['compatible'],'startup review changed')
     persistent = common.state_inputs(root)
     facts = dict(format=manifests.CONTEXT,**d['base_facts'],ports=persistent['ports'],required_system_paths=persistent['system_shells'])

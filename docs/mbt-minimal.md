@@ -240,9 +240,11 @@ mix it with the VM profile. MPM updates preserve that machine policy; each new
 Kernel construction resolves both early and runtime driver dependencies. Normal
 boot checks paths and small hardware metadata without scanning firmware content.
 Firmware is covered by the System content proof for explicit full verification.
-Its mount remains until the existing static exitrd teardown. General service or
-firmware changes through System upgrade still need a supported transition policy;
-the unchanged-startup gate is not bypassed by this profile.
+Its mount remains until the existing static exitrd teardown. Firmware data has
+a bounded transition policy that retains machine policy and ordinary services,
+and may add the fixed conditional QEMU guest-agent service. See the
+[hardware chapter](../doc/handbook/part-iii/hardware.md#85-updating-firmware-in-an-existing-system).
+Other service/profile changes still require a supported transition contract.
 
 The local-console launcher offers SATA or USB emulation via `QEMU_DISK_BUS`.
 Use `QEMU_MEMORY_MIB=4096 QEMU_CPUS=8` for a builder VM instead of editing its

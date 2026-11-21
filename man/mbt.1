@@ -85,8 +85,9 @@ an extracted Debian firmware root with Intel 7265 firmware, regulatory database
 and upstream licenses. Firmware/licenses become inventoried System content;
 complete modules remain in the exact native Kernel artifact. Both mounts are
 read-only. Existing-system updates preserve the bound hardware/console policy.
-Normal boot does not scan firmware content. Independent firmware artifacts and
-general firmware/service upgrade transitions are not implemented.
+Normal boot does not scan firmware content. System transitions support bounded
+firmware-data changes and the fixed conditional QEMU guest-agent service.
+Independent firmware artifacts and general service/profile migrations remain open.
 .PP
 Installs Base/System and stages/selects the initial exact deployment through
 MPM libraries in a private directory before image formatting or mounted-target copying. Fixed manager code runs using

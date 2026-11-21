@@ -27,8 +27,9 @@ interfaces. The [architecture](architecture.md) defines the area boundaries.
 1. Validate the generic PC hardware profile on representative physical machines.
    The profile includes broader firmware inputs, udev probing and NVMe/SATA/USB
    early drivers; emulated boots do not establish physical firmware coverage.
-   Existing ThinkPad selections retain their machine policy. A live profile or
-   firmware/service migration needs an explicit supported transition contract.
+   Existing ThinkPad selections retain their machine policy. Firmware data and
+   the fixed optional QEMU guest service have a bounded transition contract;
+   live machine-profile changes and other service migrations remain separate work.
 2. Continue focused usability work and MBT development against the installed
    workflows. Keep activation a bounded atomic choice; construction belongs to
    preparation, and full audits remain explicit.

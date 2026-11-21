@@ -111,3 +111,71 @@ For an image, `QEMU_DISK_BUS=sata`, `usb` or `nvme` chooses the emulated disk bu
 Emulated storage boots do not validate physical Wi-Fi/GPU firmware. On hardware,
 check the actual network and devices, inspect `journalctl -b -k`, and retain the
 previous working image until the new installation has been checked.
+
+## 8.5 Updating firmware in an existing System
+
+The firmware-data transition keeps Base, Kernel, early driver lists, machine
+profile and ordinary services. Its `firmware-update.json` contract binds the
+selected System manifest, before/after hardware metadata and firmware/license
+inventories. Unrelated service, Kernel module and state-schema changes remain
+blocked. Returning to a retained prepared deployment selects its original
+firmware and services.
+
+This transition may also add the fixed `qemu-guest-agent.service` described below
+and its retained binary dependencies. It is a narrow supported service
+introduction, not a general service-upgrade or machine-profile migration rule.
+
+The target-side delivery procedure imports `linux-firmware` and `qemu_kvm.ga`
+from the installation's pinned Nixpkgs source. Exact upstream firmware source is
+retained for `WHENCE` and license texts. Its fixed-output fetch is refused if it
+would build other dependencies. Original firmware filenames and regulatory data
+are retained; incoming files replace collisions only in the new immutable
+component. No Kernel compilation is involved. This differs from the extracted
+Debian firmware input used when bootstrapping fresh images.
+
+Preparation downloads and packages substantial data; activation selects the
+prepared boot entry. The installed manager imports the package. If the running
+manager predates this transition reader, the delivery procedure uses the verified
+installed candidate manager to prepare its deployment in an isolated process.
+Running manager files and persistent configuration are not patched. See the
+[target-side procedure](https://github.com/kjonasipersson-bert/mojt-linux/blob/main/docs/reports/firmware-generation-test.md).
+
+## 8.6 QEMU guests
+
+The bundled Kernel configuration enables VirtIO PCI, block, network, console,
+SCSI, balloon, input and graphics, plus virtiofs and 9p. Configuration alone does
+not prove that every feature works in a guest. Early boot follows the selected
+profile: the retained ThinkPad policy includes VirtIO block; the PC profile also
+includes VirtIO SCSI and NVMe. Runtime devices use the complete selected module
+tree. A graphical desktop and SPICE integration are separate work.
+
+The firmware-generation procedure includes ordinary `qemu-ga` and
+`qemu-guest-agent.service`. After hardware setup the service refreshes VirtIO and
+port udev events, then starts only if
+`/dev/virtio-ports/org.qemu.guest_agent.0` exists. Without the channel it is skipped,
+including on physical hardware. Runtime state uses `/run/qemu-guest-agent`.
+
+```sh
+qemu-ga --version
+systemctl status qemu-guest-agent.service
+journalctl -b -u qemu-guest-agent.service
+```
+
+Optional machine configuration is `/etc/qemu/qemu-ga.conf`, using upstream INI
+syntax. Keep `daemon=0` for this foreground systemd service. The service does not
+create or overwrite the configuration. See the upstream
+[QEMU Guest Agent reference](https://www.qemu.org/docs/master/interop/qemu-ga.html).
+
+Configure the named channel through libvirt/virt-manager or add these host QEMU
+options, choosing a local socket path:
+
+```sh
+-chardev socket,path=/tmp/mojt-qga.sock,server=on,wait=off,id=qga
+-device virtio-serial-pci
+-device virtserialport,chardev=qga,name=org.qemu.guest_agent.0
+```
+
+If the channel is added after boot, use
+`systemctl start qemu-guest-agent.service`. Agent communication and the guest's
+IP networking/SSH are separate facilities. Firmware does not supply VirtIO
+drivers; they belong to the selected Kernel.

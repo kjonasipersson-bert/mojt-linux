@@ -161,7 +161,7 @@ class ConstructionTests(unittest.TestCase):
     def test_pc_mounted_target_preserves_generic_profile_in_portable_inputs(self):
         self.hardware_construction(mounted=True,hardware_profile=bootstrap.native.hardware.PC_PROFILE)
 
-    def hardware_construction(self, *, mounted, hardware_profile=bootstrap.native.hardware.PROFILE):
+    def hardware_construction(self, *, mounted, hardware_profile=bootstrap.native.hardware.PROFILE, after_construct=None):
         import test_native_image as fixtures
         import test_system_vm as system_fixtures
         import test_hardware_boot as hardware_fixtures
@@ -213,6 +213,7 @@ class ConstructionTests(unittest.TestCase):
                  mock.patch.object(constructor.archive,'vm_module',return_value=fixtures.fixtures.vm):
                 outcome=bootstrap.construct(tree,runtime,value,prep/'work',adapter=adapter)
             bootstrap.record_result(tree,result,outcome);d=outcome['description'];seen.append(d)
+            if after_construct is not None:after_construct(tree,d,adapter)
             profile=tree/'realizations/system'/d['system'][7:]/'profile'
             self.assertTrue((profile/'units/mojt-console.service').is_file())
             self.assertEqual(bootstrap.native.hardware.native_firmware(profile),profile/'kernel/lib/firmware')
