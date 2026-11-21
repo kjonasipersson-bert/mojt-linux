@@ -118,6 +118,31 @@ class PolicyTests(unittest.TestCase):
 
 
 class DriverTests(unittest.TestCase):
+    def test_license_directory_and_legacy_files_preserve_relative_paths(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            paths.write(root/'WHENCE','See LICENSES/GPL-2.0 and LICENCE.vendor')
+            paths.write(root/'LICENSES/GPL-2.0','upstream GPL text')
+            paths.write(root/'LICENSES/vendor/terms','vendor terms')
+            paths.write(root/'LICENCE.vendor','legacy vendor terms')
+            paths.write(root/'not-a-license.bin','do not copy')
+            self.assertEqual(delivery.license_texts(root),{
+                'WHENCE':b'See LICENSES/GPL-2.0 and LICENCE.vendor',
+                'LICENSES/GPL-2.0':b'upstream GPL text','LICENSES/vendor/terms':b'vendor terms',
+                'LICENCE.vendor':b'legacy vendor terms'})
+
+    def test_license_escape_special_file_and_linked_directory_are_refused(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)/'source';paths.write(root/'WHENCE','test');(root/'LICENSES').mkdir()
+            outside=Path(folder)/'outside';outside.write_text('unrelated')
+            point=root/'LICENSES/vendor'
+            point.symlink_to(outside)
+            with self.assertRaisesRegex(ValueError,'unsafe upstream license'):delivery.license_texts(root)
+            point.unlink();os.mkfifo(point)
+            with self.assertRaisesRegex(ValueError,'unsafe upstream license'):delivery.license_texts(root)
+            point.unlink();point.symlink_to(root/'LICENSES',target_is_directory=True)
+            with self.assertRaisesRegex(ValueError,'linked upstream license directory'):delivery.license_texts(root)
+
     def test_overlay_replaces_a_filename_without_writing_through_its_old_alias(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);source=root/'source';destination=root/'destination';source.mkdir();destination.mkdir()
@@ -167,6 +192,31 @@ class PreparationTests(unittest.TestCase):
                 self.assertEqual(execute.call_count,2)
                 self.assertEqual(execute.call_args.args[1][-1],'_prepare')
 
+    def test_refresh_replaces_only_unfinished_code_and_retains_downloads_and_baseline(self):
+        with tempfile.TemporaryDirectory() as folder:
+            work=Path(folder)/'work';before=dict(running='sha256:'+'a'*64,selected='sha256:'+'b'*64)
+            with mock.patch.object(delivery,'WORK',work),mock.patch.object(delivery.os.path,'ismount',return_value=True),\
+                 mock.patch.dict(os.environ,dict(os.environ)),mock.patch.object(sys,'path',list(sys.path)),\
+                 mock.patch.object(delivery,'snapshot',return_value=before),\
+                 mock.patch.object(delivery,'mpm',return_value={'running':{'deployment':before['selected']}}),\
+                 mock.patch.object(delivery.os,'execv',side_effect=RuntimeError('isolated handoff')):
+                with self.assertRaisesRegex(RuntimeError,'isolated handoff'):delivery.main(['prepare'])
+                previous=delivery.state();old=Path(previous['code']);old_bytes=(old/'mbt-execution.json').read_bytes()
+                (work/'firmware-root').symlink_to('/nix/store/retained-firmware')
+                previous['script']='0'*64;delivery.save(previous)
+                with self.assertRaisesRegex(ValueError,'script/checkpoint'):delivery.main(['prepare'])
+                with mock.patch.object(delivery,'snapshot',return_value=dict(before,selected='changed')):
+                    with self.assertRaisesRegex(ValueError,'next boot'):delivery.main(['prepare','--refresh-code'])
+                with self.assertRaisesRegex(RuntimeError,'isolated handoff'):delivery.main(['prepare','--refresh-code'])
+                refreshed=delivery.state();self.assertNotEqual(refreshed['code'],str(old))
+                self.assertEqual(refreshed['baseline'],before)
+                self.assertEqual((old/'mbt-execution.json').read_bytes(),old_bytes)
+                self.assertEqual(os.readlink(work/'firmware-root'),'/nix/store/retained-firmware')
+                refreshed['phase']='prepared';delivery.save(refreshed)
+                with self.assertRaisesRegex(ValueError,'already complete'):delivery.main(['prepare','--refresh-code'])
+                refreshed['phase']='preparing';delivery.save(refreshed);(work/'package').mkdir()
+                with self.assertRaisesRegex(ValueError,'already complete'):delivery.main(['prepare','--refresh-code'])
+
 
 class Provider:
     def describe(self,reference,root):return dict(reference=reference,commands={})
@@ -196,7 +246,7 @@ class PackageTests(Fixture):
         self.archive,self.body=self.package(self.composition,self.actions);self.install()
         self.firmware=self.work/'firmware';self.licenses=self.work/'licenses'
         paths.write(self.firmware/'old.bin','replacement firmware');paths.write(self.firmware/'new.bin','additional firmware')
-        paths.write(self.licenses/'WHENCE','original firmware attributions');paths.write(self.licenses/'LICENCE.test','redistribution terms')
+        paths.write(self.licenses/'WHENCE','original firmware attributions');paths.write(self.licenses/'LICENSES/GPL-2.0','redistribution terms')
 
     def test_generation_packages_and_installs_without_mutating_old_release_or_running_programs(self):
         before=tree(self.root)
@@ -208,6 +258,7 @@ class PackageTests(Fixture):
         self.assertEqual((old/'kernel/lib/firmware/old.bin').read_text(),'old old.bin')
         self.assertEqual((new/'kernel/lib/firmware/old.bin').read_text(),'replacement firmware')
         self.assertEqual((new/'kernel/lib/firmware/regulatory.db').read_text(),'old regulatory.db')
+        self.assertEqual((new/'kernel/licenses/linux-firmware/LICENSES/GPL-2.0').read_text(),'redistribution terms')
         report=transition.profile_review(base.read(old/'manifest.json'),base.read(new/'manifest.json'),new)
         self.assertTrue(report['description']['compatible'],report)
         self.assertFalse((new/'private.conf').exists());self.assertFalse((self.root/'boot').exists())

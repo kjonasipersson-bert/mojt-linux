@@ -37,6 +37,8 @@ Old firmware names and regulatory data are retained while incoming files replace
 collisions in the new copy. Upstream `WHENCE` and license texts are included. No
 running profile, package hook or persistent configuration is patched/executed by
 the packager. Running System and next boot must remain unchanged.
+Both older root-level license files and upstream's `LICENSES/` directory are
+retained alongside `WHENCE`.
 
 The workspace is `/var/lib/mojt/firmware-system-test`. After a checkpointed
 interruption, rerun `prepare` with the same script and frozen code. Inspect its
@@ -45,6 +47,18 @@ phase and package paths with:
 ```sh
 python3 -I -B tools/mojt-system-firmware-test.py status
 ```
+
+After updating the reviewed checkout to fix an unfinished preparation, explicitly
+refresh its frozen code with:
+
+```sh
+python3 -I -B tools/mojt-system-firmware-test.py prepare --refresh-code
+```
+
+This requires phase `preparing`, no published package, unchanged running/selected
+deployment and intact old frozen resources. It retains the original checkpoint
+baseline, downloaded Nix objects and roots, and the previous frozen resources.
+Completed preparation cannot be refreshed this way.
 
 ## Install, select and check
 

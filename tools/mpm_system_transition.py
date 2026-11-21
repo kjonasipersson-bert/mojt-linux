@@ -117,7 +117,8 @@ def firmware_review(selected, candidate, proof):
     debian=all('sha256' in after.get('kernel/licenses/'+p+'/copyright',{})
                for p in hardware_model.license_packages(hardware_model.PC_PROFILE))
     upstream=('sha256' in after.get('kernel/licenses/linux-firmware/WHENCE',{}) and
-              any(p.startswith('kernel/licenses/linux-firmware/') and p.rsplit('/',1)[-1].startswith(('LICENSE','LICENCE','COPYING'))
+              any(p.startswith('kernel/licenses/linux-firmware/') and
+                  (p.startswith('kernel/licenses/linux-firmware/LICENSES/') or p.rsplit('/',1)[-1].startswith(('LICENSE','LICENCE','COPYING')))
                   and 'sha256' in r for p,r in after.items()))
     require(debian or upstream,'firmware update lacks complete input licenses')
     allowed=changed | {'hardware.json',FIRMWARE_PROOF}

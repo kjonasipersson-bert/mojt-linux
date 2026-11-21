@@ -40,18 +40,21 @@ def checked(path):
                 'unprotected maintenance path: '+str(point))
 
 
-def state():
+def state(*, allow_script_change=False):
     path=WORK/'state.json';checked(path);info=path.stat()
     require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and info.st_size <= 1024**2,'unsafe maintenance state')
     value=json.loads(path.read_text())
-    require(value['format'] == FORMAT and value['script'] == hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+    require(value['format'] == FORMAT and (allow_script_change or value['script'] == hashlib.sha256(Path(__file__).read_bytes()).hexdigest()),
             'maintenance script/checkpoint differs')
     return value
 
 
 def save(value):
     import mpm_native_io as io
-    io.write_json(WORK/'state.json',value)
+    checked(WORK/'state.json')
+    with tempfile.TemporaryDirectory(prefix='.checkpoint-',dir=WORK) as folder:
+        pending=Path(folder)/'state.json';io.write_json(pending,value)
+        os.replace(pending,WORK/'state.json');io.sync_directory(WORK)
 
 
 def mpm(*args):
@@ -157,6 +160,25 @@ def specification(body,version,provenance):
         version=version,provenance=dict(body['provenance'],firmware_update=provenance))
 
 
+def license_texts(source):
+    """Retain legacy root license files and the upstream LICENSES directory."""
+    root=source.resolve(strict=True);texts={}
+    def read(point):
+        resolved=point.resolve(strict=True)
+        require(resolved.is_relative_to(root) and resolved.is_file(), 'unsafe upstream license: '+str(point))
+        texts[point.relative_to(source).as_posix()]=resolved.read_bytes()
+    for point in sorted(source.iterdir()):
+        if point.name == 'LICENSES' and point.is_dir() and not point.is_symlink():
+            for directory,dirs,files in os.walk(point,followlinks=False):
+                for name in dirs:
+                    require(not (Path(directory)/name).is_symlink(),'linked upstream license directory: '+str(Path(directory)/name))
+                for name in files:read(Path(directory)/name)
+        elif point.name == 'WHENCE' or point.name.startswith(('LICENSE','LICENCE','COPYING')):
+            read(point)
+    require('WHENCE' in texts and len(texts)>1,'firmware license texts missing')
+    return texts
+
+
 def package(root,baseline,code,firmware,licenses,agent,provenance,output):
     """Copy owned System content only; retain all old provider references and startup."""
     import mojt_artifact as artifact
@@ -170,7 +192,7 @@ def package(root,baseline,code,firmware,licenses,agent,provenance,output):
     import mpm_management as management
     import mpm_transaction as tx
     hardware.checked_tree(firmware)
-    require((licenses/'WHENCE').is_file(),'upstream firmware WHENCE required')
+    texts=license_texts(licenses)
     body,_=system.object_record(root,baseline);composition,actions=system.composition(system.object_path(root,baseline),body)
     d=copy.deepcopy(composition['description'])
     require(len(d['components']) == 1 and d['components'][0]['role'] == 'runtime','single-runtime native System required')
@@ -196,11 +218,7 @@ def package(root,baseline,code,firmware,licenses,agent,provenance,output):
         overlay(firmware,target)
         hardware.checked_tree(target)
         attribution=content/'kernel/licenses/linux-firmware';attribution.mkdir(parents=True,exist_ok=True)
-        license_files=[p for p in licenses.iterdir() if p.name == 'WHENCE' or p.name.startswith(('LICENSE','LICENCE','COPYING'))]
-        require(any(p.name != 'WHENCE' for p in license_files),'firmware license texts missing')
-        for point in license_files:
-            require(point.resolve().is_relative_to(licenses.resolve()) and point.is_file(),'unsafe upstream license')
-            write(attribution/point.name,point.read_bytes())
+        for name,data in texts.items():write(attribution/name,data)
         for name in ('regulatory.db','regulatory.db.p7s'):
             require((target/name).is_file(),'preserved regulatory database missing')
         after=dict(before,firmware_tree_sha256=paths.tree_hash(target),licenses_tree_sha256=paths.tree_hash(content/'kernel/licenses'))
@@ -274,15 +292,27 @@ def private_stage(value):
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action',choices=('prepare','install','activate','check','back','status','_prepare','_stage'))
+    parser.add_argument('--refresh-code',action='store_true',help='refresh only an unfinished preparation, retaining downloaded inputs')
     args=parser.parse_args(argv)
+    require(not args.refresh_code or args.action == 'prepare','--refresh-code requires prepare')
     require(os.geteuid() == 0 and os.path.ismount(ROOT) and os.path.ismount(RUNTIME),'run as root on installed native Mojt')
     os.environ['PATH']=str(RUNTIME/'libexec/mpm/bin')+':'+str(RUNTIME/'bin')+':/usr/sbin:/usr/bin:/sbin:/bin'
     checked(WORK)
     if args.action == 'prepare':
         if (WORK/'state.json').exists():
-            previous=state()
+            previous=state(allow_script_change=args.refresh_code)
             require(previous['phase'] == 'preparing' and not (WORK/'package').exists(),'preparation already complete; use status/install')
+            if args.refresh_code:
+                unchanged(previous['baseline'])
+                repo=Path(__file__).resolve().parents[1];sys.path.insert(0,str(repo/'tools'));import mbt_runtime
+                old=Path(previous['code'])
+                require(mbt_runtime.verify(old)['id'] == previous['execution']['id'],'prepared source cohort changed')
+                code=Path(tempfile.mkdtemp(prefix=mbt_runtime.PREFIX,dir=WORK));execution=mbt_runtime.freeze(repo,code)
+                previous.update(code=str(code),execution=execution,script=hashlib.sha256(Path(__file__).read_bytes()).hexdigest())
+                save(previous)
+                print('Refreshed unfinished preparation code; retained baseline and downloaded inputs.',flush=True)
             os.execv(sys.executable,[sys.executable,'-I','-B',str(Path(__file__).resolve()),'_prepare'])
+        require(not args.refresh_code,'no preparation checkpoint to refresh')
         require(not WORK.exists(),'incomplete preparation without checkpoint; retain it and inspect before retrying')
         before=snapshot();require(mpm('system','status','--json')['running']['deployment'] == before['selected'],'resolve pending next boot first')
         WORK.mkdir(mode=0o700)
