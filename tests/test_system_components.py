@@ -134,6 +134,30 @@ class Components(Fixture):
         with self.assertRaisesRegex(ValueError,'thin System profile differs'):
             system.realization(self.root,candidate['artifact'],verify=True)
 
+    def test_link_checks_accept_escaped_and_colon_unit_names_without_accepting_traversal(self):
+        content=self.work/'component-source';units=content/'units';units.mkdir()
+        names=(r'system-systemd\x2dcryptsetup.slice','app:worker.service')
+        for name in names:(units/name).symlink_to('../start')
+        result=pack(content,spec('component'),self.work/'unit-component')
+        self.reference=dict(provider='native',artifact=result['artifact']['id'])
+        self.component_archive=self.work/'unit-component'/result['archive']['file']
+        d=copy.deepcopy(self.composition['description']);d['components']=[dict(role='runtime',reference=self.reference)]
+        d['profile']=[dict(path=n,source=dict(reference=self.reference,path=n))
+            for n in ('bin','kernel','start','tools','units','version')]
+        self.composition=base.record(model.FORMAT,d);self.archive,self.body=self.package(self.composition);self.install()
+        candidate=self.build(label='escaped-units');self.import_package(candidate)
+        profile=system.realization_path(self.root,candidate['artifact'])/'profile'
+        system.verify_links(profile,[],{})
+        manifest=base.read(profile/'manifest.json')
+        for name in names:
+            target,external=system.profile_path(profile,'units/'+name,[],{},manifest=manifest)
+            self.assertFalse(external);self.assertTrue(target.is_file())
+        for name in ('../outside','units/../start','/etc/passwd','units//alias','units/./alias'):
+            with self.assertRaisesRegex(ValueError,'unsafe or noncanonical'):
+                system.profile_file(profile,name)
+        # State and projection naming rules remain independent of payload names.
+        with self.assertRaisesRegex(ValueError,'unsafe managed path'):management.path('units/'+names[0])
+
     def test_projection_retargeting_is_refused_without_a_full_byte_audit(self):
         candidate=self.build();self.import_package(candidate)
         profile=system.realization_path(self.root,candidate['artifact'])/'profile'

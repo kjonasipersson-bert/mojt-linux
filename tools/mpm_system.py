@@ -242,7 +242,10 @@ def _projection(row):
 
 def profile_file(profile, relative, *, manifest=None):
     """Resolve a declared native projection in its target, never in the host /run."""
-    management.path(relative)
+    # Descendants are accepted Unix payload paths, not managed-state names.
+    # In particular, upstream systemd unit names can contain literal \xNN escapes.
+    artifact.relative(relative)
+    require(len(relative.encode()) <= 4096 and len(relative.split('/')) <= 64,'unbounded System profile path')
     if manifest is None:
         if not os.path.lexists(profile/'manifest.json'):return profile/relative
         manifest = base.read(profile/'manifest.json')
