@@ -2,7 +2,7 @@
 # Mojt Linux
 # Copyright (C) 2026 Jonas Persson
 # SPDX-License-Identifier: GPL-2.0-only
-"""Build/install two component generations, then explicitly boot and return."""
+"""Build/install two component generations; explicit boot and optional return."""
 import time
 STARTED=time.monotonic()
 import argparse
@@ -129,7 +129,7 @@ def prepare_child(run):
         install_seconds=sum(r['total']['wall_ns']/1e9 for r in reports))
     save(run/'completed.json',completed)
     print('PASS: two fresh component generations prepared; unchanged firmware never opened or repacked; zero profile file copies.',flush=True)
-    print('Next: activate, reboot, after, back, reboot, check-back. Reports: '+str(run),flush=True)
+    print('Next: activate, reboot, after. Optional return: back, reboot, check-back. Reports: '+str(run),flush=True)
     return 0
 
 

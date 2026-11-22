@@ -59,6 +59,10 @@ simulated initramfs producer. It asserts:
   admission receipt; explicit complete inspection still detects that damage.
 - Plain status does not reconstruct realizations or handover readiness.
 - An accepted retained interpreter descriptor avoids a fresh runtime snapshot.
+- Full handover checks in the isolated reader do not invoke original archive
+  codecs; early content audits use the bound tree proof.
+- Private runtime copies check source bytes without durability flushes or an
+  independent readback; full producer verification retains that comparison.
 
 The existing transaction, component, reader, archive and QEMU cases retain
 unsafe-path, state/selection race, publication uncertainty, explicit damage audit,

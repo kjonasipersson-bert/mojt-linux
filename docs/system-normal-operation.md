@@ -62,6 +62,10 @@ refuse handover. Historical defaults invocation consistency and unrelated object
 damage are explicit audit/repair concerns; current required defaults are checked
 against their actual machine paths.
 
+Full early-boot verification checks the bound tree proof without requiring the
+original compressed package archives or external archive codecs. Runtime MPM
+audits continue to check retained archives.
+
 The existing serialized deployment, handover and receipt formats are retained.
 Existing slots are not rewritten. Older installed readers retain their own
 behavior; these changes apply to newly produced reader code and management tools.
