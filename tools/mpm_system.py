@@ -388,35 +388,69 @@ def _initialize(root, info):
 
 
 def _retain(root, info, body, source, encoding, acquisition=None, *, verify=False):
+    """Retain a completed durable _freeze tree; only final publication is public."""
     dest = object_path(root, body['id'])
     if management.present(dest):return object_record(root, body['id'], verify=verify)[1]
     stage = Path(tempfile.mkdtemp(prefix='.install-', dir=dest.parent))
     try:
         checksum,size = encoding['sha256'],encoding['size']
-        if verify:
-            copied = io.frozen_copy(source / 'archive.tar.zst',stage / 'archive.tar.zst')
-            require(copied == (checksum,size), 'System import changed after preview')
-        else:io.copy_regular(source / 'archive.tar.zst',stage / 'archive.tar.zst',size,0o444)
-        for row in body['files']:
-            destination = stage / row['path'];original = source / row['path']
-            if row['type'] == 'directory':destination.mkdir(mode=0o700)
-            elif row['type'] == 'symlink':
-                require(original.is_symlink() and os.readlink(original) == row['target'], 'System source link changed')
-                destination.symlink_to(row['target'])
-            else:io.copy_regular(original,destination,row['size'],stored_mode(row))
+        expected={r['path'] for r in body['files']} | {'archive.tar.zst'}
+        require({p.relative_to(source).as_posix() for p in source.rglob('*')} == expected,
+                'private System import contains unexpected/missing entries')
+        io.directory(source);source.chmod(0o700)
+        promoted=False
+        try:os.rename(source,stage)
+        except OSError as error:
+            if error.errno != errno.EXDEV:raise
+        else:
+            promoted=True;io.sync_directory(source.parent)
+        if promoted:
+            require(io.regular(stage/'archive.tar.zst').st_size == size,'System archive size changed after preview')
+            if verify:require(artifact.file_sha(stage/'archive.tar.zst') == checksum,'System import changed after preview')
+        else:
+            if verify:
+                copied = io.frozen_copy(source / 'archive.tar.zst',stage / 'archive.tar.zst')
+                require(copied == (checksum,size), 'System import changed after preview')
+            else:io.copy_regular(source / 'archive.tar.zst',stage / 'archive.tar.zst',size,0o444)
+            for row in body['files']:
+                destination = stage / row['path'];original = source / row['path']
+                if row['type'] == 'directory':destination.mkdir(mode=0o700)
+                elif row['type'] == 'symlink':
+                    require(original.is_symlink() and os.readlink(original) == row['target'], 'System source link changed')
+                    destination.symlink_to(row['target'])
+                else:io.copy_regular(original,destination,row['size'],stored_mode(row))
+        dirty_directories=set()
         for row in reversed(body['files']):
-            os.chown(stage / row['path'], 0, 0, follow_symlinks=False)
-            if row['type'] != 'symlink':(stage / row['path']).chmod(stored_mode(row))
+            path=stage/row['path'];entry=path.lstat();changed=False
+            if row['type'] == 'file':require(stat.S_ISREG(entry.st_mode) and entry.st_nlink == 1 and entry.st_size == row['size'],'System import file changed')
+            elif row['type'] == 'directory':require(stat.S_ISDIR(entry.st_mode),'System import directory changed')
+            else:require(stat.S_ISLNK(entry.st_mode) and os.readlink(path) == row['target'],'System source link changed')
+            if (entry.st_uid,entry.st_gid) != (0,0):os.chown(path,0,0,follow_symlinks=False);changed=True
+            if row['type'] != 'symlink' and stat.S_IMODE(entry.st_mode) != stored_mode(row):path.chmod(stored_mode(row));changed=True
+            if changed and row['type'] == 'file':_sync_file(path)
+            if changed and row['type'] == 'directory':dirty_directories.add(path)
+            if changed and row['type'] == 'symlink':dirty_directories.add(path.parent)
         receipt = base.record(base.RECEIPT, dict(installation=info['installation'], kind='system', artifact=body['id'], archive=encoding,
             representation='system-object-v1', dependencies=body['dependencies'], trust=io.acquisition_trust(acquisition, body['id'], checksum, size),
             installed_utc=datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'), uid=os.geteuid(), manager=manager(),
             **({'acquisition':acquisition} if acquisition else {})))
         io.write_json(stage / 'artifact.json', body);io.write_json(stage / 'installed.json', receipt)
         for row in body['files']:
-            if row['type'] == 'directory':io.sync_directory(stage / row['path'])
+            if row['type'] == 'directory' and (not promoted or stage/row['path'] in dirty_directories):
+                io.sync_directory(stage/row['path'])
         os.chown(stage, 0, 0);stage.chmod(0o555);io.sync_directory(stage);tx.publish(stage, dest)
     finally:io.clean_stage(stage)
     return receipt
+
+
+def _sync_file(path):
+    fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+    try:
+        actual=os.fstat(fd);current=io.regular(path)
+        require(stat.S_ISREG(actual.st_mode) and actual.st_nlink == 1 and
+                (actual.st_dev,actual.st_ino) == (current.st_dev,current.st_ino),'System file changed before metadata sync')
+        os.fsync(fd)
+    finally:os.close(fd)
 
 
 def _freeze(archive, work, expected=None, *, budget=artifact.MAX_CONTENT, verify=False):
@@ -424,7 +458,12 @@ def _freeze(archive, work, expected=None, *, budget=artifact.MAX_CONTENT, verify
     body = io.unpack_regular(work / 'archive.tar.zst', None, work, symlinks=True, verify=verify, expected_id=expected, budget=budget);acceptable(body)
     require(sum(r.get('size', 0) for r in body['files']) <= budget, 'System dependency bundle exceeds content budget')
     for row in reversed(body['files']):
-        if row['type'] != 'symlink':(work / row['path']).chmod(stored_mode(row))
+        if row['type'] != 'symlink':
+            path=work/row['path']
+            if stat.S_IMODE(path.stat().st_mode) != stored_mode(row):
+                path.chmod(stored_mode(row))
+                if row['type'] == 'file':_sync_file(path)
+                else:io.sync_directory(path)
     return body, dict(sha256=checksum, size=size)
 
 

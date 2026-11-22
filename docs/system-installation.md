@@ -144,7 +144,12 @@ stage without composing it again. On the same filesystem it renames the already
 synced profile and syncs both parent directories, avoiding another full content
 copy and per-file sync. A cross-filesystem workspace uses the durable copy path.
 Only the completed realization is published; existing releases are never linked
-to mutable staging files or replaced. Archive structure/link confinement, decompressor exit status,
+to mutable staging files or replaced. The same-filesystem object writer also
+promotes the complete, already synced private archive/extraction tree rather
+than copying it again. It checks the exact entry set/types/sizes/links, seals
+ownership/modes, syncs any changed metadata and writes the normal receipt before
+publication. Cross-filesystem workspaces retain the durable object copy path.
+Caller-owned input archives are copied/validated, never moved. Archive structure/link confinement, decompressor exit status,
 copy failures and atomic publication errors are checked in both modes. A failure can retain
 complete imported components or a generation object without its realization;
 status reports that generation as **retained, not installed**. Retry can finish

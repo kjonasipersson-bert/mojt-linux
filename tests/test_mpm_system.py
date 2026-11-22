@@ -238,6 +238,46 @@ class PreviewTests(Fixture):
 
 @unittest.skipUnless(os.geteuid() == 0 and shutil.which('zstd'), 'real numeric-owner System installation requires root and zstd')
 class InstallTests(Fixture):
+    def test_retained_imports_promote_private_inodes_without_moving_caller_archives(self):
+        retain=system._retain;seen=[]
+        originals={p:(p.stat().st_ino,p.read_bytes()) for p in (self.archive,self.component_archive)}
+        def observe(root,info,body,source,encoding,*args,**kwargs):
+            paths=['archive.tar.zst']+[r['path'] for r in body['files'] if r['type']=='file']
+            inodes={p:(source/p).stat().st_ino for p in paths}
+            result=retain(root,info,body,source,encoding,*args,**kwargs)
+            self.assertFalse(source.exists())
+            self.assertEqual(inodes,{p:(system.object_path(root,body['id'])/p).stat().st_ino for p in paths})
+            seen.append(body['id']);return result
+        with mock.patch.object(system,'_retain',side_effect=observe):self.install(verify=True)
+        self.assertEqual(len(seen),2)
+        for p,value in originals.items():self.assertEqual((p.stat().st_ino,p.read_bytes()),value)
+
+    @unittest.skipUnless(Path('/dev/shm').is_dir() and os.access('/dev/shm',os.W_OK),'requires a writable second filesystem')
+    def test_real_cross_filesystem_import_and_profile_copy_still_verify(self):
+        with tempfile.TemporaryDirectory(dir='/dev/shm') as folder:
+            if Path(folder).stat().st_dev == self.root.stat().st_dev:self.skipTest('no second filesystem')
+            with mock.patch.object(system.tempfile,'tempdir',folder):self.install(verify=True)
+        self.assertEqual(len(system.status(self.root,verify=True)['installed']),1)
+
+    def test_failed_import_move_flush_remains_unpublished_and_retryable(self):
+        sync=system.io.sync_directory
+        def fail(path):
+            if path.name.startswith('mojt-system-preview-'):raise OSError('injected import move flush')
+            return sync(path)
+        with mock.patch.object(system.io,'sync_directory',side_effect=fail),\
+             self.assertRaisesRegex(OSError,'import move flush'):
+            self.install()
+        self.assertFalse(list((self.root/'artifacts/system/installed').iterdir()))
+        self.assertTrue(self.archive.exists() and self.component_archive.exists())
+        self.assertTrue(self.install(verify=True)['changed'])
+
+    def test_changed_private_modes_are_synced_before_import_promotion(self):
+        with mock.patch.object(system,'_sync_file',wraps=system._sync_file) as sync:
+            self.install()
+        self.assertTrue(any(c.args[0].name == 'private.conf' for c in sync.call_args_list))
+        private=system.object_path(self.root,self.component['id'])/'payload/private.conf'
+        self.assertEqual(private.stat().st_mode & 0o777,0o400)
+
     def test_install_noop_and_status_retain_exact_inputs_without_running_package_code(self):
         (self.root / 'state/etc').mkdir(parents=True);(self.root / 'state/etc/keep').write_bytes(b'local configuration\n')
         (self.root / 'state/var').mkdir();(self.root / 'state/var/keep').write_bytes(b'persistent state\n')

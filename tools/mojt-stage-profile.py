@@ -53,7 +53,7 @@ class Timings:
             self.sequence+=1
             frame=dict(id=self.sequence,parent=self.stack[-1]['id'] if self.stack else None,
                        name=key,children=[0,0,0])
-            if phase:print('Stage profile: '+key+'...',file=sys.stderr,flush=True)
+            if phase:print(getattr(self,'caption','Stage profile')+': '+key+'...',file=sys.stderr,flush=True)
             self.stack.append(frame);start=clock();ok=False;result=None
             try:
                 result=original(*args,**kwargs);ok=True
@@ -73,7 +73,7 @@ class Timings:
                 if phase:
                     self.phases.append(dict(id=frame['id'],parent=frame['parent'],
                         caller=self.stack[-1]['name'] if self.stack else None,name=key,ok=ok,**metrics))
-                    print('Stage profile: %.3f s wall / %.3f s CPU  %s%s' %
+                    print((getattr(self,'caption','Stage profile')+': %.3f s wall / %.3f s CPU  %s%s') %
                           (elapsed[0]/1e9,(elapsed[1]+elapsed[2])/1e9,key,'' if ok else ' FAILED'),file=sys.stderr,flush=True)
                 if tree:
                     detail=dict(parent=frame['parent'],caller=self.stack[-1]['name'] if self.stack else None,

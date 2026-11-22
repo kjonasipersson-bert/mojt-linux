@@ -31,6 +31,21 @@ preserve upstream licenses.
 - Run checks appropriate to the change. Distinguish local, CI, VM and physical
   machine results; never claim to have run commands on the owner's machine.
 
+## Bulk I/O and durability
+
+- Distinguish disposable scratch copies from content that must survive a crash.
+  Identify the final durable representation and commit/publication point before
+  adding `fsync` to a bulk file loop; document why each flush is required.
+- Prefer promoting already synced private trees on the same filesystem over
+  copying and syncing the same bytes again. Sync changed parent directories;
+  retain a durable copy fallback for cross-filesystem workspaces.
+- Preserve archive validation, required file/metadata durability, locking, atomic
+  publication and post-publication uncertainty. Do not disable syncs globally,
+  assume directory sync flushes file data, or share mutable release inodes.
+- Test with many small files as well as large content. Measure copy bytes,
+  file/directory sync counts and complete operation time, and report nested
+  timings without double counting. Include interruption/retry and fallback tests.
+
 ## Documentation is a current interface contract
 
 - The Handbook, README, architecture and operational/reference documentation

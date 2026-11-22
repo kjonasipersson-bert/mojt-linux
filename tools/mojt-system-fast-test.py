@@ -72,7 +72,7 @@ def specification(body, version, provenance):
         version=version, provenance=dict(body['provenance'], activation_test=provenance))
 
 
-def package(root, baseline, downloads, output, *, label=LABEL, revision=1):
+def package(root, baseline, downloads, output, *, label=LABEL, revision=1, expected_files=None, source_revision=REVISION):
     """Copy and verify owned component bytes, never copy/evaluate the Nix store."""
     import mojt_artifact as artifact
     import mpm_base as base
@@ -82,7 +82,8 @@ def package(root, baseline, downloads, output, *, label=LABEL, revision=1):
     import mpm_system_transition as transition
     import mpm_transaction as tx
     import mojt_system_manifest as manifests
-    require(set(downloads) == set(FILES) and all(hashlib.sha256(v).hexdigest() == FILES[k]
+    files=FILES if expected_files is None else expected_files
+    require(set(downloads) == set(files) and all(hashlib.sha256(v).hexdigest() == files[k]
             for k,v in downloads.items()), 'delivery inputs differ from pinned data')
     body, unused = system.object_record(root, baseline)
     comp, actions = system.composition(system.object_path(root, baseline), body)
@@ -101,7 +102,7 @@ def package(root, baseline, downloads, output, *, label=LABEL, revision=1):
     version = {k:body['version'][k] for k in ('upstream', 'scheme', 'revision')}
     require(type(version['revision']) is int, 'delivery requires a numeric System package revision')
     version['revision'] += revision
-    provenance = dict(source_revision=REVISION, files=FILES, baseline=baseline,
+    provenance = dict(source_revision=source_revision, files=files, baseline=baseline,
         baseline_component=old_ref['artifact'], bridge_sha256=artifact.file_sha(__file__))
     with tempfile.TemporaryDirectory(prefix='.package-', dir=output.parent) as temporary:
         work = Path(temporary); content = work / 'content'
