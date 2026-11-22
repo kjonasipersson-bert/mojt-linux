@@ -268,7 +268,7 @@ def build_disk(disk, tree, work, size_mib, root_uuid, system, base, console="ser
     return {**parts, "root_uuid": root_uuid, "efi_loader_sha256": digest(loader)}
 
 
-def run_script(network=False, local_console=False):
+def run_script(network=False, local_console=False, hardware_profile=None):
     script = '''#!/usr/bin/env bash
 # Mojt Linux
 # Copyright (C) 2026 Jonas Persson
@@ -305,4 +305,6 @@ exec qemu-system-x86_64''')
         script = script.replace('-drive "file=$here/disk.img,if=virtio,format=raw"', '"${disk_args[@]}"')
         script = script.replace('-display none', '-vga std -display "${QEMU_DISPLAY:-gtk}"')
         script = script.replace('user,model=virtio-net-pci', 'user,model=e1000e')
+        if hardware_profile == 'pc-x86_64':
+            script = script.replace("    *) echo 'QEMU_DISK_BUS must be sata or usb'", "    nvme) disk_args+=(-device nvme,drive=mojt,serial=mojt-test,bootindex=1) ;;\n    *) echo 'QEMU_DISK_BUS must be sata, usb or nvme'")
     return script

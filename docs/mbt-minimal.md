@@ -200,6 +200,17 @@ rebuild of Base, the Kernel or third-party System packages. A resulting builder
 can separately acquire a private compiler environment, build/package a Kernel,
 and install/activate it with MPM.
 
+### Generic PC image profile
+
+`--hardware-profile pc-x86_64 --firmware-root EXTRACTED_FIRMWARE_ROOT` uses
+UEFI/local password login, includes NVMe and VirtIO SCSI alongside SATA/USB early
+drivers, and probes runtime devices through standard udev rules. It requires the
+broader fixed firmware/license set described in the Handbook's
+[hardware chapter](../doc/handbook/part-iii/hardware.md). Firmware remains part of
+System; the selected Kernel retains its complete module tree. This is a separate
+machine policy from the legacy ThinkPad profile, not an automatic migration of
+an existing selection. Its image launcher also accepts `QEMU_DISK_BUS=nvme`.
+
 ### ThinkPad image profile
 
 `--hardware-profile thinkpad-x1-carbon-3 --firmware-root EXTRACTED_FIRMWARE_ROOT`
@@ -229,9 +240,11 @@ mix it with the VM profile. MPM updates preserve that machine policy; each new
 Kernel construction resolves both early and runtime driver dependencies. Normal
 boot checks paths and small hardware metadata without scanning firmware content.
 Firmware is covered by the System content proof for explicit full verification.
-Its mount remains until the existing static exitrd teardown. General service or
-firmware changes through System upgrade still need a supported transition policy;
-the unchanged-startup gate is not bypassed by this profile.
+Its mount remains until the existing static exitrd teardown. Firmware data has
+a bounded transition policy that retains machine policy and ordinary services,
+and may add the fixed conditional QEMU guest-agent service. See the
+[hardware chapter](../doc/handbook/part-iii/hardware.md#85-updating-firmware-in-an-existing-system).
+Other service/profile changes still require a supported transition contract.
 
 The local-console launcher offers SATA or USB emulation via `QEMU_DISK_BUS`.
 Use `QEMU_MEMORY_MIB=4096 QEMU_CPUS=8` for a builder VM instead of editing its

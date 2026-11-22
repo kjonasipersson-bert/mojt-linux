@@ -154,7 +154,7 @@ def check(root, source, trees, value, *, provider_roots=None, cache=None, verify
     profile = inventory.path(root,'realizations/system/'+i['system']['artifact'][7:]+'/profile')
     candidate = manifests.validate(base.read(profile/'manifest.json'))
     require(candidate['id'] == i['system']['manifest'],'handover System manifest differs')
-    review = transition.tooling_review(d['baseline_manifest'],candidate)
+    review = transition.profile_review(d['baseline_manifest'],candidate,profile)
     require(review == d['preflight']['description']['checks']['startup'] and review['description']['compatible'],'startup review changed')
     persistent = common.state_inputs(root)
     facts = dict(format=manifests.CONTEXT,**d['base_facts'],ports=persistent['ports'],required_system_paths=persistent['system_shells'])
@@ -176,8 +176,8 @@ def check(root, source, trees, value, *, provider_roots=None, cache=None, verify
         point = paths.virtual_file(tree,'/'+name)
         require(point.is_dir() and not any(point.iterdir()),'boot mountpoint must be an empty directory: '+name)
     firmware = None
-    if i['boot']['profile'] == model.HARDWARE_PROFILE:
-        firmware = hardware.native_firmware(profile)
+    if i['boot']['profile'] in model.HARDWARE_PROFILES:
+        firmware = hardware.native_firmware(profile,i['boot']['profile'])
         point = paths.virtual_file(tree,'/lib/firmware')
         require(point.is_dir() and not any(point.iterdir()),'boot firmware mountpoint must be empty')
     else:require(not (profile/'hardware.json').exists(),'hardware System requires its native boot profile')

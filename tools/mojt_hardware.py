@@ -1,7 +1,7 @@
 # Mojt Linux
 # Copyright (C) 2026 Jonas Persson
 # SPDX-License-Identifier: GPL-2.0-only
-"""One explicit hardware profile; staged only into a fresh image, never the host."""
+"""Explicit PC hardware inputs; staged only into a fresh image, never the host."""
 
 import json
 import os
@@ -11,6 +11,8 @@ import stat
 
 
 PROFILE = "thinkpad-x1-carbon-3"
+PC_PROFILE = "pc-x86_64"
+PROFILES = (PROFILE, PC_PROFILE)
 # Dependency closure is resolved by the builder's host kmod. No GPU/Wi-Fi
 # probing before the System firmware and complete module tree are mounted.
 EARLY_MODULES = ("virtio_pci", "virtio_blk", "ahci", "xhci_pci", "ehci_pci",
@@ -18,6 +20,42 @@ EARLY_MODULES = ("virtio_pci", "virtio_blk", "ahci", "xhci_pci", "ehci_pci",
                  "hid_generic", "usbhid")
 RUNTIME_MODULES = ("i915", "e1000e", "iwlwifi", "iwlmvm")
 LICENSE_PACKAGES = ("firmware-iwlwifi", "firmware-intel-graphics", "wireless-regdb")
+PC_EARLY_MODULES = EARLY_MODULES + ("nvme", "virtio_scsi")
+PC_FIRMWARE = {
+    "firmware-iwlwifi": "iwlwifi-*.ucode*",
+    "firmware-intel-graphics": "i915/**/*",
+    "firmware-amd-graphics": "amdgpu/**/*",
+    "firmware-realtek": "rtl_nic/**/*",
+    "firmware-atheros": "ath10k/**/*",
+    "firmware-mediatek": "mediatek/**/*",
+    "firmware-brcm80211": "brcm/**/*",
+}
+
+
+def early_modules(profile):
+    if profile not in PROFILES:raise ValueError("unsupported hardware profile")
+    return PC_EARLY_MODULES if profile == PC_PROFILE else EARLY_MODULES
+
+
+def runtime_modules(profile):
+    early_modules(profile)
+    return () if profile == PC_PROFILE else RUNTIME_MODULES
+
+
+def license_packages(profile):
+    early_modules(profile)
+    return tuple(PC_FIRMWARE) + ("wireless-regdb",) if profile == PC_PROFILE else LICENSE_PACKAGES
+
+
+def boot_profile(profile):
+    early_modules(profile)
+    return profile + "-v1"
+
+
+def profile_for_boot(value):
+    for profile in PROFILES:
+        if value == boot_profile(profile):return profile
+    raise ValueError("unsupported hardware boot profile")
 
 
 def checked_tree(root, ignore=()):
@@ -42,7 +80,7 @@ def checked_tree(root, ignore=()):
     return root
 
 
-def firmware_inputs(root):
+def firmware_inputs(root, profile=PROFILE):
     """Read an extracted Debian firmware root, retaining the upstream copyright files."""
     if root is None:
         raise ValueError("hardware profile requires --firmware-root (extracted Debian firmware packages)")
@@ -52,24 +90,28 @@ def firmware_inputs(root):
     if firmware is None:
         raise ValueError("firmware root has no usr/lib/firmware or lib/firmware")
     checked_tree(firmware)
-    if not list(firmware.glob("iwlwifi-7265*.ucode*")):
+    if profile == PROFILE and not list(firmware.glob("iwlwifi-7265*.ucode*")):
         raise ValueError("firmware root lacks Intel 7265 firmware")
+    if profile == PC_PROFILE:
+        for package, pattern in PC_FIRMWARE.items():
+            if not any(p.is_file() for p in firmware.glob(pattern)):
+                raise ValueError("firmware root lacks payload for " + package)
     docs = root / "usr/share/doc"
     for name in ("regulatory.db", "regulatory.db.p7s"):
         if not (firmware / name).is_file() and not (firmware / (name + "-debian")).is_file():
             raise ValueError(f"firmware root lacks signed Wi-Fi regulatory database: {name}")
-    for package in LICENSE_PACKAGES:
+    for package in license_packages(profile):
         checked_tree(docs / package)
         if not (docs / package / "copyright").is_file():
             raise ValueError(f"firmware root lacks upstream license: {package}/copyright")
     return firmware, docs
 
 
-def input_identity(root, release, support):
-    firmware, docs = firmware_inputs(root)
+def input_identity(root, release, support, profile=PROFILE):
+    firmware, docs = firmware_inputs(root, profile)
     trees = {'firmware':support.tree_hash(firmware)}
-    for name in (*LICENSE_PACKAGES, 'linux-image-' + release):
-        if name in LICENSE_PACKAGES or (docs/name).is_dir():
+    for name in (*license_packages(profile), 'linux-image-' + release):
+        if name in license_packages(profile) or (docs/name).is_dir():
             checked_tree(docs/name);trees[name] = support.tree_hash(docs/name)
     provenance = {}
     for name in ('packages.txt','SHA256SUMS'):
@@ -80,43 +122,46 @@ def input_identity(root, release, support):
     return dict(trees=trees,provenance=provenance)
 
 
-def freeze_inputs(root, destination, release, support, expected):
+def freeze_inputs(root, destination, release, support, expected, profile=PROFILE):
     """Copy only profile firmware/licenses; Kernel bytes come from its artifact."""
-    if input_identity(root,release,support) != expected:raise ValueError('hardware inputs changed after preview')
-    firmware,docs = firmware_inputs(root)
+    if input_identity(root,release,support,profile) != expected:raise ValueError('hardware inputs changed after preview')
+    firmware,docs = firmware_inputs(root,profile)
     (destination/'usr/lib').mkdir(parents=True)
     shutil.copytree(firmware,destination/'usr/lib/firmware',symlinks=True)
     for name in expected['trees']:
         if name != 'firmware':shutil.copytree(docs/name,destination/'usr/share/doc'/name,symlinks=True)
     for name in expected['provenance']:shutil.copyfile(root/name,destination/name)
-    if input_identity(root,release,support) != expected or input_identity(destination,release,support) != expected:
+    if input_identity(root,release,support,profile) != expected or input_identity(destination,release,support,profile) != expected:
         raise ValueError('hardware input copy differs')
 
 
-def native_firmware(profile):
+def native_firmware(profile, expected_boot_profile=None):
     """Bounded path/metadata check; full bytes are covered by the System proof."""
     point = profile/'hardware.json'
     if point.is_symlink() or not point.is_file() or point.stat().st_size > 65536:
         raise ValueError('missing/bounded native hardware declaration required')
     row = json.loads(point.read_bytes())
+    name = row.get('profile') if type(row) is dict else None
     fields = {'format','profile','kernel_release','modules_tree_sha256','firmware_tree_sha256','licenses_tree_sha256',
               'early_modules','runtime_modules','modules_location'}
-    if (type(row) is not dict or set(row) != fields or row.get('format') != 2 or row.get('profile') != PROFILE
+    if (type(row) is not dict or set(row) != fields or row.get('format') != 2 or name not in PROFILES
             or row.get('modules_location') != 'native-kernel'
-            or row.get('early_modules') != list(EARLY_MODULES) or row.get('runtime_modules') != list(RUNTIME_MODULES)):
+            or row.get('early_modules') != list(early_modules(name)) or row.get('runtime_modules') != list(runtime_modules(name))):
         raise ValueError('native hardware declaration differs')
+    if expected_boot_profile is not None and boot_profile(name) != expected_boot_profile:
+        raise ValueError('System hardware differs from bound boot profile')
     firmware = profile/'kernel/lib/firmware'
     if firmware.is_symlink() or not firmware.is_dir():raise ValueError('missing native System firmware')
-    for package in LICENSE_PACKAGES:
+    for package in license_packages(name):
         point = profile/'kernel/licenses'/package/'copyright'
         if point.is_symlink() or not point.is_file():raise ValueError('missing native firmware license: '+package)
     return firmware
 
 
-def stage(tree, system, modules_dir, release, firmware_root, support, *, native_kernel=False):
+def stage(tree, system, modules_dir, release, firmware_root, support, *, native_kernel=False, hardware_profile=PROFILE):
     """Retain complete versioned modules, firmware, licenses and transfer hashes."""
     modules = checked_tree(modules_dir, ignore=("build", "source"))
-    firmware, docs = firmware_inputs(firmware_root)
+    firmware, docs = firmware_inputs(firmware_root, hardware_profile)
     profile = tree / "system" / system
     kernel = profile / "kernel"
     destination = kernel / "lib/modules" / release
@@ -131,7 +176,7 @@ def stage(tree, system, modules_dir, release, firmware_root, support, *, native_
         dest = kernel / "lib/firmware" / name
         if not dest.exists():
             shutil.copy2(firmware / (name + "-debian"), dest)
-    for package in LICENSE_PACKAGES:
+    for package in license_packages(hardware_profile):
         shutil.copytree(docs / package, kernel / "licenses" / package, symlinks=True)
     kernel_docs = docs / ("linux-image-" + release)
     if kernel_docs.is_dir():
@@ -151,25 +196,30 @@ def stage(tree, system, modules_dir, release, firmware_root, support, *, native_
         if point.is_symlink() or (point.exists() and (not point.is_dir() or any(point.iterdir()))):
             raise ValueError(f"conflicting Base /lib/{name} mountpoint")
         point.mkdir(parents=True, exist_ok=True)
-    # Explicit known devices first; udev can load additional drivers from the same tree.
+    # PC devices are probed only after System firmware and modules are mounted.
+    drivers = ("udevadm trigger --action=add --type=subsystems --settle\n"
+               "udevadm trigger --action=add --type=devices --settle\n"
+               if hardware_profile == PC_PROFILE else
+               "".join("modprobe " + name + "\n" for name in runtime_modules(hardware_profile)))
     support.write(profile / "load-hardware", "#!/bin/sh\nset -eu\n"
                   ". /run/mojt-system/environment\n" +
-                  "".join("modprobe " + name + "\n" for name in RUNTIME_MODULES) +
+                  drivers +
                   "# Keep kernel logs in the ring buffer/journal; only critical messages on the login console.\n"
                   "printf '3\\n' >/proc/sys/kernel/printk\n", 0o755)
     support.write(profile / "units/mojt-hardware.service", support.unit(
         "Mojt hardware drivers", "/run/mojt-system/load-hardware",
         "Type=oneshot\nRemainAfterExit=yes",
-        "Requires=mojt-setup.service\nAfter=mojt-setup.service\n"
+        ("Requires=mojt-setup.service systemd-udevd.service\nAfter=mojt-setup.service systemd-udevd.service\n"
+         if hardware_profile == PC_PROFILE else "Requires=mojt-setup.service\nAfter=mojt-setup.service\n") +
         "Before=NetworkManager.service mojt-console.service\n"))
     wants = profile / "units/mojt.target.wants"
     wants.mkdir(exist_ok=True)
     (wants / "mojt-hardware.service").symlink_to("../mojt-hardware.service")
-    metadata = dict(format=2 if native_kernel else 1, profile=PROFILE, kernel_release=release,
+    metadata = dict(format=2 if native_kernel else 1, profile=hardware_profile, kernel_release=release,
                     modules_tree_sha256=support.tree_hash(modules if native_kernel else destination),
                     firmware_tree_sha256=support.tree_hash(kernel / "lib/firmware"),
                     licenses_tree_sha256=support.tree_hash(kernel / "licenses"),
-                    early_modules=list(EARLY_MODULES), runtime_modules=list(RUNTIME_MODULES))
+                    early_modules=list(early_modules(hardware_profile)), runtime_modules=list(runtime_modules(hardware_profile)))
     if native_kernel:metadata['modules_location'] = 'native-kernel'
     support.write(profile / "hardware.json", json.dumps(metadata, indent=2) + "\n")
     return metadata

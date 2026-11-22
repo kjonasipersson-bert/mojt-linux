@@ -86,11 +86,11 @@ def preview(args):
     require(payload_record["step"] >= 6, "native image requires System step 6+ kmod integration")
     physical = getattr(args,'hardware_profile',None)
     firmware = getattr(args,'firmware_root',None)
-    require(physical in (None,hardware.PROFILE),'unsupported hardware profile')
+    require(physical in (None,*hardware.PROFILES),'unsupported hardware profile')
     require(not firmware or physical,'--firmware-root requires --hardware-profile')
     require(not physical or args.login_mode == 'password','hardware profile requires password login')
     if firmware is not None:require(firmware.absolute() == firmware.resolve(),'firmware root must not traverse symlinks')
-    hardware_record = hardware.input_identity(firmware,candidate['metadata']['kernel_release'],system) if physical else None
+    hardware_record = hardware.input_identity(firmware,candidate['metadata']['kernel_release'],system,physical) if physical else None
     boot.generation(args.system_generation)
     output = Path(os.path.abspath(args.output))
     require(output == output.resolve() and not os.path.lexists(output), "output must be a new nonsymlink directory")
@@ -455,7 +455,7 @@ def _build(args, vm=None, *, finalize_tree=None, preflight=None,
         firmware_root = None
         if evidence['hardware'] is not None:
             firmware_root = work/'firmware'
-            hardware.freeze_inputs(args.firmware_root,firmware_root,copied['metadata']['kernel_release'],system,evidence['hardware'])
+            hardware.freeze_inputs(args.firmware_root,firmware_root,copied['metadata']['kernel_release'],system,evidence['hardware'],args.hardware_profile)
         base = evidence["base"]["version"]["upstream"]
         context = dict(evidence, registry=str(registry), payload=str(obj / "payload"),
             source_kernel_installation_digest=evidence["kernel_installation_digest"],
@@ -531,7 +531,7 @@ def parser(prog=None, *, mounted=False):
     parser.add_argument("--disk-size-mib", type=int, default=8192)
     parser.add_argument("--login-mode", choices=("password", "development"), default="password")
     parser.add_argument('--with-build-tools',action='store_true',help='include experimental MBT entrypoints in the new System')
-    parser.add_argument('--hardware-profile',choices=(hardware.PROFILE,),help='native-v2 local-console hardware profile; use mbt bootstrap')
+    parser.add_argument('--hardware-profile',choices=hardware.PROFILES,help='native-v2 local-console hardware profile; use mbt bootstrap')
     parser.add_argument('--firmware-root',type=Path,help='extracted firmware and upstream licenses for the hardware profile')
     parser.add_argument("--dry-run", action="store_true")
     return parser

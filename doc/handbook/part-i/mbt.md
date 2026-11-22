@@ -219,8 +219,9 @@ or format a device. Both are new-target operations. Updating an existing Mojt
 installation belongs to MPM.
 
 Bootstrap currently assembles prebuilt inputs; it does not rebuild Base and all
-third-party System packages from source. Detailed input preparation, hardware
-profile limits and mounted-target requirements remain in the technical guides.
+third-party System packages from source. See the [hardware chapter](../part-iii/hardware.md)
+for the PC and retained ThinkPad profiles and firmware inputs. Detailed input
+preparation and mounted-target requirements remain in the technical guides.
 
 ## 4.7. Further reading
 

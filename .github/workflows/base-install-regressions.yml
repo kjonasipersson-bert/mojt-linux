@@ -42,6 +42,8 @@ jobs:
           sudo env PYTHONPATH=tests python3 -B -m unittest test_mojt_sshd test_openssh_setup test_kernel_ssh_delivery -v
       - name: Check fixed Ports repair as a new native System generation
         run: sudo env PYTHONPATH=tests python3 -B -m unittest -v test_system_ports_repair test_system_activation_test test_system_fast_test
+      - name: Check retained firmware generations and the bounded QEMU guest service
+        run: sudo env PYTHONPATH=tests python3 -B -m unittest test_system_firmware -v
       - name: Check owner-authorized native acquisition and verified cache
         run: |
           python3 -B -m unittest discover -s tests -p 'test_kernel_image_origin.py' -v
@@ -210,7 +212,7 @@ jobs:
             -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install --no-install-recommends -y \
             "$kernel_package" "$modules_package" build-essential systemd e2fsprogs \
             busybox-static cpio kmod zstd grub-common grub-efi-amd64-bin \
-            fdisk dosfstools mtools ovmf qemu-system-x86 qemu-utils
+            fdisk dosfstools mtools ovmf qemu-system-x86 qemu-utils qemu-guest-agent
           printf 'MOJT_CI_KERNEL_PACKAGE=%s\n' "$kernel_package" >>"$GITHUB_ENV"
       - name: Boot the hardware profile with SATA and USB disks
         run: |
@@ -244,6 +246,18 @@ jobs:
             --kernel "$kernel" --modules-dir "/lib/modules/$release" \
             --hardware-profile thinkpad-x1-carbon-3 --disk-bus usb --generations --serial-login \
             --output "$RUNNER_TEMP/mojt-hardware-serial"
+          sudo python3 tests/run-uefi-smoke.py \
+            --kernel "$kernel" --modules-dir "/lib/modules/$release" \
+            --hardware-profile pc-x86_64 --disk-bus nvme --switch-bus usb \
+            --output "$RUNNER_TEMP/mojt-hardware-pc-nvme-to-usb"
+      - name: Probe ordinary QEMU guest agent over VirtIO serial
+        run: |
+          kernel="$(dpkg-query -L "$MOJT_CI_KERNEL_PACKAGE" |
+            sed -n '\|^/boot/vmlinuz-[^/]*-generic$|p')"
+          release="${kernel#/boot/vmlinuz-}"
+          sudo python3 tests/run-qemu-agent-smoke.py \
+            --kernel "$kernel" --modules-dir "/lib/modules/$release" \
+            --output "$RUNNER_TEMP/mojt-hardware-qemu-guest-agent"
       - name: Reproduce mapped-file shutdown failure and verify corrected final unmount
         run: |
           kernel_package="$MOJT_CI_KERNEL_PACKAGE"
@@ -269,7 +283,7 @@ jobs:
 
           os.umask(0o022)
           temporary = Path(sys.argv[1])
-          for scenario in ("sata", "usb", "sata-to-usb", "generations", "serial", "shutdown-legacy", "shutdown-corrected", "initramfs-payload"):
+          for scenario in ("sata", "usb", "sata-to-usb", "generations", "serial", "pc-nvme-to-usb", "qemu-guest-agent", "shutdown-legacy", "shutdown-corrected", "initramfs-payload"):
               source = temporary / ("mojt-hardware-" + scenario)
               if not source.is_dir():
                   continue

@@ -4,7 +4,9 @@
 """Read-only exact System transition planning and bounded unchanged-startup review."""
 import copy
 import hashlib
+import json
 import os
+import posixpath
 import stat
 import tomllib
 
@@ -24,6 +26,28 @@ FORMAT = 'mojt-system-transition-preflight-v1'
 NATIVE_FORMAT = 'mojt-system-transition-preflight-v2'
 BOOT_FORMAT = 'mojt-boot-transition-preflight-v1'
 REVIEW = 'mojt-system-startup-review-v1'
+FIRMWARE_REVIEW = 'mojt-system-startup-review-v2'
+FIRMWARE_FORMAT = 'mojt-system-firmware-data-v1'
+FIRMWARE_PROOF = 'firmware-update.json'
+QEMU_AGENT_UNIT = '''[Unit]
+Description=QEMU Guest Agent
+After=mojt-hardware.service systemd-udev-trigger.service
+
+[Service]
+Type=simple
+Environment=QGA_CONF=/etc/qemu/qemu-ga.conf
+Environment=PATH=/run/mojt-system/bin:/usr/sbin:/usr/bin:/sbin:/bin
+RuntimeDirectory=qemu-guest-agent
+ExecCondition=/run/mojt-system/bin/udevadm trigger --action=add --settle --subsystem-match=virtio
+ExecCondition=/run/mojt-system/bin/udevadm trigger --action=add --settle --subsystem-match=virtio-ports
+ExecCondition=/run/mojt-system/busybox test -e /dev/virtio-ports/org.qemu.guest_agent.0
+ExecStart=/run/mojt-system/bin/qemu-ga --method=virtio-serial --path=/dev/virtio-ports/org.qemu.guest_agent.0 --statedir=/run/qemu-guest-agent --pidfile=/run/qemu-guest-agent/qemu-ga.pid
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=mojt.target
+'''
 require = base.require
 
 
@@ -34,12 +58,101 @@ def normalized(row):
     return dict(row, mode=row['mode'] & ~0o222)
 
 
-def tooling_review(selected, candidate):
+def firmware_inventory(profile):
+    """Firmware data and its attributions, not Kernel modules or service code."""
+    return {p:normalized(r) for p,r in profile.items()
+            if p == 'kernel/lib/firmware' or p.startswith('kernel/lib/firmware/')
+            or p == 'kernel/licenses' or p.startswith('kernel/licenses/')}
+
+
+def firmware_review(selected, candidate, proof):
+    """A bounded data-only exception; the selected machine/startup policy stays exact."""
+    artifact.fields(proof, ('format','baseline','hardware_before','hardware_after',
+                            'inventory_before','inventory_after','source'))
+    require(proof['format'] == FIRMWARE_FORMAT and proof['baseline'] == selected['id'],
+            'firmware review does not bind the selected System manifest')
+    require(type(proof['source']) is dict and proof['source'], 'firmware source provenance required')
+    before=selected['description']['profile'];after=candidate['description']['profile']
+    hardware=[]
+    for profile,key in ((before,'hardware_before'),(after,'hardware_after')):
+        raw=proof[key]
+        require(type(raw) is str and len(raw.encode()) <= 65536, 'bounded hardware evidence required')
+        row=normalized(profile.get('hardware.json',{}))
+        require(row.get('sha256') == hashlib.sha256(raw.encode()).hexdigest() and not row['mode'] & 0o111,
+                'firmware hardware evidence differs from profile')
+        value=artifact.parse_json(raw.encode())
+        require(type(value) is dict and value.get('format') == 2 and value.get('modules_location') == 'native-kernel',
+                'firmware update needs native Kernel hardware metadata')
+        hardware.append(value)
+    mutable={'firmware_tree_sha256','licenses_tree_sha256'}
+    require(all(mutable <= set(row) for row in hardware) and
+            {k:v for k,v in hardware[0].items() if k not in mutable} ==
+            {k:v for k,v in hardware[1].items() if k not in mutable},
+            'firmware update changes hardware/Kernel/module startup policy')
+    for row in hardware:
+        for key in mutable:
+            require(type(row[key]) is str and len(row[key]) == 64 and all(c in '0123456789abcdef' for c in row[key]),
+                    'invalid firmware tree provenance hash')
+    inventories=(firmware_inventory(before),firmware_inventory(after))
+    require(all(artifact.digest(rows) == proof[key] for rows,key in zip(inventories,('inventory_before','inventory_after'))),
+            'firmware inventory proof differs')
+    changed={p for p in set(inventories[0])|set(inventories[1]) if inventories[0].get(p) != inventories[1].get(p)}
+    require(changed,'firmware update has no data changes')
+    for path in changed:
+        if path.startswith('kernel/licenses/'):
+            package=path.split('/')[2]
+            import mojt_hardware as hardware_model
+            require(package in (*hardware_model.license_packages(hardware_model.PC_PROFILE),'linux-firmware'),
+                    'firmware update changes unrelated Kernel licenses')
+    for path,row in inventories[1].items():
+        if 'sha256' in row:require(not row['mode'] & 0o111,'executable firmware/license data refused')
+        if 'link' in row:
+            target=posixpath.normpath(posixpath.join(posixpath.dirname(path),row['link']))
+            boundary='kernel/lib/firmware/' if path.startswith('kernel/lib/firmware/') else 'kernel/licenses/'
+            require(not row['link'].startswith('/') and target.startswith(boundary) and target in inventories[1],
+                    'firmware/license link escapes its data tree')
+    for name in ('regulatory.db','regulatory.db.p7s'):
+        require('sha256' in after.get('kernel/lib/firmware/'+name,{}),'firmware update lacks regulatory data/signature')
+    # One of the supported input layouts must retain its complete attributions.
+    import mojt_hardware as hardware_model
+    debian=all('sha256' in after.get('kernel/licenses/'+p+'/copyright',{})
+               for p in hardware_model.license_packages(hardware_model.PC_PROFILE))
+    upstream=('sha256' in after.get('kernel/licenses/linux-firmware/WHENCE',{}) and
+              any(p.startswith('kernel/licenses/linux-firmware/') and
+                  (p.startswith('kernel/licenses/linux-firmware/LICENSES/') or p.rsplit('/',1)[-1].startswith(('LICENSE','LICENCE','COPYING')))
+                  and 'sha256' in r for p,r in after.items()))
+    require(debian or upstream,'firmware update lacks complete input licenses')
+    allowed=changed | {'hardware.json',FIRMWARE_PROOF}
+    unit='units/qemu-guest-agent.service';wanted='units/mojt.target.wants/qemu-guest-agent.service'
+    if before.get(unit) != after.get(unit) or before.get(wanted) != after.get(wanted):
+        require(unit not in before and wanted not in before and
+                normalized(after.get(unit,{})) == dict(sha256=hashlib.sha256(QEMU_AGENT_UNIT.encode()).hexdigest(),mode=0o444)
+                and after.get(wanted) == dict(link='../qemu-guest-agent.service')
+                and 'link' in after.get('bin/qemu-ga',{}), 'unsupported QEMU guest service transition')
+        allowed.update((unit,wanted))
+    return allowed
+
+
+def profile_review(selected, candidate, profile):
+    """Read only the small, inventoried contract when firmware data actually changes."""
+    before=selected['description']['profile'];after=candidate['description']['profile']
+    needed=(firmware_inventory(before) != firmware_inventory(after) or before.get(FIRMWARE_PROOF) != after.get(FIRMWARE_PROOF))
+    proof=None
+    if needed and FIRMWARE_PROOF in after:
+        raw=common.checked_bytes(profile/FIRMWARE_PROOF)
+        require(len(raw) <= 65536 and after[FIRMWARE_PROOF].get('sha256') == hashlib.sha256(raw).hexdigest(),
+                'firmware contract differs from profile')
+        proof=artifact.parse_json(raw)
+    return tooling_review(selected,candidate,firmware=proof)
+
+
+def tooling_review(selected, candidate, *, firmware=None):
     """Allow management tooling changes; do not infer service/schema migrations."""
     old = manifests.validate(selected)['description'];new = manifests.validate(candidate)['description']
     before = {p:normalized(r) for p,r in old['profile'].items() if p != management.FILENAME}
     after = {p:normalized(r) for p,r in new['profile'].items() if p != management.FILENAME}
     changed = sorted(p for p in set(before) | set(after) if before.get(p) != after.get(p))
+    firmware_paths=firmware_review(selected,candidate,firmware) if firmware is not None else set()
     blocked = []
     for path in changed:
         allowed = (path.startswith(('tools/', 'tests/')) or path in ('tools', 'tests', 'bin/mpm', 'bin/man', 'bin/manpath', 'bin/mojt-system-inspect', 'bin/mbt', 'share/man/man1/mpm.1',
@@ -49,16 +162,28 @@ def tooling_review(selected, candidate):
                    or path in ('share/mbt','man','manifests') and all(row is None or row.get('directory') is True for row in (before.get(path),after.get(path))))
         if path == 'version':
             allowed = after.get(path, {}).get('sha256') == hashlib.sha256((new['label'] + '\n').encode()).hexdigest()
-        if not allowed:blocked.append(path)
+        if not allowed and path not in firmware_paths:blocked.append(path)
     previous_outputs = sorted({r['link'] for r in before.values() if r.get('link') in
         ('/run/mojt-privileged/passwd', '/run/mojt-privileged/sudo')})
     outputs = new['provenance'].get('runtime_outputs', [])
     if outputs != previous_outputs:blocked.append('runtime-output-contract')
     stable = {p:r for p,r in before.items() if p not in changed}
-    return base.record(REVIEW, dict(policy='unchanged-startup-only-v1', selected=selected['id'], candidate=candidate['id'],
+    policy=('firmware-data-and-guest-agent-v1' if firmware is not None and 'units/qemu-guest-agent.service' in firmware_paths
+            else 'firmware-data-only-v1' if firmware is not None else 'unchanged-startup-only-v1')
+    description=dict(policy=policy, selected=selected['id'], candidate=candidate['id'],
         changed=changed, blockers=sorted(blocked), preserved_inventory=artifact.digest(stable),
         runtime_outputs=outputs, compatible=not blocked, effects=False,
-        limitation='No service upgrade, new initializer, state-schema migration or runtime health is authorized.'))
+        limitation=('Firmware data and the fixed optional QEMU guest service only; no other service or state-schema migration.'
+                    if firmware is not None else 'No service upgrade, new initializer, state-schema migration or runtime health is authorized.'))
+    if firmware is not None:
+        data_paths=set(firmware_inventory(before)) | set(firmware_inventory(after))
+        data_changes=[p for p in changed if p in data_paths]
+        description['changed']=[p for p in changed if p not in data_paths]
+        # Complete inventories remain bound by the manifests/proof. Boot handover
+        # needs their exact change-set identity, not another unbounded path list.
+        description['firmware_changes']=dict(count=len(data_changes),digest=artifact.digest(data_changes),
+            inventory_before=firmware['inventory_before'],inventory_after=firmware['inventory_after'])
+    return base.record(FIRMWARE_REVIEW if firmware is not None else REVIEW,description)
 
 
 def defaults(root, profile):
@@ -227,7 +352,7 @@ def _prepare(root, identifier, baseline, adapters, *, area='system', bounds=None
     upstream = context['kernel']['version']
     require(upstream['scheme'] == 'dotted-v1' and catalog.compare_versions(bounds['kernel_min'], upstream['upstream']) <= 0
             and catalog.compare_versions(upstream['upstream'], bounds['kernel_max']) <= 0, 'preserved Kernel is outside selected Base bounds')
-    reviewed = tooling_review(selected, candidate)
+    reviewed = profile_review(selected, candidate, profile)
     requirements = providers(selected, candidate, refs, adapters,baseline_refs=context.get('provider_references'))
     management_report = management.check_target(root, profile, candidate)
     tree = base.realization_path(root, base_body['id']) / 'tree/rootfs'

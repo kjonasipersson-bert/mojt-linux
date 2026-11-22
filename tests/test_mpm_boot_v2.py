@@ -41,6 +41,22 @@ def bound(source, data=b'opaque constructor output', image_size=10):
 
 
 class Records(unittest.TestCase):
+    def test_generic_pc_policy_is_distinct_from_legacy_hardware_and_requires_local_console(self):
+        d=fixture()['description'];d['boot'].update(console='local',profile=model.PC_PROFILE)
+        pc=bound(record(model.INPUTS,d))
+        legacy=copy.deepcopy(d);legacy['boot']['profile']=model.HARDWARE_PROFILE
+        previous=bound(record(model.INPUTS,legacy))
+        choice=record(model.SELECTION,dict(installation=d['installation'],selected=pc['id'],previous=None,
+            requests=[dict(area=a,state=None) for a in ('base','kernel','system')],
+            entries=[dict(deployment=pc['id'],path=model.slot(pc['id']))]))
+        self.assertEqual(model.parse_menu(model.render(choice,{pc['id']:pc}),{pc['id']:pc}),choice)
+        mixed=copy.deepcopy(choice['description']);mixed['entries'].append(dict(deployment=previous['id'],path=model.slot(previous['id'])))
+        mixed['entries'].sort(key=lambda row:row['deployment'])
+        with self.assertRaisesRegex(ValueError,'mixes machine'):
+            model.render(record(model.SELECTION,mixed),{pc['id']:pc,previous['id']:previous})
+        d['boot']['console']='serial'
+        with self.assertRaisesRegex(ValueError,'boot profile'):model.inputs(record(model.INPUTS,d))
+
     def test_hardware_console_and_machine_profile_are_bound_and_cannot_mix_with_vm_entries(self):
         source=fixture();d=copy.deepcopy(source['description'])
         d['boot'].update(console='local',profile=model.HARDWARE_PROFILE)

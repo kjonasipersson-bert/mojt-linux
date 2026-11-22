@@ -529,7 +529,7 @@ def kernel_release_from_path(path):
 
 
 def module_paths(release, modules_dir, network=False, names=None):
-    """Use kmod on the host for dependency ordering; do not load modules."""
+    """Resolve exact Kernel dependencies without host modprobe.d policy or loading."""
     root = modules_dir.resolve(strict=True)
     if root.name != release or root.parent.name != "modules" or root.parent.parent.name != "lib":
         fail("modules directory must end in lib/modules/<kernel-release>")
@@ -538,7 +538,7 @@ def module_paths(release, modules_dir, network=False, names=None):
     for name in (names if names is not None else
                  ("virtio_pci", "virtio_blk", "ext4") + (("virtio_net",) if network else ())):
         result = subprocess.run(
-            ["modprobe", "--dirname", str(root.parents[2]),
+            ["modprobe", "--config", "/dev/null", "--dirname", str(root.parents[2]),
              "--set-version", release, "--show-depends", name],
             check=True, capture_output=True, text=True,
         )
@@ -546,8 +546,12 @@ def module_paths(release, modules_dir, network=False, names=None):
             words = shlex.split(line)
             if not words or words[0] == "builtin":
                 continue
-            if len(words) != 2 or words[0] != "insmod":
+            if len(words) < 2 or words[0] != "insmod":
                 fail(f"unexpected modprobe dependency instruction: {line!r}")
+            # kmod can also report options from the host Kernel command line.
+            # This plan copies only module files, never those host parameters.
+            if any(not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_.-]*(?:=.*)?', option) for option in words[2:]):
+                fail(f"unexpected modprobe module option: {line!r}")
             path = Path(words[1]).resolve(strict=True)
             if root not in path.parents:
                 fail(f"module outside selected kernel tree: {path}")
@@ -686,7 +690,7 @@ def additional_pairs(entries, *, tree, work, target, first_base, support, args,
         if physical and record["step"] < 6:
             fail("hardware generation needs System step 6")
         modules = module_paths(release, modules_dir, network=record["step"] >= 2,
-                               names=hardware.EARLY_MODULES if physical else None)
+                               names=hardware.early_modules(physical) if physical else None)
         candidate = work / ("generation-" + str(number))
         candidate.mkdir()
         populate_disk_tree(target, base, candidate)
@@ -697,9 +701,9 @@ def additional_pairs(entries, *, tree, work, target, first_base, support, args,
         (candidate / "system" / selected / "assembled-at-utc").write_text(assembled_at + "\n")
         script = support.init_script(INIT)
         if physical:
-            module_paths(release, modules_dir, names=hardware.RUNTIME_MODULES)
+            module_paths(release, modules_dir, names=hardware.runtime_modules(physical))
             hardware.stage(candidate, selected, modules_dir, release,
-                           entry.get("firmware_root", args.firmware_root), support)
+                           entry.get("firmware_root", args.firmware_root), support, hardware_profile=physical)
             script = hardware.init_script(script)
         # Prove the shared account's selected shell is available in each pair.
         if args.login_mode == "password":
@@ -736,12 +740,12 @@ def build(args, *, finalize_tree=None, filesystem_uuid=None, filesystem_writer=N
     uefi = getattr(args, "boot_mode", "direct") == "uefi"
     physical = getattr(args, "hardware_profile", None)
     console = "local" if physical else "serial"
-    if physical and (physical != hardware.PROFILE or not uefi or args.login_mode != "password"):
+    if physical and (physical not in hardware.PROFILES or not uefi or args.login_mode != "password"):
         fail("hardware profile requires UEFI and password login")
     if getattr(args, "firmware_root", None) and not physical:
         fail("--firmware-root requires --hardware-profile")
     if physical:
-        hardware.firmware_inputs(getattr(args, "firmware_root", None))
+        hardware.firmware_inputs(getattr(args, "firmware_root", None),physical)
     if uefi and not getattr(args, "system_payload", None):
         fail("UEFI boot requires --system-payload")
     plan_path = getattr(args, "additional_generations", None)
@@ -840,10 +844,10 @@ def build(args, *, finalize_tree=None, filesystem_uuid=None, filesystem_writer=N
         for name in ("etc", "var", "dev", "proc", "sys"):
             require_directory(generation / name, f"Base /{name}")
         modules = module_paths(release, modules_dir, network=network,
-                               names=hardware.EARLY_MODULES if physical else None)
+                               names=hardware.early_modules(physical) if physical else None)
         if physical:
             # Validate the runtime drivers now, rather than discovering omissions after boot.
-            module_paths(release, modules_dir, names=hardware.RUNTIME_MODULES)
+            module_paths(release, modules_dir, names=hardware.runtime_modules(physical))
         output.parent.mkdir(parents=True, exist_ok=True)
 
         with tempfile.TemporaryDirectory(prefix=".mojt-vm-", dir=output.parent) as temp:
@@ -884,7 +888,7 @@ def build(args, *, finalize_tree=None, filesystem_uuid=None, filesystem_writer=N
                 hardware_record = None
                 if physical:
                     hardware_record = hardware.stage(tree, system_version, modules_dir, release,
-                                                     args.firmware_root, support,native_kernel=native is not None)
+                                                     args.firmware_root, support,native_kernel=native is not None,hardware_profile=physical)
                     if native is None:init_script = hardware.init_script(init_script)
             else:
                 assembled_at = install_system_init(tree, busybox, args.login_mode)
@@ -961,7 +965,7 @@ def build(args, *, finalize_tree=None, filesystem_uuid=None, filesystem_writer=N
             (result / "initramfs.cpio.gz").write_bytes(initramfs)
             shutil.copy2(kernel, result / "vmlinuz")
             (result / "run-qemu.sh").write_text(
-                boot.run_script(network, local_console=bool(physical)) if uefi else run_script(network), encoding="ascii")
+                boot.run_script(network, local_console=bool(physical),hardware_profile=physical) if uefi else run_script(network), encoding="ascii")
             (result / "run-qemu.sh").chmod(0o755)
             if uefi and native_boot is None:
                 (result / "run-qemu-direct.sh").write_text(
@@ -1025,7 +1029,7 @@ def main():
     parser.add_argument("--additional-generations", type=Path,
                         help="UEFI: TOML plan of additional explicit Base/System boot pairs")
     parser.add_argument('--with-build-tools',action='store_true',help='include experimental MBT; compiler environments remain separate')
-    parser.add_argument("--hardware-profile", choices=(hardware.PROFILE,),
+    parser.add_argument("--hardware-profile", choices=hardware.PROFILES,
                         help="USB/SATA boot, full modules/firmware and local console; requires UEFI/password/step 6")
     parser.add_argument("--firmware-root", type=Path,
                         help="extracted Debian firmware packages, including usr/share/doc licenses")

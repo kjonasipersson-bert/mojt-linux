@@ -20,7 +20,7 @@ mbt \- prepare private build tools and create Mojt build/package results
 --kernel-registry DIRECTORY --kernel-artifact ID --system-payload DIRECTORY
 --system-generation NAME --output DIRECTORY [--system-version VERSION]
 [--system-revision N] [--with-build-tools] [--with-installer-inputs] [--dry-run]
-[--hardware-profile thinkpad-x1-carbon-3 --firmware-root DIRECTORY]
+[--hardware-profile PROFILE --firmware-root DIRECTORY]
 .PP
 .B mbt bootstrap
 --inputs DIRECTORY --target-root DIRECTORY --efi-directory DIRECTORY
@@ -70,14 +70,24 @@ and an account-enabled step-10 System payload. --dry-run validates inputs withou
 creating an image or registry. Actual creation requires root and an interactive
 terminal to set the new guest password. No automatic sudo or password flags.
 .PP
-The optional thinkpad-x1-carbon-3 profile selects local password login, USB/SATA
+The optional pc-x86_64 profile selects local password login, NVMe, USB/SATA,
+VirtIO block/SCSI and keyboard early drivers. Runtime devices are probed through
+standard udev rules after System firmware and modules are mounted. Firmware input
+must include Intel/AMD graphics and Intel, Realtek, Qualcomm Atheros, MediaTek
+and Broadcom network firmware, wireless-regdb and each package's upstream licenses.
+See the Handbook hardware chapter for the exact bootstrap package set and limits.
+The image launcher accepts QEMU_DISK_BUS=sata, usb or nvme for this profile.
+It is a separate machine policy, not a live migration of existing ThinkPad selections.
+.PP
+The retained thinkpad-x1-carbon-3 profile selects local password login, USB/SATA
 storage and keyboard support, and graphics/network drivers. --firmware-root names
 an extracted Debian firmware root with Intel 7265 firmware, regulatory database
 and upstream licenses. Firmware/licenses become inventoried System content;
 complete modules remain in the exact native Kernel artifact. Both mounts are
 read-only. Existing-system updates preserve the bound hardware/console policy.
-Normal boot does not scan firmware content. Independent firmware artifacts and
-general firmware/service upgrade transitions are not implemented.
+Normal boot does not scan firmware content. System transitions support bounded
+firmware-data changes and the fixed conditional QEMU guest-agent service.
+Independent firmware artifacts and general service/profile migrations remain open.
 .PP
 Installs Base/System and stages/selects the initial exact deployment through
 MPM libraries in a private directory before image formatting or mounted-target copying. Fixed manager code runs using

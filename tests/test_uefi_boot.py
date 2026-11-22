@@ -105,7 +105,10 @@ class UefiTests(unittest.TestCase):
         path.write_bytes(b"module")
         with mock.patch.object(vm.subprocess, "run", return_value=mock.Mock(stdout=f"insmod {path}\n")) as run:
             self.assertEqual(vm.module_paths("6.8-test", modules), [path])
-        self.assertEqual(run.call_args.args[0][:3], ["modprobe", "--dirname", str(self.root / "kernel")])
+        command = run.call_args.args[0]
+        self.assertEqual(command[0], "modprobe")
+        self.assertEqual(command[command.index("--dirname") + 1], str(self.root / "kernel"))
+        self.assertEqual(command[command.index("--config") + 1], "/dev/null")
 
     def test_uefi_without_system_fails_before_host_commands_or_output_creation(self):
         args = mock.Mock(boot_mode="uefi", system_payload=None, hardware_profile=None, firmware_root=None)

@@ -52,7 +52,7 @@ def audit_inputs(root, value, bounds, *, adapters=None):
     profile = system.realization_path(root, body['id']) / 'profile'
     manifest = base.read(profile / 'manifest.json')
     require(manifest['description']['label'] == d['system']['generation'], 'System generation label differs')
-    if d['boot']['profile'] == model.HARDWARE_PROFILE:hardware.native_firmware(profile)
+    if d['boot']['profile'] in model.HARDWARE_PROFILES:hardware.native_firmware(profile,d['boot']['profile'])
     refs = system.retained_providers(root, body['id'])
     system.providers(root, refs, adapters, effect='verify' if base.io.preparation_verify() else 'inspect')
     system.verify_links(profile, refs, adapters, manifest['description']['provenance'].get('runtime_outputs', []))

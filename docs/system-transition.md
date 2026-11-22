@@ -126,19 +126,44 @@ a no-op. The menu is the next-boot commit point; post-publication durability
 errors remain explicit and do not delete the published result. Normal boot keeps
 its metadata/state checks and does not run full content scans.
 
-## First initialization/service contract
+## Supported initialization/service contracts
 
-The implemented policy is deliberately **unchanged startup, tooling changes
-only**, recorded by `mojt-system-startup-review-v1`. It permits MPM/tool modules,
+The default policy is **unchanged startup, tooling changes only**, recorded by
+`mojt-system-startup-review-v1`. It permits MPM/tool modules,
 MPM/inspector frontends, test files, the MPM manual and newly added admin commands.
 It normalizes only write bits removed during immutable installation; other
 metadata/content differences remain meaningful. A changed version marker must
 match the candidate's human label.
 
-All remaining profile content must be preserved: setup/start/environment,
+Outside the bounded exception below, remaining profile content is preserved: setup/start/environment,
 units, helper declarations/producers, authentication data and service configs.
 Changed/removed services or startup inputs block. No new migration or initializer
 is inferred from an empty lifecycle list or a package-supplied script.
+
+The `mojt-system-firmware-data-v1` contract permits firmware and upstream
+attribution changes in a new immutable System. Its startup review uses
+`mojt-system-startup-review-v2`: `changed` lists non-firmware
+paths, while `firmware_changes` binds the complete sorted firmware/license path
+change set with its count/digest and before/after inventory identities. Complete
+manifests and the data contract remain authoritative and are rechecked during
+handover. This keeps large firmware updates within the existing boot metadata
+collection/size limits without duplicating every changed data path in a list.
+
+The inventoried
+`firmware-update.json` binds the selected manifest, before/after hardware metadata
+and firmware/license inventories. Early/runtime module lists, machine profile
+and Kernel provenance stay exact. Executable data, escaping links, missing
+attributions and unrelated Kernel-license changes are refused. Preparation and
+handover recheck the contract without normal-boot scans of firmware bytes.
+
+It can also introduce one fixed `qemu-guest-agent.service`, its wanted link and a
+retained agent binary. Only the reviewed unit bytes are accepted; replacing an
+existing service or changing another unit still blocks. The review policy is
+`firmware-data-and-guest-agent-v1`, or `firmware-data-only-v1` without a new service.
+The ordinary agent uses udev/virtio-serial, skips startup without its channel,
+reads optional machine configuration and keeps transient state under `/run`.
+See the [hardware chapter](../doc/handbook/part-iii/hardware.md#85-updating-firmware-in-an-existing-system)
+and [acceptance procedure](reports/firmware-generation-test.md).
 
 Providers implement their own pure preservation comparison. The Nix adapter
 requires the entire selected startup closure's exact paths/NAR hashes to remain
