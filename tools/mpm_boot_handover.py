@@ -109,6 +109,13 @@ def unchanged(root, plan):
             'selection, state or target changed during preparation')
 
 
+class PreparedHandover(dict):
+    """Checked in-process contract; serialization carries no admission authority."""
+    def __init__(self,value,system_value,plan,systems):
+        super().__init__(value);self.system=system_value;self.plan=plan;self.systems=systems
+        self.checked=value['description']
+
+
 def prepare_locked(root, source, plan, context, *, adapters, tar='tar'):
     """Construct from a plan/context checked under caller-held transaction locks."""
     require(os.geteuid() == 0,'System handover preparation requires an administrator')
@@ -123,13 +130,15 @@ def prepare_locked(root, source, plan, context, *, adapters, tar='tar'):
     for name in ('boot','boot/mpm'):
         tx.protected_directory(root/name,write=True);(root/name).mkdir(mode=0o755,exist_ok=True)
     old = context['manifest']
-    profile = (root/'realizations/system'/context['old']['system']['artifact'][7:]/'profile' if context['native']
+    profile = (root/'realizations/system'/context['old']['system'].get('artifact')[7:]/'profile' if context['native']
                else root/'system'/old['description']['label'])
-    support = management.retained(profile,old)
+    previous=context.get('systems',{}).get(context['old']['system'].get('artifact'))
+    support=previous.support if previous is not None else management.retained(profile,old)
     release = tomllib.loads(common.checked_bytes(base.object_path(root,i['base']['artifact'])/'payload/manifest.toml').decode())
     mounts = {}
     import mpm_system as system
-    for ref in system.retained_providers(root,i['system']['artifact']):
+    candidate_value=context.get('candidate')
+    for ref in (candidate_value.references if candidate_value is not None else system.retained_providers(root,i['system']['artifact'])):
         adapter = adapters[ref['provider']]
         require(hasattr(adapter,'boot_mounts'),'provider has no boot mount contract')
         for row in adapter.boot_mounts(ref,root):
@@ -140,7 +149,7 @@ def prepare_locked(root, source, plan, context, *, adapters, tar='tar'):
         base_facts=dict(architecture=release['base']['architecture'],base_abi=release['abi'],state_layout=release['state']['layout_version']),
         boot_base=boot_base.prepare_locked(root,i['base']['artifact'],tar=tar),mounts=[mounts[k] for k in sorted(mounts)]))
     validate(value,source)
-    return value
+    return PreparedHandover(value,candidate_value,plan,tuple(context['systems'].values())) if candidate_value is not None else value
 
 
 def guest_file(root, tree, profile, provider_roots, mounts, guest, *, components=()):
@@ -173,20 +182,34 @@ def guest_file(root, tree, profile, provider_roots, mounts, guest, *, components
     return actual
 
 
-def check(root, source, trees, value, *, provider_roots=None, cache=None, verify_content=True):
+def check(root, source, trees, value, *, provider_roots=None, cache=None, verify_content=True, system_value=None):
     """Re-evaluate current state before writable mounts; never run a provider."""
-    d = validate(value,source);i = source['description'];tree = boot_base.inspect(root,d['boot_base'],cache=cache,verify=verify_content)
-    profile = inventory.path(root,'realizations/system/'+i['system']['artifact'][7:]+'/profile')
-    candidate = manifests.validate(base.read(profile/'manifest.json'))
-    require(candidate['id'] == i['system']['manifest'],'handover System manifest differs')
-    review = transition.profile_review(d['baseline_manifest'],candidate,profile)
-    require(review == d['preflight']['description']['checks']['startup'] and review['description']['compatible'],'startup review changed')
+    internal=isinstance(value,PreparedHandover)
+    if internal:
+        for item in value.systems:item.unchanged()
+    d=value.checked if internal else validate(value,source)
+    require(d['inputs']==source['id'],'handover inputs differ')
+    i=source['description'];tree=boot_base.inspect(root,d['boot_base'],cache=cache,verify=verify_content)
+    import mpm_system as system
+    accepted=value.system if internal else system_value if system_value is not None else system.CheckedSystem(root,i['system']['artifact'])
+    # Boot audits use the tree proof; original archive codecs belong to the
+    # running install/audit command, not the isolated initramfs reader.
+    profile,candidate=accepted.profile,accepted.manifest
+    require(candidate['id']==i['system']['manifest'] and accepted.realization['description']['composition']==i['system']['composition'],
+            'handover System manifest differs')
+    # Startup acceptance was bound to this exact manifest before admission.
+    # Normal boot checks current state, not the immutable baseline comparison.
+    if verify_content:
+        review=transition.profile_review(d['baseline_manifest'],candidate,profile,candidate_system=accepted)
+        require(review==d['preflight']['description']['checks']['startup'] and review['description']['compatible'],'startup review changed')
+    else:require(d['preflight']['description']['checks']['startup']['description']['compatible'],'startup preflight blocks boot')
     persistent = common.state_inputs(root)
     facts = dict(format=manifests.CONTEXT,**d['base_facts'],ports=persistent['ports'],required_system_paths=persistent['system_shells'])
     require(persistent['layout'] == facts['state_layout'],'persistent state layout differs')
     compatibility = manifests.check(candidate,facts);require(compatibility['compatible'],'System current-state compatibility: '+'; '.join(compatibility['errors']))
-    observed = management.observe_target(root)
-    for support in (management.current(),management.retained(profile,candidate),d['baseline_support']):
+    observed=(management.observe_target(root) if verify_content else management.schemas(root,systems=(accepted,)))
+    supports=(management.current(),management.retained(profile,candidate),d['baseline_support']) if verify_content else (accepted.support,d['baseline_support'])
+    for support in supports:
         report = management.check(support,observed);require(report['compatible'],'management/recovery compatibility: '+'; '.join(report['errors']))
     require(not transition.defaults(root,profile)['missing'] and not base_boot.defaults_check(root,tree)['missing'],
             'missing defaults require explicit preparation')
@@ -197,7 +220,7 @@ def check(root, source, trees, value, *, provider_roots=None, cache=None, verify
         proof = early.proof(trees,source)
         provider_roots = [p for row in proof['providers'] if row['reference']['provider'] != 'mojt-system-component' for p in row['trees']]
     import mpm_system as system
-    components=system.native_components(root,i['system']['artifact'])
+    components=accepted.components
     if trees is not None:
         supplied={p:row['reference']['identity']['artifact'] for row in proof['providers']
                   if row['reference']['provider']=='mojt-system-component' for p in row['trees']}
@@ -311,7 +334,7 @@ def enter(root, source, trees, value, cmdline, release, *, runner=None, execute=
     start = time.monotonic()
     checked = (early.verify if verify_content else early.inspect)(root,source,trees,cmdline,release)
     after_reader = time.monotonic()
-    context = check(Path(root),source,trees,value,verify_content=verify_content)
+    context = check(Path(root),source,trees,value,verify_content=verify_content,system_value=getattr(checked,'system',None))
     context['deployment'] = early.read(Path(root)/model.slot(checked['deployment'])/'deployment.json')
     require(context['deployment']['id'] == checked['deployment'],'deployment changed before handover')
     context['boot_checks'] = dict(format='mojt-boot-checks-v1',deployment=checked['deployment'],

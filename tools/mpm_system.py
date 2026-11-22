@@ -356,10 +356,10 @@ def profile_path(profile, relative, references, adapters, outputs=(), *, manifes
     return path, False
 
 
-def verify_links(profile, references, adapters, outputs=()):
-    manifest = base.read(profile/'manifest.json') if (profile/'manifest.json').is_file() else None
+def verify_links(profile, references, adapters, outputs=(), *, manifest=None, inventory=None):
+    manifest = (base.read(profile/'manifest.json') if (profile/'manifest.json').is_file() else None) if manifest is None else manifest
     if manifest is not None and component_profile(manifest) is not None:
-        for name,row in logical_inventory(profile,manifest).items():
+        for name,row in (logical_inventory(profile,manifest) if inventory is None else inventory).items():
             if 'link' in row:
                 target,external = profile_path(profile,name,references,adapters,outputs,manifest=manifest)
                 if external is True:
@@ -556,20 +556,20 @@ def copy_profile(source, destination):
         io.sync_directory(directory)
 
 
-def realization(root, identifier, *, verify=False):
+def _checked_realization(root, identifier, body, receipt, parts, *, verify=False):
     path = realization_path(root, identifier)
     if not management.present(path):return None
     require(stat.S_IMODE(io.directory(path).st_mode) == 0o555 and {p.name for p in path.iterdir()} == {'profile', 'realization.json'}, 'incomplete/unsealed System realization')
     value = base.read(path / 'realization.json');d = base.envelope(value, REALIZATION)
     artifact.fields(d, ('installation', 'artifact', 'receipt', 'composition', 'manifest', 'dependencies'))
-    body, receipt = object_record(root, identifier, verify=verify);require(body['metadata']['system_role'] == 'generation', 'component cannot be a System generation')
+    require(body['metadata']['system_role'] == 'generation', 'component cannot be a System generation')
     comp, unused = composition(object_path(root, identifier), body)
     require(d['installation'] == receipt['description']['installation'] and d['artifact'] == identifier and d['receipt'] == receipt['id']
             and d['composition'] == comp['id'], 'System realization binding differs')
     require(set(d['dependencies']) == {r['artifact'] for r in body['dependencies']}, 'System realization dependencies differ')
     for dependency, identity in d['dependencies'].items():
-        dependency_body, dependency_receipt = object_record(root, dependency, verify=verify)
-        acceptable(dependency_body, 'component');require(dependency_receipt['id'] == identity, 'retained System component receipt differs')
+        dependency_body,dependency_receipt=parts[dependency]
+        require(dependency_body['metadata']['system_role']=='component' and dependency_receipt['id']==identity,'retained System component receipt differs')
     measured = manifests.validate(base.read(path / 'profile/manifest.json'))
     require(d['manifest'] == measured['id'] and measured['description']['provenance']['artifact'] == identifier
             and measured['description']['provenance']['composition'] == comp['id'], 'System profile manifest binding differs')
@@ -577,7 +577,55 @@ def realization(root, identifier, *, verify=False):
         require(body['metadata'].get('profile_layout') == THIN,'unbound component profile layout')
         check_component_profile(path/'profile',measured,comp,verify=verify)
     elif verify:require(inventory(path / 'profile') == measured['description']['profile'], 'System profile content/modes damaged')
-    return value
+    return value,comp,measured
+
+
+class CheckedSystem:
+    """One accepted installed System. Internal facts, never serialized authority."""
+    def __init__(self,root,identifier,*,verify=False,loaded=None):
+        self.root=root;self.identifier=identifier;self.profile=realization_path(root,identifier)/'profile'
+        self.loaded={} if loaded is None else loaded
+        def accepted(key):
+            if key not in self.loaded:self.loaded[key]=object_record(root,key,verify=verify)
+            return self.loaded[key]
+        self.body,self.receipt=accepted(identifier)
+        require(self.body['metadata']['system_role']=='generation','component cannot be a System generation')
+        self.objects={r['artifact']:accepted(r['artifact']) for r in self.body['dependencies']}
+        checked=_checked_realization(root,identifier,self.body,self.receipt,self.objects,verify=verify)
+        require(checked is not None,'missing native System realization')
+        self.realization,self.composition,self.manifest=checked
+        self.parts={key:(body,object_path(root,key)) for key,(body,receipt) in self.objects.items()}
+        self.references=provider_references(self.parts)
+        self.inventory=logical_inventory(self.profile,self.manifest,parts=self.parts)
+        self.components=([] if component_profile(self.manifest) is None else
+            [dict(reference=r['reference'],path='artifacts/system/installed/'+model.reference(r['reference'])[7:]+'/payload')
+             for r in self.composition['description']['components']])
+        self.support=management.retained(self.profile,self.manifest) if verify else management.summary(self.profile,self.manifest,self.inventory)
+        paths={realization_path(root,identifier),self.profile,self.profile/'manifest.json',self.profile/'management.json',
+            realization_path(root,identifier)/'realization.json'}
+        for key in self.loaded:
+            folder=object_path(root,key)
+            paths.update((folder,folder/'artifact.json',folder/'installed.json',folder/'payload'))
+        layout=component_profile(self.manifest)
+        if layout is not None:paths.update(self.profile/r['path'] for r in layout['mappings'])
+        self.bindings={path:self.signature(path) for path in paths if management.present(path)}
+
+    @staticmethod
+    def signature(path):
+        info=path.lstat()
+        return (info.st_dev,info.st_ino,info.st_mode,info.st_uid,info.st_gid,info.st_nlink,info.st_size,info.st_mtime_ns,info.st_ctime_ns)
+
+    def unchanged(self):
+        require(all(self.signature(path)==stamp for path,stamp in self.bindings.items()),'accepted System inputs changed during preparation')
+
+
+
+def realization(root, identifier, *, verify=False):
+    if not management.present(realization_path(root,identifier)):return None
+    body,receipt=object_record(root,identifier,verify=verify)
+    parts={r['artifact']:object_record(root,r['artifact'],verify=verify) for r in body['dependencies']}
+    value=_checked_realization(root,identifier,body,receipt,parts,verify=verify)
+    return value[0] if value is not None else None
 
 
 def _initialize(root, info):
@@ -827,7 +875,62 @@ def registry_observation(root):
     return base.record('mojt-system-observation-v1', dict(installation=marker['description']['installation'], records=sorted(identities)))
 
 
+def metadata_status(root,*,running_record=None):
+    """Display protected installed summaries; no payload or readiness reconstruction."""
+    from mpm_boot_status import selected,description,running
+    from mpm_boot_selection import present,summaries
+    root=target(root);active=running(root,running_record)
+    observed=selected(root,active) if root.exists() else dict(record=None,reason='target does not exist')
+    info=base.store_info(root);marker=registry(root);installed=[];components=[];retained=[];incomplete=[]
+    for name in object_names(root) if marker else ():
+        if name.startswith('.install-'):incomplete.append('artifacts/system/installed/'+name);continue
+        identifier='sha256:'+name;io.identifier(identifier);folder=object_path(root,identifier)
+        require(io.directory(folder).st_mode & 0o777==0o555,'unsealed System object')
+        for filename in ('artifact.json','installed.json'):
+            item=io.regular(folder/filename)
+            require(item.st_uid==0 and item.st_mode & 0o777==0o444,'unprotected System summary')
+        body=base.read(folder/'artifact.json');receipt=base.read(folder/'installed.json');r=base.envelope(receipt,base.RECEIPT)
+        require(body['id']==r['artifact']==identifier and r['installation']==marker['description']['installation']
+                and body['kind']==r['kind']=='system','System summary binding differs')
+        role=body['metadata']['system_role'];require(role in ('generation','component'),'unknown System role')
+        row=dict(artifact=identifier,version=body['version'],role=role,dependencies=body['dependencies'],
+            trust=r['trust'],acquisition=r.get('acquisition'))
+        if role=='component':components.append(row);continue
+        path=realization_path(root,identifier)
+        if not management.present(path):retained.append(row);continue
+        require(io.directory(path).st_mode & 0o777==0o555,'unsealed System realization')
+        value=base.read(path/'realization.json');d=base.envelope(value,REALIZATION)
+        require(d['artifact']==identifier and d['receipt']==receipt['id'] and d['installation']==r['installation'],'System summary realization differs')
+        comp,unused=composition(folder,body)
+        require(comp['id']==d['composition'],'System summary composition differs')
+        row.update(label=comp['description']['label'],composition=d['composition'],manifest=d['manifest'],
+            realization=value['id'],profile=str(path/'profile'));installed.append(row)
+    folder=root/'realizations/system'
+    if management.present(folder):
+        known={r['artifact'][7:] for r in installed}
+        for entry in folder.iterdir():
+            if entry.name.startswith('.install-'):incomplete.append(str(entry.relative_to(root)));continue
+            require(entry.name in known,'orphan/unknown System realization')
+    versions={r['artifact']:r['version'] for r in installed};by_manifest={r['manifest']:r for r in installed}
+    def identity(record,reason):
+        if record is None:return dict(state='unknown',artifact=None,manifest=None,label=None,deployment=None,reason=reason)
+        d=description(record)['system'];row=by_manifest.get(d['manifest'])
+        return dict(state='known',artifact=row['artifact'] if row else None,manifest=d['manifest'],label=d['generation'],deployment=record['id'],
+            version=row['version'] if row else {},artifact_evidence='exact installed manifest' if row else 'native artifact unknown; label is not identity')
+    entries=summaries(root)[0] if root.exists() and present(root) else {}
+    staged=[]
+    for identifier,entry in sorted(entries.items()):
+        d=entry['record']['description']['inputs']['description']
+        staged.append(dict(deployment=identifier,artifact=d['system']['artifact'],label=d['system']['generation'],
+            version=versions.get(d['system']['artifact'],{}),base_release=d['base']['release'],kernel_release=d['kernel']['release']))
+    return dict(format='mpm-system-status-v1',target=str(root),installation=info['installation'] if info else None,
+        staged_deployments=staged,installed=installed,components=components,retained=retained,incomplete=sorted(incomplete),
+        selected=identity(observed['record'],observed['reason']),running=identity(active,'offline target or no authoritative running record'),
+        compatibility='installed content is not deployment compatibility, activation or boot readiness')
+
+
 def status(root, *, verify=False, running_record=None, adapters=None):
+    if not verify:return metadata_status(root,running_record=running_record)
     root = target(root)
     from mpm_boot_status import selected, description, running as validate_running
     running_record = validate_running(root,running_record)

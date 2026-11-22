@@ -8,7 +8,10 @@ SPDX-License-Identifier: GPL-2.0-only
 
 Normal boot checks exact deployment/input bindings, readiness receipts, metadata,
 required paths and current-state compatibility. It does not repeat complete
-retained-content/provider byte audits. Explicit diagnostic/full-audit mode
+retained-content/provider byte audits or enumerate unrelated System generations.
+The selected admission and current-state gates consume the accepted immutable
+facts without replaying the complete historical startup comparison. See
+[normal operation boundaries](system-normal-operation.md). Explicit diagnostic/full-audit mode
 retains those checks; skipping a full audit is not a new integrity attestation.
 
 The runtime record at `/run/mojt/boot-checks.json` identifies the chosen mode,

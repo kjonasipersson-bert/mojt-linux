@@ -45,7 +45,7 @@ jobs:
       - name: Check retained firmware generations and the bounded QEMU guest service
         run: sudo env PYTHONPATH=tests python3 -B -m unittest test_system_firmware -v
       - name: Check combined System installation diagnostic and frozen delivery
-        run: sudo env PYTHONPATH=tests python3 -B -m unittest test_system_install_profile test_system_install_transaction test_system_components test_system_components_driver -v
+        run: sudo env PYTHONPATH=tests python3 -B -m unittest test_system_install_profile test_system_install_transaction test_system_components test_system_components_driver test_system_normal_operation -v
       - name: Check owner-authorized native acquisition and verified cache
         run: |
           python3 -B -m unittest discover -s tests -p 'test_kernel_image_origin.py' -v

@@ -73,6 +73,37 @@ def describe_runtime(root, ref, interpreter, *, adapters):
     return value
 
 
+def retained_runtime(root,ref,interpreter,selected,*,adapters):
+    """Reuse an accepted runtime descriptor bound to the selected producer."""
+    producer=selected['record']['description']['inputs']['description']['constructor']
+    identity=producer.get('identity',{}).get('runtime')
+    if identity is None or io.preparation_verify():return None
+    model.identity(identity);path=root/'boot/mpm/runtime-descriptors'/(identity[7:]+'.json')
+    if not os.path.lexists(path):return None
+    tx.protected_directory(path.parent,label='retained boot runtime')
+    info=io.regular(path);require(info.st_uid==0 and stat.S_IMODE(info.st_mode)==0o444,'unprotected boot runtime descriptor')
+    value=early.read(path);d=early.runtime(value)
+    require(value['id']==identity,'retained boot runtime identity differs')
+    if d['reference']!=ref or d['interpreter']!=interpreter:return None
+    (getattr(adapters[ref['provider']],'inspect',adapters[ref['provider']].verify))(ref,root)
+    for name in d['trees']:require(inventory.path(root,name).is_dir(),'retained interpreter tree missing')
+    return value
+
+
+def retain_runtime(root,value):
+    """Publish only metadata after accepting an exact trusted runtime snapshot."""
+    early.runtime(value);parent=root/'boot/mpm/runtime-descriptors'
+    tx.protected_directory(parent,write=True,label='retained boot runtime');created=not parent.exists();parent.mkdir(mode=0o755,exist_ok=True)
+    if created:io.sync_directory(parent.parent)
+    destination=parent/(value['id'][7:]+'.json')
+    if os.path.lexists(destination):
+        require(early.read(destination)==value,'retained boot runtime descriptor differs');return
+    fd,name=tempfile.mkstemp(prefix='.runtime-',dir=parent);os.close(fd);stage=Path(name);stage.unlink()
+    try:io.write_json(stage,value);tx.publish(stage,destination)
+    finally:
+        if stage.exists():stage.unlink()
+
+
 def freeze_runtime(root, ref, interpreter, output, *, adapters):
     """Explicit trusted runtime, independent of Base and the candidate interpreter."""
     root = Path(root).absolute()
@@ -100,7 +131,7 @@ def constructor(runtime, busybox, *, handover=False):
         code=code,runtime=runtime['id'],busybox_sha256=artifact.file_sha(busybox)))
 
 
-def capture(root, source, adapters, *, entries=None):
+def capture(root, source, adapters, *, entries=None, system_value=None):
     d = model.inputs(source)
     known={}
     def remember(key,value):
@@ -127,12 +158,12 @@ def capture(root, source, adapters, *, entries=None):
         return dict(expected) if expected is not None else inventory.measure(path)
     def tree(area,relative):return dict(path=relative,measurement=measurement(area,d[area]['artifact'],relative))
     providers = [];seen = set()
-    for ref in system.retained_providers(root,d['system']['artifact']):
+    for ref in (system_value.references if system_value is not None else system.retained_providers(root,d['system']['artifact'])):
         names = provider_paths(root,ref,adapters)
         fresh = [p for p in names if p not in seen];seen.update(names)
         if fresh:providers.append(dict(reference=ref,trees={p:measurement('provider',artifact.digest(ref),p) for p in fresh}))
-    for component in system.native_components(root,d['system']['artifact']):
-        identifier=component['reference']['artifact'];body,receipt=system.object_record(root,identifier)
+    for component in (system_value.components if system_value is not None else system.native_components(root,d['system']['artifact'])):
+        identifier=component['reference']['artifact'];body,receipt=(system_value.objects[identifier] if system_value is not None else system.object_record(root,identifier))
         providers.append(dict(reference=dict(provider='mojt-system-component',identity=dict(artifact=identifier,receipt=receipt['id'])),
             trees={component['path']:inventory.component_measurement(body)}))
     value = record(early.PROOF,dict(inputs=source['id'],constructor=d['constructor'],
@@ -257,7 +288,6 @@ def cached_payload(root, key, create):
             require(path.stat().st_size == d['archive']['size'],'cached boot payload size differs')
             raw = path.read_bytes()
             require(hashlib.sha256(raw).hexdigest() == d['archive']['sha256'],'cached boot payload bytes damaged')
-            io.sync_directory(destination);io.sync_directory(parent)
             return raw,True
         require(sum(1 for p in parent.iterdir() if not p.name.startswith('.')) < model.MAX_ENTRIES,'boot payload cache limit')
         raw = create();require(0 < len(raw) <= model.MAX_BOOT,'boot payload exceeds size limit')
@@ -277,7 +307,7 @@ def controls(root, source, runtime, trees, handover):
     d = source['description'];folder = root/'mojt';folder.mkdir();folder.chmod(0o755)
     code = folder/'code';code.mkdir();code.chmod(0o755)
     for name,checksum in d['constructor']['identity']['code'].items():
-        actual,size = io.frozen_copy(Path(__file__).with_name(name),code/name,maximum=model.MAX_BOOT)
+        actual,size = io.frozen_copy(Path(__file__).with_name(name),code/name,maximum=model.MAX_BOOT,durable=False)
         require(actual == checksum,'constructor code changed: '+name)
     io.write_json(folder/'inputs.json',source);io.write_json(folder/'trees.json',trees)
     io.write_json(folder/'runtime.json',runtime)
@@ -319,9 +349,9 @@ def _build_locked(root, source, runtime_directory, busybox, work, *, bounds, ada
         runtime = runtime_value
     runtime_d = early.runtime(runtime)
     d = model.inputs(source);require(d['constructor'] == constructor(runtime,busybox,handover=handover is not None), 'constructor/runtime differs from boot inputs')
-    trees = capture(root,source,adapters,entries=entries) if trees is None else trees
+    trees = capture(root,source,adapters,entries=entries,system_value=getattr(handover,'system',None)) if trees is None else trees
     work.mkdir(mode=0o700)
-    frozen_busybox = work/'busybox';checksum,unused = io.frozen_copy(busybox,frozen_busybox,maximum=model.MAX_BOOT)
+    frozen_busybox = work/'busybox';checksum,unused = io.frozen_copy(busybox,frozen_busybox,maximum=model.MAX_BOOT,durable=False)
     require(checksum == d['constructor']['identity']['busybox_sha256'], 'BusyBox changed during copying');frozen_busybox.chmod(0o755)
     vm = archive.vm_module()
     require(vm.static_x86_64_elf(frozen_busybox), 'trusted static x86_64 BusyBox required')
@@ -331,10 +361,7 @@ def _build_locked(root, source, runtime_directory, busybox, work, *, bounds, ada
     module_tree = payload/'lib/modules'/d['kernel']['release']
     def make_payload():
         nonlocal runtime_directory
-        if runtime_directory is None:
-            runtime_directory = work/'runtime'
-            frozen = freeze_runtime(root,runtime_d['reference'],runtime_d['interpreter'],runtime_directory,adapters=adapters)
-            require(frozen == runtime,'manager runtime changed before construction')
+        runtime_tree=root if runtime_directory is None else runtime_directory/'tree'
         if d['boot']['profile'] in model.HARDWARE_PROFILES:
             machine = hardware.profile_for_boot(d['boot']['profile'])
             vm.module_paths(d['kernel']['release'],module_tree,names=hardware.runtime_modules(machine))
@@ -344,10 +371,10 @@ def _build_locked(root, source, runtime_directory, busybox, work, *, bounds, ada
             require(module == module.resolve() and payload/'lib/modules' in module.parents,'early module outside exact Kernel tree')
         modules = decode_modules(modules,work/'decoded-modules')
         def assemble(initroot):
-            check_runtime_links(runtime_directory/'tree',runtime)
+            check_runtime_links(runtime_tree,runtime)
             for name,rows in runtime_d['trees'].items():
-                original = inventory.path(runtime_directory/'tree',name)
-                require(inventory.snapshot(original,maximum=model.MAX_BOOT) == rows,'bootstrap bundle changed')
+                original = inventory.path(runtime_tree,name)
+                if io.preparation_verify():require(inventory.snapshot(original,maximum=model.MAX_BOOT) == rows,'bootstrap bundle changed')
                 destination = initroot/name;destination.parent.mkdir(mode=0o755,parents=True,exist_ok=True)
                 require(destination == destination.resolve(),'linked initramfs runtime destination')
                 inventory.clone_runtime(original,destination,rows)

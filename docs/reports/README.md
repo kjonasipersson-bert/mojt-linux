@@ -61,6 +61,7 @@ Existing dedicated reports retain their original paths:
 - [System profile placement and many-file diagnostic](system-profile-placement.md)
 - [Complete System install/preparation and I/O diagnostic](system-install-profile.md)
 - [Component Runtime update, complete command timing and boot/return](system-components-test.md)
+- [Normal-operation structural and physical acceptance](system-normal-operation-test.md)
 - [Ports frontend/adapter](../ports-profile-acceptance.md)
 - [Activation measurements](../activation-fast-hardware-test.md)
 - [Initramfs payload reuse](../initramfs-payload-hardware-test.md)

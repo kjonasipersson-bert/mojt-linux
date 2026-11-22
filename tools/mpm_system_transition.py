@@ -136,14 +136,16 @@ def firmware_review(selected, candidate, proof):
     return allowed
 
 
-def profile_review(selected, candidate, profile):
+def profile_review(selected, candidate, profile, *, selected_system=None, candidate_system=None):
     """Read only the small, inventoried contract when firmware data actually changes."""
     previous_layout=system.component_profile(selected);layout=system.component_profile(candidate)
     one_legacy=(previous_layout is None) != (layout is None)
     changed_firmware=(firmware_inventory(selected['description']['profile']) != firmware_inventory(candidate['description']['profile']))
     expand=one_legacy or changed_firmware
-    before=system.logical_inventory(profile,selected,firmware=expand)
-    after=system.logical_inventory(profile,candidate,firmware=expand)
+    before=(selected_system.inventory if selected_system is not None and not expand else
+        system.logical_inventory(profile,selected,parts=selected_system.parts if selected_system is not None else None,firmware=expand))
+    after=(candidate_system.inventory if candidate_system is not None and not expand else
+        system.logical_inventory(profile,candidate,parts=candidate_system.parts if candidate_system is not None else None,firmware=expand))
     allowed=set()
     if layout is not None and not any(r['role']=='firmware' for r in layout['components']) and 'hardware.json' not in before and 'hardware.json' not in after:
         allowed=set(firmware_inventory(before)) | {FIRMWARE_PROOF}
@@ -300,21 +302,17 @@ def selected_context(root, baseline):
     require(baseline is None,'native-v2 selection is authoritative; --baseline is only for a fresh v1 image')
     from mpm_boot_v2 import inputs, slot, DEPLOYMENT
     from mpm_boot_v2_store import inspect
-    state,entries,menu = selection.current(root)
+    state,entries,menu = selection.selected(root)
     require(state is not None,'native-v2 initial selection is incomplete')
     selected_id = state['description']['selected'];value = entries[selected_id]['record']
     if base.io.preparation_verify():
         require(inspect(root,selected_id,verify=True) == value,'selected native-v2 slot changed')
     source = value['description']['inputs'];old = inputs(source)
-    body,receipt = system.object_record(root,old['system']['artifact'])
-    realized = system.realization(root,body['id'],verify=base.io.preparation_verify())
-    require(realized is not None,'selected native System is not installed')
-    require(all(realized['description'][key] == old['system'][key] for key in ('composition','manifest')),
-            'selected native System realization differs from deployment')
-    profile = system.realization_path(root,body['id'])/'profile'
-    manifest = manifests.validate(base.read(profile/'manifest.json'))
-    require(manifest['id'] == old['system']['manifest'] and manifest['description']['label'] == old['system']['generation']
-            and body['platform'] == old['platform'],'selected native System identity differs')
+    checked=system.CheckedSystem(root,old['system']['artifact'],verify=base.io.preparation_verify())
+    body,receipt,realized,profile,manifest=checked.body,checked.receipt,checked.realization,checked.profile,checked.manifest
+    require(all(realized['description'][key] == old['system'][key] for key in ('composition','manifest'))
+            and manifest['id']==old['system']['manifest'] and manifest['description']['label']==old['system']['generation']
+            and body['platform']==old['platform'],'selected native System identity differs')
     kernel_body,_ = kernel.object_record(root/'kernel/installed'/kernel.identifier(old['kernel']['artifact']),old['kernel']['artifact'],verify=base.io.preparation_verify())
     require(dict(deployment.kernel_identity(kernel_body),upstream=kernel_body['version']['upstream']) == old['kernel'],
             'selected native Kernel identity differs')
@@ -324,7 +322,7 @@ def selected_context(root, baseline):
     require(artifact.digest(bounds) == old['base']['bounds_evidence'],'selected native Base bounds differ')
     return dict(native=True,selected=selected_id,old=old,manifest=manifest,menu=menu,bounds=bounds,kernel=kernel_body,
                 baseline_format=DEPLOYMENT,baseline_entry=slot(selected_id),selected_inputs=source['id'],baseline_inputs=source,
-                entries=entries,provider_references=system.retained_providers(root,body['id']),
+                entries=entries,selection=state,systems={body['id']:checked},objects=checked.loaded,provider_references=checked.references,
                 selected_system=dict(old['system'],receipt=receipt['id'],realization=realized['id']))
 
 
@@ -355,16 +353,16 @@ def _prepare(root, identifier, baseline, adapters, *, area='system', bounds=None
         if area != 'system':identifier = old['system']['artifact']
     persistent = common.state_inputs(root)
     info = base.store_info(root);require(info is not None, 'native installation store required')
-    body, receipt = system.object_record(root, identifier)
-    require(body['metadata']['system_role'] == 'generation', 'candidate must be an installed System generation')
-    realized = system.realization(root, identifier, verify=base.io.preparation_verify())
-    require(realized is not None, 'System is retained but not installed; finish realization first')
-    profile = system.realization_path(root, identifier) / 'profile'
-    candidate = manifests.validate(base.read(profile / 'manifest.json'))
-    refs = system.retained_providers(root, identifier)
-    system.providers(root, refs, adapters, effect='verify' if base.io.preparation_verify() else 'inspect')
-    outputs = candidate['description']['provenance'].get('runtime_outputs', [])
-    system.verify_links(profile, refs, adapters, outputs)
+    systems=context.setdefault('systems',{})
+    checked=systems.get(identifier)
+    if checked is None:
+        checked=system.CheckedSystem(root,identifier,verify=base.io.preparation_verify(),loaded=context.setdefault('objects',{}));systems[identifier]=checked
+    body,receipt,realized,profile,candidate=checked.body,checked.receipt,checked.realization,checked.profile,checked.manifest
+    refs=checked.references
+    system.providers(root,refs,adapters,effect='verify' if base.io.preparation_verify() else 'inspect')
+    outputs=candidate['description']['provenance'].get('runtime_outputs',[])
+    system.verify_links(profile,refs,adapters,outputs,manifest=candidate,inventory=checked.inventory)
+    context['candidate']=checked
     base_body, base_receipt = base.object_record(root, old['base']['artifact'], verify=base.io.preparation_verify())
     require(base_body['version']['upstream'] == old['base']['release'], 'installed Base differs from selected exact Base')
     base_realized = base.realization(root, base_body['id'], base_receipt, verify=base.io.preparation_verify())
@@ -385,10 +383,16 @@ def _prepare(root, identifier, baseline, adapters, *, area='system', bounds=None
     upstream = context['kernel']['version']
     require(upstream['scheme'] == 'dotted-v1' and catalog.compare_versions(bounds['kernel_min'], upstream['upstream']) <= 0
             and catalog.compare_versions(upstream['upstream'], bounds['kernel_max']) <= 0, 'preserved Kernel is outside selected Base bounds')
-    reviewed = profile_review(selected, candidate, profile)
+    previous=context.get('systems',{}).get(context['old']['system'].get('artifact'))
+    reviewed = profile_review(selected,candidate,profile,selected_system=previous,candidate_system=checked)
     requirements = providers(selected,candidate,refs,adapters,baseline_refs=context.get('provider_references'),
-        inventories=(system.logical_inventory(profile,selected),system.logical_inventory(profile,candidate)))
-    management_report = management.check_target(root, profile, candidate)
+        inventories=(previous.inventory if previous is not None else system.logical_inventory(profile,selected),checked.inventory))
+    if base.io.preparation_verify():management_report=management.check_target(root,profile,candidate)
+    else:
+        observed=management.schemas(root,systems=tuple(systems.values()),selection=context.get('selection'))
+        preparing=context.setdefault('preparing_support',management.current())
+        management_report=dict(management.check_transition(preparing,checked.support,observed),observed=observed,
+            candidate=checked.support['id'] if checked.support else None,preparing=preparing['id'])
     tree = base.realization_path(root, base_body['id']) / 'tree/rootfs'
     shell_report = shells(root, tree, persistent, candidate, refs, adapters)
     observed_defaults = defaults(root, profile)

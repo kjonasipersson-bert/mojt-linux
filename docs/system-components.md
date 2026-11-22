@@ -113,4 +113,6 @@ operations. The existing envelopes and receipt bindings remain compatible with
 booting retained materialized generations. The acceptance procedure checks an
 actual return rather than treating a reader declaration as boot evidence.
 
-See the [component acceptance procedure](reports/system-components-test.md).
+See [normal operation boundaries](system-normal-operation.md), the
+[component acceptance procedure](reports/system-components-test.md) and the
+[normal-operation test](reports/system-normal-operation-test.md).

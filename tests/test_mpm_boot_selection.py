@@ -25,6 +25,7 @@ class Boundaries(unittest.TestCase):
         with mock.patch.object(selection.os,'geteuid',return_value=0), \
              mock.patch.object(selection.store,'target',side_effect=lambda p:p), \
              mock.patch.object(selection,'current',side_effect=lambda p:(copy.deepcopy(old),{before:entry},b'menu')), \
+             mock.patch.object(selection,'selected',side_effect=lambda p:(copy.deepcopy(old),{before:entry},b'menu')), \
              mock.patch.object(selection,'ready',return_value=entry), \
              mock.patch('mpm_base_transition.read_locks',side_effect=lambda p:nullcontext()), \
              mock.patch.object(selection,'locked',side_effect=lambda p:nullcontext()), \
@@ -58,8 +59,8 @@ class Boundaries(unittest.TestCase):
         with mock.patch.object(update.os,'geteuid',return_value=0), \
              mock.patch.object(update.system,'target',side_effect=lambda p:p), \
              mock.patch.object(update.common,'read_locks',side_effect=lambda p:nullcontext()), \
-             mock.patch.object(selection,'current',return_value=(old,entries,b'menu')), \
-             mock.patch.object(selection,'available',return_value=(entries,[])), \
+             mock.patch.object(selection,'selected',return_value=(old,entries,b'menu')), \
+             mock.patch.object(selection,'summaries',return_value=(entries,[])), \
              mock.patch.object(update,'stage',side_effect=AssertionError('activation staged content')), \
              mock.patch.object(update,'prepare',side_effect=AssertionError('activation scanned content')), \
              mock.patch.object(selection,'select',return_value=report) as select, \

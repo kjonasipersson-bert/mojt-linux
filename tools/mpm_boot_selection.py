@@ -102,7 +102,7 @@ def _admit_locked(root, item, built):
             {name:artifact.file_sha(Path(__file__).with_name(name)) for name in paths.MPM_FILES},'constructor code changed before stage admission')
     require(store.inspect(root,item['id'],verify=io.preparation_verify()) == item,'retained slot changed')
     value = record(READY,dict(installation=source['description']['installation'],deployment=item['id'],inputs=source['id'],
-        archive=built['binding']['description']['archive'],proof=built['proof'],handover=built.handover))
+        archive=built['binding']['description']['archive'],proof=built['proof'],handover=dict(built.handover)))
     model.envelope(value,READY)
     parent = root/'boot/mpm/ready';tx.protected_directory(parent,write=True);parent.mkdir(mode=0o755,exist_ok=True)
     destination = parent/(item['id'][7:]+'.json')
@@ -166,6 +166,52 @@ def current(root, *, verify=False, cache=None):
     return value,entries,raw
 
 
+def state(root):
+    """Read menu authority/format without resolving any deployment slot."""
+    root=store.target(root)
+    require(checked(root/'boot/mojt/grub.cfg')==HOOK,'native-v2 menu has no exact bootloader hook')
+    if not os.path.lexists(root/MENU):return None,None
+    raw=checked(root/MENU);value,unused,unused_blocks=model.menu_blocks(raw)
+    require(value['description']['installation']==base.store_info(root)['installation'],'foreign native-v2 selection')
+    return value,raw
+
+
+def selected(root, *, receipt=True):
+    """Resolve the chosen admitted deployment, independently of retained history."""
+    value,raw=state(root)
+    if value is None:return None,{},None
+    unused,prefix,blocks=model.menu_blocks(raw);d=value['description']
+    identifier=d['selected'];entry=ready(root,identifier) if receipt else summary(root,identifier)
+    # Check the actual selected commands/title against the admitted deployment.
+    one=dict(d,previous=None,entries=[dict(deployment=identifier,path=model.slot(identifier))])
+    unused,wanted_prefix,wanted=model.menu_blocks(model.render(model.record(model.SELECTION,one),{identifier:entry['record']}))
+    require(prefix==wanted_prefix and blocks[identifier]==wanted[identifier],'selected boot menu differs from admitted deployment')
+    return value,{identifier:entry},raw
+
+
+def summary(root,identifier):
+    model.identity(identifier)
+    path=root/'boot/mpm/ready'/(identifier[7:]+'.json')
+    tx.protected_directory(path.parent,label='native-v2 stage receipts');store.checked_file(path,artifact.MAX_METADATA)
+    value=_read(root/model.slot(identifier)/'deployment.json');model.deployment(value)
+    require(value['id']==identifier and value['description']['inputs']['description']['installation']==base.store_info(root)['installation'],
+            'foreign deployment summary')
+    return dict(record=value)
+
+
+def summaries(root):
+    """Read bounded deployment summaries, not full saved handover receipts."""
+    parent=root/'boot/mpm/ready';entries={};incomplete=[]
+    if not parent.exists():return entries,incomplete
+    tx.protected_directory(parent,label='native-v2 stage receipts')
+    for number,path in enumerate(sorted(parent.iterdir())):
+        require(number<model.MAX_ENTRIES,'native-v2 stage inventory limit')
+        if path.name.startswith('.admit-'):incomplete.append(path.name);continue
+        require(path.suffix=='.json','unknown stage receipt file')
+        identifier='sha256:'+path.stem;entries[identifier]=summary(root,identifier)
+    return entries,incomplete
+
+
 def _gates(root, entries):
     cache = {}
     required = management.context(registries=[dict(family='mpm-boot-v2',version=1,capabilities=['exact-system-selection'],evidence='sha256:'+'0'*64)])
@@ -181,7 +227,8 @@ def _gates(root, entries):
 
 def _publish(root, value, entries, old_raw):
     require((checked(root/MENU) if os.path.lexists(root/MENU) else None) == old_raw,'boot selection changed before publication')
-    raw = model.render(value,{k:v['record'] for k,v in entries.items()})
+    raw = (model.render(value,{k:v['record'] for k,v in entries.items()}) if len(entries)==len(value['description']['entries'])
+           else model.render_known(value,{k:v['record'] for k,v in entries.items()},old_raw))
     if raw == old_raw:
         io.sync_directory((root/MENU).parent);return False
     fd,name = tempfile.mkstemp(prefix='.select-',dir=(root/MENU).parent)
@@ -212,7 +259,7 @@ def select(root, identifier=None, *, expected_selected, rollback=False, dry_run=
     root = store.target(root)
     from mpm_base_transition import read_locks
     def prepare(*, audit=False):
-        old,entries,raw = current(root);require(old is not None,'native-v2 initial boot selection is missing')
+        old,entries,raw = selected(root);require(old is not None,'native-v2 initial boot selection is missing')
         d = old['description'];require(d['selected'] == expected_selected,'selected deployment changed; repeat preview')
         wanted = d['previous'] if rollback else identifier;require(wanted is not None,'no previous deployment');model.identity(wanted)
         entries[wanted] = ready(root,wanted)
@@ -220,9 +267,10 @@ def select(root, identifier=None, *, expected_selected, rollback=False, dry_run=
         after = entries[wanted]['record']['description']['inputs']['description']
         preserved = [k for k in ('base','system','kernel','platform','boot','firmware','state_requirements') if k != area]
         require(all(before[k] == after[k] for k in preserved),area+'-only selection must preserve other areas and boot policy')
-        if audit:_gates(root,entries)
+        if audit:
+            unused,all_entries,unused_raw=current(root);all_entries.update(entries);_gates(root,all_entries)
         if wanted == d['selected']:return old,entries,raw
-        next_d = copy.deepcopy(d);next_d.update(selected=wanted,previous=d['selected'],entries=[dict(deployment=k,path=model.slot(k)) for k in sorted(entries)])
+        next_d = copy.deepcopy(d);next_d.update(selected=wanted,previous=d['selected'],entries=[dict(deployment=k,path=model.slot(k)) for k in sorted({r['deployment'] for r in d['entries']}|set(entries))])
         return record(model.SELECTION,next_d),entries,raw
     with read_locks(root):value,entries,raw = prepare(audit=verify and dry_run)
     changed = value['description']['selected'] != expected_selected
@@ -240,7 +288,7 @@ def select(root, identifier=None, *, expected_selected, rollback=False, dry_run=
 
 def observation(root):
     if not present(root) or not os.path.lexists(root/MENU):return None
-    value,entries,raw = current(root)
+    value,raw = state(root)
     return dict(family='mpm-boot-v2',version=1,capabilities=['exact-system-selection'],evidence=value['id'])
 
 
@@ -248,19 +296,19 @@ def status(root, *, running_record=None, verify=False):
     from mpm_boot_status import running as validate_running, description
     import mpm_kernel as kernel
     root = store.target(root)
-    value,entries,raw = current(root,verify=verify,cache={} if verify else None)
+    value,entries,raw = current(root,verify=True,cache={}) if verify else selected(root,receipt=False)
     running = validate_running(root,running_record,release=os.uname().release) if running_record is not None else None
     active = dict(release=os.uname().release,artifact=None,deployment=None,evidence='unknown')
     if running is not None:
         d = description(running);active.update(artifact=d['kernel']['artifact'],deployment=running['id'],evidence='explicit-runtime-record')
-    selected = value['description']['selected'] if value else None
-    staged,incomplete = available(root)
-    return dict(format='mpm-native-v2-status-v1',selected=selected,
-        selected_kernel=description(entries[selected]['record'])['kernel'] if selected else None,
+    selected_id = value['description']['selected'] if value else None
+    staged,incomplete = available(root) if verify else summaries(root)
+    return dict(format='mpm-native-v2-status-v1',selected=selected_id,
+        selected_kernel=description(entries[selected_id]['record'])['kernel'] if selected_id else None,
         previous=value['description']['previous'] if value else None,running=active,
         staged=sorted(staged),incomplete=incomplete+([] if value else ['initial selection missing']),
         installed=kernel.status(root/'kernel',verify=verify)['installed'],
-        running_is_selected=(running['id'] == selected) if running is not None and selected else None,
+        running_is_selected=(running['id'] == selected_id) if running is not None and selected_id else None,
         integrity='verified-now' if verify else 'metadata-only',
         compatibility='selection is next boot, never live activation; owner boot acceptance remains separate')
 

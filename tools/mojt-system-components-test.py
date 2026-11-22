@@ -2,7 +2,7 @@
 # Mojt Linux
 # Copyright (C) 2026 Jonas Persson
 # SPDX-License-Identifier: GPL-2.0-only
-"""Build/install two component generations, then explicitly boot and return."""
+"""Build/install two component generations; explicit boot and optional return."""
 import time
 STARTED=time.monotonic()
 import argparse
@@ -129,7 +129,7 @@ def prepare_child(run):
         install_seconds=sum(r['total']['wall_ns']/1e9 for r in reports))
     save(run/'completed.json',completed)
     print('PASS: two fresh component generations prepared; unchanged firmware never opened or repacked; zero profile file copies.',flush=True)
-    print('Next: activate, reboot, after, back, reboot, check-back. Reports: '+str(run),flush=True)
+    print('Next: activate, reboot, after. Optional return: back, reboot, check-back. Reports: '+str(run),flush=True)
     return 0
 
 
@@ -158,7 +158,7 @@ def main(argv=None):
             data=mbt_runtime.read_file(repo/source);(run/name).write_bytes(data);(run/name).chmod(0o444)
             hashes[name]=hashlib.sha256(data).hexdigest()
         snapshot=load('snapshot',run/'snapshot.py');before=snapshot.snapshot()
-        require(snapshot.mpm('system','status','--json')['running']['deployment']==before['selected'],'resolve pending next boot first')
+        require(before['running_deployment']==before['selected'],'resolve pending next boot first')
         save(run/'context.json',dict(format=FORMAT,baseline=before,code=str(code),execution=execution,support=hashes))
         temporary=WORK/('.current-'+run.name);temporary.symlink_to(run.name);os.replace(temporary,WORK/'current')
         (run/'tmp').mkdir(mode=0o700)
@@ -187,7 +187,13 @@ def main(argv=None):
         subprocess.run([str(RUNTIME/'bin/mbt'),'package','system','--help'],check=True)
         require((RUNTIME/'tools').is_symlink(),'running profile is not thin')
         require(complete['firmware'] is None or os.statvfs('/lib/firmware').f_flag & os.ST_RDONLY,'firmware is not read-only')
-        print('PASS: component System running; MPM/MBT available; Base/Kernel/boot policy retained. Next: back, then reboot.')
+        report=Path('/run/mojt/boot-checks.json')
+        if report.is_file():
+            checks=json.loads(report.read_text())
+            require(checks['deployment']==selected,'boot timing record belongs to another deployment')
+            print('Boot checks: reader %.3f s; current-state gates %.3f s; mode %s'%
+                (checks['reader_ms']/1000,checks['state_gates_ms']/1000,checks['mode']))
+        print('PASS: component System running; MPM/MBT available; Base/Kernel/boot policy retained. Optional return: back, reboot, check-back.')
     elif args.action=='back':
         now=snapshot.snapshot();require(now['running']==complete['candidate']['artifact'] and now['selected']==selected,'boot and check the component generation first')
         snapshot.mpm('system','select','--deployment',baseline,'--expected-selected',selected,'-y','--json')

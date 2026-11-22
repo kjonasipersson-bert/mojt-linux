@@ -265,6 +265,11 @@ estimated percentages. Next boot stays unchanged. If preparation fails, the
 command fails, reports that content is retained, and leaves the selection alone;
 fix the reported problem and repeat installation to retry preparation. `--verify`
 adds full content audits; it is not required for ordinary installation.
+Preparation accepts the relevant immutable inputs once and checks current
+selection/state again before publishing. Normal boot uses the chosen deployment
+and its dependencies without inspecting every retained generation. Plain status
+lists metadata summaries; it does not repeat complete boot-readiness or content
+audits for every displayed entry.
 
 A component-based System stores Runtime and optional firmware once. Its profile
 projects exact retained payloads using controlled links. Updating Runtime can

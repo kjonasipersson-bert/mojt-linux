@@ -300,6 +300,56 @@ def retained(profile, manifest):
     return value
 
 
+def summary(profile,manifest,inventory=None):
+    """Read declared support bound to accepted content; full byte audit is retained()."""
+    import mpm_system as system
+    import mpm_base as base
+    inventory=system.logical_inventory(profile,manifest) if inventory is None else inventory
+    if FILENAME not in inventory:return None
+    row=inventory[FILENAME];file=profile/FILENAME
+    require(file_hash(file)==row['sha256'] and stat.S_IMODE(file.lstat().st_mode)==row['mode'],'management capability evidence differs')
+    value=validate(base.read(file));files=value['description']['implementation']['identity']['files']
+    require(set(files)==set(CAPABILITY_FILES),'incomplete native management support')
+    for name,checksum in files.items():
+        require(inventory.get('tools/'+name,{}).get('sha256')==checksum,'management implementation differs from accepted inventory')
+    return value
+
+
+def schemas(root,*,systems=(),selection=None):
+    """Observe actual formats and relevant Systems; never inspect retained history."""
+    import mpm_system as system
+    import mpm_base as base
+    import mpm_transaction as tx
+    registries=[]
+    lifecycle=root/'state/var/lib/mojt/lifecycle'
+    tx.protected_directory(lifecycle,label='lifecycle registry')
+    if lifecycle.exists():
+        require(lifecycle.is_dir() and not lifecycle.is_symlink(),'unsafe lifecycle registry')
+        require({p.name for p in lifecycle.iterdir()}<={'defaults-v1'},'unsupported lifecycle registry')
+        if (lifecycle/'defaults-v1').exists():
+            tx.protected_directory(lifecycle/'defaults-v1',label='defaults registry')
+            require((lifecycle/'defaults-v1').is_dir(),'unsafe defaults registry')
+            require({p.name for p in (lifecycle/'defaults-v1').iterdir()}<={base.store_info(root)['installation']},'lifecycle registry belongs to another installation')
+            registries.append(dict(family='mpm-defaults',version=1,capabilities=[],evidence=base.store_info(root)['installation']))
+            # Evidence is a bounded schema declaration, not a claim of a history audit.
+            registries[-1]['evidence']=digest(dict(installation=registries[-1]['evidence'],format='defaults-v1'))
+    marker=system.registry(root)
+    if marker is not None:
+        caps=set()
+        for checked in systems:
+            for body,unused in checked.parts.values():
+                if body['dependencies']:caps.add('exact-provider-dependencies')
+                if any(r['type']=='symlink' for r in body['files']):caps.add('profile-symlinks')
+                if system.runtime_outputs({body['id']:(body,None)}):caps.add('profile-runtime-outputs')
+        registries.append(dict(family='mpm-system',version=1,capabilities=sorted(caps),evidence=marker['id']))
+    if selection is None:
+        import mpm_boot_selection as boot
+        if boot.present(root):selection=boot.state(root)[0]
+    if selection is not None:
+        registries.append(dict(family='mpm-boot-v2',version=1,capabilities=['exact-system-selection'],evidence=selection['id']))
+    return context(registries=sorted(registries,key=lambda r:r['family']))
+
+
 def observe_target(root):
     """Only the implemented lifecycle registry is observed; absence is explicit."""
     import mpm_defaults as defaults
