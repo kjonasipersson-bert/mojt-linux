@@ -21,7 +21,7 @@ from unittest import mock
 ROOT=Path('/run/mojt-disk')
 RUNTIME=Path('/run/mojt-system')
 WORK=Path('/var/lib/mojt/system-install-profile')
-SUPPORT={'driver.py':'tools/mojt-system-install-profile.py','package.py':'tools/mojt-system-fast-test.py',
+SUPPORT={'driver.py':'tools/mojt-system-install-profile.py','package.py':'tools/mojt_system_tooling.py',
          'profile.py':'tools/mojt-stage-profile.py','snapshot.py':'tools/mojt-system-firmware-test.py'}
 FORMAT='mojt-system-install-profile-v1'
 

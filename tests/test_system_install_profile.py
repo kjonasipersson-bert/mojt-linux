@@ -79,7 +79,7 @@ class IntegrationTests(firmware.PackageTests):
         self.assertTrue((run/'summary.txt').is_file());self.assertFalse(self.marker.exists())
 
     def test_reviewed_resource_cohort_packages_unchanged_firmware_and_uses_public_install(self):
-        packager=driver.load('test_package',REPO/'tools/mojt-system-fast-test.py')
+        packager=driver.load('test_package',REPO/'tools/mojt_system_tooling.py')
         profiler=driver.load('test_profile',REPO/'tools/mojt-stage-profile.py')
         data={n:(REPO/n).read_bytes() for n in mbt_runtime.resources(REPO)}
         hashes={n:hashlib.sha256(v).hexdigest() for n,v in data.items()}

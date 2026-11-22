@@ -16,9 +16,10 @@ unpublished realization stage and syncs both parents. A different-filesystem
 workspace keeps the durable copy path. Required content, compatibility and
 publication checks remain; `--verify` still audits the final profile.
 
-This removes one materialization, not every copy made during installation. It
-does not optimize unpacking, retained objects, initramfs construction or provider
-queries. Existing releases and persistent state are unchanged. Failure before
+This diagnostic isolates one profile materialization. It does not measure
+unpacking, retained-object placement, initramfs construction or provider queries.
+Use the [combined install diagnostic](system-install-profile.md) to measure those
+phases and the complete command. Existing releases and persistent state are unchanged. Failure before
 publication can leave retained inputs for retry; post-publication uncertainty
 continues to preserve potentially committed content.
 
