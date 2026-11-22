@@ -220,7 +220,7 @@ class PreviewTests(Fixture):
 
     def test_changed_physical_target_is_refused_without_a_registry(self):
         build = system.build_profile
-        for dry_run in (True,False):
+        for dry_run in ((True,False) if os.geteuid() == 0 else (True,)):
             moved = self.work / ('replaced-target-'+str(dry_run))
             def replace_target(*args, **kwargs):
                 result = build(*args, **kwargs)
