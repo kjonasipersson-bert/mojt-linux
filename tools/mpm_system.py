@@ -4,6 +4,7 @@
 """Content-only native System composition install. No state effects or selection."""
 from datetime import datetime, timezone
 import copy
+import errno
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -328,7 +329,21 @@ def build_profile(profile, body, value, parts, *, adapters=None, verify=False):
 
 
 def copy_profile(source, destination):
-    """Publish the privately prepared profile without rebuilding or reading it back."""
+    """Place a durable private profile in the unpublished realization stage.
+
+    build_profile has synced its files/directories. A same-filesystem rename
+    preserves those inodes without another content copy or per-file sync.
+    Cross-filesystem workspaces keep the durable copy path. Only tx.publish
+    below the caller's locks can make the completed realization visible.
+    """
+    io.directory(source)
+    if management.present(destination):raise FileExistsError(errno.EEXIST,'profile destination already exists',str(destination))
+    try:os.rename(source,destination)
+    except OSError as error:
+        if error.errno != errno.EXDEV:raise
+    else:
+        io.sync_directory(source.parent);io.sync_directory(destination.parent)
+        return
     def copy_file(original, target):
         info = io.regular(Path(original))
         io.copy_regular(original,Path(target),info.st_size,stat.S_IMODE(info.st_mode))

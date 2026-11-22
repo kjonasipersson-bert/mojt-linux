@@ -75,6 +75,8 @@ jobs:
         run: |
           python3 -B -m unittest discover -s tests -p 'test_mpm_system*.py' -v
           sudo env PYTHONPATH=tests python3 -B -m unittest discover -s tests -p 'test_mpm_system*.py' -v
+      - name: Check synthetic System profile placement benchmark
+        run: sudo python3 -I -B tests/benchmark-system-profile.py --workspace /var/tmp/mojt-profile-benchmark-ci --files 64 --file-size 1024 --large-files 1 --large-size-mib 1
       - name: Check native-v2 records, immutable slots and isolated initramfs reader
         run: |
           python3 -B -m unittest discover -s tests -p 'test_mpm_boot_*.py' -v

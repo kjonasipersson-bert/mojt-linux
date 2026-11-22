@@ -4,6 +4,7 @@
 """Real native System archives/components; no Nix, package execution or VM boot."""
 import contextlib
 import copy
+import errno
 import io
 import json
 import os
@@ -88,6 +89,59 @@ class Fixture(unittest.TestCase):
     def install(self, **kw):
         dependencies = kw.pop('dependency_files',[self.component_archive])
         return system.install(self.root,self.archive,self.body['id'],dependency_files=dependencies,yes=True,**kw)
+
+
+class ProfilePlacementTests(unittest.TestCase):
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
+        self.work=Path(self.temp.name);self.source=self.work/'preview/profile';self.target=self.work/'stage/profile'
+        (self.source/'nested').mkdir(parents=True);self.target.parent.mkdir()
+        (self.source/'nested/file').write_bytes(b'prepared content');(self.source/'nested/file').chmod(0o444)
+        (self.source/'alias').symlink_to('nested/file')
+        for p in (self.source/'nested',self.source):p.chmod(0o555)
+
+    @unittest.skipUnless(os.geteuid()==0,'read-only directory promotion requires an administrator')
+    def test_same_filesystem_preserves_inodes_modes_and_links_without_copying(self):
+        before=tree(self.source);inode=(self.source/'nested/file').stat().st_ino
+        with mock.patch.object(system.io,'copy_regular',side_effect=AssertionError('redundant profile copy')),\
+             mock.patch.object(system.io,'sync_directory',wraps=system.io.sync_directory) as sync:
+            system.copy_profile(self.source,self.target)
+        self.assertFalse(self.source.exists());self.assertEqual(tree(self.target),before)
+        self.assertEqual((self.target/'nested/file').stat().st_ino,inode)
+        self.assertEqual((self.target/'nested/file').stat().st_nlink,1)
+        self.assertEqual(os.readlink(self.target/'alias'),'nested/file')
+        self.assertEqual([c.args[0] for c in sync.call_args_list],[self.source.parent,self.target.parent])
+
+    def test_cross_filesystem_rename_refusal_falls_back_to_durable_copy(self):
+        before=tree(self.source);inode=(self.source/'nested/file').stat().st_ino
+        with mock.patch.object(system.os,'rename',side_effect=OSError(errno.EXDEV,'different devices')),\
+             mock.patch.object(system.io,'copy_regular',wraps=system.io.copy_regular) as copy_file:
+            system.copy_profile(self.source,self.target)
+        self.assertEqual(copy_file.call_count,1);self.assertEqual(tree(self.source),before)
+        self.assertEqual(tree(self.target),before)
+        self.assertNotEqual((self.target/'nested/file').stat().st_ino,inode)
+        self.assertEqual((self.target/'nested/file').stat().st_nlink,1)
+
+    @unittest.skipUnless(Path('/dev/shm').is_dir() and os.access('/dev/shm',os.W_OK),'requires a writable second filesystem')
+    def test_real_cross_filesystem_copy_preserves_the_prepared_source(self):
+        with tempfile.TemporaryDirectory(dir='/dev/shm') as folder:
+            target=Path(folder)/'profile'
+            if target.parent.stat().st_dev == self.source.stat().st_dev:self.skipTest('no second filesystem')
+            before=tree(self.source)
+            system.copy_profile(self.source,target)
+            self.assertEqual(tree(self.source),before);self.assertEqual(tree(target),before)
+            self.assertNotEqual((self.source/'nested/file').stat().st_dev,(target/'nested/file').stat().st_dev)
+
+    def test_other_rename_errors_and_existing_targets_never_trigger_copy_or_replacement(self):
+        before=tree(self.source)
+        with mock.patch.object(system.os,'rename',side_effect=OSError(errno.EACCES,'denied')),\
+             mock.patch.object(system.io,'copy_regular',side_effect=AssertionError('unexpected fallback')):
+            with self.assertRaises(OSError):system.copy_profile(self.source,self.target)
+        self.assertFalse(self.target.exists());self.assertEqual(tree(self.source),before)
+        self.target.mkdir();(self.target/'keep').write_bytes(b'existing target')
+        with self.assertRaises(FileExistsError):system.copy_profile(self.source,self.target)
+        self.assertEqual((self.target/'keep').read_bytes(),b'existing target')
+        self.assertEqual(tree(self.source),before)
 
 
 @unittest.skipUnless(shutil.which('zstd'), 'requires real native archive codec')
@@ -253,6 +307,21 @@ class InstallTests(Fixture):
         self.assertEqual(len(status['retained']), 1);self.assertEqual(len(status['components']), 1);self.assertEqual(status['installed'], [])
         self.assertTrue(system.install(self.root, None, self.body['id'], yes=True)['changed'])
         self.assertEqual(len(system.status(self.root, verify=True)['installed']), 1)
+
+    def test_directory_flush_failure_after_profile_move_keeps_publication_absent_and_retryable(self):
+        sync=system.io.sync_directory
+        def fail(path):
+            if path.parent == self.root/'realizations/system' and path.name.startswith('.install-'):
+                self.assertTrue((path/'profile/bin/mpm').is_file())
+                raise OSError('injected promotion directory flush')
+            return sync(path)
+        with mock.patch.object(system.io,'sync_directory',side_effect=fail),\
+             self.assertRaisesRegex(OSError,'promotion directory flush'):
+            self.install()
+        self.assertFalse(system.realization_path(self.root,self.body['id']).exists())
+        self.assertFalse(list((self.root/'realizations/system').glob('.install-*')))
+        self.assertTrue(system.install(self.root,None,self.body['id'],yes=True)['changed'])
+        self.assertEqual(len(system.status(self.root,verify=True)['installed']),1)
 
     def test_post_publication_flush_failure_retains_complete_realization(self):
         real = tx.publish

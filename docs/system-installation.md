@@ -139,8 +139,12 @@ optional through `--verify`. One temporary profile is composed before
 target mutation. The plan binds the physical target directory and existing
 installation identity, which are rechecked after approval. The writer then reuses the common artifact-store locking and
 ordered installation lock, rechecks retained component metadata, publishes complete
-immutable objects and durably copies/publishes that prepared profile without
-composing it again. Archive structure/link confinement, decompressor exit status,
+immutable objects and places that prepared profile in a private realization
+stage without composing it again. On the same filesystem it renames the already
+synced profile and syncs both parent directories, avoiding another full content
+copy and per-file sync. A cross-filesystem workspace uses the durable copy path.
+Only the completed realization is published; existing releases are never linked
+to mutable staging files or replaced. Archive structure/link confinement, decompressor exit status,
 copy failures and atomic publication errors are checked in both modes. A failure can retain
 complete imported components or a generation object without its realization;
 status reports that generation as **retained, not installed**. Retry can finish
