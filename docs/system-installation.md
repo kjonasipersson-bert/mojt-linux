@@ -6,9 +6,8 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Native System content installation and status
 
-This implements the first native System installation unit in consolidation step
-3. It imports exact native components with controlled profile links, validates a generation's
-resolved composition and materializes an immutable profile. It does not change
+Native System installation imports exact components with controlled profile
+links, validates a generation's resolved composition and materializes an immutable profile. It does not change
 persistent configuration/accounts/data, existing System profiles, services,
 Base/Kernel selection, the boot menu or the running System. No package code,
 frontend, interpreter or lifecycle handler from the candidate is executed.
@@ -74,6 +73,43 @@ Named-source installation acquires the complete native bundle from one accepted
 snapshot. Direct provider profile mappings, transitive native component import,
 hardlinks and lifecycle execution remain later joins. Packaging/import does not
 prove ELF/libc compatibility or boot readiness.
+
+## Normal transaction and verification
+
+A normal live installation consists of content installation followed by automatic
+boot preparation. These are separate publication boundaries: if preparation
+fails, installed content remains available for an explicit retry, and the next
+boot choice stays unchanged. `--content-only` stops after content installation.
+
+Mutating content installation creates scratch space through the target disk's own path, rather than
+`TMPDIR`. This allows completed private imports/profiles to be renamed into their
+publication stages, including when `/var` is a bind mount of the same disk.
+Required archives and independent profile files are still written and synced.
+The private workspace is anchored to an open target directory through cleanup;
+a replaced target is refused without cleaning an unrelated replacement tree.
+Read-only previews use external temporary space and do not require target writes.
+
+Boot preparation acquires the cooperating store, installation, Kernel, boot and
+existing Ports locks once. It reads the selected context and creates one
+compatibility plan, validates the exact boot inputs, then constructs, retains and
+admits the prepared entry under those locks. Internal construction/storage steps
+consume the checked inputs; they do not rebuild the transition plan. An
+interactive preview is outside the write transaction and its approved identity
+must still match when the transaction starts.
+
+| Boundary | Checks |
+| --- | --- |
+| Incoming content | Archive identity, bounded safe paths/types/links, composition and dependencies |
+| Locked boot planning | Base/Kernel/System identity and compatibility, providers, startup/state/default and management requirements |
+| Construction and retention | Exact constructor/runtime inputs and generated boot bytes; durable immutable publication |
+| Final admission | Current persistent startup requirements, unchanged selection/state/target, completed manager-owned build and retained slot binding |
+| Explicit `--verify` | Additional archive, retained profile/tree and provider content audits |
+
+The locks prevent cooperating MPM writers from changing the planned resources.
+Persistent configuration can also be edited independently, so admission checks
+current state and brackets that check with selection/state/target guards. Saved
+plans passed to standalone builder APIs are revalidated at their own entry
+boundary. Normal installation neither selects the prepared entry nor reboots.
 
 ## Package and runtime contracts
 

@@ -2,6 +2,7 @@
 # Copyright (C) 2026 Jonas Persson
 # SPDX-License-Identifier: GPL-2.0-only
 """Content-only native System composition install. No state effects or selection."""
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import copy
 import errno
@@ -473,6 +474,27 @@ def target_identity(root):
     return dict(device=info.st_dev, inode=info.st_ino)
 
 
+@contextmanager
+def _workspace(root, *, dry_run=False):
+    """Private scratch on the publication mount, anchored through cleanup."""
+    if dry_run:
+        with tempfile.TemporaryDirectory(prefix='mojt-system-preview-') as temporary:yield Path(temporary)
+        return
+    fd = os.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+    folder = None
+    try:
+        anchor = Path('/proc/self/fd')/str(fd)
+        folder = Path(tempfile.mkdtemp(prefix='mojt-system-preview-',dir=anchor)).name
+        held = os.fstat(fd)
+        require(target_identity(root) == dict(device=held.st_dev,inode=held.st_ino),
+                'System target changed before scratch creation')
+        yield root/folder
+    finally:
+        try:
+            if folder is not None:io.clean_stage(Path('/proc/self/fd')/str(fd)/folder)
+        finally:os.close(fd)
+
+
 def install(root, archive, identifier, *, dependency_files=(), dry_run=False, yes=False, acquisition=None, adapters=None, dependency_acquisition=None, verify=False):
     io.identifier(identifier);root = target(root, write=not dry_run)
     physical = target_identity(root)
@@ -494,8 +516,10 @@ def install(root, archive, identifier, *, dependency_files=(), dry_run=False, ye
             return dict(changed=False, dry_run=dry_run, action='no-change', artifact=identifier, realization=completed['id'], selected='unchanged', running='unchanged')
         archive = object_path(root, identifier) / 'archive.tar.zst';acquisition = receipt['description'].get('acquisition')
     require(archive is not None, 'missing exact System archive')
-    with tempfile.TemporaryDirectory(prefix='mojt-system-preview-') as temp:
-        work = Path(temp);body, encoding = _freeze(archive, work / 'generation', identifier, verify=verify)
+    # Keep scratch and publication paths in the same mount namespace. /var
+    # can be a bind mount of this disk: equal st_dev alone does not permit rename.
+    with _workspace(root,dry_run=dry_run) as work:
+        body, encoding = _freeze(archive, work / 'generation', identifier, verify=verify)
         comp, actions = composition(work / 'generation', body)
         io.acquisition_trust(acquisition, identifier, encoding['sha256'], encoding['size'])
         parts, frozen, encodings = {}, {}, {}

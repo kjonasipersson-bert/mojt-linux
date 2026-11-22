@@ -271,7 +271,8 @@ def selected_context(root, baseline):
     state,entries,menu = selection.current(root)
     require(state is not None,'native-v2 initial selection is incomplete')
     selected_id = state['description']['selected'];value = entries[selected_id]['record']
-    require(inspect(root,selected_id,verify=base.io.preparation_verify()) == value,'selected native-v2 slot changed')
+    if base.io.preparation_verify():
+        require(inspect(root,selected_id,verify=True) == value,'selected native-v2 slot changed')
     source = value['description']['inputs'];old = inputs(source)
     body,receipt = system.object_record(root,old['system']['artifact'])
     realized = system.realization(root,body['id'],verify=base.io.preparation_verify())
@@ -291,14 +292,14 @@ def selected_context(root, baseline):
     require(artifact.digest(bounds) == old['base']['bounds_evidence'],'selected native Base bounds differ')
     return dict(native=True,selected=selected_id,old=old,manifest=manifest,menu=menu,bounds=bounds,kernel=kernel_body,
                 baseline_format=DEPLOYMENT,baseline_entry=slot(selected_id),selected_inputs=source['id'],baseline_inputs=source,
-                provider_references=system.retained_providers(root,body['id']),
+                entries=entries,provider_references=system.retained_providers(root,body['id']),
                 selected_system=dict(old['system'],receipt=receipt['id'],realization=realized['id']))
 
 
-def _prepare(root, identifier, baseline, adapters, *, area='system', bounds=None, joined=False):
+def _prepare(root, identifier, baseline, adapters, *, area='system', bounds=None, joined=False, context=None):
     require(os.geteuid() == 0, 'verified System planning requires administrator access to retained content')
     physical = system.target_identity(root)
-    context = selected_context(root,baseline)
+    context = selected_context(root,baseline) if context is None else context
     old,selected,menu = context['old'],context['manifest'],context['menu']
     if joined:
         require(context['native'] and area in ('base','system','kernel'), 'joined updates require native-v2 selection')
@@ -370,7 +371,8 @@ def _prepare(root, identifier, baseline, adapters, *, area='system', bounds=None
     # Bind actual persistent/selection facts, not the running System label.
     if context['native']:
         from mpm_boot_selection import current
-        unchanged = current(root)[2] == menu
+        from mpm_boot_selection import checked, MENU
+        unchanged = checked(root/MENU) == menu
     else:unchanged = boot.checked_file(root/'boot/mojt/grub.cfg') == menu
     require(unchanged and system.target_identity(root) == physical, 'selection or target changed during System planning')
     require(common.state_inputs(root) == persistent and defaults(root, profile) == observed_defaults, 'persistent state changed during System planning')

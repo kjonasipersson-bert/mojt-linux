@@ -34,6 +34,14 @@ driver=importlib.util.module_from_spec(spec);spec.loader.exec_module(driver)
 
 @unittest.skipUnless(os.geteuid()==0,'requires protected root-owned execution resources')
 class FreezeTests(unittest.TestCase):
+    def test_two_samples_are_distinct_operations_and_failure_stops_the_run(self):
+        with mock.patch.object(driver.os.path,'ismount',return_value=True),             mock.patch.object(driver,'sample',side_effect=[0,0]) as sample:
+            self.assertEqual(driver.main(['--samples','2']),0)
+            self.assertEqual(sample.call_count,2)
+        with mock.patch.object(driver.os.path,'ismount',return_value=True),             mock.patch.object(driver,'sample',return_value=1) as sample:
+            self.assertEqual(driver.main(['--samples','2']),1)
+            sample.assert_called_once()
+
     def test_one_command_freezes_its_cohort_and_support_then_uses_retained_python_and_disk_tmp(self):
         with tempfile.TemporaryDirectory() as folder:
             work=Path(folder)/'diagnostic';before=dict(running='sha256:'+'a'*64,selected='sha256:'+'b'*64)

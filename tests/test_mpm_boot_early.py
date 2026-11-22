@@ -279,7 +279,7 @@ class ConstructorTests(unittest.TestCase):
         approved=update.prepare(root,'system',other,adapters=f.f.adapters)
         changed=copy.deepcopy(approved['description']);changed['state']['ports']='sha256:'+'0'*64
         changed=base.record(approved['format'],changed)
-        with mock.patch.object(update,'prepare',side_effect=[approved,changed]), \
+        with mock.patch.object(update.transition,'_prepare',side_effect=[approved,changed]), \
              mock.patch.object(constructor,'freeze_runtime',side_effect=AssertionError('stale approval wrote runtime')):
             with self.assertRaisesRegex(ValueError,'changed after approval'):
                 update.upgrade(root,'system',other,yes=True,**options)

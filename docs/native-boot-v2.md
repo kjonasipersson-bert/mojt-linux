@@ -69,7 +69,9 @@ Preparation can leave coordination directories/locks, but no boot choice.
 Dry-run creates no target directories, slots or locks.
 
 `inspect` checks retained sidecars/bytes; it does not repeat the installed input
-audit. `retain`, including its no-op and dry-run paths, does repeat that audit.
+audit. Standalone `retain`, including its no-op and dry-run paths, audits its
+supplied inputs at the entry boundary. The normal updater calls the same locked
+retention primitive after its own input audit, without repeating it.
 Neither function certifies the initramfs contents as executable or bootable.
 
 ## Verification constructor and remaining gates

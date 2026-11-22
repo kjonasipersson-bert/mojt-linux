@@ -82,48 +82,74 @@ def _admit(root, item, built, *, adapters):
     """Private manager join: only an in-process constructor result, never JSON."""
     require(isinstance(built,constructor.CompletedBuild) and built.get('handover_enabled') is True and built.handover is not None,
             'stage admission requires a completed manager-owned System constructor')
+    source = item['description']['inputs']
+    with locked(root) as root:
+        handover.recheck_locked(root,built.handover,source,adapters)
+        cache = {}
+        if io.preparation_verify():early.verify_content(root,source,built['proof'],cache=cache)
+        handover.check(root,source,built['proof'],built.handover,cache=cache,verify_content=io.preparation_verify())
+        return _admit_locked(root,item,built)
+
+
+def _admit_locked(root, item, built):
+    """Admit a completed checked build while caller retains all transaction locks."""
+    require(isinstance(built,constructor.CompletedBuild) and built.get('handover_enabled') is True and built.handover is not None,
+            'stage admission requires a completed manager-owned System constructor')
     source = item['description']['inputs'];model.deployment(item)
     require(built['binding'] == item['description']['initramfs'] and hashlib.sha256(built['archive']).hexdigest() == built['binding']['description']['archive']['sha256'],
             'completed build differs from slot')
     require(source['description']['constructor']['identity']['code'] ==
             {name:artifact.file_sha(Path(__file__).with_name(name)) for name in paths.MPM_FILES},'constructor code changed before stage admission')
-    with locked(root) as root:
-        require(store.inspect(root,item['id']) == item,'retained slot changed')
-        handover.recheck_locked(root,built.handover,source,adapters)
-        cache = {}
-        if io.preparation_verify():early.verify_content(root,source,built['proof'],cache=cache)
-        handover.check(root,source,built['proof'],built.handover,cache=cache,verify_content=io.preparation_verify())
-        value = record(READY,dict(installation=source['description']['installation'],deployment=item['id'],inputs=source['id'],
-            archive=built['binding']['description']['archive'],proof=built['proof'],handover=built.handover))
-        model.envelope(value,READY)
-        parent = root/'boot/mpm/ready';tx.protected_directory(parent,write=True);parent.mkdir(mode=0o755,exist_ok=True)
-        destination = parent/(item['id'][7:]+'.json')
-        if os.path.lexists(destination):
-            require(_read(destination) == value,'refuse to replace a stage receipt')
-            io.sync_directory(parent);return value
-        fd,name = tempfile.mkstemp(prefix='.admit-',dir=parent);os.close(fd);temporary = Path(name);temporary.unlink()
-        try:io.write_json(temporary,value);tx.publish(temporary,destination)
-        finally:
-            if temporary.exists():temporary.unlink()
-        return value
+    require(store.inspect(root,item['id'],verify=io.preparation_verify()) == item,'retained slot changed')
+    value = record(READY,dict(installation=source['description']['installation'],deployment=item['id'],inputs=source['id'],
+        archive=built['binding']['description']['archive'],proof=built['proof'],handover=built.handover))
+    model.envelope(value,READY)
+    parent = root/'boot/mpm/ready';tx.protected_directory(parent,write=True);parent.mkdir(mode=0o755,exist_ok=True)
+    destination = parent/(item['id'][7:]+'.json')
+    if os.path.lexists(destination):
+        require(_read(destination) == value,'refuse to replace a stage receipt')
+        io.sync_directory(parent);return value
+    fd,name = tempfile.mkstemp(prefix='.admit-',dir=parent);os.close(fd);temporary = Path(name);temporary.unlink()
+    try:io.write_json(temporary,value);tx.publish(temporary,destination)
+    finally:
+        if temporary.exists():temporary.unlink()
+    return value
 
 
 def stage(root, source, runtime_directory, busybox, work, *, bounds, adapters, contract, runtime_value=None):
-    """MBT/image preparation API: construct, retain and admit; never select."""
+    """Standalone saved-handover entry; use the same locked construction path."""
+    with locked(root) as root:
+        handover.recheck_locked(root,contract,source,adapters)
+        store.audit_inputs(root,source,bounds,adapters=adapters)
+        return _stage_locked(root,source,runtime_directory,busybox,work,bounds=bounds,adapters=adapters,
+            contract=contract,entries=None,runtime_value=runtime_value)
+
+
+def _stage_locked(root, source, runtime_directory, busybox, work, *, bounds, adapters, contract, entries, runtime_value=None):
+    """One checked plan through construction, retention and final admission."""
     with ui.phase('Construct boot files'):
-        built = constructor.build(root,source,runtime_directory,busybox,work,bounds=bounds,adapters=adapters,handover=contract,reuse_payload=True,runtime_value=runtime_value)
-    root = store.target(root);i = model.inputs(source)
+        built = constructor._build_locked(root,source,runtime_directory,busybox,work,bounds=bounds,
+            adapters=adapters,handover=contract,reuse_payload=True,runtime_value=runtime_value,entries=entries)
+    i = source['description']
     image = root/'kernel/installed'/i['kernel']['artifact'][7:]/'payload/boot'/('vmlinuz-'+i['kernel']['release'])
     item = model.compose(source,built['binding'],image.stat().st_size)
     archive = Path(work)/'completed-initramfs.cpio.gz'
-    with archive.open('xb') as stream:stream.write(built['archive']);os.fchmod(stream.fileno(),0o444);os.fsync(stream.fileno())
+    with archive.open('xb') as stream:
+        stream.write(built['archive']);os.fchmod(stream.fileno(),0o444);os.fsync(stream.fileno())
     with ui.phase('Retain boot files'):
-        store.retain(root,item,image,archive,bounds=bounds,adapters=adapters)
+        store._retain_locked(root,item,image,archive)
     with ui.phase('Admit prepared boot entry'):
-        receipt = _admit(root,item,built,adapters=adapters)
+        # Persistent files can be edited outside MPM's locks. Check current
+        # startup/state requirements once at this boundary; do not repeat planning.
+        handover.unchanged(root,contract['description']['preflight'])
+        cache = {}
+        if io.preparation_verify():early.verify_content(root,source,built['proof'],cache=cache)
+        handover.check(root,source,built['proof'],contract,cache=cache,verify_content=io.preparation_verify())
+        handover.unchanged(root,contract['description']['preflight'])
+        receipt = _admit_locked(root,item,built)
     return dict(deployment=item['id'],stage_receipt=receipt['id'],selection_changed=False,boot_ready=False,
-                initramfs_payload=dict(inputs=built['payload_key'],reused=built['payload_reused']),
-                scope='Complete handover staged; next-boot selection and owner boot acceptance are separate.')
+        initramfs_payload=dict(inputs=built['payload_key'],reused=built['payload_reused']),
+        scope='Complete handover staged; next-boot selection is separate.')
 
 
 def current(root, *, verify=False, cache=None):

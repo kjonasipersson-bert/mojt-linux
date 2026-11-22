@@ -74,7 +74,43 @@ def recheck_locked(root, value, source, adapters):
 
 
 def prepare(root, source, plan, *, adapters, tar='tar'):
-    """Join the existing preflight to a new immutable boot-only Base realization."""
+    """Standalone saved-plan entry: acquire locks and validate before writing."""
+    require(os.geteuid() == 0,'System handover preparation requires an administrator')
+    root = base.target(root,write=True)
+    for name in ('boot','boot/mpm'):
+        tx.protected_directory(root/name,write=True);(root/name).mkdir(mode=0o755,exist_ok=True)
+    locks = {root/'.artifact-store.lock',root/'artifacts/.lock',*tx.boot_lock_paths(root)}
+    locks = {p for p in locks if p.parent.exists()}
+    with tx.resource_locks(locks,modes={root/'.install-lock':0o644}):
+        require(transition.repeat(root,plan,adapters) == plan,'boot inputs changed before preparation')
+        context = transition.selected_context(root,plan['description']['baseline'])
+        value = prepare_locked(root,source,plan,context,adapters=adapters,tar=tar)
+        import mpm_system as system
+        from mpm_boot_constructor import provider_paths
+        roots = sorted({p for ref in system.retained_providers(root,source['description']['system']['artifact'])
+                        for p in provider_paths(root,ref,adapters)})
+        check(root,source,None,value,provider_roots=roots,verify_content=base.io.preparation_verify())
+        unchanged(root,plan)
+        return value
+
+
+def unchanged(root, plan):
+    """Recheck mutable machine/selection inputs, not immutable compatibility work."""
+    from mpm_boot_selection import checked, MENU, HOOK, present
+    import mpm_system as system
+    p = plan['description']
+    if present(root):
+        require(checked(root/'boot/mojt/grub.cfg') == HOOK,'native-v2 bootloader hook changed')
+        menu = checked(root/MENU)
+    else:menu = common.checked_bytes(root/'boot/mojt/grub.cfg')
+    require(hashlib.sha256(menu).hexdigest() == p['selection_sha256']
+            and common.state_inputs(root)['evidence'] == p['state']
+            and system.target_identity(root) == p['target_identity'],
+            'selection, state or target changed during preparation')
+
+
+def prepare_locked(root, source, plan, context, *, adapters, tar='tar'):
+    """Construct from a plan/context checked under caller-held transaction locks."""
     require(os.geteuid() == 0,'System handover preparation requires an administrator')
     root = base.target(root,write=True);candidate = transition.boot_fields(plan);p = plan['description']
     require(p['checks']['compatible'],'System preflight blocks handover')
@@ -86,38 +122,25 @@ def prepare(root, source, plan, *, adapters, tar='tar'):
             and all(candidate['kernel'][k] == i['kernel'][k] for k in candidate['kernel']), 'handover scope differs')
     for name in ('boot','boot/mpm'):
         tx.protected_directory(root/name,write=True);(root/name).mkdir(mode=0o755,exist_ok=True)
-    locks = {root/'.artifact-store.lock',root/'artifacts/.lock',*tx.boot_lock_paths(root)}
-    # Do not initialize a Ports profile just to acquire a lock. Existing writers
-    # are observed again by the constructor and at boot; lock existing Ports state.
-    locks = {p for p in locks if p.parent.exists()}
-    with tx.resource_locks(locks,modes={root/'.install-lock':0o644}):
-        require(transition.repeat(root,plan,adapters) == plan,'boot inputs changed before preparation')
-        context = transition.selected_context(root,p['baseline']);old = context['manifest']
-        profile = (root/'realizations/system'/context['old']['system']['artifact'][7:]/'profile' if context['native']
-                   else root/'system'/old['description']['label'])
-        support = management.retained(profile,old)
-        release = tomllib.loads(common.checked_bytes(base.object_path(root,i['base']['artifact'])/'payload/manifest.toml').decode())
-        mounts = {};provider_roots = set()
-        import mpm_system as system
-        from mpm_boot_constructor import provider_paths
-        for ref in system.retained_providers(root,i['system']['artifact']):
-            adapter = adapters[ref['provider']]
-            provider_roots.update(provider_paths(root,ref,adapters))
-            require(hasattr(adapter,'boot_mounts'),'provider has no boot mount contract')
-            for row in adapter.boot_mounts(ref,root):
-                require(type(row) is dict and type(row.get('target')) is str,'invalid provider mount projection')
-                require(row['target'] not in mounts or mounts[row['target']] == row,'conflicting provider mounts')
-                mounts[row['target']] = copy.deepcopy(row)
-        value = record(FORMAT,dict(inputs=source['id'],preflight=plan,baseline_manifest=old,baseline_support=support,
-            base_facts=dict(architecture=release['base']['architecture'],base_abi=release['abi'],state_layout=release['state']['layout_version']),
-            boot_base=boot_base.prepare_locked(root,i['base']['artifact'],tar=tar),mounts=[mounts[k] for k in sorted(mounts)]))
-        validate(value,source);check(root,source,None,value,provider_roots=sorted(provider_roots),verify_content=base.io.preparation_verify())
-        from mpm_boot_selection import current
-        menu = current(root)[2] if context['native'] else transition.boot.checked_file(root/'boot/mojt/grub.cfg')
-        require(hashlib.sha256(menu).hexdigest() == p['selection_sha256']
-                and common.state_inputs(root)['evidence'] == p['state'] and system.target_identity(root) == p['target_identity'],
-                'selection, state or target changed during preparation')
-        return value
+    old = context['manifest']
+    profile = (root/'realizations/system'/context['old']['system']['artifact'][7:]/'profile' if context['native']
+               else root/'system'/old['description']['label'])
+    support = management.retained(profile,old)
+    release = tomllib.loads(common.checked_bytes(base.object_path(root,i['base']['artifact'])/'payload/manifest.toml').decode())
+    mounts = {}
+    import mpm_system as system
+    for ref in system.retained_providers(root,i['system']['artifact']):
+        adapter = adapters[ref['provider']]
+        require(hasattr(adapter,'boot_mounts'),'provider has no boot mount contract')
+        for row in adapter.boot_mounts(ref,root):
+            require(type(row) is dict and type(row.get('target')) is str,'invalid provider mount projection')
+            require(row['target'] not in mounts or mounts[row['target']] == row,'conflicting provider mounts')
+            mounts[row['target']] = copy.deepcopy(row)
+    value = record(FORMAT,dict(inputs=source['id'],preflight=plan,baseline_manifest=old,baseline_support=support,
+        base_facts=dict(architecture=release['base']['architecture'],base_abi=release['abi'],state_layout=release['state']['layout_version']),
+        boot_base=boot_base.prepare_locked(root,i['base']['artifact'],tar=tar),mounts=[mounts[k] for k in sorted(mounts)]))
+    validate(value,source)
+    return value
 
 
 def guest_file(root, tree, profile, provider_roots, mounts, guest):

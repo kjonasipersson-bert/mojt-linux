@@ -151,9 +151,20 @@ def child(run):
 
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--child',type=Path,help=argparse.SUPPRESS)
+    parser.add_argument('--samples',type=int,choices=(1,2),default=1,help='use two fresh installs to observe cold then warm boot-payload preparation')
     args=parser.parse_args(argv)
     require(os.geteuid() == 0 and os.path.ismount(ROOT) and os.path.ismount(RUNTIME),'run as root on installed native Mojt')
-    if args.child is not None:return child(args.child)
+    if args.child is not None:
+        require(args.samples == 1,'child execution accepts one frozen sample only')
+        return child(args.child)
+    for number in range(args.samples):
+        print('Installation sample %d/%d'%(number+1,args.samples),flush=True)
+        code=sample()
+        if code:return code
+    return 0
+
+
+def sample():
     repo=Path(__file__).resolve().parents[1];sys.path.insert(0,str(repo/'tools'));import mbt_runtime
     protected(WORK);WORK.mkdir(mode=0o700,parents=True,exist_ok=True)
     run=Path(tempfile.mkdtemp(prefix='run-',dir=WORK));code=Path(tempfile.mkdtemp(prefix=mbt_runtime.PREFIX,dir=run))

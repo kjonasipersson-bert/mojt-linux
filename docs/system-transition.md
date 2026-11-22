@@ -115,9 +115,13 @@ existing service libc dependencies; it does not infer plugin/desktop ABI safety.
 The joined updater uses `mojt-boot-transition-preflight-v1`, recording the exact
 baseline inputs, candidate boot Base/System/Kernel and one permitted area. The
 same handover, constructor, immutable slot store, readiness receipt and atomic
-menu publisher used by image preparation consume this result. A saved preflight
-is never an executable authorization: the constructor/admission boundary repeats
-it under locks and refuses changed selection, target or persistent state.
+menu publisher used by image preparation consume this result. The normal updater
+builds the plan once while holding the transaction locks and passes its checked
+inputs to construction and retention. Admission checks current startup/state
+requirements and refuses changed selection, target or persistent state. A saved
+preflight supplied to a standalone builder is independently revalidated under
+locks; serialized data is never executable authorization. See the
+[normal transaction boundaries](system-installation.md#normal-transaction-and-verification).
 
 A failed construction may leave retained verified content, but does not select
 it. Repeating staging reuses only a complete admitted deployment with matching

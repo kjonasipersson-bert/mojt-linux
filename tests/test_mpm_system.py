@@ -220,14 +220,15 @@ class PreviewTests(Fixture):
 
     def test_changed_physical_target_is_refused_without_a_registry(self):
         build = system.build_profile
-        moved = self.work / 'replaced-target'
-        def replace_target(*args, **kwargs):
-            result = build(*args, **kwargs)
-            self.root.rename(moved);self.root.mkdir()
-            return result
-        with mock.patch.object(system, 'build_profile', side_effect=replace_target), self.assertRaisesRegex(ValueError, 'target changed'):
-            self.install(dry_run=True)
-        self.assertEqual(tree(self.root), {});self.assertEqual(tree(moved), {})
+        for dry_run in (True,False):
+            moved = self.work / ('replaced-target-'+str(dry_run))
+            def replace_target(*args, **kwargs):
+                result = build(*args, **kwargs)
+                self.root.rename(moved);self.root.mkdir()
+                return result
+            with mock.patch.object(system,'build_profile',side_effect=replace_target),self.assertRaisesRegex(ValueError,'target changed'):
+                self.install(dry_run=dry_run)
+            self.assertEqual(tree(self.root),{});self.assertEqual(tree(moved),{})
 
     def test_ordinary_user_denied_before_archive_or_codec_lookup(self):
         runtime = cli.Runtime(disk=self.root)
@@ -256,7 +257,50 @@ class InstallTests(Fixture):
     def test_real_cross_filesystem_import_and_profile_copy_still_verify(self):
         with tempfile.TemporaryDirectory(dir='/dev/shm') as folder:
             if Path(folder).stat().st_dev == self.root.stat().st_dev:self.skipTest('no second filesystem')
-            with mock.patch.object(system.tempfile,'tempdir',folder):self.install(verify=True)
+            @contextlib.contextmanager
+            def cross_mount(root,**kwargs):
+                with tempfile.TemporaryDirectory(dir=folder) as private:yield Path(private)
+            with mock.patch.object(system,'_workspace',side_effect=cross_mount):self.install(verify=True)
+        self.assertEqual(len(system.status(self.root,verify=True)['installed']),1)
+
+    @unittest.skipUnless(shutil.which('unshare') and shutil.which('mount'),'requires isolated mount support')
+    def test_bind_mounted_tmpdir_does_not_force_import_or_profile_copy_fallback(self):
+        alias=self.work/'tmp-alias';alias.mkdir()
+        source=self.root/'scratch-source';source.mkdir()
+        code = r"""
+import errno,json,os,subprocess,sys,tempfile
+from pathlib import Path
+import test_mpm_system
+import mpm_system as system
+root,source,alias,archive,identifier,component=map(Path,sys.argv[1:])
+subprocess.run(['mount','--bind',str(source),str(alias)],check=True)
+try:
+    # The old TMPDIR path has the same device, but crosses a bind-mount boundary.
+    assert source.stat().st_dev == alias.stat().st_dev
+    (alias/'probe').mkdir()
+    try:os.rename(alias/'probe',root/'probe')
+    except OSError as error:assert error.errno == errno.EXDEV
+    else:raise AssertionError('fixture did not cross a mount boundary')
+    (alias/'probe').rmdir()
+    tempfile.tempdir=str(alias);rename=os.rename;fallbacks=[]
+    def observed(*args,**kwargs):
+        try:return rename(*args,**kwargs)
+        except OSError as error:
+            if error.errno == errno.EXDEV:fallbacks.append(str(args[0]))
+            raise
+    os.rename=observed
+    result=system.install(root,archive,str(identifier),dependency_files=[component],yes=True,verify=True)
+    assert result['changed'] and not fallbacks, fallbacks
+    print('PASS: bind-mounted TMPDIR avoided without any EXDEV fallback')
+finally:subprocess.run(['umount',str(alias)],check=True)
+"""
+        result=subprocess.run(['unshare','--mount','--propagation','private','--',sys.executable,'-B','-c',code,
+            str(self.root),str(source),str(alias),str(self.archive),self.body['id'],str(self.component_archive)],
+            capture_output=True,text=True)
+        if result.returncode and ('Operation not permitted' in result.stderr or 'permission denied' in result.stderr.lower()):
+            self.skipTest('mount namespaces unavailable in this executor')
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertIn('PASS: bind-mounted TMPDIR',result.stdout)
         self.assertEqual(len(system.status(self.root,verify=True)['installed']),1)
 
     def test_failed_import_move_flush_remains_unpublished_and_retryable(self):

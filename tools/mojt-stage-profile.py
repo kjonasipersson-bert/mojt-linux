@@ -95,10 +95,10 @@ class Timings:
 PHASES = {
     'mpm_cli':('main',),
     'mpm_boot_update':('stage','prepare','runtime_reference','source_for'),
-    'mpm_boot_constructor':('describe_runtime','freeze_runtime','build','capture','cached_payload','decode_modules'),
-    'mpm_boot_handover':('prepare',),
-    'mpm_boot_selection':('stage','_admit'),
-    'mpm_boot_v2_store':('retain',),
+    'mpm_boot_constructor':('describe_runtime','freeze_runtime','build','_build_locked','capture','cached_payload','decode_modules'),
+    'mpm_boot_handover':('prepare','prepare_locked'),
+    'mpm_boot_selection':('stage','_stage_locked','_admit','_admit_locked'),
+    'mpm_boot_v2_store':('retain','_retain_locked'),
 }
 DETAILS = {
     'mpm_system_transition':('_prepare','repeat','recheck','selected_context','providers','shells','tooling_review','defaults'),

@@ -23,6 +23,19 @@ inputs. No new firmware acquisition or Kernel compilation is performed.
 python3 -I -B tools/mojt-system-install-profile.py
 ```
 
+When constructor code has changed, the first preparation needs a new heavy
+payload cache entry. To collect two fresh installations in one invocation:
+
+```sh
+python3 -I -B tools/mojt-system-install-profile.py --samples 2
+```
+
+Each sample has a distinct generation, package and report directory, and includes
+its own full frontend installation/preparation time. The second can reuse the
+payload built by the first if its inputs are unchanged; both report the actual
+reuse outcome. The command stops after any failure. Neither sample selects or
+reboots. Packaging is separately reported for each sample.
+
 The command freezes the complete reviewed manager/MBT resource cohort and the
 diagnostic's support scripts in a new private run directory. A fresh isolated
 process checks their identities before using them. The running manager is never
@@ -62,6 +75,8 @@ At completion, inspect these parts of the output together:
 - `copy_profile`: final private profile placement. On the same filesystem this
   should show a move, no file copies/syncs and directory syncs only.
 - `Early-boot payload reused`: distinguish a warm preparation from a cold build.
+- `mpm_system_transition._prepare` call count: ordinary approved preparation
+  builds one plan; an interactive preview is a separate read-only operation.
 - The final PASS means fresh content and boot preparation completed and the
   running/selected baseline remained exact. A no-op or skipped preparation is
   refused as an incomplete measurement.

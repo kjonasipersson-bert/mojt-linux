@@ -110,43 +110,47 @@ def result(value, changed, dry_run):
 
 
 def retain(root, value, image, initramfs, *, bounds, adapters=None, dry_run=False):
-    """Administrator-only immutable publication; no menu, requests or state effects."""
-    d = model.deployment(value);root = target(root, write=not dry_run)
-    require(os.geteuid() == 0, 'native-v2 slot retention requires an administrator')
-    destination = root / model.slot(value['id'])
-    def existing():
-        actual = inspect(root, value['id'], expected_inputs=d['inputs']['id'])
-        require(actual == value, 'existing deployment differs')
-        audit_inputs(root, d['inputs'], bounds, adapters=adapters)
-        if not dry_run:
-            io.sync_directory(destination);io.sync_directory(destination.parent)
-        return result(value, False, dry_run)
+    """Standalone retention: validate inputs under locks, then publish exact bytes."""
+    d = model.deployment(value);root = target(root,write=not dry_run)
+    require(os.geteuid() == 0,'native-v2 slot retention requires an administrator')
     if dry_run:
         from mpm_base_transition import read_locks
         with read_locks(root):
-            if management.present(destination):return existing()
-            audit_inputs(root, d['inputs'], bounds, adapters=adapters)
-            with tempfile.TemporaryDirectory(prefix='mojt-v2-preview-') as temporary:
-                freeze(d, image, initramfs, Path(temporary))
-        return result(value, False, True)
-    for name in ('boot', 'boot/mpm', 'boot/mojt', 'boot/mojt/deployments'):
-        path = root / name;path.mkdir(mode=0o755, exist_ok=True)
-        tx.protected_directory(path, write=True, label='native-v2 storage')
-        io.sync_directory(path.parent)
-    locks = {root/'.artifact-store.lock', root/'artifacts/.lock', root/'.install-lock', root/'kernel/.lock', root/'boot/mpm/.lock'}
-    with tx.resource_locks(locks, modes={root/'.install-lock':0o644}):
-        if management.present(destination):return existing()
-        audit_inputs(root, d['inputs'], bounds, adapters=adapters)
-        stage = Path(tempfile.mkdtemp(prefix='.retain-', dir=destination.parent))
-        try:
-            freeze(d, image, initramfs, stage)
-            io.write_json(stage/'inputs.json', d['inputs']);io.write_json(stage/'binding.json', d['initramfs'])
-            io.write_json(stage/'deployment.json', value)
-            stage.chmod(0o555);io.sync_directory(stage)
-            require(not management.present(destination), 'refuse to replace a boot slot')
-            tx.publish(stage, destination)
-        finally:io.clean_stage(stage)
-        return result(value, True, False)
+            audit_inputs(root,d['inputs'],bounds,adapters=adapters)
+            return _retain_locked(root,value,image,initramfs,dry_run=True)
+    for name in ('boot','boot/mpm','boot/mojt','boot/mojt/deployments'):
+        path = root/name;path.mkdir(mode=0o755,exist_ok=True)
+        tx.protected_directory(path,write=True,label='native-v2 storage');io.sync_directory(path.parent)
+    locks = {root/'.artifact-store.lock',root/'artifacts/.lock',root/'.install-lock',root/'kernel/.lock',root/'boot/mpm/.lock'}
+    with tx.resource_locks(locks,modes={root/'.install-lock':0o644}):
+        audit_inputs(root,d['inputs'],bounds,adapters=adapters)
+        return _retain_locked(root,value,image,initramfs)
+
+
+def _retain_locked(root, value, image, initramfs, *, dry_run=False):
+    """Publish checked constructor inputs; caller holds store/install/boot locks."""
+    d = model.deployment(value);destination = root/model.slot(value['id'])
+    if management.present(destination):
+        require(inspect(root,value['id'],expected_inputs=d['inputs']['id']) == value,'existing deployment differs')
+        if not dry_run:io.sync_directory(destination);io.sync_directory(destination.parent)
+        return result(value,False,dry_run)
+    if dry_run:
+        with tempfile.TemporaryDirectory(prefix='mojt-v2-preview-') as temporary:
+            freeze(d,image,initramfs,Path(temporary))
+        return result(value,False,True)
+    for name in ('boot/mojt','boot/mojt/deployments'):
+        path = root/name;path.mkdir(mode=0o755,exist_ok=True)
+        tx.protected_directory(path,write=True,label='native-v2 storage');io.sync_directory(path.parent)
+    stage = Path(tempfile.mkdtemp(prefix='.retain-',dir=destination.parent))
+    try:
+        freeze(d,image,initramfs,stage)
+        io.write_json(stage/'inputs.json',d['inputs']);io.write_json(stage/'binding.json',d['initramfs'])
+        io.write_json(stage/'deployment.json',value)
+        stage.chmod(0o555);io.sync_directory(stage)
+        require(not management.present(destination),'refuse to replace a boot slot')
+        tx.publish(stage,destination)
+    finally:io.clean_stage(stage)
+    return result(value,True,False)
 
 
 def freeze(description, image, initramfs, stage):
