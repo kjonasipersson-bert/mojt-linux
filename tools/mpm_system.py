@@ -8,6 +8,7 @@ import copy
 import errno
 import json
 import os
+import posixpath
 from pathlib import Path, PurePosixPath
 import re
 import shutil
@@ -25,7 +26,9 @@ import mpm_transaction as tx
 REGISTRY = 'mojt-system-registry-v1'
 REALIZATION = 'mojt-system-realization-v1'
 PLAN = 'mojt-system-install-plan-v1'
-MANAGEMENT_SUPPORT = [{'family': 'mpm-system', 'read': [1], 'write': [1], 'capabilities': ['exact-provider-dependencies', 'profile-runtime-outputs', 'profile-symlinks']}]
+THIN = 'mojt-system-component-profile-v1'
+COMPONENT_PREFIX = '/run/mojt-disk/artifacts/system/installed/'
+MANAGEMENT_SUPPORT = [{'family': 'mpm-system', 'read': [1], 'write': [1], 'capabilities': ['component-profiles', 'exact-provider-dependencies', 'profile-runtime-outputs', 'profile-symlinks']}]
 CODE = ('mpm_system.py', 'mpm_system_model.py', 'mpm_native_io.py', 'mpm_base.py',
         'mojt_artifact.py', 'mojt_system_manifest.py', 'mpm_management.py', 'mpm_transaction.py')
 require = base.require
@@ -61,6 +64,7 @@ def stored_mode(row):return row['mode'] & 0o555
 
 def acceptable(body, role=None):
     artifact.validate_descriptor(body)
+    require(body['metadata'].get('profile_layout') in (None,THIN),'unsupported System profile layout')
     require(body['kind'] == 'system' and body['platform'] == os.uname().machine + '-linux', 'System kind/platform differs')
     require(role is None or body['metadata']['system_role'] == role, 'System component/generation role differs')
     require(not body['requirements'], 'unsupported outer System requirements')
@@ -203,7 +207,112 @@ def inventory(profile, *, declared=None):
     return result
 
 
-def profile_path(profile, relative, references, adapters, outputs=()):
+def component_profile(manifest):
+    value = manifest['description']['provenance'].get('native_profile')
+    if value is None:return None
+    artifact.fields(value,('format','components','mappings'))
+    require(value['format'] == THIN,'unsupported native profile layout')
+    for item in value['components']:
+        artifact.fields(item,('role','reference'));model.reference(item['reference'])
+    roles = {r['role']:r['reference'] for r in value['components']}
+    require(set(roles) <= {'runtime','firmware'} and 'runtime' in roles,'unsupported thin System components')
+    require(len(roles) == len(value['components']) and len({model.reference(r) for r in roles.values()}) == len(roles),'duplicate thin component role/reference')
+    paths=[]
+    for row in value['mappings']:
+        artifact.fields(row,('path','source'));artifact.fields(row['source'],('reference','path'))
+        require(not any(model.overlap(row['path'],p) for p in paths),'overlapping native profile mappings');paths.append(row['path'])
+        management.path(row['path']);management.path(row['source']['path'])
+        require(row['source']['reference'] in roles.values(),'unbound profile projection')
+        if row['source']['reference'] == roles.get('firmware'):
+            require(row['path'] in ('kernel/lib/firmware','kernel/licenses'),'firmware projection outside data namespace')
+    return value
+
+
+def profile_root(profile):
+    require(profile.name == 'profile' and profile.parent.parent.name == 'system'
+            and profile.parent.parent.parent.name == 'realizations','profile is outside a native realization')
+    if not profile.parent.name.startswith('.install-'):io.identifier('sha256:'+profile.parent.name)
+    return target(profile.parents[3])
+
+
+def _projection(row):
+    return COMPONENT_PREFIX+model.reference(row['source']['reference'])[7:]+'/payload/'+row['source']['path']
+
+
+def profile_file(profile, relative, *, manifest=None):
+    """Resolve a declared native projection in its target, never in the host /run."""
+    management.path(relative)
+    if manifest is None:
+        if not os.path.lexists(profile/'manifest.json'):return profile/relative
+        manifest = base.read(profile/'manifest.json')
+    layout = component_profile(manifest)
+    if layout is None:return profile/relative
+    matches = [r for r in layout['mappings'] if relative == r['path'] or relative.startswith(r['path']+'/')]
+    if not matches:return profile/relative
+    require(len(matches) == 1,'overlapping native profile projections')
+    row = matches[0];root = profile_root(profile)
+    require((profile/row['path']).is_symlink() and os.readlink(profile/row['path']) == _projection(row),
+            'native profile projection differs')
+    folder = object_path(root,model.reference(row['source']['reference']))
+    io.directory(folder);require(folder == folder.resolve(),'linked native component root')
+    return folder/'payload'/row['source']['path']/relative[len(row['path']):].lstrip('/')
+
+
+def logical_inventory(profile, manifest, *, parts=None, firmware=False):
+    """Compare component descriptors, not materialized copies or firmware bytes."""
+    layout = component_profile(manifest)
+    if layout is None:return copy.deepcopy(manifest['description']['profile'])
+    root = None if parts is not None else profile_root(profile)
+    roles = {r['role']:r['reference'] for r in layout['components']}
+    result = {p:copy.deepcopy(r) for p,r in manifest['description']['profile'].items() if 'component' not in r}
+    for mapping in layout['mappings']:
+        name = mapping['path'];ref = mapping['source']['reference'];identifier = model.reference(ref)
+        if ref == roles.get('firmware') and not firmware:
+            result[name] = copy.deepcopy(manifest['description']['profile'][name]);continue
+        body = parts[identifier][0] if parts is not None else object_record(root,identifier)[0]
+        prefix = 'payload/'+mapping['source']['path']
+        rows = [r for r in body['files'] if r['path'] == prefix or r['path'].startswith(prefix+'/')]
+        require(rows and rows[0]['path'] == prefix,'missing native projection source')
+        for row in rows:
+            dest = name+row['path'][len(prefix):]
+            result[dest] = (dict(link=row['target']) if row['type'] == 'symlink' else
+                dict(directory=True,mode=stored_mode(row)) if row['type'] == 'directory' else
+                dict(sha256=row['sha256'],mode=stored_mode(row)))
+    # Parent scaffolding is owned by the generation, not by a component.
+    for name in list(result):
+        for parent in PurePosixPath(name).parents:
+            if str(parent) != '.':result.setdefault(str(parent),dict(directory=True,mode=0o555))
+    return result
+
+
+def native_components(root, identifier):
+    value = realization(root,identifier)
+    require(value is not None,'missing native System realization')
+    profile = realization_path(root,identifier)/'profile'
+    manifest = base.read(profile/'manifest.json');layout = component_profile(manifest)
+    if layout is None:return []
+    return [dict(reference=r['reference'],path='artifacts/system/installed/'+model.reference(r['reference'])[7:]+'/payload')
+            for r in layout['components']]
+
+
+def check_component_profile(profile, manifest, composition):
+    layout = component_profile(manifest);require(layout is not None,'missing component profile contract')
+    require(layout['components'] == composition['description']['components'] and
+            layout['mappings'] == composition['description']['profile'],'profile projections differ from composition')
+    expected_rows={r['path']:dict(component=dict(artifact=model.reference(r['source']['reference']),path=r['source']['path'])) for r in layout['mappings']}
+    require(set(manifest['description']['profile']) == {*expected_rows,'management.json','version'}
+            and all(manifest['description']['profile'][p]==r for p,r in expected_rows.items()),'profile component inventory differs')
+    expected = {}
+    for row in layout['mappings']:
+        expected[row['path']] = dict(link=_projection(row))
+        for parent in PurePosixPath(row['path']).parents:
+            if str(parent) != '.':expected.setdefault(str(parent),dict(directory=True,mode=0o555))
+    for name in ('management.json','version'):expected[name] = manifest['description']['profile'][name]
+    require(inventory(profile) == expected,'thin System profile differs from its projections')
+    return layout
+
+
+def profile_path(profile, relative, references, adapters, outputs=(), *, manifest=None, sources=None):
     """Resolve inside the profile; authorize external links without reading host files."""
     pending = list(PurePosixPath(relative).parts);done = [];links = 0
     while pending:
@@ -211,7 +320,13 @@ def profile_path(profile, relative, references, adapters, outputs=()):
         if part in ('', '.'):continue
         if part == '..':
             require(done, 'System profile link escapes profile');done.pop();continue
-        path = profile.joinpath(*done, part)
+        logical = '/'.join([*done,part])
+        if sources is None:
+            path = profile_file(profile,logical,manifest=manifest) if manifest is not None else profile.joinpath(*done,part)
+        else:
+            match = next((r for r in sources[0] if logical == r['path'] or logical.startswith(r['path']+'/')),None)
+            path = (sources[1][model.reference(match['source']['reference'])][1]/'payload'/match['source']['path']/logical[len(match['path']):].lstrip('/')
+                    if match else profile/logical)
         if path.is_symlink():
             links += 1;require(links <= 40, 'System profile link loop')
             target = os.readlink(path)
@@ -231,10 +346,19 @@ def profile_path(profile, relative, references, adapters, outputs=()):
         else:
             require(path.exists(), 'dangling System profile link/path: ' + str(path))
             done.append(part)
-    return profile.joinpath(*done), False
+    return path, False
 
 
 def verify_links(profile, references, adapters, outputs=()):
+    manifest = base.read(profile/'manifest.json') if (profile/'manifest.json').is_file() else None
+    if manifest is not None and component_profile(manifest) is not None:
+        for name,row in logical_inventory(profile,manifest).items():
+            if 'link' in row:
+                target,external = profile_path(profile,name,references,adapters,outputs,manifest=manifest)
+                if external is True:
+                    adapter,ref = next((adapters[r['provider']],r) for r in references if adapters[r['provider']].contains(r,target))
+                    adapter.verify_path(ref,target,executable=name.startswith('bin/'))
+        return
     for path in profile.rglob('*'):
         if not path.is_symlink():continue
         target, external = profile_path(profile, path.relative_to(profile).as_posix(), references, adapters, outputs)
@@ -246,6 +370,7 @@ def verify_links(profile, references, adapters, outputs=()):
 
 
 def build_profile(profile, body, value, parts, *, adapters=None, verify=False):
+    if body['metadata'].get('profile_layout') == THIN:return build_component_profile(profile,body,value,parts,adapters=adapters)
     d = value['description'];planned = {};total = 0
     for mapping in d['profile']:
         identifier = model.reference(mapping['source']['reference']);component, source = parts[identifier]
@@ -329,6 +454,76 @@ def build_profile(profile, body, value, parts, *, adapters=None, verify=False):
     return measured
 
 
+def build_component_profile(profile, body, value, parts, *, adapters=None):
+    """Install each component once; a generation owns only links and small records."""
+    d = value['description'];mappings = d['profile'];profile.mkdir()
+    require(all(r['path'] not in ('version',management.FILENAME) for r in mappings),'reserved thin profile projection')
+    refs = provider_references(parts);outputs = runtime_outputs(parts)
+    sources = (mappings,parts)
+    def local(name):
+        row = next((r for r in mappings if name == r['path'] or name.startswith(r['path']+'/')),None)
+        require(row is not None,'unprovided thin System path: '+name)
+        return parts[model.reference(row['source']['reference'])][1]/'payload'/row['source']['path']/name[len(row['path']):].lstrip('/')
+    roles={r['role']:r['reference'] for r in d['components']}
+    for mapping in mappings:
+        component=parts[model.reference(mapping['source']['reference'])][0]
+        prefix='payload/'+mapping['source']['path']
+        rows=[r for r in component['files'] if r['path']==prefix or r['path'].startswith(prefix+'/')]
+        require(rows and rows[0]['path']==prefix,'missing component projection source')
+        firmware=mapping['source']['reference']==roles.get('firmware')
+        for item in rows:
+            name=mapping['path']+item['path'][len(prefix):]
+            if not firmware:
+                require(not any(name==p or name.startswith(p+'/') for p in ('kernel/lib/firmware','kernel/licenses')),
+                        'firmware must use a separate component')
+            elif item['type']=='file':require(not item['mode'] & 0o111,'executable firmware data refused')
+            elif item['type']=='symlink':
+                target=posixpath.normpath(posixpath.join(posixpath.dirname(item['path']),item['target']))
+                require(not item['target'].startswith('/') and (target==prefix or target.startswith(prefix+'/'))
+                        and any(r['path']==target for r in rows),'firmware projection link escapes its tree')
+    for row in mappings:
+        source = local(row['path']);require(source.exists() or source.is_symlink(),'missing projection source')
+        target = profile/row['path'];target.parent.mkdir(parents=True,exist_ok=True)
+        target.symlink_to(_projection(row))
+    tools = local(d['runtime']['module_root']);io.directory(tools)
+    names = management.literal(tools/'mojt_system.py','MPM_FILES')
+    support = management.produce(tools,names)
+    require(support['description']['management'] == d['management'] and support['description']['state'] == d['state'],
+            'component System overstates management support')
+    own = management.context(registries=[dict(family='mpm-system',version=1,capabilities=['component-profiles'],evidence=body['id'])])
+    require(management.check_transition(management.current(),support,own)['compatible'],'manager cannot read component profiles')
+    for name in ('interpreter','frontend'):
+        path,external = profile_path(profile,d['runtime'][name],refs,adapters,outputs,sources=sources)
+        require(external is True or path.is_file() and path.stat().st_mode & 0o001,'System runtime must be public executable')
+    for service in d['services']:
+        path,external = profile_path(profile,'units/'+service['unit'],refs,adapters,outputs,sources=sources)
+        require(external is True or path.is_file(),'missing declared System unit')
+    io.write_json(profile/management.FILENAME,support)
+    with (profile/'version').open('xb') as stream:
+        stream.write((d['label']+'\n').encode());stream.flush();os.fchmod(stream.fileno(),0o444);os.fsync(stream.fileno())
+    rows = {r['path']:dict(component=dict(artifact=model.reference(r['source']['reference']),path=r['source']['path'])) for r in mappings}
+    for name in (management.FILENAME,'version'):
+        rows[name] = dict(sha256=artifact.file_sha(profile/name),mode=0o444)
+    ports = dict(read=list(management.literal(tools/'mpm_ports_cli.py','SUPPORTED_STATE_FORMATS')),
+        write=list(management.literal(tools/'mpm_ports_cli.py','SUPPORTED_STATE_FORMATS')),
+        capabilities=list(management.literal(tools/'mpm_ports_cli.py','SUPPORTED_CAPABILITIES')))
+    bin_source = local('bin');io.directory(bin_source);provided = []
+    for path in sorted(bin_source.iterdir()):
+        resolved,external = profile_path(profile,'bin/'+path.name,refs,adapters,outputs,sources=sources)
+        if external != 'runtime' and (external is True or resolved.is_file() and resolved.stat().st_mode & 0o001):
+            provided.append('/run/mojt-system/bin/'+path.name)
+    manifest = manifests.create(dict(label=d['label'],architecture=d['platform'].removesuffix('-linux'),
+        requirements=dict(base_abi={r['name']:r['value'] for r in d['requirements']['base_abi']},state_layout=d['requirements']['state_layout']),
+        support=dict(ports=ports),provides=provided,artifacts=dict(native=dict(components=d['components'])),
+        provenance=dict(artifact=body['id'],composition=value['id'],assembler=manager(),runtime_outputs=outputs,
+            native_profile=dict(format=THIN,components=d['components'],mappings=mappings)),profile=rows))
+    component_profile(manifest)
+    io.write_json(profile/'manifest.json',manifest)
+    for directory in sorted([profile,*[p for p in profile.rglob('*') if not p.is_symlink() and p.is_dir()]],key=lambda p:len(p.parts),reverse=True):
+        directory.chmod(0o555);io.sync_directory(directory)
+    return manifest
+
+
 def copy_profile(source, destination):
     """Place a durable private profile in the unpublished realization stage.
 
@@ -371,7 +566,10 @@ def realization(root, identifier, *, verify=False):
     measured = manifests.validate(base.read(path / 'profile/manifest.json'))
     require(d['manifest'] == measured['id'] and measured['description']['provenance']['artifact'] == identifier
             and measured['description']['provenance']['composition'] == comp['id'], 'System profile manifest binding differs')
-    if verify:require(inventory(path / 'profile') == measured['description']['profile'], 'System profile content/modes damaged')
+    if component_profile(measured) is not None:
+        require(body['metadata'].get('profile_layout') == THIN,'unbound component profile layout')
+        check_component_profile(path/'profile',measured,comp)
+    elif verify:require(inventory(path / 'profile') == measured['description']['profile'], 'System profile content/modes damaged')
     return value
 
 
@@ -577,7 +775,8 @@ def install(root, archive, identifier, *, dependency_files=(), dry_run=False, ye
                 retained = {dep:(object_record(root, dep, verify=verify)[0], object_path(root, dep)) for dep in required}
                 require(all(retained[dep][0] == parts[dep][0] for dep in retained), 'System components changed after preview')
                 copy_profile(work / 'profile',stage / 'profile');actual = measured
-                if verify:require(inventory(stage / 'profile') == actual['description']['profile'], 'System profile copy damaged')
+                if component_profile(actual) is not None:check_component_profile(stage/'profile',actual,comp)
+                elif verify:require(inventory(stage / 'profile') == actual['description']['profile'], 'System profile copy damaged')
                 if verify:verify_links(stage / 'profile', references, adapters, runtime_outputs(retained))
                 dependencies = {dep:object_record(root,dep)[1]['id'] for dep in sorted(required)}
                 proof = base.record(REALIZATION, dict(installation=info['installation'], artifact=identifier, receipt=receipt['id'], composition=comp['id'], manifest=actual['id'], dependencies=dependencies))

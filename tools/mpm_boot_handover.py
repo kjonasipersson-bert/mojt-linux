@@ -143,10 +143,12 @@ def prepare_locked(root, source, plan, context, *, adapters, tar='tar'):
     return value
 
 
-def guest_file(root, tree, profile, provider_roots, mounts, guest):
+def guest_file(root, tree, profile, provider_roots, mounts, guest, *, components=()):
     """Resolve account/start paths in the future mount namespace, never the host."""
     require(type(guest) is str and guest.startswith('/'),'absolute guest executable required')
     maps = [('/run/mojt-system',profile,True)]
+    if components:maps.append(('/run/mojt-disk',root,False))
+    maps += [('/run/mojt-disk/'+r['path'],root/r['path'],True) for r in components]
     maps += [('/'+m['target'],root/m['source'],False) for m in mounts]
     maps += [('/'+p,root/p,True) for p in provider_roots]
     maps += [('/'+p,root/'state'/p,False) for p in ('etc','var','home','root')]
@@ -193,7 +195,13 @@ def check(root, source, trees, value, *, provider_roots=None, cache=None, verify
         require(type(provider_roots) is list,'verified provider roots required')
     else:
         proof = early.proof(trees,source)
-        provider_roots = [p for row in proof['providers'] for p in row['trees']]
+        provider_roots = [p for row in proof['providers'] if row['reference']['provider'] != 'mojt-system-component' for p in row['trees']]
+    import mpm_system as system
+    components=system.native_components(root,i['system']['artifact'])
+    if trees is not None:
+        supplied={p:row['reference']['identity']['artifact'] for row in proof['providers']
+                  if row['reference']['provider']=='mojt-system-component' for p in row['trees']}
+        require(supplied == {r['path']:r['reference']['artifact'] for r in components},'native component proof differs from System')
     require(all(any(p.startswith(m['source']+'/') for m in d['mounts']) for p in provider_roots),'provider tree has no declared mount')
     for name in ('dev','proc','sys','etc','var','home','root','run','tmp','lib/modules',*[m['target'] for m in d['mounts']]):
         point = paths.virtual_file(tree,'/'+name)
@@ -207,12 +215,12 @@ def check(root, source, trees, value, *, provider_roots=None, cache=None, verify
     for mount in d['mounts']:require(inventory.path(root,mount['source']).is_dir(),'provider mount source missing')
     for name in ('etc','var','home','root'):inventory.path(root,'state/'+name)
     writable_root(root,tree,d['mounts'])  # Inspect only; stage never initializes machine state.
-    for shell in [*persistent['base_shells'],*persistent['system_shells']]:guest_file(root,tree,profile,provider_roots,d['mounts'],shell)
-    guest_file(root,tree,profile,provider_roots,d['mounts'],'/run/mojt-system/start')
+    for shell in [*persistent['base_shells'],*persistent['system_shells']]:guest_file(root,tree,profile,provider_roots,d['mounts'],shell,components=components)
+    guest_file(root,tree,profile,provider_roots,d['mounts'],'/run/mojt-system/start',components=components)
     hostname = common.checked_bytes(root/'state/etc/hostname').decode().strip()
     require(re.fullmatch('[A-Za-z0-9][A-Za-z0-9.-]{0,252}',hostname),'invalid persistent hostname')
     return dict(tree=tree,profile=profile,modules=inventory.path(root,'kernel/installed/'+i['kernel']['artifact'][7:]+'/payload/lib/modules'),
-                provider_roots=provider_roots,mounts=d['mounts'],hostname=hostname,source=source,firmware=firmware)
+                provider_roots=provider_roots,components=components,mounts=d['mounts'],hostname=hostname,source=source,firmware=firmware)
 
 
 def unit_name(path):
@@ -351,6 +359,9 @@ def _enter(root, context, verified, *, runner=None, execute=None, newroot=Path('
         for name in ('etc','var','home','root'):bind(root/'state'/name,newroot/name)
         for mount in context['mounts']:bind(root/mount['source'],newroot/mount['target'])
         immutable = []
+        for component in context.get('components',[]):
+            point=root/component['path'];bind(point,point,True)
+            immutable.append('/run/mojt-disk/'+component['path'])
         for name in context['provider_roots']:
             destination = newroot/name;bind(root/name,destination,True);immutable.append('/'+name)
         module_point = paths.virtual_file(context['tree'],'/lib/modules').relative_to(context['tree'])

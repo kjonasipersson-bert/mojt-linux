@@ -275,26 +275,28 @@ def retained(profile, manifest):
     validate_manifest(manifest)
     import mpm_transaction as tx
     tx.protected_directory(profile, label='System management profile')
-    inventory = manifest['description']['profile'];file = profile / FILENAME
+    import mpm_system as system
+    inventory = system.logical_inventory(profile,manifest);file = profile / FILENAME
+    tools = system.profile_file(profile,'tools',manifest=manifest)
     if FILENAME not in inventory:
         require(not present(file), 'unmeasured management capability file')
         return None
-    tx.protected_directory(profile / 'tools', label='System management code')
+    tx.protected_directory(tools, label='System management code')
     row = inventory[FILENAME]
     require(type(row) is dict and set(row) == {'sha256', 'mode'} and type(row['mode']) is int and file_hash(file) == row['sha256']
             and stat.S_IMODE(file.lstat().st_mode) == row['mode'], 'management capability evidence differs')
     value = validate(base.read(file))
     files = value['description']['implementation']['identity']['files']
-    names = literal(profile / 'tools/mojt_system.py', 'MPM_FILES')
+    names = literal(tools / 'mojt_system.py', 'MPM_FILES')
     require(type(names) in (list, tuple) and len(names) <= LIMIT and all(type(n) is str for n in names), 'invalid retained runtime list')
     require(set(files) == set(CAPABILITY_FILES) and set(files) <= set(names),
             'management implementation is not the complete native capability runtime')
     for name, checksum in files.items():
         row = inventory.get('tools/' + name)
         require(type(row) is dict and set(row) == {'sha256', 'mode'} and type(row['mode']) is int and row['sha256'] == checksum
-                and file_hash(profile / 'tools' / name) == checksum
-                and stat.S_IMODE((profile / 'tools' / name).lstat().st_mode) == row['mode'], 'retained management code differs: ' + name)
-    require(produce(profile / 'tools', names) == value, 'management declarations differ from bundled implementation')
+                and file_hash(tools / name) == checksum
+                and stat.S_IMODE((tools / name).lstat().st_mode) == row['mode'], 'retained management code differs: ' + name)
+    require(produce(tools, names) == value, 'management declarations differ from bundled implementation')
     return value
 
 

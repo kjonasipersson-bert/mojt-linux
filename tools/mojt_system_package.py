@@ -178,3 +178,106 @@ def package(tree, generation, upstream, revision, output, *, adapter):
         for p in sorted((p for p in stage.rglob('*') if p.is_dir()), key=lambda p:len(p.parts), reverse=True):tx.sync_directory(p)
         tx.sync_directory(stage);tx.publish(stage, output)
     return dict(kit=kit, output=str(output), changed=True, activation=False)
+
+
+def package_installed(root, baseline, output, *, label, revision=1, firmware='none', resources=None):
+    """Build a small Runtime successor and references; never copy firmware data."""
+    import copy
+    import mbt_runtime
+    root=system.target(root);output=Path(output).absolute()
+    tx.protected_directory(output.parent,write=True,label='System package output')
+    artifact.require(not output.exists() and firmware in ('none','keep'),'invalid/existing component package output')
+    body,_=system.object_record(root,baseline)
+    composition,actions=system.composition(system.object_path(root,baseline),body)
+    old=composition['description'];profile=system.realization_path(root,baseline)/'profile'
+    manifest=manifests.validate(base.read(profile/'manifest.json'));layout=system.component_profile(manifest)
+    resources=resources if resources is not None else {n:mbt_runtime.read_file(Path(__file__).resolve().parents[1]/n)
+                                                     for n in mbt_runtime.resources(Path(__file__).resolve().parents[1])}
+    version={k:body['version'][k] for k in ('upstream','scheme','revision')}
+    artifact.require(type(version['revision']) is int and type(revision) is int and revision>0,'numeric System revision required')
+    version['revision']+=revision
+    roles={r['role']:r['reference'] for r in old['components']}
+    runtime_paths=[r['path'] for r in old['profile'] if r['source']['reference']==roles['runtime']]
+    firmware_paths=('kernel/lib/firmware','kernel/licenses')
+    with tempfile.TemporaryDirectory(prefix='.mojt-components-',dir=output.parent) as temporary:
+        work=Path(temporary);content=work/'runtime';content.mkdir();kit=work/'kit';kit.mkdir()
+        for name in runtime_paths:
+            if name in ('version','management.json','manifest.json') or name in firmware_paths:continue
+            source=system.profile_file(profile,name,manifest=manifest)
+            target=content/name;target.parent.mkdir(parents=True,exist_ok=True)
+            if source.is_dir() and not source.is_symlink():
+                # Ignore relative to the whole profile, even if this mapping is
+                # a nested Runtime directory. Firmware is a separate reference.
+                def omit(directory,names):
+                    suffix=(Path(directory).relative_to(source)).as_posix()
+                    prefix=name if suffix=='.' else name+'/'+suffix
+                    return {n for n in names if prefix+'/'+n in firmware_paths}
+                shutil.copytree(source,target,symlinks=True,ignore=omit)
+            elif source.is_symlink():target.symlink_to(os.readlink(source))
+            else:shutil.copy2(source,target)
+        for directory in [content,*content.rglob('*')]:
+            if directory.is_dir() and not directory.is_symlink():directory.chmod(0o755)
+        # Drop empty scaffolding; the generation creates parents for projections.
+        for name in ('kernel/lib','kernel'):
+            directory=content/name
+            if directory.is_dir() and not directory.is_symlink() and not any(directory.iterdir()):directory.rmdir()
+        for name,data in resources.items():
+            artifact.relative(name);target=content/name
+            target.parent.mkdir(parents=True,exist_ok=True)
+            artifact.require(not any(p.is_symlink() for p in (target,*target.parents)),'linked tooling resource')
+            target.unlink(missing_ok=True);target.write_bytes(data);target.chmod(0o444)
+        for name in ('mpm','mbt'):
+            data=resources.get('man/'+name+'.1')
+            if data is not None:
+                target=content/'share/man/man1'/(name+'.1');target.parent.mkdir(parents=True,exist_ok=True)
+                target.unlink(missing_ok=True);target.write_bytes(data);target.chmod(0o444)
+        if firmware=='none' and (content/'hardware.json').exists():
+            hardware=artifact.read_json(content/'hardware.json')
+            hardware.update(format=3,firmware_mode='none',firmware_tree_sha256=None,licenses_tree_sha256=None)
+            (content/'hardware.json').unlink();(content/'hardware.json').write_bytes(raw(hardware))
+            (content/'hardware.json').chmod(0o444)
+            (content/'firmware-update.json').unlink(missing_ok=True)
+        names=management.literal(content/'tools/mojt_system.py','MPM_FILES')
+        support=management.produce(content/'tools',names)
+        provenance=dict(source_generation=baseline,resources={n:hashlib.sha256(v).hexdigest() for n,v in resources.items()})
+        spec=dict(format=artifact.SPEC_FORMAT,kind='system',name='mojt-system-runtime',platform=body['platform'],
+            version=version,dependencies=system.retained_providers(root,baseline),requirements={},provides={},provenance=provenance,
+            metadata=dict(system_role='component',**({'runtime_outputs':dict(format='mojt-profile-runtime-outputs-v1',producer='mojt-privileged-v1',
+                paths=manifest['description']['provenance']['runtime_outputs'])} if manifest['description']['provenance'].get('runtime_outputs') else {})))
+        runtime=artifact.pack(content,spec,kit/'runtime',numeric_owner=(0,0))
+        reference=dict(provider='native',artifact=runtime['artifact']['id'])
+        d=copy.deepcopy(old);d['label']=label;d['components']=[dict(role='runtime',reference=reference)]
+        d['management']=support['description']['management']
+        d['profile']=[]
+        def project(path):
+            name=path.relative_to(content).as_posix()
+            if any(p.startswith(name+'/') for p in firmware_paths):
+                for child in sorted(path.iterdir()):project(child)
+            else:d['profile'].append(dict(path=name,source=dict(reference=reference,path=name)))
+        for path in sorted(content.iterdir()):project(path)
+        reused=None
+        if firmware=='keep':
+            if layout is not None:
+                reused=roles.get('firmware')
+                mappings=[copy.deepcopy(r) for r in layout['mappings'] if r['source']['reference']==reused]
+            else:
+                mappings=[]
+                for name in firmware_paths:
+                    if not (profile/name).exists():continue
+                    row=next(r for r in old['profile'] if name==r['path'] or name.startswith(r['path']+'/'))
+                    ref=row['source']['reference'];artifact.require(reused in (None,ref),'firmware spans multiple legacy components')
+                    reused=ref
+                    mappings.append(dict(path=name,source=dict(reference=ref,path=row['source']['path']+name[len(row['path']):])))
+            if reused is not None:d['components'].append(dict(role='firmware',reference=reused));d['profile'].extend(mappings)
+        d['components'].sort(key=lambda r:r['role']);d['profile'].sort(key=lambda r:r['path'])
+        value=base.record(model.FORMAT,d);model.supported(value,actions)
+        gen=work/'generation';gen.mkdir();(gen/'composition.json').write_bytes(raw(value));(gen/'lifecycle.json').write_bytes(raw(actions))
+        spec=dict(format=artifact.SPEC_FORMAT,kind='system',name=body['name'],platform=body['platform'],version=version,
+            dependencies=sorted({artifact.canonical(r['reference']):r['reference'] for r in d['components']}.values(),key=artifact.canonical),
+            requirements={},provides={},provenance=provenance,metadata=dict(system_role='generation',profile_layout=system.THIN,
+                deployment_contract=dict(format='mojt-system-content-only-v1',initialization='profile-services-not-reviewed'),
+                composition=dict(format=model.FORMAT,id=value['id'],path='payload/composition.json')))
+        generation=artifact.pack(gen,spec,kit/'generation',numeric_owner=(0,0));tx.publish(kit,output)
+    return dict(artifact=generation['artifact']['id'],label=label,generation='generation/'+generation['archive']['file'],
+        dependency_files=['runtime/'+runtime['archive']['file']],runtime=reference['artifact'],firmware=reused,
+        scope='Packages only; existing firmware referenced, no installation or selection.')
