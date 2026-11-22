@@ -26,6 +26,7 @@ FORMAT = 'mojt-system-transition-preflight-v1'
 NATIVE_FORMAT = 'mojt-system-transition-preflight-v2'
 BOOT_FORMAT = 'mojt-boot-transition-preflight-v1'
 REVIEW = 'mojt-system-startup-review-v1'
+FIRMWARE_REVIEW = 'mojt-system-startup-review-v2'
 FIRMWARE_FORMAT = 'mojt-system-firmware-data-v1'
 FIRMWARE_PROOF = 'firmware-update.json'
 QEMU_AGENT_UNIT = '''[Unit]
@@ -169,11 +170,20 @@ def tooling_review(selected, candidate, *, firmware=None):
     stable = {p:r for p,r in before.items() if p not in changed}
     policy=('firmware-data-and-guest-agent-v1' if firmware is not None and 'units/qemu-guest-agent.service' in firmware_paths
             else 'firmware-data-only-v1' if firmware is not None else 'unchanged-startup-only-v1')
-    return base.record(REVIEW, dict(policy=policy, selected=selected['id'], candidate=candidate['id'],
+    description=dict(policy=policy, selected=selected['id'], candidate=candidate['id'],
         changed=changed, blockers=sorted(blocked), preserved_inventory=artifact.digest(stable),
         runtime_outputs=outputs, compatible=not blocked, effects=False,
         limitation=('Firmware data and the fixed optional QEMU guest service only; no other service or state-schema migration.'
-                    if firmware is not None else 'No service upgrade, new initializer, state-schema migration or runtime health is authorized.')))
+                    if firmware is not None else 'No service upgrade, new initializer, state-schema migration or runtime health is authorized.'))
+    if firmware is not None:
+        data_paths=set(firmware_inventory(before)) | set(firmware_inventory(after))
+        data_changes=[p for p in changed if p in data_paths]
+        description['changed']=[p for p in changed if p not in data_paths]
+        # Complete inventories remain bound by the manifests/proof. Boot handover
+        # needs their exact change-set identity, not another unbounded path list.
+        description['firmware_changes']=dict(count=len(data_changes),digest=artifact.digest(data_changes),
+            inventory_before=firmware['inventory_before'],inventory_after=firmware['inventory_after'])
+    return base.record(FIRMWARE_REVIEW if firmware is not None else REVIEW,description)
 
 
 def defaults(root, profile):

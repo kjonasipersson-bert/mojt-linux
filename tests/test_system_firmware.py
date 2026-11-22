@@ -86,6 +86,24 @@ class PolicyTests(unittest.TestCase):
             report=transition.tooling_review(before,manifests.create(changed),firmware=proof)['description']
             self.assertFalse(report['compatible']);self.assertIn(path,report['blockers'])
 
+    def test_large_firmware_change_set_stays_within_existing_boot_collection_limits(self):
+        import mpm_boot_v2 as boot
+        before,after,proof=example();candidate=copy.deepcopy(after['description'])
+        for number in range(5000):candidate['profile']['kernel/lib/firmware/device-%05d.bin'%number]=file_row('firmware')
+        proof['inventory_after']=artifact.digest(transition.firmware_inventory(candidate['profile']))
+        after=manifests.create(candidate);review=transition.tooling_review(before,after,firmware=proof)
+        changes=sorted(p for p in set(before['description']['profile'])|set(after['description']['profile'])
+                       if before['description']['profile'].get(p) != after['description']['profile'].get(p))
+        data=[p for p in changes if p in set(transition.firmware_inventory(before['description']['profile']))|
+              set(transition.firmware_inventory(after['description']['profile']))]
+        self.assertEqual(review['format'],transition.FIRMWARE_REVIEW)
+        self.assertEqual(review['description']['firmware_changes']['count'],len(data))
+        self.assertEqual(review['description']['firmware_changes']['digest'],artifact.digest(data))
+        self.assertGreater(len(data),4096)
+        boot.record('fixture',dict(startup=review))
+        legacy=dict(review['description'],changed=changes);legacy.pop('firmware_changes')
+        with self.assertRaisesRegex(ValueError,'collection limit'):boot.record('fixture',dict(startup=base.record(transition.REVIEW,legacy)))
+
     def test_hardware_policy_and_forged_inventory_or_baseline_are_refused(self):
         before,after,proof=example()
         for key in ('baseline','inventory_before','inventory_after'):
@@ -367,6 +385,7 @@ class HandoverTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as folder:
                 work=Path(folder);firmware=work/'firmware';licenses=work/'licenses'
                 paths.write(firmware/'additional.bin','new firmware')
+                for number in range(5000):paths.write(firmware/('device-%05d.bin'%number),'firmware')
                 paths.write(licenses/'WHENCE','upstream attributions');paths.write(licenses/'LICENCE.test','upstream terms')
                 result=delivery.package(root,description['system'],REPO,firmware,licenses,None,{'source':'exact fixture'},work/'package')
                 adapters={'nix':adapter}
@@ -374,6 +393,7 @@ class HandoverTests(unittest.TestCase):
                     dependency_files=[work/'package'/result['component']],yes=True,adapters=adapters)
                 plan=transition.prepare(root,result['artifact'],adapters=adapters)
                 self.assertTrue(plan['description']['checks']['compatible'],plan['description']['checks']['errors'])
+                self.assertGreater(plan['description']['checks']['startup']['description']['firmware_changes']['count'],4096)
                 realized=system.realization(root,result['artifact'])['description']
                 inputs['system'].update(artifact=result['artifact'],composition=realized['composition'],
                     manifest=realized['manifest'],generation=result['label'])

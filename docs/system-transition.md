@@ -141,7 +141,15 @@ Changed/removed services or startup inputs block. No new migration or initialize
 is inferred from an empty lifecycle list or a package-supplied script.
 
 The `mojt-system-firmware-data-v1` contract permits firmware and upstream
-attribution changes in a new immutable System. Its inventoried
+attribution changes in a new immutable System. Its startup review uses
+`mojt-system-startup-review-v2`: `changed` lists non-firmware
+paths, while `firmware_changes` binds the complete sorted firmware/license path
+change set with its count/digest and before/after inventory identities. Complete
+manifests and the data contract remain authoritative and are rechecked during
+handover. This keeps large firmware updates within the existing boot metadata
+collection/size limits without duplicating every changed data path in a list.
+
+The inventoried
 `firmware-update.json` binds the selected manifest, before/after hardware metadata
 and firmware/license inventories. Early/runtime module lists, machine profile
 and Kernel provenance stay exact. Executable data, escaping links, missing

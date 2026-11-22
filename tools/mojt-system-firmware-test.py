@@ -274,6 +274,8 @@ def package(root,baseline,code,firmware,licenses,agent,provenance,output):
         proposed['profile']={p:r for p,r in system.inventory(content).items() if p.split('/')[0] in roots}
         review=transition.tooling_review(old_manifest,manifests.create(proposed),firmware=proof)
         require(review['description']['compatible'],'candidate changes unrelated startup: '+', '.join(review['description']['blockers']))
+        from mpm_boot_v2 import canonical as boot_canonical
+        boot_canonical(review)  # Refuse oversized handover evidence before installation.
         comp=base.record(model.FORMAT,d);model.supported(comp,actions)
         generation=work/'generation';generation.mkdir()
         write(generation/'composition.json',artifact.canonical(comp)+b'\n');write(generation/'lifecycle.json',artifact.canonical(actions)+b'\n')

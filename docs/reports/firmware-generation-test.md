@@ -65,6 +65,9 @@ Completed installation or selection cannot be refreshed this way.
 
 The imported guest-agent reference includes its complete executable inventory
 and is checked by the ordinary Nix adapter before packaging.
+Packaging also checks that startup-review evidence fits the existing boot
+metadata bounds. Firmware changes use a count/digest and exact before/after
+inventories instead of embedding every changed firmware path in a boot list.
 
 ## Install, select and check
 
