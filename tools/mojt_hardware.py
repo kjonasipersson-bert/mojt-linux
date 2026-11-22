@@ -4,6 +4,7 @@
 """Explicit PC hardware inputs; staged only into a fresh image, never the host."""
 
 import json
+import hashlib
 import os
 from pathlib import Path
 import shutil
@@ -137,23 +138,40 @@ def freeze_inputs(root, destination, release, support, expected, profile=PROFILE
 
 def native_firmware(profile, expected_boot_profile=None):
     """Bounded path/metadata check; full bytes are covered by the System proof."""
-    point = profile/'hardware.json'
+    native = None;manifest = None
+    if (profile/'manifest.json').is_file():
+        import mpm_system as native
+        manifest = native.base.read(profile/'manifest.json')
+    def resolved(name):return native.profile_file(profile,name,manifest=manifest) if native is not None else profile/name
+    point = resolved('hardware.json')
     if point.is_symlink() or not point.is_file() or point.stat().st_size > 65536:
         raise ValueError('missing/bounded native hardware declaration required')
-    row = json.loads(point.read_bytes())
+    raw=point.read_bytes()
+    if manifest is not None and native.component_profile(manifest) is not None:
+        require=native.require
+        require(native.logical_inventory(profile,manifest)['hardware.json']['sha256'] == hashlib.sha256(raw).hexdigest(),'native hardware metadata differs from component')
+    row = json.loads(raw)
     name = row.get('profile') if type(row) is dict else None
     fields = {'format','profile','kernel_release','modules_tree_sha256','firmware_tree_sha256','licenses_tree_sha256',
               'early_modules','runtime_modules','modules_location'}
-    if (type(row) is not dict or set(row) != fields or row.get('format') != 2 or name not in PROFILES
+    minimal = type(row) is dict and row.get('format') == 3 and row.get('firmware_mode') == 'none'
+    if (type(row) is not dict or set(row) != (fields | {'firmware_mode'} if minimal else fields)
+            or row.get('format') not in ((3,) if minimal else (2,)) or name not in PROFILES
             or row.get('modules_location') != 'native-kernel'
             or row.get('early_modules') != list(early_modules(name)) or row.get('runtime_modules') != list(runtime_modules(name))):
         raise ValueError('native hardware declaration differs')
     if expected_boot_profile is not None and boot_profile(name) != expected_boot_profile:
         raise ValueError('System hardware differs from bound boot profile')
-    firmware = profile/'kernel/lib/firmware'
+    if minimal:
+        layout=native.component_profile(manifest) if native is not None else None
+        if (layout is None or any(r['role']=='firmware' for r in layout['components'])
+                or row['firmware_tree_sha256'] is not None or row['licenses_tree_sha256'] is not None):
+            raise ValueError('minimal firmware declaration differs from components')
+        return None
+    firmware = resolved('kernel/lib/firmware')
     if firmware.is_symlink() or not firmware.is_dir():raise ValueError('missing native System firmware')
     for package in license_packages(name):
-        point = profile/'kernel/licenses'/package/'copyright'
+        point = resolved('kernel/licenses/'+package+'/copyright')
         if point.is_symlink() or not point.is_file():raise ValueError('missing native firmware license: '+package)
     return firmware
 

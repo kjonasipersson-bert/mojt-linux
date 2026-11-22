@@ -13,6 +13,11 @@ install` frontend additionally prepares a boot entry; `--content-only` and
 explicit offline targets skip that step. Installation never selects it. See
 [the ordinary installation/activation flow](system-transition.md).
 
+For an installed Mojt successor, use the [component builder](system-components.md):
+`mbt package system --running --output ./system-package`. Firmware is optional;
+`--firmware keep` reuses its exact retained reference. The assembled-tree route
+below remains the bootstrap packaging interface.
+
 ## Input and packaging
 
 Use a **newly assembled** tree from the current builder, containing

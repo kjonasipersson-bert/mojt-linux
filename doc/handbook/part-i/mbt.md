@@ -171,6 +171,29 @@ mbt package base --help
 mbt package system --help
 ```
 
+### Package a System successor
+
+On installed Mojt, run as administrator:
+
+```sh
+mbt package system --running --output ./system-package
+```
+
+The builder packages its bundled Runtime resources with the running System's
+startup content and exact provider references. The new generation references
+retained components; its profile contains links and small management records.
+It does not copy a complete System profile. Firmware is omitted by default.
+Use `--firmware keep` to retain the current firmware selection without copying
+or repackaging its data. Devices requiring firmware need an appropriate selection.
+
+The JSON result reports the generation archive, full artifact ID and new Runtime
+dependency archives. Pass these to `mpm system install --from-file ...
+--expected-id ... --dependency-file ...`; retained firmware needs no new archive.
+Installation prepares the boot entry on the running native-v2 installation,
+leaving selection and reboot explicit. Packaging itself changes neither.
+See [component generations](https://github.com/kjonasipersson-bert/mojt-linux/blob/main/docs/system-components.md) for storage,
+validation and compatibility limits.
+
 ## 4.5. Prepare image tools
 
 Image assembly uses a different private environment from Kernel compilation.

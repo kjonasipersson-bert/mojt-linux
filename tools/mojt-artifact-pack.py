@@ -28,11 +28,14 @@ def main(argv=None, *, prog=None):
     base.add_argument("--revision", type=int, required=True)
     base.add_argument("--attachment", action="append", default=[], metavar="NAME=FILE")
     system = commands.add_parser("system")
-    system.add_argument("--tree", type=Path, required=True)
-    system.add_argument("--generation", required=True)
-    system.add_argument("--version", required=True)
-    system.add_argument("--revision", type=int, required=True)
-    system.add_argument("--nix-store", type=Path, required=True)
+    system_input=system.add_mutually_exclusive_group(required=True)
+    system_input.add_argument("--tree",type=Path)
+    system_input.add_argument("--running",action="store_true",help="package a component-based successor of the running native System")
+    system.add_argument("--firmware",choices=("none","keep"),default="none",help="component System firmware selection (default: none)")
+    system.add_argument("--generation")
+    system.add_argument("--version")
+    system.add_argument("--revision", type=int)
+    system.add_argument("--nix-store", type=Path)
     for command in (generic, kernel, base, system):
         command.add_argument("--output", type=Path, required=command is not kernel,
                              default=Path("kernel-package") if command is kernel else None)
@@ -44,11 +47,26 @@ def main(argv=None, *, prog=None):
         if args.action == "verify":
             result = artifact.verify(args.archive, args.expected_id)
         elif args.action == "system":
-            from mojt_system_package import package
-            from mpm_nix_binary import NixBinaryAdapter
-            artifact.require(args.nix_store.is_absolute(), 'select an absolute retained nix-store helper')
-            result = package(args.tree, args.generation, args.version, args.revision, args.output,
-                             adapter=NixBinaryAdapter(args.nix_store))
+            if args.running:
+                from mojt_system_package import package_installed
+                import mpm_base as base
+                import mpm_system as system
+                from mpm_cli import Runtime
+                from mpm_boot_status import read_running,description
+                artifact.require(args.version is None and args.nix_store is None,'--version/--nix-store belong to assembled-tree packaging')
+                runtime=Runtime();running=read_running(runtime)
+                artifact.require(running is not None,'running native System identity required')
+                baseline=description(running)['system']['artifact'];body,_=system.object_record(runtime.disk,baseline)
+                revision=1 if args.revision is None else args.revision
+                label=args.generation or 'system-'+body['version']['upstream']+'-r'+str(body['version']['revision']+revision)
+                result=package_installed(runtime.disk,baseline,args.output,label=label,revision=revision,firmware=args.firmware)
+            else:
+                from mojt_system_package import package
+                from mpm_nix_binary import NixBinaryAdapter
+                artifact.require(all(v is not None for v in (args.generation,args.version,args.revision,args.nix_store)),
+                                 'assembled tree packaging requires --generation, --version, --revision and --nix-store')
+                artifact.require(args.nix_store.is_absolute(),'select an absolute retained nix-store helper')
+                result=package(args.tree,args.generation,args.version,args.revision,args.output,adapter=NixBinaryAdapter(args.nix_store))
         else:
             if args.action == "kernel":
                 spec, attachments = artifact.kernel_input(args.build, args.revision)

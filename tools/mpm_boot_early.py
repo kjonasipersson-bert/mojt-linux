@@ -58,6 +58,10 @@ def proof(value, source):
     names = []
     for row in d['providers']:
         artifact.fields(row,('reference','trees'));reference(row['reference']);require(type(row['trees']) is dict, 'missing provider trees')
+        if row['reference']['provider'] == 'mojt-system-component':
+            identity=row['reference']['identity'];artifact.fields(identity,('artifact','receipt'))
+            model.identity(identity['artifact']);model.identity(identity['receipt'])
+            require(set(row['trees']) == {'artifacts/system/installed/'+identity['artifact'][7:]+'/payload'},'foreign native component proof path')
         roots(sorted(row['trees']));names.extend(row['trees'])
         for measured in row['trees'].values():inventory.measurement(measured)
     if names:roots(sorted(names))
@@ -104,6 +108,11 @@ def inspect(root, source, trees, raw_cmdline, running_release):
     providers = [p for row in d['providers'] for p in row['trees']]
     for path in [*paths,*providers]:
         require(inventory.path(root,path).is_dir(),'required boot tree missing: '+path)
+    for row in d['providers']:
+        if row['reference']['provider'] == 'mojt-system-component':
+            import mpm_system as system
+            identity=row['reference']['identity'];unused,receipt=system.object_record(root,identity['artifact'])
+            require(receipt['id'] == identity['receipt'],'native component receipt differs')
     return dict(format='mojt-early-inspection-v1',inputs=source['id'],deployment=candidate['id'],
                 installation=i['installation'],metadata_checked=True,content_verified=False,
                 handover=False,scope='Exact boot metadata and required roots checked; content not rescanned.')

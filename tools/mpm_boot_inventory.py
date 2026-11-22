@@ -109,6 +109,29 @@ def measure(root, *, maximum=artifact.MAX_CONTENT):
     return measurement(dict(format=MEASUREMENT,digest='sha256:'+checksum.hexdigest(),nodes=nodes,content_bytes=total))
 
 
+def component_measurement(body):
+    """Expected sealed payload identity from accepted descriptor metadata, not a scan."""
+    rows = {r['path'][len('payload'):].lstrip('/') or '.':r for r in body['files']
+            if r['path'] == 'payload' or r['path'].startswith('payload/')}
+    require('.' in rows and rows['.']['type'] == 'directory','component needs a payload root')
+    checksum=hashlib.sha256((MEASUREMENT+'\n').encode('ascii'));total=0
+    encoder=json.JSONEncoder(sort_keys=True,separators=(',',':'),ensure_ascii=True,allow_nan=False)
+    # The reader's depth-first lexical order differs from a flat path sort when
+    # a sibling contains punctuation sorting before '/'. Walk the descriptor tree.
+    children={}
+    for name in rows:
+        if name != '.':children.setdefault(name.rpartition('/')[0] or '.',[]).append(name)
+    def visit(name):
+        yield name
+        for child in sorted(children.get(name,[]),key=lambda p:p.rsplit('/',1)[-1]):yield from visit(child)
+    for name in visit('.'):
+        source=rows[name];row=dict(mode=0o777 if source['type']=='symlink' else source['mode'] & 0o555,uid=0,gid=0,xattrs={},type=source['type'])
+        if source['type']=='file':row.update(size=source['size'],sha256=source['sha256']);total+=source['size']
+        elif source['type']=='symlink':row['target']=source['target']
+        checksum.update(encoder.encode([name,row]).encode('ascii')+b'\n')
+    return measurement(dict(format=MEASUREMENT,digest='sha256:'+checksum.hexdigest(),nodes=len(rows),content_bytes=total))
+
+
 def clone_runtime(source, destination, expected):
     """Copy only an already verified runtime snapshot into a private initramfs."""
     require(not os.path.lexists(destination), 'runtime output collision')

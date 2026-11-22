@@ -266,6 +266,12 @@ command fails, reports that content is retained, and leaves the selection alone;
 fix the reported problem and repeat installation to retry preparation. `--verify`
 adds full content audits; it is not required for ordinary installation.
 
+A component-based System stores Runtime and optional firmware once. Its profile
+projects exact retained payloads using controlled links. Updating Runtime can
+reuse firmware without extracting or copying it again. Minimal System packaging
+omits firmware by default; `mbt package system --running --firmware keep` retains
+the current selection. See [System packaging](mbt.md#package-a-system-successor).
+
 Use `mpm system install ... --content-only` to import without preparation.
 Explicit `--disk-root` targets are offline and also remain content-only. Base and
 Kernel installation still require separate preparation in this implementation.

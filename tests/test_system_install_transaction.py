@@ -63,6 +63,27 @@ class InstallationTransaction(unittest.TestCase):
         return constructor.CompletedBuild(dict(archive=raw,binding=binding,proof=proof,handover_enabled=True,
             payload_key='sha256:'+'0'*64,payload_reused=True),handover)
 
+    def test_component_generation_prepares_and_returns_to_legacy_without_changing_state(self):
+        import mojt_system_package as package
+        candidate=package.package_installed(self.root,self.candidate,self.work/'thin',label='thin-runtime',firmware='keep')
+        system.install(self.root,self.work/'thin'/candidate['generation'],candidate['artifact'],
+            dependency_files=[self.work/'thin'/p for p in candidate['dependency_files']],yes=True,adapters=self.f.f.adapters)
+        with mock.patch.object(constructor,'_build_locked',side_effect=self.build):
+            result=update.stage(self.root,'system',candidate['artifact'],**self.options)
+        admitted=selection.ready(self.root,result['deployment'],verify=True)
+        source=admitted['record']['description']['inputs'];proof=admitted['receipt']['description']['proof']
+        context=handover.check(self.root,source,proof,admitted['receipt']['description']['handover'],verify_content=False)
+        self.assertEqual(len(context['components']),1)
+        start=handover.guest_file(self.root,context['tree'],context['profile'],context['provider_roots'],context['mounts'],
+            '/run/mojt-system/start',components=context['components'])
+        self.assertTrue(start.is_file());self.assertIn('/artifacts/system/installed/',str(start))
+        old=selection.current(self.root)[0]['description']['selected']
+        state={k:v for k,v in self.f.f.f.snapshot().items() if k.startswith('state/')}
+        selection.select(self.root,result['deployment'],expected_selected=old,yes=True)
+        selection.select(self.root,expected_selected=result['deployment'],rollback=True,yes=True)
+        self.assertEqual(selection.current(self.root)[0]['description']['selected'],old)
+        self.assertEqual({k:v for k,v in self.f.f.f.snapshot().items() if k.startswith('state/')},state)
+
     def test_one_plan_keeps_selection_exact_and_holds_writer_locks_through_construction(self):
         def build(*args,**kwargs):
             probe="import fcntl,sys; f=open(sys.argv[1],'r+'); fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB)"

@@ -7,10 +7,14 @@ SPDX-License-Identifier: GPL-2.0-only
 # Native System content installation and status
 
 Native System installation imports exact components with controlled profile
-links, validates a generation's resolved composition and materializes an immutable profile. It does not change
+links, validates a generation's resolved composition and publishes an immutable profile. It does not change
 persistent configuration/accounts/data, existing System profiles, services,
 Base/Kernel selection, the boot menu or the running System. No package code,
 frontend, interpreter or lifecycle handler from the candidate is executed.
+
+Component-based generations project retained payloads through controlled links;
+materialized generations remain supported. See [component profiles and optional
+firmware](system-components.md) for the storage and input-validation contract.
 
 ## User flow
 

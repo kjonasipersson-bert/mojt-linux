@@ -52,6 +52,9 @@ require = base.require
 
 
 def normalized(row):
+    if set(row) == {'component'}:
+        artifact.fields(row['component'],('artifact','path'));base.io.identifier(row['component']['artifact']);management.path(row['component']['path'])
+        return copy.deepcopy(row)
     if set(row) == {'link'}:
         require(type(row['link']) is str, 'invalid profile link evidence');return copy.deepcopy(row)
     require(set(row) in ({'directory', 'mode'}, {'sha256', 'mode'}) and type(row['mode']) is int, 'unsupported profile evidence')
@@ -135,22 +138,50 @@ def firmware_review(selected, candidate, proof):
 
 def profile_review(selected, candidate, profile):
     """Read only the small, inventoried contract when firmware data actually changes."""
-    before=selected['description']['profile'];after=candidate['description']['profile']
-    needed=(firmware_inventory(before) != firmware_inventory(after) or before.get(FIRMWARE_PROOF) != after.get(FIRMWARE_PROOF))
+    previous_layout=system.component_profile(selected);layout=system.component_profile(candidate)
+    one_legacy=(previous_layout is None) != (layout is None)
+    changed_firmware=(firmware_inventory(selected['description']['profile']) != firmware_inventory(candidate['description']['profile']))
+    expand=one_legacy or changed_firmware
+    before=system.logical_inventory(profile,selected,firmware=expand)
+    after=system.logical_inventory(profile,candidate,firmware=expand)
+    allowed=set()
+    if layout is not None and not any(r['role']=='firmware' for r in layout['components']) and 'hardware.json' not in before and 'hardware.json' not in after:
+        allowed=set(firmware_inventory(before)) | {FIRMWARE_PROOF}
+    if layout is not None and not any(r['role']=='firmware' for r in layout['components']) and 'hardware.json' in after:
+        following=artifact.parse_json(common.checked_bytes(system.profile_file(profile,'hardware.json',manifest=candidate)))
+        if following.get('format') == 3 and following.get('firmware_mode') == 'none':
+            root=system.profile_root(profile)
+            previous_profile=(system.realization_path(root,selected['description']['provenance']['artifact'])/'profile'
+                if 'artifact' in selected['description']['provenance'] else root/'system'/selected['description']['label'])
+            raw=common.checked_bytes(system.profile_file(previous_profile,'hardware.json',manifest=selected))
+            require(before['hardware.json']['sha256'] == hashlib.sha256(raw).hexdigest(),'baseline hardware metadata changed')
+            previous=artifact.parse_json(raw)
+            mutable={'format','firmware_mode','firmware_tree_sha256','licenses_tree_sha256'}
+            require({k:v for k,v in previous.items() if k not in mutable} == {k:v for k,v in following.items() if k not in mutable}
+                    and following['firmware_tree_sha256'] is None and following['licenses_tree_sha256'] is None
+                    and not firmware_inventory(after),'minimal System changes non-firmware hardware policy')
+            allowed=set(firmware_inventory(before)) | {'hardware.json',FIRMWARE_PROOF}
+            if 'kernel/lib' not in after:allowed.add('kernel/lib')
+    if allowed:
+        for name,row in sorted(before.items(),key=lambda pair:len(pair[0].split('/')),reverse=True):
+            if row.get('directory') and name not in after and all(p in allowed for p in before if p.startswith(name+'/')):
+                allowed.add(name)
+    needed=(firmware_inventory(before) != firmware_inventory(after) or before.get(FIRMWARE_PROOF) != after.get(FIRMWARE_PROOF)) and not allowed
     proof=None
     if needed and FIRMWARE_PROOF in after:
-        raw=common.checked_bytes(profile/FIRMWARE_PROOF)
+        raw=common.checked_bytes(system.profile_file(profile,FIRMWARE_PROOF,manifest=candidate))
         require(len(raw) <= 65536 and after[FIRMWARE_PROOF].get('sha256') == hashlib.sha256(raw).hexdigest(),
                 'firmware contract differs from profile')
         proof=artifact.parse_json(raw)
-    return tooling_review(selected,candidate,firmware=proof)
+    return tooling_review(selected,candidate,firmware=proof,inventories=(before,after),allowed_data=allowed)
 
 
-def tooling_review(selected, candidate, *, firmware=None):
+def tooling_review(selected, candidate, *, firmware=None, inventories=None, allowed_data=()):
     """Allow management tooling changes; do not infer service/schema migrations."""
     old = manifests.validate(selected)['description'];new = manifests.validate(candidate)['description']
-    before = {p:normalized(r) for p,r in old['profile'].items() if p != management.FILENAME}
-    after = {p:normalized(r) for p,r in new['profile'].items() if p != management.FILENAME}
+    previous,following = inventories if inventories is not None else (old['profile'],new['profile'])
+    before = {p:normalized(r) for p,r in previous.items() if p != management.FILENAME}
+    after = {p:normalized(r) for p,r in following.items() if p != management.FILENAME}
     changed = sorted(p for p in set(before) | set(after) if before.get(p) != after.get(p))
     firmware_paths=firmware_review(selected,candidate,firmware) if firmware is not None else set()
     blocked = []
@@ -162,7 +193,7 @@ def tooling_review(selected, candidate, *, firmware=None):
                    or path in ('share/mbt','man','manifests') and all(row is None or row.get('directory') is True for row in (before.get(path),after.get(path))))
         if path == 'version':
             allowed = after.get(path, {}).get('sha256') == hashlib.sha256((new['label'] + '\n').encode()).hexdigest()
-        if not allowed and path not in firmware_paths:blocked.append(path)
+        if not allowed and path not in firmware_paths and path not in allowed_data:blocked.append(path)
     previous_outputs = sorted({r['link'] for r in before.values() if r.get('link') in
         ('/run/mojt-privileged/passwd', '/run/mojt-privileged/sudo')})
     outputs = new['provenance'].get('runtime_outputs', [])
@@ -188,7 +219,7 @@ def tooling_review(selected, candidate, *, firmware=None):
 
 def defaults(root, profile):
     """Only observe missing profile defaults; preserve local files and symlinks."""
-    source = profile / 'defaults';missing = [];observed = []
+    source = system.profile_file(profile,'defaults');missing = [];observed = []
     if not source.exists():return dict(policy='existing-defaults-only-v1', missing=[], observed=artifact.digest([]))
     require(source.is_dir() and not source.is_symlink(), 'unsupported System defaults root')
     def visit(src, dst):
@@ -214,7 +245,7 @@ def defaults(root, profile):
     return dict(policy='existing-defaults-only-v1', missing=missing, observed=artifact.digest(observed))
 
 
-def providers(manifest, candidate, refs, adapters, *, baseline_refs=None):
+def providers(manifest, candidate, refs, adapters, *, baseline_refs=None, inventories=None):
     """Provider-specific preservation facts stay in the manager-owned adapter."""
     reports = [];errors = []
     baselines = manifest['description']['artifacts'] if baseline_refs is None else {
@@ -234,7 +265,8 @@ def providers(manifest, candidate, refs, adapters, *, baseline_refs=None):
             require(type(files) is list and len(files) <= 128, 'invalid provider runtime evidence')
             for path in files:
                 management.path(path)
-                old = manifest['description']['profile'].get(path);new = candidate['description']['profile'].get(path)
+                previous,following = inventories if inventories is not None else (manifest['description']['profile'],candidate['description']['profile'])
+                old = previous.get(path);new = following.get(path)
                 if old is None or new is None or normalized(old) != normalized(new):
                     errors.append('provider runtime change requires an explicit upgrade contract: ' + path)
         except (KeyError, ValueError) as error:errors.append(str(error))
@@ -354,7 +386,8 @@ def _prepare(root, identifier, baseline, adapters, *, area='system', bounds=None
     require(upstream['scheme'] == 'dotted-v1' and catalog.compare_versions(bounds['kernel_min'], upstream['upstream']) <= 0
             and catalog.compare_versions(upstream['upstream'], bounds['kernel_max']) <= 0, 'preserved Kernel is outside selected Base bounds')
     reviewed = profile_review(selected, candidate, profile)
-    requirements = providers(selected, candidate, refs, adapters,baseline_refs=context.get('provider_references'))
+    requirements = providers(selected,candidate,refs,adapters,baseline_refs=context.get('provider_references'),
+        inventories=(system.logical_inventory(profile,selected),system.logical_inventory(profile,candidate)))
     management_report = management.check_target(root, profile, candidate)
     tree = base.realization_path(root, base_body['id']) / 'tree/rootfs'
     shell_report = shells(root, tree, persistent, candidate, refs, adapters)

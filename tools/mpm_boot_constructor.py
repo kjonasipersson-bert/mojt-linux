@@ -131,6 +131,10 @@ def capture(root, source, adapters, *, entries=None):
         names = provider_paths(root,ref,adapters)
         fresh = [p for p in names if p not in seen];seen.update(names)
         if fresh:providers.append(dict(reference=ref,trees={p:measurement('provider',artifact.digest(ref),p) for p in fresh}))
+    for component in system.native_components(root,d['system']['artifact']):
+        identifier=component['reference']['artifact'];body,receipt=system.object_record(root,identifier)
+        providers.append(dict(reference=dict(provider='mojt-system-component',identity=dict(artifact=identifier,receipt=receipt['id'])),
+            trees={component['path']:inventory.component_measurement(body)}))
     value = record(early.PROOF,dict(inputs=source['id'],constructor=d['constructor'],
         base=tree('base','realizations/base/'+d['base']['artifact'][7:]+'/tree/rootfs'),
         system=tree('system','realizations/system/'+d['system']['artifact'][7:]+'/profile'),

@@ -386,6 +386,32 @@ class ConstructorTests(unittest.TestCase):
                 selection.select(root,expected_selected=changed['selected'],area=area,rollback=True,yes=True)
                 self.assertEqual(selection.current(root)[0]['description']['selected'],value['id'])
                 self.assertEqual(initial_state,{k:v for k,v in f.f.f.snapshot().items() if k.startswith('state/')})
+        # Build a thin successor through the real constructor, then run its
+        # embedded reader and handover gates independently of this checkout.
+        import mojt_system_package as packager
+        thin=packager.package_installed(root,other,work/'thin-package',label='thin-reader',firmware='keep')
+        constructor.system.install(root,work/'thin-package'/thin['generation'],thin['artifact'],
+            dependency_files=[work/'thin-package'/p for p in thin['dependency_files']],yes=True,adapters=f.f.adapters)
+        with mock.patch.object(constructor.archive,'vm_module',return_value=vm),mock.patch.object(vm,'module_paths',return_value=[module]):
+            prepared=update.stage(root,'system',thin['artifact'],yes=True,**options)
+        admitted=selection.ready(root,prepared['deployment'],verify=True)
+        thin_slot=root/model.slot(prepared['deployment'])
+        isolated=work/'thin-extraction';isolated.mkdir()
+        from test_mpm_boot_payload import members
+        for frame in members((thin_slot/'initramfs.cpio.gz').read_bytes()):
+            subprocess.run(['cpio','-idm','--quiet','--no-absolute-filenames'],cwd=isolated,input=frame,check=True)
+        shutil.copytree(root,isolated/'test-target',symlinks=True)
+        (isolated/'mojt/test-cmdline').write_text(model.cmdline(admitted['record']))
+        thin_args=['chroot',str(isolated),'/usr/bin/python3','-I','-S','-B','/mojt/launch.py','--root','/test-target',
+            '--inputs','/mojt/inputs.json','--proof','/mojt/trees.json','--cmdline','/mojt/test-cmdline',
+            '--release','/mojt/test-release']
+        (isolated/'mojt/test-release').write_text(source['description']['kernel']['release'])
+        checked=subprocess.run(thin_args,capture_output=True,text=True)
+        self.assertEqual(checked.returncode,0,checked.stderr)
+        self.assertTrue(json.loads(checked.stdout)['verified'])
+        thin_gates="import sys;sys.path.insert(0,'/mojt/code');from pathlib import Path;import mpm_boot_early as e;import mpm_boot_handover as h;c=h.check(Path('/test-target'),e.read(Path('/mojt/inputs.json')),e.read(Path('/mojt/trees.json')),e.read(Path('/mojt/handover.json')),verify_content=False);assert c['components'];print('PASS: isolated component handover')"
+        checked=subprocess.run(['chroot',str(isolated),'/usr/bin/python3','-I','-S','-B','-c',thin_gates],capture_output=True,text=True)
+        self.assertEqual(checked.returncode,0,checked.stderr)
         extracted=work/'independent-extraction';extracted.mkdir()
         subprocess.run(['cpio','-idm','--quiet','--no-absolute-filenames'],cwd=extracted,input=gzip.decompress(result['archive']),check=True)
         shutil.copytree(root,extracted/'test-target',symlinks=True)

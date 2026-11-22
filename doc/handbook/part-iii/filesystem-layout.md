@@ -74,6 +74,12 @@ ordinary work should use the public paths above.
 | Selected System realization's `profile` | `/run/mojt-system` |
 | Selected Kernel's retained `payload/lib/modules` | `/lib/modules` |
 
+Component-based System profiles link exact Runtime and optional firmware payloads
+under `artifacts/system/installed/` on the backing disk. Handover mounts the
+referenced payloads read-only. Firmware follows the selected System when included;
+a minimal System can omit it. Older retained generations keep their objects for
+return and are not automatically collected.
+
 The persistent root is a small shell of directories and Base aliases, not a
 copy of the selected Base and not an overlay over release files. Read-only bind
 mounts project the release's immutable top-level trees/files into that shell.
