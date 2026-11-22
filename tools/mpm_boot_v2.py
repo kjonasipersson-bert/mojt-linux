@@ -232,3 +232,59 @@ def parse_menu(raw, entries):
     value = artifact.parse_json(lines[1][2:]);selection(value)
     require(render(value, entries) == raw, 'menu bytes differ from complete selection record')
     return value
+
+
+def menu_blocks(raw):
+    """Check the bounded menu wire without opening unrelated deployment slots."""
+    require(type(raw) is bytes and len(raw) <= artifact.MAX_METADATA,'invalid native-v2 menu')
+    lines=raw.splitlines(keepends=True)
+    require(len(lines)>=2 and lines[0]==HEADER.encode() and lines[1].startswith(b'# '),'unknown native-v2 menu header')
+    value=artifact.parse_json(lines[1][2:].rstrip(b'\n'));d=selection(value)
+    require(lines[1]==b'# '+artifact.canonical(value)+b'\n','noncanonical selection header')
+    prefix=[];blocks={};index=2
+    while index<len(lines) and not lines[index].startswith(b'menuentry '):prefix.append(lines[index]);index+=1
+    wire=b''.join(prefix).decode('ascii');console=None;root_uuid=None
+    for mode in ('serial','local'):
+        start=boot.terminal(mode)+('set gfxpayload=keep\n' if mode=='local' else '')+"set timeout=10\nset default='mpm-"+d['selected'][7:]+"'\n"
+        if wire.startswith(start):
+            match=re.fullmatch(r'search --no-floppy --fs-uuid --set=root ([0-9a-f-]+)\n',wire[len(start):])
+            require(match is not None,'unsupported boot menu prefix');root_uuid=boot.fs_uuid(match.group(1));console=mode;break
+    require(console is not None,'unsupported boot menu prefix')
+    for row in d['entries']:
+        identifier=row['deployment'];block=lines[index:index+4];index+=4
+        require(len(block)==4 and block[0].startswith(b"menuentry 'Mojt Base ") and
+                block[0].endswith(("' --id 'mpm-"+identifier[7:]+"' {\n").encode()) and block[3]==b'}\n',
+                'menu entry differs from selection')
+        image=('    linux /'+row['path']+'/vmlinuz ').encode()
+        require(block[1].startswith(image) and block[1].endswith(b'\n') and
+                ('mojt.deployment='+identifier[7:]).encode() in block[1].split() and
+                block[2]==('    initrd /'+row['path']+'/initramfs.cpio.gz\n').encode(),
+                'menu boot path differs from selection')
+        title=block[0].decode('ascii')
+        pattern=r"menuentry 'Mojt Base ([A-Za-z0-9._+-]+) / System ([A-Za-z0-9._+-]+) / Linux ([A-Za-z0-9._+-]+) / "+identifier[7:19]+r"' --id 'mpm-"+identifier[7:]+r"' \{\n"
+        require(re.fullmatch(pattern,title) is not None,'unsupported boot menu title')
+        command=block[1][len(image):].decode('ascii').strip()
+        expected='console=ttyS0,115200'+(' console=tty0' if console=='local' else '')+' rdinit=/init root=UUID='+root_uuid+' mojt.deployment='+identifier[7:]
+        require(command==expected or command.startswith(expected+' '),'menu mixes machine boot policies')
+        arguments(command[len(expected):].split())
+        blocks[identifier]=b''.join(block)
+    require(index==len(lines),'unexpected boot menu lines')
+    return value,b''.join(prefix),blocks
+
+
+def render_known(value, entries, previous):
+    """Preserve checked old menu blocks; render only newly resolved entries."""
+    d=selection(value);old,prefix,blocks=menu_blocks(previous)
+    selected=d['selected'];item=entries[selected]
+    # Rendering a one-entry selection supplies the authoritative machine prefix.
+    one=dict(d,entries=[dict(deployment=selected,path=slot(selected))],previous=None)
+    single=render(record(SELECTION,one),{selected:item})
+    unused,header,unused_blocks=menu_blocks(single)
+    for identifier,item in entries.items():
+        row=dict(d,selected=identifier,previous=None,entries=[dict(deployment=identifier,path=slot(identifier))])
+        unused,unused_header,rendered=menu_blocks(render(record(SELECTION,row),{identifier:item}))
+        blocks[identifier]=rendered[identifier]
+    require(all(row['deployment'] in blocks for row in d['entries']),'missing boot menu block')
+    raw=HEADER.encode()+b'# '+artifact.canonical(value)+b'\n'+header+b''.join(blocks[r['deployment']] for r in d['entries'])
+    require(len(raw)<=artifact.MAX_METADATA,'generated boot menu exceeds metadata limit')
+    return raw

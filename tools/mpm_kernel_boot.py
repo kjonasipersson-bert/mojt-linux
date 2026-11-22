@@ -277,7 +277,10 @@ def write_initramfs(root):
     append("TRAILER!!!", 0, 0, 0)
     result.extend(b"\0" * (-len(result) % 512))
     raw = gzip.compress(bytes(result), mtime=0)
-    native.inspect_initramfs(raw, root)
+    # Private writer invariants run above. Independent round-trip comparison
+    # belongs to standalone/full verification, not normal locked production.
+    from mpm_native_io import preparation_verify
+    if preparation_verify():native.inspect_initramfs(raw, root)
     return raw
 
 

@@ -62,17 +62,21 @@ def preparation_cached(key, paths, read, *, cost=None, require_stable=True):
     if active is None:return read()
     paths=tuple(Path(p).absolute() for p in paths)
     def signature():
+        # Check each shared ancestor once. lstat of every path component proves
+        # that this lexical path has no symlink without repeated resolve walks.
+        parents={parent for path in paths for parent in path.parents}
         result=[]
-        for path in paths:
-            if path!=path.resolve():return None
-            for parent in path.parents:
-                try:info=parent.lstat()
-                except FileNotFoundError:return None
-                result.append((str(parent),info.st_dev,info.st_ino,info.st_mode,info.st_uid,info.st_gid))
+        for path in sorted(parents|set(paths),key=lambda p:(len(p.parts),str(p))):
+            if '..' in path.parts:return None
             try:info=path.lstat()
-            except FileNotFoundError:result.append((str(path),None));continue
-            result.append((str(path),info.st_dev,info.st_ino,info.st_mode,info.st_uid,info.st_gid,
-                           info.st_nlink,info.st_size,info.st_mtime_ns,info.st_ctime_ns))
+            except FileNotFoundError:
+                if path in parents:return None
+                result.append((str(path),None));continue
+            if stat.S_ISLNK(info.st_mode):return None
+            if path in parents and not stat.S_ISDIR(info.st_mode):return None
+            facts=(str(path),info.st_dev,info.st_ino,info.st_mode,info.st_uid,info.st_gid)
+            if path in paths:facts+=(info.st_nlink,info.st_size,info.st_mtime_ns,info.st_ctime_ns)
+            result.append(facts)
         return tuple(result)
     before=signature()
     if before is None:return read()
@@ -130,7 +134,7 @@ def stored_mode(row):
     return 0o555 if row["type"] == "directory" else 0o444 | row["mode"] & 0o111
 
 
-def frozen_copy(source, destination, *, maximum=MAX_ARCHIVE):
+def frozen_copy(source, destination, *, maximum=MAX_ARCHIVE, durable=True):
     require(type(maximum) is int and 0 < maximum <= MAX_ARCHIVE, "invalid copy size limit")
     fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     checksum = hashlib.sha256()
@@ -146,7 +150,7 @@ def frozen_copy(source, destination, *, maximum=MAX_ARCHIVE):
                 target.write(chunk)
             require(total == info.st_size, "input archive changed size during copying")
             os.fchmod(target.fileno(), 0o444)
-            os.fsync(target.fileno())
+            if durable:os.fsync(target.fileno())
         return checksum.hexdigest(), total
     finally:
         os.close(fd)

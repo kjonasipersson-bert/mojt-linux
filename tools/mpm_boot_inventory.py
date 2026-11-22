@@ -145,11 +145,11 @@ def clone_runtime(source, destination, expected):
         if row['type'] == 'directory':target.mkdir(mode=0o700)
         elif row['type'] == 'symlink':target.symlink_to(row['target'])
         elif 'hardlink_to' not in row:
-            checksum,size = io.frozen_copy(origin,target)
+            checksum,size = io.frozen_copy(origin,target,durable=False)
             require((checksum,size) == (row['sha256'],row['size']), 'runtime changed during copying')
     for name,row in expected.items():
         if 'hardlink_to' in row:os.link(destination/row['hardlink_to'],destination/name,follow_symlinks=False)
     for name,row in reversed(list(expected.items())):
         target = destination if name == '.' else destination/name
         if row['type'] != 'symlink':target.chmod(row['mode'])
-    require(snapshot(destination) == expected, 'copied runtime inventory differs')
+    if io.preparation_verify():require(snapshot(destination) == expected, 'copied runtime inventory differs')

@@ -57,9 +57,9 @@ def read_running(runtime):
 
 
 def selected(root, running_record=None):
-    from mpm_boot_selection import present, current
+    from mpm_boot_selection import present, selected as current
     if present(root):
-        value,entries,raw = current(root)
+        value,entries,raw = current(root,receipt=False)
         return observation(entries[value['description']['selected']]['record']) if value else unknown('native-v2 initial selection is incomplete')
     path=root/'boot/mojt/grub.cfg'
     if not os.path.lexists(path):return unknown('no boot selection record')

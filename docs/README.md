@@ -15,6 +15,7 @@ references describe the implementation and supported limits at this commit:
 - [MPM contract](mpm.md), [Ports](mpm-ports.md) and [management workflow](management-workflow.md)
 - [System installation/boot updates](system-transition.md) and [native System packaging](system-packaging.md)
 - [Component System generations and optional firmware](system-components.md)
+- [Normal System operation and audit boundaries](system-normal-operation.md)
 - [Base import](base-installation.md) and [Base boot preparation/selection](base-boot-staging.md)
 - [Native-v2 selection](native-system-selection.md) and [handover](native-system-handover.md)
 - [System assembly](system-nix-vm.md), [accounts](system-accounts.md), [console/time](system-console-time.md) and [manuals/environment](system-environment.md)

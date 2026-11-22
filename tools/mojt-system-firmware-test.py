@@ -70,12 +70,16 @@ def mpm(*args):
 
 
 def snapshot():
-    status=mpm('system','status','--json')
-    require(status['running']['state'] == status['selected']['state'] == 'known','exact running/selected System required')
-    item=ROOT/'boot/mojt/deployments'/status['selected']['deployment'][7:]/'inputs.json'
-    checked(item);source=json.loads(item.read_text())['description']
-    return dict(running=status['running']['artifact'],label=status['running']['label'],selected=status['selected']['deployment'],
-                installation=source['installation'],base=source['base'],kernel=source['kernel'],boot=source['boot'])
+    """Read exact live identities without enumerating installed/prepared history."""
+    from mpm_cli import Runtime
+    from mpm_boot_status import read_running,description
+    from mpm_boot_selection import selected
+    runtime=Runtime();active=read_running(runtime);state,entries,unused=selected(ROOT,receipt=False)
+    require(active is not None and state is not None,'exact running/selected System required')
+    source=entries[state['description']['selected']]['record']['description']['inputs']['description']
+    running=description(active)['system']
+    return dict(running=running['artifact'],label=running['generation'],running_deployment=active['id'],selected=state['description']['selected'],
+        installation=source['installation'],base=source['base'],kernel=source['kernel'],boot=source['boot'])
 
 
 def unchanged(before):

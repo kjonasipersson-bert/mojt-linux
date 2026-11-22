@@ -101,6 +101,11 @@ def _candidate(root, source, trees, raw_cmdline, running_release, *, verify_file
     return root,i,d,candidate
 
 
+class Inspection(dict):
+    """Checked reader result shared with handover inside the boot process."""
+    def __init__(self,value,system_value):super().__init__(value);self.system=system_value
+
+
 def inspect(root, source, trees, raw_cmdline, running_release):
     """Normal boot: exact metadata, selectors and roots, without a content scrub."""
     root,i,d,candidate = _candidate(root,source,trees,raw_cmdline,running_release,verify_files=False)
@@ -108,14 +113,20 @@ def inspect(root, source, trees, raw_cmdline, running_release):
     providers = [p for row in d['providers'] for p in row['trees']]
     for path in [*paths,*providers]:
         require(inventory.path(root,path).is_dir(),'required boot tree missing: '+path)
+    import mpm_system as system
+    accepted=None
+    if any(row['reference']['provider']=='mojt-system-component' for row in d['providers']):
+        accepted=system.CheckedSystem(root,i['system']['artifact'])
+        require(accepted.manifest['id']==i['system']['manifest'] and accepted.realization['description']['composition']==i['system']['composition'],
+                'early System binding differs')
     for row in d['providers']:
-        if row['reference']['provider'] == 'mojt-system-component':
-            import mpm_system as system
-            identity=row['reference']['identity'];unused,receipt=system.object_record(root,identity['artifact'])
-            require(receipt['id'] == identity['receipt'],'native component receipt differs')
-    return dict(format='mojt-early-inspection-v1',inputs=source['id'],deployment=candidate['id'],
-                installation=i['installation'],metadata_checked=True,content_verified=False,
-                handover=False,scope='Exact boot metadata and required roots checked; content not rescanned.')
+        if row['reference']['provider']=='mojt-system-component':
+            identity=row['reference']['identity']
+            require(identity['artifact'] in accepted.objects and accepted.objects[identity['artifact']][1]['id']==identity['receipt'],
+                    'native component receipt differs')
+    return Inspection(dict(format='mojt-early-inspection-v1',inputs=source['id'],deployment=candidate['id'],
+        installation=i['installation'],metadata_checked=True,content_verified=False,
+        handover=False,scope='Exact boot metadata and required roots checked; content not rescanned.'),accepted)
 
 
 def verify(root, source, trees, raw_cmdline, running_release):

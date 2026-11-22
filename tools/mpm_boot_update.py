@@ -122,7 +122,10 @@ def _stage_locked(root, area, identifier, *, bounds=None, adapters=None, runtime
     else:
         ref,interpreter = runtime_reference(root,runtime,adapters)
         with ui.phase('Inspect boot runtime'):
-            measured = constructor.describe_runtime(root,ref,interpreter,adapters=adapters)
+            measured=constructor.retained_runtime(root,ref,interpreter,context['entries'][context['selected']],adapters=adapters)
+            if measured is None:
+                measured=constructor.describe_runtime(root,ref,interpreter,adapters=adapters)
+                if not dry_run:constructor.retain_runtime(root,measured)
     require(busybox is not None or runtime is not None,'offline construction requires an explicit static BusyBox')
     busybox = Path(busybox) if busybox is not None else runtime.system_bin.parent/'busybox'
     require(busybox == busybox.absolute() and busybox == busybox.resolve(),'canonical static BusyBox required')
@@ -131,7 +134,7 @@ def _stage_locked(root, area, identifier, *, bounds=None, adapters=None, runtime
     report['inputs'] = source['id']
     # Reuse only fully admitted exact inputs. An interrupted raw slot never
     # becomes bootable merely because its files happen to exist.
-    entries,_ = selection.available(root)
+    entries,_ = selection.summaries(root)
     matches = [key for key,row in entries.items() if row['record']['description']['inputs'] == source]
     require(len(matches) <= 1,'multiple deployments for exact constructor inputs')
     if matches:
@@ -139,13 +142,13 @@ def _stage_locked(root, area, identifier, *, bounds=None, adapters=None, runtime
         return dict(report,action='no-change',deployment=matches[0])
     if dry_run:return dict(report,action='stage',inputs=source['id'])
     print('Preparing exact '+area+' deployment'+(' with full content verification' if io.preparation_verify() else '')+'...',file=sys.stderr,flush=True)
-    selection.store.audit_inputs(root,source,p['kernel_bounds'],adapters=adapters)
+    if io.preparation_verify():selection.store.audit_inputs(root,source,p['kernel_bounds'],adapters=adapters)
     with tempfile.TemporaryDirectory(prefix='mojt-boot-update-') as temporary:
         work = Path(temporary)
         with ui.phase('Prepare Base and machine handover'):
             contract = handover.prepare_locked(root,source,plan,context,adapters=adapters,tar=tar)
         result = selection._stage_locked(root,source,runtime_directory,busybox,work/'construction',
-                                 bounds=p['kernel_bounds'],adapters=adapters,contract=contract,entries=entries,runtime_value=measured)
+                                 bounds=p['kernel_bounds'],adapters=adapters,contract=contract,entries=context['entries'],runtime_value=measured)
     payload = result['initramfs_payload']
     print('Early-boot runtime/drivers: '+('reused' if payload['reused'] else 'built'),file=sys.stderr,flush=True)
     return dict(report,action='stage',changed=True,deployment=result['deployment'],initramfs_payload=payload)
@@ -156,7 +159,7 @@ def upgrade(root, area, identifier, *, expected_selected=None, dry_run=False, ye
     require(os.geteuid() == 0,'boot updates require an administrator')
     root = system.target(root)
     with common.read_locks(root):
-        value,_,_ = selection.current(root)
+        value,_,_ = selection.selected(root)
         require(value is not None,'native-v2 initial selection is missing')
         selected = value['description']['selected']
         require(expected_selected is None or selected == expected_selected,'selected deployment changed; repeat preview')
@@ -171,7 +174,7 @@ def upgrade(root, area, identifier, *, expected_selected=None, dry_run=False, ye
     show_preview(root,area,identifier,preview)
     if not yes:require(input('Select this exact '+area+' update for NEXT boot? [y/N] ').strip().lower() in ('y','yes'),'activation cancelled')
     with common.read_locks(root):
-        require(selection.current(root)[0]['description']['selected'] == selected,'selection changed after approval')
+        require(selection.selected(root)[0]['description']['selected'] == selected,'selection changed after approval')
     started = time.monotonic()
     staged = stage(root,area,identifier,yes=True,verify=verify,expected_preflight=preview['preflight'],
                    expected_inputs=preview.get('inputs'),**options)
@@ -190,12 +193,12 @@ def activate(root, area, identifier, *, expected_selected=None, dry_run=False, y
     require(os.geteuid() == 0,'boot activation requires an administrator')
     root = system.target(root);model.identity(identifier)
     with common.read_locks(root):
-        value,entries,_ = selection.current(root)
+        value,entries,_ = selection.selected(root)
         require(value is not None,'native-v2 initial selection is missing')
         selected = value['description']['selected']
         require(expected_selected is None or expected_selected == selected,'selected deployment changed; repeat preview')
         before = entries[selected]['record']['description']['inputs']['description']
-        available,_ = selection.available(root)
+        available,_ = selection.summaries(root)
         preserved = [key for key in ('base','system','kernel','platform','boot','firmware','state_requirements') if key != area]
         matches = {key:item for key,item in available.items()
                    if (inputs := item['record']['description']['inputs']['description'])[area]['artifact'] == identifier
@@ -215,10 +218,10 @@ def activate(root, area, identifier, *, expected_selected=None, dry_run=False, y
 def choose_artifact(root, area, *, prepared=False):
     """Metadata-only installed inventory; compatibility is checked after choice."""
     if prepared:
-        value,current_entries,_ = selection.current(root)
+        value,current_entries,_ = selection.selected(root)
         require(value is not None,'native-v2 initial selection is missing')
         before=current_entries[value['description']['selected']]['record']['description']['inputs']['description']
-        entries,_ = selection.available(root)
+        entries,_ = selection.summaries(root)
         preserved=[key for key in ('base','system','kernel','platform','boot','firmware','state_requirements') if key!=area]
         entries={key:item for key,item in entries.items() if all(item['record']['description']['inputs']['description'][field]==before[field] for field in preserved)}
         candidates = {item['record']['description']['inputs']['description'][area]['artifact']:
@@ -248,7 +251,7 @@ def choose_artifact(root, area, *, prepared=False):
 
 def show_preview(root, area, identifier, preview):
     from mpm_boot_status import description
-    value,entries,unused=selection.current(root)
+    value,entries,unused=selection.selected(root)
     before=description(entries[preview['selected']]['record']);after=copy.deepcopy(before)
     after[area]['artifact']=identifier
     after[area]['generation' if area=='system' else 'release']=preview['release']
