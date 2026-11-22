@@ -118,7 +118,10 @@ Base/Kernel installation integration is still pending.
 .BI "system install --from-file " "GENERATION --expected-id sha256:FULL_ID"
 imports a native System generation and exact components, safely unpacks each
 new archive once and composes one immutable profile. Full payload, retained
-content and provider closure audits require --verify. Supply missing
+content and provider closure audits require --verify. For component profiles,
+new dependency bytes are checked while extracting; installed exact payloads are
+projected through controlled links rather than copied into each profile. Firmware
+is an optional exact component. See docs/system-components.md. Supply missing
 components with repeatable --dependency-file ARCHIVE. Installed exact components
 are reused through protected metadata; unrelated inputs fail.
 --dry-run checks the local package structure/composition without target writes;

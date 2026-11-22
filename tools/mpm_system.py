@@ -211,7 +211,8 @@ def component_profile(manifest):
     value = manifest['description']['provenance'].get('native_profile')
     if value is None:return None
     artifact.fields(value,('format','components','mappings'))
-    require(value['format'] == THIN,'unsupported native profile layout')
+    require(value['format'] == THIN and type(value['components']) is list and 1 <= len(value['components']) <= 2
+            and type(value['mappings']) is list and 0 < len(value['mappings']) <= model.MAX_ROWS,'unsupported native profile layout')
     for item in value['components']:
         artifact.fields(item,('role','reference'));model.reference(item['reference'])
     roles = {r['role']:r['reference'] for r in value['components']}
@@ -286,11 +287,11 @@ def logical_inventory(profile, manifest, *, parts=None, firmware=False):
 
 
 def native_components(root, identifier):
-    value = realization(root,identifier)
-    require(value is not None,'missing native System realization')
     profile = realization_path(root,identifier)/'profile'
+    if not os.path.lexists(profile/'manifest.json'):return []
     manifest = base.read(profile/'manifest.json');layout = component_profile(manifest)
     if layout is None:return []
+    require(realization(root,identifier) is not None,'missing native System realization')
     return [dict(reference=r['reference'],path='artifacts/system/installed/'+model.reference(r['reference'])[7:]+'/payload')
             for r in layout['components']]
 
@@ -724,7 +725,8 @@ def install(root, archive, identifier, *, dependency_files=(), dry_run=False, ye
         remaining = artifact.MAX_CONTENT - sum(r.get('size', 0) for r in body['files'])
         required = {r['artifact'] for r in body['dependencies']}
         for n, file in enumerate(dependency_files):
-            component, encoded = _freeze(file, work / ('part-' + str(n)), budget=remaining, verify=verify)
+            component, encoded = _freeze(file, work / ('part-' + str(n)), budget=remaining,
+                verify=verify or body['metadata'].get('profile_layout') == THIN)
             remaining -= sum(r.get('size', 0) for r in component['files'])
             acceptable(component, 'component');dep = component['id']
             require(dep in required and dep not in frozen, 'unexpected/duplicate System dependency archive')

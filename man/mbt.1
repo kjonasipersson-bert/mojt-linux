@@ -62,6 +62,15 @@ retained release. For kernel, the defaults are --build kernel-result, --revision
 --output kernel-package. Packaging revision and original build provenance are distinct.
 verify checks an existing archive without installing it. Packaging has no
 --dry-run option in this initial interface; it writes a new explicit output.
+.PP
+package system --running --output DIRECTORY packages a successor from the running
+System and the builder's bundled Runtime resources. It creates exact native
+component references and a small profile, without copying a complete profile.
+Firmware is omitted by default; --firmware keep reuses the retained firmware
+component without opening or repackaging its data. --generation NAME sets the
+label; --revision N advances the baseline packaging revision by N (default 1).
+It neither installs nor selects output. The assembled --tree route remains
+available for bootstrap. See docs/system-components.md.
 .TP
 .B bootstrap
 With --output, create a NEW regular UEFI/GPT native-v2 image with serial console and VirtIO.

@@ -134,7 +134,6 @@ class Cache(unittest.TestCase):
              mock.patch.object(constructor.store,'audit_inputs'), \
              mock.patch('mpm_base_transition.read_locks',side_effect=lambda p:nullcontext()), \
              mock.patch.object(constructor.system,'retained_providers',return_value=[]), \
-             mock.patch.object(constructor.system,'native_components',return_value=[]), \
              mock.patch.object(constructor.archive,'vm_module',return_value=vm), \
              mock.patch.object(inventory,'clone_runtime',wraps=inventory.clone_runtime) as clone:
             source_a=model.record(model.INPUTS,first)

@@ -171,8 +171,7 @@ class PolicyTests(unittest.TestCase):
                 ('system','realizations/system/'+d['system']['artifact'][7:]+'/profile'),
                 ('kernel','kernel/installed/'+d['kernel']['artifact'][7:]+'/payload/lib/modules'))}
             for path in paths.values():path.mkdir(parents=True)
-            with mock.patch.object(system,'retained_providers',return_value=[]), \
-                 mock.patch.object(system,'native_components',return_value=[]):
+            with mock.patch.object(system,'retained_providers',return_value=[]):
                 original=constructor.capture(root,source,{})
                 entry=dict(record=dict(description=dict(inputs=source)),receipt=dict(description=dict(proof=original)))
                 with mock.patch.object(selection,'current',return_value=(None,{'old':entry},None)),io.preparation(), \

@@ -4,6 +4,7 @@
 """Explicit PC hardware inputs; staged only into a fresh image, never the host."""
 
 import json
+import hashlib
 import os
 from pathlib import Path
 import shutil
@@ -141,7 +142,12 @@ def native_firmware(profile, expected_boot_profile=None):
     point = native.profile_file(profile,'hardware.json')
     if point.is_symlink() or not point.is_file() or point.stat().st_size > 65536:
         raise ValueError('missing/bounded native hardware declaration required')
-    row = json.loads(point.read_bytes())
+    raw=point.read_bytes()
+    manifest=native.base.read(profile/'manifest.json') if (profile/'manifest.json').is_file() else None
+    if manifest is not None and native.component_profile(manifest) is not None:
+        require=native.require
+        require(native.logical_inventory(profile,manifest)['hardware.json']['sha256'] == hashlib.sha256(raw).hexdigest(),'native hardware metadata differs from component')
+    row = json.loads(raw)
     name = row.get('profile') if type(row) is dict else None
     fields = {'format','profile','kernel_release','modules_tree_sha256','firmware_tree_sha256','licenses_tree_sha256',
               'early_modules','runtime_modules','modules_location'}
