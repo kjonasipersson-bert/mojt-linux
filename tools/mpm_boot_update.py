@@ -74,13 +74,33 @@ def stage(root, area, identifier, *, bounds=None, adapters=None, runtime=None,
 def _stage(root, area, identifier, *, bounds=None, adapters=None, runtime=None,
           runtime_directory=None, busybox=None, tar='tar', dry_run=False, yes=False,
           expected_preflight=None, expected_inputs=None):
-    """Prepare and admit, without selection. Dry-run never constructs or writes."""
+    require(os.geteuid() == 0,'boot updates require an administrator')
+    root = system.target(root)
+    if not yes and not dry_run:
+        preview = _stage(root,area,identifier,bounds=bounds,adapters=adapters,runtime=runtime,
+            runtime_directory=runtime_directory,busybox=busybox,tar=tar,dry_run=True,yes=True,
+            expected_preflight=expected_preflight,expected_inputs=expected_inputs)
+        if preview['action'] == 'no-change':return preview
+        require(input('Prepare this exact '+area+' for next boot? [y/N] ').strip().lower() in ('y','yes'),'staging cancelled')
+        expected_preflight,expected_inputs = preview['preflight'],preview['inputs']
+    locks = common.read_locks(root) if dry_run else selection.locked(root)
+    with locks:
+        return _stage_locked(root,area,identifier,bounds=bounds,adapters=adapters,runtime=runtime,
+            runtime_directory=runtime_directory,busybox=busybox,tar=tar,dry_run=dry_run,
+            expected_preflight=expected_preflight,expected_inputs=expected_inputs)
+
+
+def _stage_locked(root, area, identifier, *, bounds=None, adapters=None, runtime=None,
+          runtime_directory=None, busybox=None, tar='tar', dry_run=False,
+          expected_preflight=None, expected_inputs=None):
+    """One plan and one locked transaction; dry-run never constructs or writes."""
     require(os.geteuid() == 0,'boot updates require an administrator')
     started = time.monotonic()
     print('Checking exact '+area+' candidate and compatibility...',file=sys.stderr,flush=True)
     root = system.target(root)
+    context = transition.selected_context(root,None)
     with ui.phase('Check candidate and compatibility'):
-        plan = prepare(root,area,identifier,bounds=bounds,adapters=adapters)
+        plan = transition._prepare(root,identifier,None,adapters,area=area,bounds=bounds,joined=True,context=context)
     print('Candidate checks: %.2f s' % (time.monotonic()-started),file=sys.stderr,flush=True)
     require(expected_preflight is None or plan['id'] == expected_preflight,'boot inputs changed after approval; repeat preview')
     p = plan['description'];require(p['checks']['compatible'],'boot update blocked: '+'; '.join(p['checks']['errors']))
@@ -92,7 +112,7 @@ def _stage(root, area, identifier, *, bounds=None, adapters=None, runtime=None,
     candidate = transition.boot_fields(plan)[area]
     report['release'] = candidate.get('release',candidate.get('generation'))
     if all(candidate.get(key) == value for key,value in before[area].items()):
-        selection.ready(root,p['selected'],verify=io.preparation_verify())
+        if io.preparation_verify():selection.ready(root,p['selected'],verify=True)
         return dict(report,action='no-change',deployment=p['selected'])
     if runtime_directory is not None:
         runtime_directory = Path(runtime_directory).absolute()
@@ -111,23 +131,21 @@ def _stage(root, area, identifier, *, bounds=None, adapters=None, runtime=None,
     report['inputs'] = source['id']
     # Reuse only fully admitted exact inputs. An interrupted raw slot never
     # becomes bootable merely because its files happen to exist.
-    with common.read_locks(root):
-        transition.recheck(root,plan,adapters=adapters)
-        entries,_ = selection.available(root)
-        matches = [key for key,row in entries.items() if row['record']['description']['inputs'] == source]
-        require(len(matches) <= 1,'multiple deployments for exact constructor inputs')
-        if matches:
-            selection.ready(root,matches[0],verify=io.preparation_verify())
-            return dict(report,action='no-change',deployment=matches[0])
+    entries,_ = selection.available(root)
+    matches = [key for key,row in entries.items() if row['record']['description']['inputs'] == source]
+    require(len(matches) <= 1,'multiple deployments for exact constructor inputs')
+    if matches:
+        if io.preparation_verify():selection.ready(root,matches[0],verify=True)
+        return dict(report,action='no-change',deployment=matches[0])
     if dry_run:return dict(report,action='stage',inputs=source['id'])
-    if not yes:require(input('Prepare this exact '+area+' for next boot? [y/N] ').strip().lower() in ('y','yes'),'staging cancelled')
     print('Preparing exact '+area+' deployment'+(' with full content verification' if io.preparation_verify() else '')+'...',file=sys.stderr,flush=True)
+    selection.store.audit_inputs(root,source,p['kernel_bounds'],adapters=adapters)
     with tempfile.TemporaryDirectory(prefix='mojt-boot-update-') as temporary:
         work = Path(temporary)
         with ui.phase('Prepare Base and machine handover'):
-            contract = handover.prepare(root,source,plan,adapters=adapters,tar=tar)
-        result = selection.stage(root,source,runtime_directory,busybox,work/'construction',
-                                 bounds=p['kernel_bounds'],adapters=adapters,contract=contract,runtime_value=measured)
+            contract = handover.prepare_locked(root,source,plan,context,adapters=adapters,tar=tar)
+        result = selection._stage_locked(root,source,runtime_directory,busybox,work/'construction',
+                                 bounds=p['kernel_bounds'],adapters=adapters,contract=contract,entries=entries,runtime_value=measured)
     payload = result['initramfs_payload']
     print('Early-boot runtime/drivers: '+('reused' if payload['reused'] else 'built'),file=sys.stderr,flush=True)
     return dict(report,action='stage',changed=True,deployment=result['deployment'],initramfs_payload=payload)

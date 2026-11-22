@@ -44,6 +44,8 @@ jobs:
         run: sudo env PYTHONPATH=tests python3 -B -m unittest -v test_system_ports_repair test_system_activation_test test_system_fast_test
       - name: Check retained firmware generations and the bounded QEMU guest service
         run: sudo env PYTHONPATH=tests python3 -B -m unittest test_system_firmware -v
+      - name: Check combined System installation diagnostic and frozen delivery
+        run: sudo env PYTHONPATH=tests python3 -B -m unittest test_system_install_profile test_system_install_transaction -v
       - name: Check owner-authorized native acquisition and verified cache
         run: |
           python3 -B -m unittest discover -s tests -p 'test_kernel_image_origin.py' -v
@@ -75,6 +77,8 @@ jobs:
         run: |
           python3 -B -m unittest discover -s tests -p 'test_mpm_system*.py' -v
           sudo env PYTHONPATH=tests python3 -B -m unittest discover -s tests -p 'test_mpm_system*.py' -v
+      - name: Check synthetic System profile placement benchmark
+        run: sudo python3 -I -B tests/benchmark-system-profile.py --workspace /var/tmp/mojt-profile-benchmark-ci --files 64 --file-size 1024 --large-files 1 --large-size-mib 1
       - name: Check native-v2 records, immutable slots and isolated initramfs reader
         run: |
           python3 -B -m unittest discover -s tests -p 'test_mpm_boot_*.py' -v

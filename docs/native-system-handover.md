@@ -6,16 +6,17 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Native-v2 System initialization and handover
 
-This extends the [trusted initramfs reader](native-initramfs-reader.md) within
-consolidation step 3. The explicitly enabled System constructor joins the
+The [trusted initramfs reader](native-initramfs-reader.md) and System constructor join the
 unchanged-startup preflight, prepares an immutable boot Base, rechecks current
 state, attaches runtime mounts and transfers PID 1 to the retained System start.
 It publishes no boot choice or new CLI. Verification-only mode remains available.
 
 ## Preparation and formats
 
-`mpm_boot_handover.prepare` rechecks the compatible System preflight under the
-shared store/install/boot/Kernel and existing Ports locks. It preserves the
+Normal update preparation constructs the handover from its once-checked plan
+while retaining the store/install/boot/Kernel and existing Ports locks. The
+standalone `mpm_boot_handover.prepare` API independently rechecks a supplied
+preflight under those locks. Both preserve the
 selected exact Base/Kernel and binds candidate, installation, root UUID, reviewed
 baseline manifest and measured recovery support. Providers explicitly project
 their boot mount namespaces; package hooks are never executed.
@@ -41,8 +42,8 @@ identity distinguishes verification-only and System-handover purposes.
 
 Normal handover checks exact input/slot metadata and required roots without a
 full content scan. It checks boot Base metadata/containment, candidate manifest
-and unchanged-startup review. Preparation and explicit full-audit mode additionally
-verify every retained tree and the boot Base inventory. It observes current
+and unchanged-startup review. Explicit full-audit mode additionally verifies
+every retained tree and the boot Base inventory. It observes current
 state layout, Ports format/capabilities, management registry compatibility for
 preparing/candidate/recovery code, and already-present defaults. Unsupported
 migrations or missing defaults block before writable mounts. Historical passwd

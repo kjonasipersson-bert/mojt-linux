@@ -2,8 +2,10 @@
 # Copyright (C) 2026 Jonas Persson
 # SPDX-License-Identifier: GPL-2.0-only
 """Content-only native System composition install. No state effects or selection."""
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import copy
+import errno
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -328,7 +330,21 @@ def build_profile(profile, body, value, parts, *, adapters=None, verify=False):
 
 
 def copy_profile(source, destination):
-    """Publish the privately prepared profile without rebuilding or reading it back."""
+    """Place a durable private profile in the unpublished realization stage.
+
+    build_profile has synced its files/directories. A same-filesystem rename
+    preserves those inodes without another content copy or per-file sync.
+    Cross-filesystem workspaces keep the durable copy path. Only tx.publish
+    below the caller's locks can make the completed realization visible.
+    """
+    io.directory(source)
+    if management.present(destination):raise FileExistsError(errno.EEXIST,'profile destination already exists',str(destination))
+    try:os.rename(source,destination)
+    except OSError as error:
+        if error.errno != errno.EXDEV:raise
+    else:
+        io.sync_directory(source.parent);io.sync_directory(destination.parent)
+        return
     def copy_file(original, target):
         info = io.regular(Path(original))
         io.copy_regular(original,Path(target),info.st_size,stat.S_IMODE(info.st_mode))
@@ -373,35 +389,69 @@ def _initialize(root, info):
 
 
 def _retain(root, info, body, source, encoding, acquisition=None, *, verify=False):
+    """Retain a completed durable _freeze tree; only final publication is public."""
     dest = object_path(root, body['id'])
     if management.present(dest):return object_record(root, body['id'], verify=verify)[1]
     stage = Path(tempfile.mkdtemp(prefix='.install-', dir=dest.parent))
     try:
         checksum,size = encoding['sha256'],encoding['size']
-        if verify:
-            copied = io.frozen_copy(source / 'archive.tar.zst',stage / 'archive.tar.zst')
-            require(copied == (checksum,size), 'System import changed after preview')
-        else:io.copy_regular(source / 'archive.tar.zst',stage / 'archive.tar.zst',size,0o444)
-        for row in body['files']:
-            destination = stage / row['path'];original = source / row['path']
-            if row['type'] == 'directory':destination.mkdir(mode=0o700)
-            elif row['type'] == 'symlink':
-                require(original.is_symlink() and os.readlink(original) == row['target'], 'System source link changed')
-                destination.symlink_to(row['target'])
-            else:io.copy_regular(original,destination,row['size'],stored_mode(row))
+        expected={r['path'] for r in body['files']} | {'archive.tar.zst'}
+        require({p.relative_to(source).as_posix() for p in source.rglob('*')} == expected,
+                'private System import contains unexpected/missing entries')
+        io.directory(source);source.chmod(0o700)
+        promoted=False
+        try:os.rename(source,stage)
+        except OSError as error:
+            if error.errno != errno.EXDEV:raise
+        else:
+            promoted=True;io.sync_directory(source.parent)
+        if promoted:
+            require(io.regular(stage/'archive.tar.zst').st_size == size,'System archive size changed after preview')
+            if verify:require(artifact.file_sha(stage/'archive.tar.zst') == checksum,'System import changed after preview')
+        else:
+            if verify:
+                copied = io.frozen_copy(source / 'archive.tar.zst',stage / 'archive.tar.zst')
+                require(copied == (checksum,size), 'System import changed after preview')
+            else:io.copy_regular(source / 'archive.tar.zst',stage / 'archive.tar.zst',size,0o444)
+            for row in body['files']:
+                destination = stage / row['path'];original = source / row['path']
+                if row['type'] == 'directory':destination.mkdir(mode=0o700)
+                elif row['type'] == 'symlink':
+                    require(original.is_symlink() and os.readlink(original) == row['target'], 'System source link changed')
+                    destination.symlink_to(row['target'])
+                else:io.copy_regular(original,destination,row['size'],stored_mode(row))
+        dirty_directories=set()
         for row in reversed(body['files']):
-            os.chown(stage / row['path'], 0, 0, follow_symlinks=False)
-            if row['type'] != 'symlink':(stage / row['path']).chmod(stored_mode(row))
+            path=stage/row['path'];entry=path.lstat();changed=False
+            if row['type'] == 'file':require(stat.S_ISREG(entry.st_mode) and entry.st_nlink == 1 and entry.st_size == row['size'],'System import file changed')
+            elif row['type'] == 'directory':require(stat.S_ISDIR(entry.st_mode),'System import directory changed')
+            else:require(stat.S_ISLNK(entry.st_mode) and os.readlink(path) == row['target'],'System source link changed')
+            if (entry.st_uid,entry.st_gid) != (0,0):os.chown(path,0,0,follow_symlinks=False);changed=True
+            if row['type'] != 'symlink' and stat.S_IMODE(entry.st_mode) != stored_mode(row):path.chmod(stored_mode(row));changed=True
+            if changed and row['type'] == 'file':_sync_file(path)
+            if changed and row['type'] == 'directory':dirty_directories.add(path)
+            if changed and row['type'] == 'symlink':dirty_directories.add(path.parent)
         receipt = base.record(base.RECEIPT, dict(installation=info['installation'], kind='system', artifact=body['id'], archive=encoding,
             representation='system-object-v1', dependencies=body['dependencies'], trust=io.acquisition_trust(acquisition, body['id'], checksum, size),
             installed_utc=datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'), uid=os.geteuid(), manager=manager(),
             **({'acquisition':acquisition} if acquisition else {})))
         io.write_json(stage / 'artifact.json', body);io.write_json(stage / 'installed.json', receipt)
         for row in body['files']:
-            if row['type'] == 'directory':io.sync_directory(stage / row['path'])
+            if row['type'] == 'directory' and (not promoted or stage/row['path'] in dirty_directories):
+                io.sync_directory(stage/row['path'])
         os.chown(stage, 0, 0);stage.chmod(0o555);io.sync_directory(stage);tx.publish(stage, dest)
     finally:io.clean_stage(stage)
     return receipt
+
+
+def _sync_file(path):
+    fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+    try:
+        actual=os.fstat(fd);current=io.regular(path)
+        require(stat.S_ISREG(actual.st_mode) and actual.st_nlink == 1 and
+                (actual.st_dev,actual.st_ino) == (current.st_dev,current.st_ino),'System file changed before metadata sync')
+        os.fsync(fd)
+    finally:os.close(fd)
 
 
 def _freeze(archive, work, expected=None, *, budget=artifact.MAX_CONTENT, verify=False):
@@ -409,7 +459,12 @@ def _freeze(archive, work, expected=None, *, budget=artifact.MAX_CONTENT, verify
     body = io.unpack_regular(work / 'archive.tar.zst', None, work, symlinks=True, verify=verify, expected_id=expected, budget=budget);acceptable(body)
     require(sum(r.get('size', 0) for r in body['files']) <= budget, 'System dependency bundle exceeds content budget')
     for row in reversed(body['files']):
-        if row['type'] != 'symlink':(work / row['path']).chmod(stored_mode(row))
+        if row['type'] != 'symlink':
+            path=work/row['path']
+            if stat.S_IMODE(path.stat().st_mode) != stored_mode(row):
+                path.chmod(stored_mode(row))
+                if row['type'] == 'file':_sync_file(path)
+                else:io.sync_directory(path)
     return body, dict(sha256=checksum, size=size)
 
 
@@ -417,6 +472,27 @@ def target_identity(root):
     if not management.present(root):return None
     info = io.directory(root)
     return dict(device=info.st_dev, inode=info.st_ino)
+
+
+@contextmanager
+def _workspace(root, *, dry_run=False):
+    """Private scratch on the publication mount, anchored through cleanup."""
+    if dry_run:
+        with tempfile.TemporaryDirectory(prefix='mojt-system-preview-') as temporary:yield Path(temporary)
+        return
+    fd = os.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+    folder = None
+    try:
+        anchor = Path('/proc/self/fd')/str(fd)
+        folder = Path(tempfile.mkdtemp(prefix='mojt-system-preview-',dir=anchor)).name
+        held = os.fstat(fd)
+        require(target_identity(root) == dict(device=held.st_dev,inode=held.st_ino),
+                'System target changed before scratch creation')
+        yield root/folder
+    finally:
+        try:
+            if folder is not None:io.clean_stage(Path('/proc/self/fd')/str(fd)/folder)
+        finally:os.close(fd)
 
 
 def install(root, archive, identifier, *, dependency_files=(), dry_run=False, yes=False, acquisition=None, adapters=None, dependency_acquisition=None, verify=False):
@@ -440,8 +516,10 @@ def install(root, archive, identifier, *, dependency_files=(), dry_run=False, ye
             return dict(changed=False, dry_run=dry_run, action='no-change', artifact=identifier, realization=completed['id'], selected='unchanged', running='unchanged')
         archive = object_path(root, identifier) / 'archive.tar.zst';acquisition = receipt['description'].get('acquisition')
     require(archive is not None, 'missing exact System archive')
-    with tempfile.TemporaryDirectory(prefix='mojt-system-preview-') as temp:
-        work = Path(temp);body, encoding = _freeze(archive, work / 'generation', identifier, verify=verify)
+    # Keep scratch and publication paths in the same mount namespace. /var
+    # can be a bind mount of this disk: equal st_dev alone does not permit rename.
+    with _workspace(root,dry_run=dry_run) as work:
+        body, encoding = _freeze(archive, work / 'generation', identifier, verify=verify)
         comp, actions = composition(work / 'generation', body)
         io.acquisition_trust(acquisition, identifier, encoding['sha256'], encoding['size'])
         parts, frozen, encodings = {}, {}, {}

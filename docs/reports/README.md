@@ -58,6 +58,8 @@ Existing dedicated reports retain their original paths:
 - [Kernel tracks and SSH acceptance procedure](kernel-tracks-ssh-test.md)
 - [Generic PC hardware readiness and acceptance](pc-hardware-test.md)
 - [Retained firmware generation and QEMU guest agent](firmware-generation-test.md)
+- [System profile placement and many-file diagnostic](system-profile-placement.md)
+- [Complete System install/preparation and I/O diagnostic](system-install-profile.md)
 - [Ports frontend/adapter](../ports-profile-acceptance.md)
 - [Activation measurements](../activation-fast-hardware-test.md)
 - [Initramfs payload reuse](../initramfs-payload-hardware-test.md)

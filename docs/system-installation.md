@@ -6,9 +6,8 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Native System content installation and status
 
-This implements the first native System installation unit in consolidation step
-3. It imports exact native components with controlled profile links, validates a generation's
-resolved composition and materializes an immutable profile. It does not change
+Native System installation imports exact components with controlled profile
+links, validates a generation's resolved composition and materializes an immutable profile. It does not change
 persistent configuration/accounts/data, existing System profiles, services,
 Base/Kernel selection, the boot menu or the running System. No package code,
 frontend, interpreter or lifecycle handler from the candidate is executed.
@@ -75,6 +74,43 @@ snapshot. Direct provider profile mappings, transitive native component import,
 hardlinks and lifecycle execution remain later joins. Packaging/import does not
 prove ELF/libc compatibility or boot readiness.
 
+## Normal transaction and verification
+
+A normal live installation consists of content installation followed by automatic
+boot preparation. These are separate publication boundaries: if preparation
+fails, installed content remains available for an explicit retry, and the next
+boot choice stays unchanged. `--content-only` stops after content installation.
+
+Mutating content installation creates scratch space through the target disk's own path, rather than
+`TMPDIR`. This allows completed private imports/profiles to be renamed into their
+publication stages, including when `/var` is a bind mount of the same disk.
+Required archives and independent profile files are still written and synced.
+The private workspace is anchored to an open target directory through cleanup;
+a replaced target is refused without cleaning an unrelated replacement tree.
+Read-only previews use external temporary space and do not require target writes.
+
+Boot preparation acquires the cooperating store, installation, Kernel, boot and
+existing Ports locks once. It reads the selected context and creates one
+compatibility plan, validates the exact boot inputs, then constructs, retains and
+admits the prepared entry under those locks. Internal construction/storage steps
+consume the checked inputs; they do not rebuild the transition plan. An
+interactive preview is outside the write transaction and its approved identity
+must still match when the transaction starts.
+
+| Boundary | Checks |
+| --- | --- |
+| Incoming content | Archive identity, bounded safe paths/types/links, composition and dependencies |
+| Locked boot planning | Base/Kernel/System identity and compatibility, providers, startup/state/default and management requirements |
+| Construction and retention | Exact constructor/runtime inputs and generated boot bytes; durable immutable publication |
+| Final admission | Current persistent startup requirements, unchanged selection/state/target, completed manager-owned build and retained slot binding |
+| Explicit `--verify` | Additional archive, retained profile/tree and provider content audits |
+
+The locks prevent cooperating MPM writers from changing the planned resources.
+Persistent configuration can also be edited independently, so admission checks
+current state and brackets that check with selection/state/target guards. Saved
+plans passed to standalone builder APIs are revalidated at their own entry
+boundary. Normal installation neither selects the prepared entry nor reboots.
+
 ## Package and runtime contracts
 
 The generation is existing native kind `system`, role `generation`, with
@@ -139,8 +175,17 @@ optional through `--verify`. One temporary profile is composed before
 target mutation. The plan binds the physical target directory and existing
 installation identity, which are rechecked after approval. The writer then reuses the common artifact-store locking and
 ordered installation lock, rechecks retained component metadata, publishes complete
-immutable objects and durably copies/publishes that prepared profile without
-composing it again. Archive structure/link confinement, decompressor exit status,
+immutable objects and places that prepared profile in a private realization
+stage without composing it again. On the same filesystem it renames the already
+synced profile and syncs both parent directories, avoiding another full content
+copy and per-file sync. A cross-filesystem workspace uses the durable copy path.
+Only the completed realization is published; existing releases are never linked
+to mutable staging files or replaced. The same-filesystem object writer also
+promotes the complete, already synced private archive/extraction tree rather
+than copying it again. It checks the exact entry set/types/sizes/links, seals
+ownership/modes, syncs any changed metadata and writes the normal receipt before
+publication. Cross-filesystem workspaces retain the durable object copy path.
+Caller-owned input archives are copied/validated, never moved. Archive structure/link confinement, decompressor exit status,
 copy failures and atomic publication errors are checked in both modes. A failure can retain
 complete imported components or a generation object without its realization;
 status reports that generation as **retained, not installed**. Retry can finish

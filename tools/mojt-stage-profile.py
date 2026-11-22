@@ -53,7 +53,7 @@ class Timings:
             self.sequence+=1
             frame=dict(id=self.sequence,parent=self.stack[-1]['id'] if self.stack else None,
                        name=key,children=[0,0,0])
-            if phase:print('Stage profile: '+key+'...',file=sys.stderr,flush=True)
+            if phase:print(getattr(self,'caption','Stage profile')+': '+key+'...',file=sys.stderr,flush=True)
             self.stack.append(frame);start=clock();ok=False;result=None
             try:
                 result=original(*args,**kwargs);ok=True
@@ -73,7 +73,7 @@ class Timings:
                 if phase:
                     self.phases.append(dict(id=frame['id'],parent=frame['parent'],
                         caller=self.stack[-1]['name'] if self.stack else None,name=key,ok=ok,**metrics))
-                    print('Stage profile: %.3f s wall / %.3f s CPU  %s%s' %
+                    print((getattr(self,'caption','Stage profile')+': %.3f s wall / %.3f s CPU  %s%s') %
                           (elapsed[0]/1e9,(elapsed[1]+elapsed[2])/1e9,key,'' if ok else ' FAILED'),file=sys.stderr,flush=True)
                 if tree:
                     detail=dict(parent=frame['parent'],caller=self.stack[-1]['name'] if self.stack else None,
@@ -95,10 +95,10 @@ class Timings:
 PHASES = {
     'mpm_cli':('main',),
     'mpm_boot_update':('stage','prepare','runtime_reference','source_for'),
-    'mpm_boot_constructor':('describe_runtime','freeze_runtime','build','capture','cached_payload','decode_modules'),
-    'mpm_boot_handover':('prepare',),
-    'mpm_boot_selection':('stage','_admit'),
-    'mpm_boot_v2_store':('retain',),
+    'mpm_boot_constructor':('describe_runtime','freeze_runtime','build','_build_locked','capture','cached_payload','decode_modules'),
+    'mpm_boot_handover':('prepare','prepare_locked'),
+    'mpm_boot_selection':('stage','_stage_locked','_admit','_admit_locked'),
+    'mpm_boot_v2_store':('retain','_retain_locked'),
 }
 DETAILS = {
     'mpm_system_transition':('_prepare','repeat','recheck','selected_context','providers','shells','tooling_review','defaults'),

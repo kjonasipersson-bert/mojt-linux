@@ -31,6 +31,35 @@ preserve upstream licenses.
 - Run checks appropriate to the change. Distinguish local, CI, VM and physical
   machine results; never claim to have run commands on the owner's machine.
 
+## Normal operation boundaries
+
+- Keep the normal command path a small, explicit transaction. State which checks
+  belong to input acceptance, locked preparation and final publication.
+- Pass checked immutable inputs through the operation. Do not reconstruct the
+  entire plan at every internal layer. Independently supplied saved plans still
+  need validation at their entry boundary; never treat JSON as write authority.
+- Recheck mutable state and selection at publication boundaries. Keep expensive
+  full-content audits explicit (`--verify`); normal mode still validates incoming
+  archives, paths, dependencies, compatibility and transaction results.
+- Keep profiling, fixture comparisons and acceptance orchestration in diagnostic
+  tools/tests. Product code should enforce supported contracts and report errors,
+  rather than reproduce a development test sequence.
+
+## Bulk I/O and durability
+
+- Distinguish disposable scratch copies from content that must survive a crash.
+  Identify the final durable representation and commit/publication point before
+  adding `fsync` to a bulk file loop; document why each flush is required.
+- Prefer promoting already synced private trees on the same filesystem over
+  copying and syncing the same bytes again. Sync changed parent directories;
+  retain a durable copy fallback for cross-filesystem workspaces.
+- Preserve archive validation, required file/metadata durability, locking, atomic
+  publication and post-publication uncertainty. Do not disable syncs globally,
+  assume directory sync flushes file data, or share mutable release inodes.
+- Test with many small files as well as large content. Measure copy bytes,
+  file/directory sync counts and complete operation time, and report nested
+  timings without double counting. Include interruption/retry and fallback tests.
+
 ## Documentation is a current interface contract
 
 - The Handbook, README, architecture and operational/reference documentation

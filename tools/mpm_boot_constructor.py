@@ -100,7 +100,7 @@ def constructor(runtime, busybox, *, handover=False):
         code=code,runtime=runtime['id'],busybox_sha256=artifact.file_sha(busybox)))
 
 
-def capture(root, source, adapters):
+def capture(root, source, adapters, *, entries=None):
     d = model.inputs(source)
     known={}
     def remember(key,value):
@@ -110,7 +110,7 @@ def capture(root, source, adapters):
         # Retained proofs are expected measurements, never a claim of a fresh
         # audit. Reuse only the same immutable artifact/provider identity.
         from mpm_boot_selection import current
-        unused,entries,unused_raw=current(root)
+        if entries is None:unused,entries,unused_raw=current(root)
         for entry in entries.values():
             old=entry['record']['description']['inputs'];previous=model.inputs(old)
             proof=early.proof(entry['receipt']['description']['proof'],old)
@@ -283,7 +283,24 @@ def controls(root, source, runtime, trees, handover):
 
 def build(root, source, runtime_directory, busybox, work, *, bounds, adapters, handover=None,
           reuse_payload=False, runtime_value=None):
-    """Build exact boot bytes; optional payload cache never selects next boot."""
+    """Standalone constructor: validate retained inputs before private assembly."""
+    require(os.geteuid() == 0,'initramfs construction requires an administrator')
+    root = store.target(root)
+    from mpm_base_transition import read_locks
+    with read_locks(root):
+        store.audit_inputs(root,source,bounds,adapters=adapters)
+        trees = capture(root,source,adapters)
+        if handover is not None:
+            import mpm_boot_handover as transfer
+            transfer.recheck_locked(root,handover,source,adapters)
+            transfer.check(root,source,trees,handover,verify_content=io.preparation_verify())
+        return _build_locked(root,source,runtime_directory,busybox,work,bounds=bounds,
+            adapters=adapters,handover=handover,reuse_payload=reuse_payload,runtime_value=runtime_value,trees=trees)
+
+
+def _build_locked(root, source, runtime_directory, busybox, work, *, bounds, adapters, handover=None,
+          reuse_payload=False, runtime_value=None, entries=None, trees=None):
+    """Assemble checked inputs under caller-held locks; never select next boot."""
     require(os.geteuid() == 0, 'initramfs construction requires an administrator')
     root = store.target(root);work = Path(work).absolute()
     require(work == work.resolve() and not os.path.lexists(work), 'constructor work must be new')
@@ -298,78 +315,71 @@ def build(root, source, runtime_directory, busybox, work, *, bounds, adapters, h
         runtime = runtime_value
     runtime_d = early.runtime(runtime)
     d = model.inputs(source);require(d['constructor'] == constructor(runtime,busybox,handover=handover is not None), 'constructor/runtime differs from boot inputs')
-    from mpm_base_transition import read_locks
-    with read_locks(root):
-        store.audit_inputs(root,source,bounds,adapters=adapters)
-        trees = capture(root,source,adapters)
-        if handover is not None:
-            import mpm_boot_handover as transfer
-            transfer.recheck_locked(root,handover,source,adapters)
-            transfer.check(root,source,trees,handover,verify_content=io.preparation_verify())
-        work.mkdir(mode=0o700)
-        frozen_busybox = work/'busybox';checksum,unused = io.frozen_copy(busybox,frozen_busybox,maximum=model.MAX_BOOT)
-        require(checksum == d['constructor']['identity']['busybox_sha256'], 'BusyBox changed during copying');frozen_busybox.chmod(0o755)
-        vm = archive.vm_module()
-        require(vm.static_x86_64_elf(frozen_busybox), 'trusted static x86_64 BusyBox required')
-        extra = tuple(sorted({'findfs','cat','env'} | (paths.SHUTDOWN_APPLETS-{'cp','ln'} if handover is not None else set())))
-        vm.validate_busybox_applets(frozen_busybox,'password',extra=extra)
-        payload = root/'kernel/installed'/d['kernel']['artifact'][7:]/'payload'
-        module_tree = payload/'lib/modules'/d['kernel']['release']
-        def make_payload():
-            nonlocal runtime_directory
-            if runtime_directory is None:
-                runtime_directory = work/'runtime'
-                frozen = freeze_runtime(root,runtime_d['reference'],runtime_d['interpreter'],runtime_directory,adapters=adapters)
-                require(frozen == runtime,'manager runtime changed before construction')
-            if d['boot']['profile'] in model.HARDWARE_PROFILES:
-                machine = hardware.profile_for_boot(d['boot']['profile'])
-                vm.module_paths(d['kernel']['release'],module_tree,names=hardware.runtime_modules(machine))
-                modules = vm.module_paths(d['kernel']['release'],module_tree,names=hardware.early_modules(machine))
-            else:modules = vm.module_paths(d['kernel']['release'],module_tree,network=True)
-            for module in modules:
-                require(module == module.resolve() and payload/'lib/modules' in module.parents,'early module outside exact Kernel tree')
-            modules = decode_modules(modules,work/'decoded-modules')
-            def assemble(initroot):
-                check_runtime_links(runtime_directory/'tree',runtime)
-                for name,rows in runtime_d['trees'].items():
-                    original = inventory.path(runtime_directory/'tree',name)
-                    require(inventory.snapshot(original,maximum=model.MAX_BOOT) == rows,'bootstrap bundle changed')
-                    destination = initroot/name;destination.parent.mkdir(mode=0o755,parents=True,exist_ok=True)
-                    require(destination == destination.resolve(),'linked initramfs runtime destination')
-                    inventory.clone_runtime(original,destination,rows)
-                if not reuse_payload:controls(initroot,source,runtime,trees,handover)
-                return archive.write_initramfs(initroot)
-            mask = os.umask(0o022)
-            try:
-                return vm.make_initramfs(work/'initroot',frozen_busybox,modules,
-                        PAYLOAD_INIT if reuse_payload else script(source,runtime_d['interpreter'],handover=handover is not None),
-                        paths.SHUTDOWN if handover is not None else None,extra_applets=extra,archive_writer=assemble)
-            finally:os.umask(mask)
-        reused = False;key = None
-        if reuse_payload:
-            key = payload_key(source,runtime,handover=handover is not None)
-            with ui.phase('Build or reuse early-boot runtime and drivers'):
-                raw,reused = cached_payload(root,key,make_payload)
-            overlay = work/'overlay';overlay.mkdir(mode=0o755);overlay.chmod(0o755)
-            controls(overlay,source,runtime,trees,handover)
-            (overlay/'init').write_text(script(source,runtime_d['interpreter'],handover=handover is not None),encoding='ascii');(overlay/'init').chmod(0o755)
-            # Linux unpacks concatenated gzip/newc archives in order. Both
-            # members are independently inspected against their generated trees.
-            addition = archive.write_initramfs(overlay)
-            # Each independently inspected member is below 256 MiB, so its
-            # gzip ISIZE is exact (not wrapped). Preserve the previous total
-            # expansion limit as well as the compressed boot-file limit.
-            expanded = int.from_bytes(raw[-4:],'little') + int.from_bytes(addition[-4:],'little')
-            require(expanded <= archive.native.MAX_INITRAMFS,'combined initramfs expansion exceeds size limit')
-            raw += addition
-            require(len(raw) <= model.MAX_BOOT,'combined initramfs exceeds size limit')
-        else:raw = make_payload()
-        # The frozen original module inventory is rechecked after decompression.
-        if io.preparation_verify():
-            require(inventory.measure(payload/'lib/modules') == trees['description']['modules']['measurement'], 'Kernel modules changed during construction')
-        binding = record(model.BINDING,dict(inputs=source['id'],constructor=d['constructor'],archive=dict(sha256=hashlib.sha256(raw).hexdigest(),size=len(raw))))
-        model.binding(binding,source)
-        return CompletedBuild(dict(archive=raw,binding=binding,proof=trees,boot_ready=False,selection_changed=False,handover_enabled=handover is not None,
-                    payload_key=key['id'] if key else None,payload_reused=reused,
-                    scope='System handover enabled; authoritative selection/status and owner boot acceptance remain.' if handover is not None else
-                          'Verification initramfs only; initialization, mount handover and boot publication remain required.'),handover)
+    trees = capture(root,source,adapters,entries=entries) if trees is None else trees
+    work.mkdir(mode=0o700)
+    frozen_busybox = work/'busybox';checksum,unused = io.frozen_copy(busybox,frozen_busybox,maximum=model.MAX_BOOT)
+    require(checksum == d['constructor']['identity']['busybox_sha256'], 'BusyBox changed during copying');frozen_busybox.chmod(0o755)
+    vm = archive.vm_module()
+    require(vm.static_x86_64_elf(frozen_busybox), 'trusted static x86_64 BusyBox required')
+    extra = tuple(sorted({'findfs','cat','env'} | (paths.SHUTDOWN_APPLETS-{'cp','ln'} if handover is not None else set())))
+    vm.validate_busybox_applets(frozen_busybox,'password',extra=extra)
+    payload = root/'kernel/installed'/d['kernel']['artifact'][7:]/'payload'
+    module_tree = payload/'lib/modules'/d['kernel']['release']
+    def make_payload():
+        nonlocal runtime_directory
+        if runtime_directory is None:
+            runtime_directory = work/'runtime'
+            frozen = freeze_runtime(root,runtime_d['reference'],runtime_d['interpreter'],runtime_directory,adapters=adapters)
+            require(frozen == runtime,'manager runtime changed before construction')
+        if d['boot']['profile'] in model.HARDWARE_PROFILES:
+            machine = hardware.profile_for_boot(d['boot']['profile'])
+            vm.module_paths(d['kernel']['release'],module_tree,names=hardware.runtime_modules(machine))
+            modules = vm.module_paths(d['kernel']['release'],module_tree,names=hardware.early_modules(machine))
+        else:modules = vm.module_paths(d['kernel']['release'],module_tree,network=True)
+        for module in modules:
+            require(module == module.resolve() and payload/'lib/modules' in module.parents,'early module outside exact Kernel tree')
+        modules = decode_modules(modules,work/'decoded-modules')
+        def assemble(initroot):
+            check_runtime_links(runtime_directory/'tree',runtime)
+            for name,rows in runtime_d['trees'].items():
+                original = inventory.path(runtime_directory/'tree',name)
+                require(inventory.snapshot(original,maximum=model.MAX_BOOT) == rows,'bootstrap bundle changed')
+                destination = initroot/name;destination.parent.mkdir(mode=0o755,parents=True,exist_ok=True)
+                require(destination == destination.resolve(),'linked initramfs runtime destination')
+                inventory.clone_runtime(original,destination,rows)
+            if not reuse_payload:controls(initroot,source,runtime,trees,handover)
+            return archive.write_initramfs(initroot)
+        mask = os.umask(0o022)
+        try:
+            return vm.make_initramfs(work/'initroot',frozen_busybox,modules,
+                    PAYLOAD_INIT if reuse_payload else script(source,runtime_d['interpreter'],handover=handover is not None),
+                    paths.SHUTDOWN if handover is not None else None,extra_applets=extra,archive_writer=assemble)
+        finally:os.umask(mask)
+    reused = False;key = None
+    if reuse_payload:
+        key = payload_key(source,runtime,handover=handover is not None)
+        with ui.phase('Build or reuse early-boot runtime and drivers'):
+            raw,reused = cached_payload(root,key,make_payload)
+        overlay = work/'overlay';overlay.mkdir(mode=0o755);overlay.chmod(0o755)
+        controls(overlay,source,runtime,trees,handover)
+        (overlay/'init').write_text(script(source,runtime_d['interpreter'],handover=handover is not None),encoding='ascii');(overlay/'init').chmod(0o755)
+        # Linux unpacks concatenated gzip/newc archives in order. Both
+        # members are independently inspected against their generated trees.
+        addition = archive.write_initramfs(overlay)
+        # Each independently inspected member is below 256 MiB, so its
+        # gzip ISIZE is exact (not wrapped). Preserve the previous total
+        # expansion limit as well as the compressed boot-file limit.
+        expanded = int.from_bytes(raw[-4:],'little') + int.from_bytes(addition[-4:],'little')
+        require(expanded <= archive.native.MAX_INITRAMFS,'combined initramfs expansion exceeds size limit')
+        raw += addition
+        require(len(raw) <= model.MAX_BOOT,'combined initramfs exceeds size limit')
+    else:raw = make_payload()
+    # The frozen original module inventory is rechecked after decompression.
+    if io.preparation_verify():
+        require(inventory.measure(payload/'lib/modules') == trees['description']['modules']['measurement'], 'Kernel modules changed during construction')
+    binding = record(model.BINDING,dict(inputs=source['id'],constructor=d['constructor'],archive=dict(sha256=hashlib.sha256(raw).hexdigest(),size=len(raw))))
+    model.binding(binding,source)
+    return CompletedBuild(dict(archive=raw,binding=binding,proof=trees,boot_ready=False,selection_changed=False,handover_enabled=handover is not None,
+                payload_key=key['id'] if key else None,payload_reused=reused,
+                scope='System handover enabled; authoritative selection/status and owner boot acceptance remain.' if handover is not None else
+                      'Verification initramfs only; initialization, mount handover and boot publication remain required.'),handover)
