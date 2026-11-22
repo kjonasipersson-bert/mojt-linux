@@ -88,3 +88,38 @@ class NormalOperation(unittest.TestCase):
         with native.preparation(verify=False),mock.patch.object(inventory,'snapshot',side_effect=AssertionError('warm runtime scan')):
             value=constructor.retained_runtime(self.root,d['reference'],d['interpreter'],self.entry,adapters={'fixture':adapter})
         self.assertEqual(value,self.f.runtime);adapter.inspect.assert_called_once()
+
+
+@unittest.skipUnless(os.geteuid()==0,'requires numeric root-owned runtime metadata')
+class NormalProducer(unittest.TestCase):
+    def test_private_runtime_copy_checks_bytes_without_sync_or_readback(self):
+        from pathlib import Path
+        import tempfile
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);source=root/'source';source.mkdir(mode=0o755)
+            file=source/'data';file.write_bytes(b'accepted bytes');file.chmod(0o444)
+            expected=inventory.snapshot(source)
+            with native.preparation(verify=False),\
+                 mock.patch.object(inventory,'snapshot',side_effect=AssertionError('normal copy reread output')),\
+                 mock.patch.object(native.os,'fsync',wraps=native.os.fsync) as sync:
+                inventory.clone_runtime(source,root/'copied',expected)
+            sync.assert_not_called();self.assertEqual((root/'copied/data').read_bytes(),b'accepted bytes')
+            file.chmod(0o644);file.write_bytes(b'changed bytes!')
+            with native.preparation(verify=False),self.assertRaisesRegex(ValueError,'runtime changed during copying'):
+                inventory.clone_runtime(source,root/'damaged',expected)
+
+    def test_normal_writer_enforces_node_types_and_full_mode_keeps_roundtrip(self):
+        from pathlib import Path
+        import tempfile
+        import mpm_kernel_boot as archive
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);(root/'file').write_bytes(b'private checked input')
+            with native.preparation(verify=False),\
+                 mock.patch.object(archive.native,'inspect_initramfs',side_effect=AssertionError('normal writer ran independent comparator')):
+                self.assertTrue(archive.write_initramfs(root))
+            with native.preparation(verify=True),mock.patch.object(archive.native,'inspect_initramfs',wraps=archive.native.inspect_initramfs) as audit:
+                archive.write_initramfs(root)
+            audit.assert_called_once()
+            os.mkfifo(root/'unsupported')
+            with native.preparation(verify=False),self.assertRaisesRegex(ValueError,'unsupported private initramfs node'):
+                archive.write_initramfs(root)

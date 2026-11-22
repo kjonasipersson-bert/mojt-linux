@@ -42,7 +42,8 @@ Cold production copies the accepted interpreter content directly into its privat
 initramfs tree. Source bytes are hashed against the accepted inventory while
 copying. Disposable code/runtime copies do not use per-file durability flushes;
 the published payload and deployment files do. The newc writer enforces supported
-nodes, metadata and expansion limits. The independent decompress-and-compare
+nodes, metadata and expansion limits, using explicit fast gzip compression
+(level 1). The independent decompress-and-compare
 check remains available through full verification and standalone producer tests.
 
 ## Boot
