@@ -125,6 +125,15 @@ class Components(Fixture):
         self.assertIsNotNone(system.realization(self.root,candidate['artifact']))
         with self.assertRaises(ValueError):system.realization(self.root,candidate['artifact'],verify=True)
 
+    def test_normal_projection_checks_do_not_hash_files_but_explicit_audit_checks_generated_metadata(self):
+        candidate=self.build();self.import_package(candidate)
+        with mock.patch.object(artifact,'file_sha',side_effect=AssertionError('normal mode file hash')):
+            self.assertIsNotNone(system.realization(self.root,candidate['artifact']))
+        version=system.realization_path(self.root,candidate['artifact'])/'profile/version'
+        version.chmod(0o644);version.write_bytes(b'changed label\n');version.chmod(0o444)
+        with self.assertRaisesRegex(ValueError,'thin System profile differs'):
+            system.realization(self.root,candidate['artifact'],verify=True)
+
     def test_projection_retargeting_is_refused_without_a_full_byte_audit(self):
         candidate=self.build();self.import_package(candidate)
         profile=system.realization_path(self.root,candidate['artifact'])/'profile'

@@ -296,7 +296,7 @@ def native_components(root, identifier):
             for r in layout['components']]
 
 
-def check_component_profile(profile, manifest, composition):
+def check_component_profile(profile, manifest, composition, *, verify=False):
     layout = component_profile(manifest);require(layout is not None,'missing component profile contract')
     require(layout['components'] == composition['description']['components'] and
             layout['mappings'] == composition['description']['profile'],'profile projections differ from composition')
@@ -309,7 +309,10 @@ def check_component_profile(profile, manifest, composition):
         for parent in PurePosixPath(row['path']).parents:
             if str(parent) != '.':expected.setdefault(str(parent),dict(directory=True,mode=0o555))
     for name in ('management.json','version'):expected[name] = manifest['description']['profile'][name]
-    require(inventory(profile) == expected,'thin System profile differs from its projections')
+    # Generated file hashes are accepted metadata in normal mode, like retained
+    # component inventories. Explicit verification re-reads their bytes.
+    require(inventory(profile,declared=None if verify else {p:r for p,r in expected.items() if 'sha256' in r}) == expected,
+            'thin System profile differs from its projections')
     return layout
 
 
@@ -569,7 +572,7 @@ def realization(root, identifier, *, verify=False):
             and measured['description']['provenance']['composition'] == comp['id'], 'System profile manifest binding differs')
     if component_profile(measured) is not None:
         require(body['metadata'].get('profile_layout') == THIN,'unbound component profile layout')
-        check_component_profile(path/'profile',measured,comp)
+        check_component_profile(path/'profile',measured,comp,verify=verify)
     elif verify:require(inventory(path / 'profile') == measured['description']['profile'], 'System profile content/modes damaged')
     return value
 
@@ -777,7 +780,7 @@ def install(root, archive, identifier, *, dependency_files=(), dry_run=False, ye
                 retained = {dep:(object_record(root, dep, verify=verify)[0], object_path(root, dep)) for dep in required}
                 require(all(retained[dep][0] == parts[dep][0] for dep in retained), 'System components changed after preview')
                 copy_profile(work / 'profile',stage / 'profile');actual = measured
-                if component_profile(actual) is not None:check_component_profile(stage/'profile',actual,comp)
+                if component_profile(actual) is not None:check_component_profile(stage/'profile',actual,comp,verify=verify)
                 elif verify:require(inventory(stage / 'profile') == actual['description']['profile'], 'System profile copy damaged')
                 if verify:verify_links(stage / 'profile', references, adapters, runtime_outputs(retained))
                 dependencies = {dep:object_record(root,dep)[1]['id'] for dep in sorted(required)}
