@@ -191,7 +191,9 @@ def check(root, source, trees, value, *, provider_roots=None, cache=None, verify
     require(d['inputs']==source['id'],'handover inputs differ')
     i=source['description'];tree=boot_base.inspect(root,d['boot_base'],cache=cache,verify=verify_content)
     import mpm_system as system
-    accepted=value.system if internal else system_value if system_value is not None else system.CheckedSystem(root,i['system']['artifact'],verify=verify_content)
+    accepted=value.system if internal else system_value if system_value is not None else system.CheckedSystem(root,i['system']['artifact'])
+    # Boot audits use the tree proof; original archive codecs belong to the
+    # running install/audit command, not the isolated initramfs reader.
     profile,candidate=accepted.profile,accepted.manifest
     require(candidate['id']==i['system']['manifest'] and accepted.realization['description']['composition']==i['system']['composition'],
             'handover System manifest differs')

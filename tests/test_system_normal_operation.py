@@ -82,6 +82,13 @@ class NormalOperation(unittest.TestCase):
             result=system.status(self.root)
         self.assertEqual(result['selected']['deployment'],self.selected)
 
+    def test_handover_full_tree_checks_do_not_require_an_archive_codec(self):
+        import mojt_artifact as artifact
+        source=self.entry['record']['description']['inputs'];r=self.entry['receipt']['description']
+        with mock.patch.object(artifact,'verify',side_effect=AssertionError('initramfs invoked archive codec')):
+            result=handover.check(self.root,source,r['proof'],r['handover'],verify_content=True)
+        self.assertTrue(result['profile'].is_dir())
+
     def test_retained_interpreter_descriptor_avoids_snapshots(self):
         constructor.retain_runtime(self.root,self.f.runtime);(self.root/'runtime').mkdir()
         d=self.f.runtime['description'];adapter=SimpleNamespace(inspect=mock.Mock(),verify=mock.Mock())
