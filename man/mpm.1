@@ -156,6 +156,11 @@ update target. --dry-run previews without writing
 runtime bundles, slots, boot trees or selection. There is no system plan command.
 Base preparation requires --base-context FILE declaring exact Kernel bounds.
 The other two areas, running system and persistent state are preserved.
+Normal preparation accepts the selected/candidate inputs once and rechecks
+selection, referenced metadata and mutable state before admission. Normal boot
+checks the chosen deployment and current state without auditing unrelated
+generation history. Plain status lists protected summaries; --verify performs
+full retained-content checks. See docs/system-normal-operation.md.
 No source refresh, moving-policy resolution, automatic reboot or migration occurs.
 .PP
 stage --artifact ID prepares without selecting. It reuses the large early-boot

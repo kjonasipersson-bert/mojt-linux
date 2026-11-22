@@ -74,8 +74,8 @@ class Presentation(unittest.TestCase):
         data['base']['artifact']='sha256:'+'9'*64;data['system']['generation']='wrong-base'
         other=boot.bound(selection.model.record(selection.model.INPUTS,data))
         entries={r['id']:dict(record=r) for r in (before,other)};err=io.StringIO()
-        with mock.patch.object(selection,'current',return_value=(dict(description=dict(selected=before['id'])),entries,b'')), \
-             mock.patch.object(selection,'available',return_value=(entries,[])), \
+        with mock.patch.object(selection,'selected',return_value=(dict(description=dict(selected=before['id'])),entries,b'')), \
+             mock.patch.object(selection,'summaries',return_value=(entries,[])), \
              mock.patch.object(update.system,'status',return_value=dict(installed=[])), \
              mock.patch('builtins.input',return_value='q'),contextlib.redirect_stderr(err), \
              self.assertRaisesRegex(ValueError,'cancelled'):

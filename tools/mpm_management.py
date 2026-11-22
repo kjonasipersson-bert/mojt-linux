@@ -319,7 +319,6 @@ def schemas(root,*,systems=(),selection=None):
     """Observe actual formats and relevant Systems; never inspect retained history."""
     import mpm_system as system
     import mpm_base as base
-    import mpm_defaults as defaults
     import mpm_transaction as tx
     registries=[]
     lifecycle=root/'state/var/lib/mojt/lifecycle'
@@ -333,7 +332,7 @@ def schemas(root,*,systems=(),selection=None):
             require({p.name for p in (lifecycle/'defaults-v1').iterdir()}<={base.store_info(root)['installation']},'lifecycle registry belongs to another installation')
             registries.append(dict(family='mpm-defaults',version=1,capabilities=[],evidence=base.store_info(root)['installation']))
             # Evidence is a bounded schema declaration, not a claim of a history audit.
-            registries[-1]['evidence']=digest(dict(installation=registries[-1]['evidence'],format=defaults.FORMAT if hasattr(defaults,'FORMAT') else 'defaults-v1'))
+            registries[-1]['evidence']=digest(dict(installation=registries[-1]['evidence'],format='defaults-v1'))
     marker=system.registry(root)
     if marker is not None:
         caps=set()
