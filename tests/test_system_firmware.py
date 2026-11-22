@@ -172,6 +172,36 @@ class DriverTests(unittest.TestCase):
                 self.assertEqual(imported.call_count,1)
                 self.assertEqual(run.call_count,1);self.assertIn('--dry-run',run.call_args.args[0])
 
+    def test_acquired_agent_reference_passes_the_real_nix_adapter_schema(self):
+        from mpm_nix_binary import NixBinaryAdapter
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);(root/'ports.toml').write_text('[nixpkgs]\n')
+            licenses=root/'licenses';paths.write(licenses/'WHENCE','upstream')
+            output='/nix/store/'+'a'*32+'-qemu-ga'
+            backend=types.ModuleType('test_firmware_provider')
+            backend.source_from_fields=lambda *args:{'revision':'a'*40}
+            backend.evaluate=lambda *args,**kwargs:dict(firmware=dict(version='test',output=str(root/'firmware'),
+                source=str(licenses),source_drv='/nix/store/'+'b'*32+'-source.drv',fixed='hash'),
+                agent=dict(version='test',output=output))
+            backend.store_path=Path;backend.STORE_NAME=r'[0-9a-z]{32}-[A-Za-z0-9._-]+'
+            backend.discover_commands=mock.Mock(return_value=['qemu-ga'])
+            def query(adapter,args):
+                if '--requisites' in args:return output
+                if '--hash' in args:return 'sha256:abc123'
+                self.fail('unexpected Nix query: '+str(args))
+            with mock.patch.object(delivery,'RUNTIME',root),mock.patch.object(delivery,'WORK',root),\
+                 mock.patch.object(delivery.importlib.util,'module_from_spec',return_value=backend),\
+                 mock.patch.object(delivery.importlib.machinery.SourceFileLoader,'exec_module'),\
+                 mock.patch.object(delivery,'import_binary') as imported,\
+                 mock.patch.object(NixBinaryAdapter,'_run',query):
+                unused,unused,agent,unused=delivery.acquire(REPO,True)
+            adapter=NixBinaryAdapter('/nonexistent/nix-store')
+            self.assertEqual(adapter.describe(agent,root)['commands'],{'qemu-ga':output+'/bin/qemu-ga'})
+            backend.discover_commands.assert_called_once_with(dict(output=output,attribute='qemu_kvm.ga'))
+            self.assertEqual(imported.call_count,3)
+            broken=copy.deepcopy(agent);broken['identity'].pop('commands')
+            with self.assertRaisesRegex(ValueError,'invalid fields'):adapter.identity(broken)
+
 
 @unittest.skipUnless(os.geteuid()==0,'requires root-mapped private execution')
 class PreparationTests(unittest.TestCase):
@@ -212,9 +242,55 @@ class PreparationTests(unittest.TestCase):
                 self.assertEqual(refreshed['baseline'],before)
                 self.assertEqual((old/'mbt-execution.json').read_bytes(),old_bytes)
                 self.assertEqual(os.readlink(work/'firmware-root'),'/nix/store/retained-firmware')
-                refreshed['phase']='prepared';delivery.save(refreshed)
+                refreshed['phase']='installed';delivery.save(refreshed)
                 with self.assertRaisesRegex(ValueError,'already complete'):delivery.main(['prepare','--refresh-code'])
                 refreshed['phase']='preparing';delivery.save(refreshed);(work/'package').mkdir()
+                with self.assertRaisesRegex(ValueError,'package already exists'):delivery.main(['prepare','--refresh-code'])
+
+    def test_refresh_repackages_prepared_content_without_overwriting_the_previous_kit(self):
+        with tempfile.TemporaryDirectory() as folder:
+            work=Path(folder)/'work';before=dict(running='sha256:'+'a'*64,selected='sha256:'+'b'*64)
+            with mock.patch.object(delivery,'WORK',work),mock.patch.object(delivery.os.path,'ismount',return_value=True),\
+                 mock.patch.dict(os.environ,dict(os.environ)),mock.patch.object(sys,'path',list(sys.path)),\
+                 mock.patch.object(delivery,'snapshot',return_value=before),\
+                 mock.patch.object(delivery,'mpm',return_value={'running':{'deployment':before['selected']}}),\
+                 mock.patch.object(delivery.os,'execv',side_effect=RuntimeError('isolated handoff')):
+                with self.assertRaisesRegex(RuntimeError,'isolated handoff'):delivery.main(['prepare'])
+                previous=delivery.state();previous.update(phase='prepared',candidate={'artifact':'sha256:'+'c'*64},script='0'*64)
+                paths.write(work/'package/component/original.tar.zst','retained old archive')
+                delivery.save(previous)
+                with self.assertRaisesRegex(RuntimeError,'isolated handoff'):delivery.main(['prepare','--refresh-code'])
+                current=delivery.state();replacement=delivery.package_directory(current)
+                self.assertEqual(current['phase'],'preparing');self.assertNotIn('candidate',current)
+                self.assertNotEqual(replacement,work/'package');self.assertFalse(replacement.exists())
+                self.assertEqual((work/'package/component/original.tar.zst').read_text(),'retained old archive')
+                self.assertEqual(json.loads((replacement.parent/'previous-state.json').read_text()),previous)
+                with self.assertRaisesRegex(RuntimeError,'isolated handoff'):delivery.main(['prepare'])
+                self.assertEqual(delivery.state(),current)
+
+    def test_install_uses_the_repackaged_kit_and_disk_temporary_directory(self):
+        with tempfile.TemporaryDirectory() as folder:
+            work=Path(folder)/'work';before=dict(running='sha256:'+'a'*64,selected='sha256:'+'b'*64)
+            with mock.patch.object(delivery,'WORK',work),mock.patch.object(delivery.os.path,'ismount',return_value=True),\
+                 mock.patch.dict(os.environ,dict(os.environ)),mock.patch.object(sys,'path',list(sys.path)),\
+                 mock.patch.object(delivery,'snapshot',return_value=before),\
+                 mock.patch.object(delivery,'mpm',return_value={'running':{'deployment':before['selected']}}) as mpm,\
+                 mock.patch.object(delivery.os,'execv',side_effect=RuntimeError('isolated handoff')):
+                with self.assertRaisesRegex(RuntimeError,'isolated handoff'):delivery.main(['prepare'])
+                current=delivery.state();directory=work/'repackage-test/package'
+                paths.write(directory/'component/new.tar.zst','new kit')
+                candidate=dict(artifact='sha256:'+'c'*64,generation='generation/new.tar.zst',component='component/new.tar.zst')
+                current.update(phase='prepared',candidate=candidate,package=str(directory));delivery.save(current)
+                os.environ.pop('TMPDIR',None)
+                result=subprocess.CompletedProcess([],0,stdout=json.dumps({'deployment':'sha256:'+'d'*64}))
+                with mock.patch.object(delivery.subprocess,'run',return_value=result):
+                    self.assertEqual(delivery.main(['install']),0)
+                self.assertEqual(os.environ['TMPDIR'],str(work/'tmp'))
+                mpm.assert_called_with('system','install','--from-file',directory/candidate['generation'],
+                    '--expected-id',candidate['artifact'],'--dependency-file',directory/candidate['component'],
+                    '--content-only','-y','--json')
+                self.assertEqual(delivery.state()['phase'],'installed')
+                self.assertEqual(delivery.state()['baseline'],before)
                 with self.assertRaisesRegex(ValueError,'already complete'):delivery.main(['prepare','--refresh-code'])
 
 

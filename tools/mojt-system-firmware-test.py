@@ -57,6 +57,13 @@ def save(value):
         os.replace(pending,WORK/'state.json');io.sync_directory(WORK)
 
 
+def package_directory(value):
+    path=Path(value.get('package',str(WORK/'package')))
+    require(path.is_relative_to(WORK) and path != WORK,'package directory outside maintenance workspace')
+    checked(path)
+    return path
+
+
 def mpm(*args):
     result=subprocess.run([str(RUNTIME/'bin/mpm'),*map(str,args)],check=True,stdout=subprocess.PIPE,text=True)
     return json.loads(result.stdout)
@@ -127,7 +134,10 @@ in {
         hashes=adapter.runner([adapter.binary,'--query','--hash',*paths]).splitlines()
         require(len(paths) == len(hashes),'incomplete QEMU guest-agent closure')
         agent=dict(provider='nix',identity=dict(format='mojt-nix-output-v1',output=row['output'],
-                    closure=[dict(path=p,nar_hash=h) for p,h in zip(paths,hashes)]))
+                    closure=[dict(path=p,nar_hash=h) for p,h in zip(paths,hashes)],
+                    commands=backend.discover_commands(dict(output=row['output'],attribute='qemu_kvm.ga'))))
+        adapter.describe(agent,ROOT)
+        require('qemu-ga' in agent['identity']['commands'],'QEMU guest-agent command missing')
     provenance=dict(provider='nix',nixpkgs=source,firmware=fw,agent=values['agent'])
     return Path(fw['output'])/'lib/firmware',licenses,agent,provenance
 
@@ -292,7 +302,7 @@ def private_stage(value):
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action',choices=('prepare','install','activate','check','back','status','_prepare','_stage'))
-    parser.add_argument('--refresh-code',action='store_true',help='refresh only an unfinished preparation, retaining downloaded inputs')
+    parser.add_argument('--refresh-code',action='store_true',help='refresh preparation before completed installation, retaining prior packages and inputs')
     args=parser.parse_args(argv)
     require(not args.refresh_code or args.action == 'prepare','--refresh-code requires prepare')
     require(os.geteuid() == 0 and os.path.ismount(ROOT) and os.path.ismount(RUNTIME),'run as root on installed native Mojt')
@@ -301,16 +311,28 @@ def main(argv=None):
     if args.action == 'prepare':
         if (WORK/'state.json').exists():
             previous=state(allow_script_change=args.refresh_code)
-            require(previous['phase'] == 'preparing' and not (WORK/'package').exists(),'preparation already complete; use status/install')
+            prepared=previous['phase'] == 'prepared' and args.refresh_code
+            require((previous['phase'] == 'preparing' or prepared) and 'deployment' not in previous,
+                    'preparation already complete; use status/install')
+            old_package=package_directory(previous)
+            if prepared:
+                require(old_package.is_dir() and 'candidate' in previous,'prepared package/checkpoint missing; retain and inspect')
+            else:require(not old_package.exists(),'preparation package already exists; retain and inspect')
             if args.refresh_code:
                 unchanged(previous['baseline'])
                 repo=Path(__file__).resolve().parents[1];sys.path.insert(0,str(repo/'tools'));import mbt_runtime
                 old=Path(previous['code'])
                 require(mbt_runtime.verify(old)['id'] == previous['execution']['id'],'prepared source cohort changed')
                 code=Path(tempfile.mkdtemp(prefix=mbt_runtime.PREFIX,dir=WORK));execution=mbt_runtime.freeze(repo,code)
+                if prepared:
+                    import mpm_native_io as io
+                    replacement=Path(tempfile.mkdtemp(prefix='repackage-',dir=WORK))
+                    io.write_json(replacement/'previous-state.json',previous)
+                    previous.update(package=str(replacement/'package'),phase='preparing')
+                    previous.pop('candidate')
                 previous.update(code=str(code),execution=execution,script=hashlib.sha256(Path(__file__).read_bytes()).hexdigest())
                 save(previous)
-                print('Refreshed unfinished preparation code; retained baseline and downloaded inputs.',flush=True)
+                print('Refreshed preparation code; retained baseline, prior packages and downloaded inputs.',flush=True)
             os.execv(sys.executable,[sys.executable,'-I','-B',str(Path(__file__).resolve()),'_prepare'])
         require(not args.refresh_code,'no preparation checkpoint to refresh')
         require(not WORK.exists(),'incomplete preparation without checkpoint; retain it and inspect before retrying')
@@ -329,18 +351,22 @@ def main(argv=None):
     if args.action == 'status':
         print(json.dumps(dict(phase=value['phase'],baseline=value['baseline']['label'],
             candidate={k:v for k,v in value.get('candidate',{}).items() if k != 'code'},
-            deployment=value.get('deployment')),indent=2));return 0
+            package=str(package_directory(value)),deployment=value.get('deployment')),indent=2));return 0
     if args.action == '_prepare':
         unchanged(value['baseline']);firmware,licenses,agent,provenance=acquire(code,value['with_agent'])
         print('Package new firmware System generation on the target...',flush=True)
-        value['candidate']=package(ROOT,value['baseline']['running'],code,firmware,licenses,agent,provenance,WORK/'package')
+        value['candidate']=package(ROOT,value['baseline']['running'],code,firmware,licenses,agent,provenance,package_directory(value))
         unchanged(value['baseline']);value['phase']='prepared';save(value)
         print('READY: packages only. Next: install. Boot choice unchanged.');return 0
     candidate=value['candidate'];before=value['baseline']
     if args.action == 'install':
         unchanged(before)
-        mpm('system','install','--from-file',WORK/'package'/candidate['generation'],'--expected-id',candidate['artifact'],
-            '--dependency-file',WORK/'package'/candidate['component'],'--content-only','-y','--json')
+        if 'TMPDIR' not in os.environ:
+            temporary=WORK/'tmp';checked(temporary);temporary.mkdir(mode=0o700,exist_ok=True)
+            os.environ['TMPDIR']=str(temporary)
+        directory=package_directory(value)
+        mpm('system','install','--from-file',directory/candidate['generation'],'--expected-id',candidate['artifact'],
+            '--dependency-file',directory/candidate['component'],'--content-only','-y','--json')
         unchanged(before)
         result=subprocess.run([sys.executable,'-I','-B',str(Path(__file__).resolve()),'_stage'],check=True,stdout=subprocess.PIPE,text=True)
         staged=json.loads(result.stdout);unchanged(before)

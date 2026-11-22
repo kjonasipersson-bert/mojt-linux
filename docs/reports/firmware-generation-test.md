@@ -48,17 +48,23 @@ phase and package paths with:
 python3 -I -B tools/mojt-system-firmware-test.py status
 ```
 
-After updating the reviewed checkout to fix an unfinished preparation, explicitly
-refresh its frozen code with:
+After updating the reviewed checkout to fix preparation or packaging, explicitly
+refresh its frozen code before completed installation with:
 
 ```sh
 python3 -I -B tools/mojt-system-firmware-test.py prepare --refresh-code
 ```
 
-This requires phase `preparing`, no published package, unchanged running/selected
+This requires phase `preparing` with no package, or phase `prepared` with its
+existing candidate/package, unchanged running/selected deployment, no completed
 deployment and intact old frozen resources. It retains the original checkpoint
-baseline, downloaded Nix objects and roots, and the previous frozen resources.
-Completed preparation cannot be refreshed this way.
+baseline, downloaded Nix objects/roots and previous frozen resources. Repackaging
+preserves the previous kit and checkpoint under the workspace and writes the new
+kit in a separate `repackage-*/package` directory. `status` displays its path.
+Completed installation or selection cannot be refreshed this way.
+
+The imported guest-agent reference includes its complete executable inventory
+and is checked by the ordinary Nix adapter before packaging.
 
 ## Install, select and check
 
@@ -67,6 +73,9 @@ python3 -I -B tools/mojt-system-firmware-test.py install
 ```
 
 The running manager imports the native generation/component with `--content-only`.
+By default the helper puts installation temporary files on disk under its
+workspace's `tmp` directory; an explicit `TMPDIR` overrides this. Expanded
+firmware, preview profiles and archives can exceed a small RAM-backed `/tmp`.
 The complete installed candidate cohort is verified, then its public System-stage
 frontend runs in a fresh isolated Python process. This uses the new firmware
 transition reader without replacing any running manager file. Preparation phases
