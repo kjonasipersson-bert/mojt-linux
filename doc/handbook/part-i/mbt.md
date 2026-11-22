@@ -191,7 +191,7 @@ dependency archives. Pass these to `mpm system install --from-file ...
 --expected-id ... --dependency-file ...`; retained firmware needs no new archive.
 Installation prepares the boot entry on the running native-v2 installation,
 leaving selection and reboot explicit. Packaging itself changes neither.
-See [component generations](../../../docs/system-components.md) for storage,
+See [component generations](https://github.com/kjonasipersson-bert/mojt-linux/blob/main/docs/system-components.md) for storage,
 validation and compatibility limits.
 
 ## 4.5. Prepare image tools

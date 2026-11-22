@@ -138,12 +138,15 @@ def freeze_inputs(root, destination, release, support, expected, profile=PROFILE
 
 def native_firmware(profile, expected_boot_profile=None):
     """Bounded path/metadata check; full bytes are covered by the System proof."""
-    import mpm_system as native
-    point = native.profile_file(profile,'hardware.json')
+    native = None;manifest = None
+    if (profile/'manifest.json').is_file():
+        import mpm_system as native
+        manifest = native.base.read(profile/'manifest.json')
+    def resolved(name):return native.profile_file(profile,name,manifest=manifest) if native is not None else profile/name
+    point = resolved('hardware.json')
     if point.is_symlink() or not point.is_file() or point.stat().st_size > 65536:
         raise ValueError('missing/bounded native hardware declaration required')
     raw=point.read_bytes()
-    manifest=native.base.read(profile/'manifest.json') if (profile/'manifest.json').is_file() else None
     if manifest is not None and native.component_profile(manifest) is not None:
         require=native.require
         require(native.logical_inventory(profile,manifest)['hardware.json']['sha256'] == hashlib.sha256(raw).hexdigest(),'native hardware metadata differs from component')
@@ -160,15 +163,15 @@ def native_firmware(profile, expected_boot_profile=None):
     if expected_boot_profile is not None and boot_profile(name) != expected_boot_profile:
         raise ValueError('System hardware differs from bound boot profile')
     if minimal:
-        manifest=native.base.read(profile/'manifest.json');layout=native.component_profile(manifest)
+        layout=native.component_profile(manifest) if native is not None else None
         if (layout is None or any(r['role']=='firmware' for r in layout['components'])
                 or row['firmware_tree_sha256'] is not None or row['licenses_tree_sha256'] is not None):
             raise ValueError('minimal firmware declaration differs from components')
         return None
-    firmware = native.profile_file(profile,'kernel/lib/firmware')
+    firmware = resolved('kernel/lib/firmware')
     if firmware.is_symlink() or not firmware.is_dir():raise ValueError('missing native System firmware')
     for package in license_packages(name):
-        point = native.profile_file(profile,'kernel/licenses/'+package+'/copyright')
+        point = resolved('kernel/licenses/'+package+'/copyright')
         if point.is_symlink() or not point.is_file():raise ValueError('missing native firmware license: '+package)
     return firmware
 
