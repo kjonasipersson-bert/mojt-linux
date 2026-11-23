@@ -56,8 +56,10 @@ other tools still require coordination at that later boundary.
 
 `declared_compatible` means only that the implemented declarations and account
 shell checks pass. It is not runtime libc compatibility, arbitrary state-schema
-compatibility or boot readiness. Candidate code is never executed. Existing
-conservative System ABI equality checks remain unchanged.
+compatibility or boot readiness. Candidate code is never executed. The
+[System ABI requirement policy](system-manifest.md#base-abi-requirements) allows
+a newer glibc within the same major ABI when it satisfies the System's minimum;
+other required ABI facts remain checked.
 
 All records explicitly report `writes=false`, `stage_ready=false` and
 `boot_ready=false`. Remaining gates are explicit defaults/lifecycle preparation

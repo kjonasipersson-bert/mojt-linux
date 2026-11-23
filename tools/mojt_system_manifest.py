@@ -82,13 +82,30 @@ def validate_context(value):
     return value
 
 
+def base_abi_errors(actual, required):
+    """Check required facts; glibc's version is a minimum within its major ABI."""
+    errors = []
+    for key, wanted in required.items():
+        found = actual.get(key)
+        if key == "libc_version" and required.get("libc") == actual.get("libc") == "glibc":
+            versions = [isinstance(v, str) and re.fullmatch(r"([0-9]+)\.([0-9]+)(?:\.([0-9]+))?", v)
+                        for v in (found, wanted)]
+            if all(versions):
+                current, minimum = [tuple(int(n or 0) for n in v.groups()) for v in versions]
+                if current[0] == minimum[0] and current >= minimum:
+                    continue
+            errors.append(f"declared Base ABI: glibc {found!r} does not satisfy minimum {wanted!r} within the same major ABI")
+        elif key not in actual or found != wanted:
+            errors.append(f"declared Base ABI {key} differs: installation={found!r}, required={wanted!r}")
+    return errors
+
+
 def check(manifest, context):
     d = validate(manifest)["description"]
     validate_context(context)
-    errors = []
+    errors = base_abi_errors(context["base_abi"], d["requirements"]["base_abi"])
     for label, actual, wanted in (
         ("architecture", context["architecture"], d["architecture"]),
-        ("declared Base ABI", context["base_abi"], d["requirements"]["base_abi"]),
         ("state layout", context["state_layout"], d["requirements"]["state_layout"]),
     ):
         if actual != wanted:

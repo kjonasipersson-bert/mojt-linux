@@ -51,7 +51,7 @@ System generations when acquired.
 | Field in description | Rule |
 | --- | --- |
 | `components` | Unique roles sorted by role, each binding an exact native reference or opaque provider identity; repeated references in different roles are allowed |
-| `requirements` | Exact declared Base ABI name/value facts, state-layout version and required Kernel/host capabilities; unsupported required facts block, not silently succeed |
+| `requirements` | Declared Base ABI name/value requirements, state-layout version and required Kernel/host capabilities; unsupported required facts block, not silently succeed |
 | `management` | Supported read/write format versions and capabilities by unique family, sorted by family; versions increasing, write subset of read; evidence must come from actual bundled manager support |
 | `state` | Managed owner/namespace/path and schema-family read/write versions; unique owner/location, sorted by namespace/path/owner; conflicts across owners block |
 | `profile` | Paths relative to `/run/mojt-system`, sorted uniquely; each source binds an exact listed component and relative component path; no arbitrary absolute copying |
@@ -60,6 +60,9 @@ System generations when acquired.
 | `lifecycle` | Exact action-set format/ID and `payload/lifecycle.json` path within this package's inventory |
 
 Base ABI entries and required capability lists are unique and sorted by name.
+The implemented Base ABI comparison follows the
+[System requirement policy](../../system-manifest.md#base-abi-requirements),
+including a minimum version for glibc within the same major ABI.
 This first wire format declares exact ABI facts and named capabilities, not a
 new range/dependency solver. It does not bypass the existing selected-Base Kernel
 policy bounds. Unknown platforms/required capabilities or unsupported provider

@@ -116,8 +116,22 @@ class DeclaredGateTests(unittest.TestCase):
         self.assertEqual(report['kernel'],self.selected['description']['kernel'])
         self.assertEqual(old,(self.release,self.selected,self.bounds,self.facts))
 
-    def test_changed_libc_declaration_is_not_inherited_from_selected_base(self):
-        self.release['abi']={'libc':'glibc','libc_version':'99.0'}
+    def test_newer_glibc_base_preserves_selected_system_and_kernel(self):
+        d=copy.deepcopy(self.f.manifest['description'])
+        d['requirements']['base_abi']={'libc':'glibc','libc_version':'2.41'}
+        self.f.manifest=transition.manifests.create(d)
+        selected=copy.deepcopy(self.selected['description'])
+        selected['system']['manifest']=self.f.manifest['id']
+        self.selected=deployment.create(selected)
+        self.release['abi']={'libc':'glibc','libc_version':'2.44'}
+        report=self.check();self.assertTrue(report['declared_compatible'],report['errors'])
+        self.assertEqual(report['system'],self.selected['description']['system'])
+        self.assertEqual(report['kernel'],self.selected['description']['kernel'])
+        self.release['abi']['libc_version']='2.40'
+        self.assertFalse(self.check()['declared_compatible'])
+
+    def test_changed_libc_family_is_not_inherited_from_selected_base(self):
+        self.release['abi']={'libc':'other','libc_version':'2.44'}
         report=self.check();self.assertFalse(report['declared_compatible'])
         self.assertTrue(any('ABI' in e for e in report['errors']))
         self.assertEqual(report['candidate_facts']['base_abi'],self.release['abi'])
