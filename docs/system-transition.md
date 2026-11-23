@@ -11,7 +11,8 @@ reboot, with normal installation finishing preparation when boot context exists.
 Standalone `stage` is an advanced operation, also used by MPM/MBT internally.
 Normal live native-v2 System installation now includes preparation, leaving
 next boot unchanged. Offline and --content-only imports still need explicit
-preparation; Base/Kernel install integration remains separate. Base/System releases
+preparation. Live Base install also adds missing regular defaults and prepares
+without selecting; Kernel install integration remains separate. Base/System releases
 should normally combine within real compatibility requirements rather than
 matched version pairs; see [the MPM contract](mpm.md).
 

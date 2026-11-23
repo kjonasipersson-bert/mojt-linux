@@ -115,7 +115,11 @@ class SourceBuildTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             image = work/'releases/base-0.2.1-x86_64/rootfs.tar.zst'
             raw = subprocess.check_output(['zstd', '-dc', str(image)])
+            measured=builder.release_size(image.parent)
+            self.assertEqual(measured['compressed_bytes'],image.stat().st_size)
             with tarfile.open(fileobj=io.BytesIO(raw)) as stream:
+                self.assertGreater(measured['file_bytes'],0)
+                self.assertEqual(measured['entries'],len(stream.getmembers()))
                 self.assertTrue(all((m.uid,m.gid) == (0,0) for m in stream))
                 self.assertEqual(stream.getmember('./usr/etc/shadow').mode & 0o777, 0o600)
                 self.assertFalse(any(m.name.startswith('./etc/') for m in stream))

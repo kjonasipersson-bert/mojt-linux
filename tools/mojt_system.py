@@ -87,13 +87,15 @@ MPM_FILES = (
 )
 # Optional builder entrypoints. Compilers remain in separately pinned private
 # environments; this code list is inventoried as part of the System profile.
-MBT_FILES = ('mbt','mbt_cli.py','mojt-build-env.py','mojt-kernel-build.py',
+MBT_FILES = ('mbt','mbt_cli.py','mojt-build-env.py','mojt-kernel-build.py','mojt-base-build.py','mojt-base-pack',
              'mojt-artifact-pack.py','mojt_system_package.py','mojt_bootstrap.py','mojt-privileged-setup.py',
              'mbt_runtime.py','mojt-console-size.py','mojt_mounted_install.py','mojt_bootstrap_inputs.py')
 # Fixed assembly inputs at their repository-relative paths, so an installed
 # builder can assemble its successor without carrying a checkout.
 MBT_SOURCE_FILES = ('tests/check-mojt-system.sh','manifests/mpm-release-example.json',
-                    'manifests/kernel-first-build.json','manifests/kernel-lts.json','manifests/kernel-stable.json','manifests/mojt.config','man/mpm.1','man/mbt.1')
+                    'manifests/kernel-first-build.json','manifests/kernel-lts.json','manifests/kernel-stable.json','manifests/mojt.config','man/mpm.1','man/mbt.1',
+                    'bootstrap/base-sources.json','bootstrap/tar-acl-2.4.patch',
+                    'bootstrap/licenses/gcc-runtime-exception.txt','bootstrap/licenses/iana-etc-MIT.txt')
 
 BASH_RC = r'''# Mojt System interactive Bash defaults; user startup files may override these.
 case $- in *i*) ;; *) return 0 ;; esac

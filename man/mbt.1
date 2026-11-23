@@ -12,6 +12,9 @@ mbt \- prepare private build tools and create Mojt build/package results
 [--plan FILE | --track NAME] [--config FILE] [--config-sha256 SHA256]
 [--environment DIRECTORY] [--output DIRECTORY] [--source DIRECTORY] [--resume] [--jobs N] [--dry-run] [-y]
 .PP
+.B mbt build base
+[--output DIRECTORY] [--version VERSION] [--jobs N] [--cache DIRECTORY] [--offline] [--dry-run]
+.PP
 .B mbt package
 {kernel|base|system|pack|verify} ...
 .PP
@@ -28,7 +31,7 @@ mbt \- prepare private build tools and create Mojt build/package results
 [--system-generation NAME]
 .SH DESCRIPTION
 Experimental interface for review. MBT delegates to the existing environment,
-Kernel build, native artifact and image tools. Use each command's --help for flags.
+Kernel/Base build, native artifact and image tools. Use each command's --help for flags.
 Building and packaging do not install or activate their result. Bootstrap uses
 MPM installation/deployment libraries on a new image or empty mounted target. Existing-system updates
 belong to MPM. No command implicitly reboots or changes a global compiler.
@@ -55,6 +58,14 @@ remain available.
 --dry-run validates inputs without fetching sources, compiling or writing output.
 --resume requires the same verified inputs and an eligible incomplete workspace;
 it does not repair arbitrary failed output. No automatic privilege escalation.
+.TP
+.B build base
+Compile a complete source Base and create its native MPM archive. Defaults are
+Base 0.2.1 and ./base-result. Requires plain host GCC and native build utilities;
+Nix compiler wrappers are currently rejected, and MBT does not install a compiler.
+The output must be new. result.json records provenance, exact package path/ID
+and compressed/regular-file payload sizes, excluding the build workspace.
+--dry-run performs no downloads, compilation or output writes.
 .TP
 .B package
 Create and independently verify a native archive from a complete build or

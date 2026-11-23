@@ -6,9 +6,10 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Build a Base from source
 
-`tools/mojt-base-build.py` builds a complete, versioned x86-64 glibc Base
-release without Void or XBPS. It is a standalone producer, intended for later
-MBT integration; there is no `mbt build base` command yet. It does not install,
+`mbt build base` builds a complete, versioned x86-64 glibc Base release and
+native MPM package without Void or XBPS. From a checkout use
+`python3 -I -B tools/mbt build base`. The standalone entrypoint
+`tools/mojt-base-build.py` remains available with the same build options. It does not install,
 select or boot the result, change the host's `/etc` or touch installed releases.
 
 ## Build host and commands
@@ -29,13 +30,13 @@ Build as your ordinary user. No dedicated build account or root build is needed.
 From the Mojt checkout, preview the inputs and scope:
 
 ```sh
-python3 -I -B tools/mojt-base-build.py --dry-run
+python3 -I -B tools/mbt build base --dry-run
 ```
 
 Build into a **new** directory outside the checkout:
 
 ```sh
-python3 -I -B tools/mojt-base-build.py --output "$HOME/mojt-base-result" --jobs 2
+python3 -I -B tools/mbt build base --output "$HOME/mojt-base-result" --jobs 2
 ```
 
 The default release version is `0.2.1`; `--version` selects another dotted Base
@@ -119,7 +120,12 @@ is outside this build command.
 The output directory contains:
 
 - `releases/base-0.2.1-x86_64/`: `rootfs.tar.zst`, checksum, manifest and inventory.
-- `result.json`: source/compiler provenance, phase durations and release path.
+- `package/`: native archive and artifact/transport records, ready for MPM.
+- `result.json`: source/compiler provenance, phase durations, release/package paths
+  and exact size measurements. `size.compressed_bytes` measures the rootfs archive;
+  `size.file_bytes` counts regular-file payload once per archive data entry, excluding
+  hardlink duplicates, archive overhead and filesystem allocation. Build sources,
+  objects, logs and tool environments are not part of these Base measurements.
 - `logs/`: configure/build/install/pack logs, one file per phase.
 - `rootfs/`: staged runtime tree; source/object directories remain for diagnosis.
 

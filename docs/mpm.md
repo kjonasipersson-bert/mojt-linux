@@ -751,13 +751,15 @@ and [NixOS's separate package/service integration](https://nixos.org/manual/nixo
 | Kernel | Exact local/source installation with retained origin/modules; preparation, selection/return and native-v2 activation/upgrade of installed candidates | Moving-policy acquisition and broader machine/build coverage |
 | Base | Whole-release packing, directory installation, native import/realization/status and exact compatible preparation/selection/return | Moving-policy acquisition and incompatible root-layout migration |
 | System | Pinned assembly, native compositions/components, exact local/source import and status; live install prepares an entry; native-v2 activation/upgrade | General service/provider runtime upgrades and supported schema/default lifecycle execution |
-| MBT | Private tool environments, explicit Kernel builds/packaging and fresh native-v2 bootstrap | Complete source self-hosting and further public build/environment policy |
+| MBT | Private tool environments, Kernel and source Base builds/packaging, size reporting and fresh native-v2 bootstrap | Complete source self-hosting and further public build/environment policy |
 
 The live System frontend prepares against selected Base/Kernel, leaving next boot
 and running state unchanged. `--content-only`, explicit offline targets and
 low-level APIs remain imports. Preparation failure retains installed content,
 returns failure and leaves selection alone; repeating install retries preparation.
-Base/Kernel installation still requires separate preparation. There is no public
+Live Base install also adds missing regular defaults and prepares without selecting;
+local Base `upgrade --from-file` offers selection too. Kernel installation still
+requires separate preparation. There is no public
 System `plan` operation. See [boot updates](system-transition.md).
 
 The [System runtime](mpm-system-runtime.md) delivers a closed code/helper cohort.

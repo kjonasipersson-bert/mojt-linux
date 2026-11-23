@@ -101,6 +101,24 @@ class PreparationTests(unittest.TestCase):
         self.assertEqual(command[command.index('--system-payload')+1], str(self.payload))
         self.assertEqual(command[command.index('--system-generation')+1], 'system-source-base-test')
         self.assertEqual(Path(command[3]), REPO/'tools/mojt_bootstrap.py')
+        self.args.with_build_tools=True
+        self.assertIn('--with-build-tools',prepare.bootstrap_command(self.args,output,packed))
+
+    def test_optional_update_disk_uses_a_frozen_package_and_the_new_image_only(self):
+        import shutil
+        import subprocess
+        import mojt_boot
+        output=self.root/'new-vm';(output/'image').mkdir(parents=True)
+        (output/'image/run-qemu.sh').write_text(mojt_boot.run_script(network=True))
+        package=self.root/'update.tar.zst';package.write_bytes(b'package fixture')
+        calls=[]
+        with mock.patch.object(prepare.artifact,'verify',return_value={'kind':'base','id':'fixed'}), \
+             mock.patch.object(prepare.subprocess,'run',side_effect=lambda args,**kw:calls.append(args)):
+            launcher=prepare.update_disk(output,package)
+        self.assertEqual((output/'update-input/base.tar.zst').read_bytes(),package.read_bytes())
+        self.assertIn('MOJT_BASE_UPDATE',calls[0]);self.assertIn('readonly=on',launcher.read_text())
+        self.assertIn(str(output/'image'),launcher.read_text());self.assertNotIn(str(self.old),launcher.read_text())
+        if shutil.which('bash'):subprocess.run(['bash','-n',str(launcher)],check=True)
 
     def test_input_check_never_invokes_sudo_or_creates_a_workspace(self):
         before = self.snapshot()

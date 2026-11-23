@@ -278,8 +278,10 @@ omits firmware by default; `mbt package system --running --firmware keep` retain
 the current selection. See [System packaging](mbt.md#package-a-system-successor).
 
 Use `mpm system install ... --content-only` to import without preparation.
-Explicit `--disk-root` targets are offline and also remain content-only. Base and
-Kernel installation still require separate preparation in this implementation.
+Explicit `--disk-root` targets are offline and also remain content-only. Base
+installation follows the same live preparation convention, adding only missing
+regular `/etc` defaults and preserving local files. Use `mpm base install
+--content-only` to skip it. Kernel installation still needs separate preparation.
 A dry-run does not install, construct or promise a boot-ready entry.
 
 ## 3.8. Activate and reboot
@@ -316,9 +318,12 @@ mpm kernel status
 ```
 
 The exact running identities should now match the intended selected deployment.
-Base and Kernel separate content installation from boot preparation. Their
-explicit stage/activate operations remain available. Base preparation additionally
-requires an accepted context file declaring exact Kernel bounds:
+Base install already prepares an entry on a live native-v2 installation.
+`mpm base upgrade --from-file /packages/base.tar.zst` installs, prepares and offers
+next-boot selection in one command. No command reboots automatically.
+Explicit stage/activate operations remain available; Kernel installation still
+requires separate preparation. Base preparation defaults to the exact selected
+Kernel as a local target constraint; `--base-context` supplies explicit bounds:
 
 ```sh
 mpm base stage --artifact sha256:FULL_BASE_ID \

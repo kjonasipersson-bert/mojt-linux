@@ -54,12 +54,12 @@ Kernel/initramfs slot and exact Base/System/Kernel bindings. Next boot is an
 atomic selection of a completed deployment. Running identifies what actually
 booted, independently of a pending next-boot choice.
 
-On a live native-v2 installation, normal public System installation also prepares
-an entry using the selected Base/Kernel context. It leaves next boot unchanged.
+On a live native-v2 installation, normal public System and Base installation
+also prepare an entry using the selected context. They leave next boot unchanged.
 `--content-only`, explicit offline targets and low-level import APIs keep content
-import separate. Base/Kernel installation still requires explicit preparation.
+import separate. Kernel installation still requires explicit preparation.
 `stage` remains an advanced operation and internal API, not a mandatory extra
-command after normal live System installation.
+command after normal live System or Base installation.
 
 Activation selects prepared content, with a concrete change/reboot preview. It
 does not construct initramfs, scrub payloads, switch running services or reboot.

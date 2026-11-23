@@ -12,9 +12,9 @@ next-boot selection. The [installation reference](base-installation.md) and
 This contract preserves the [MPM user model](management-workflow.md) and
 independent area lifecycles.
 
-## The two commands in one sentence each
+## Content-only installation and status
 
-`mpm base install` makes one complete exact Base available on the chosen
+`mpm base install --content-only` makes one complete exact Base available on the chosen
 installation, including a validated rootfs tree, without changing machine
 configuration, next boot or the running system.
 
@@ -52,7 +52,14 @@ not a storage key. Installing `0.1.3-r2` must not overwrite `0.1.3-r1`, and two
 different full artifacts advertising the same release ID must also coexist.
 An ambiguous catalog release must be disambiguated before installation.
 
-## Installation effects and limits
+## Content-only installation effects and limits
+
+The table describes the low-level import and `--content-only`/offline commands.
+Normal live install adds an explicit preparation phase: missing regular defaults
+are added using the durable missing-default handler, then a compatible boot entry
+is constructed. Existing machine files are preserved and next boot is unchanged.
+Local `upgrade --from-file` also offers next-boot selection. See the
+[normal workflow](base-update-workflow.md) for approval and failure boundaries.
 
 | Resource | Allowed result of Base install |
 | --- | --- |
@@ -83,10 +90,12 @@ unchanged does **not** meet this contract. Reuse its reviewed archive/identity
 validation and extractor policy behind a content-only boundary; do not duplicate
 the entire installer or change old experimental disks implicitly.
 
-## Proposed invocation boundary
+## Exact invocation boundary
 
-The first bounded implementation should mirror the established exact Kernel
-import interface. These are interface examples with placeholder IDs; substitute real verified values:
+These examples use placeholder IDs. A local archive may omit `--expected-id`;
+then identity is derived during the same verified import, without claiming
+publisher authentication. Source acquisition still requires the explicit ID.
+Add `--content-only` to skip preparation on a live target:
 
 ```sh
 mpm base install --from-file /packages/base-EXACT.tar.zst \
@@ -206,21 +215,10 @@ target and integrity scope, and distinguishes unknown from absent and failure.
 Its exact schema/exit classes must be defined before implementation; the draft
 human table is not that schema.
 
-## What comes after agreement
+## Implemented boundary
 
-Implement and test content-only Base import, realization, origin retention and
-honest status first. Cover same-label different artifacts, no-op/offline repeat,
-unsafe archives/links, corruption, unknown formats, incomplete/publication failure,
-read-only status and unchanged state/boot selections. Reuse cache/transaction
-primitives and the reviewed Base extractor; do not build a competing installer.
-
-Then generalize deployment staging/selection to a changed Base while preserving
-the chosen System and Kernel, subject to explicit compatibility/state/management
-gates. Only that next join needs a new owner boot test. System import/composition
-and its deployment join follow in the governing roadmap, before public MBT
-bootstrap/build integration. No repeated Kernel matrix is required here.
-
-**Owner agreement:** the two command meanings and the definition of installed
-Base above were accepted on 2026-11-06, with defaults/state preparation deferred
-to an explicit transition. Exact import/status implementation is authorized.
-New MBT spellings and Base deployment/upgrade integration remain separate work.
+Content import, origin retention, status, native-v2 preparation and selection
+are implemented. Normal live installation joins content, missing regular defaults
+and preparation; general lifecycle migrations, remote distribution and moving
+release acquisition remain separate work. A source checkout does not update the
+manager installed in a running System.
