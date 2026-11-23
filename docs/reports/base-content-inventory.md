@@ -9,9 +9,10 @@ SPDX-License-Identifier: GPL-2.0-only
 Source review: 2026-11-23. Reviewed Mojt revision:
 `ea033084b8997e980943cc01591ab6f669af4473`.
 
-This report inventories the existing construction path as input to defining
-Base's contents. It makes no changes to the bootstrap, installed releases,
-package selection or runtime policy. Loader/libc/ABI analysis follows this work.
+This report inventories the existing construction path and a saved 29-package
+bootstrap inventory as input to defining Base's contents. It makes no changes
+to the bootstrap, installed releases, package selection or runtime policy.
+Loader/libc/ABI analysis follows this work.
 
 ## Evidence and limits
 
@@ -38,9 +39,11 @@ establishes the direct package selection exactly, but cannot recover historical
 resolved versions or a byte/file inventory of Base 0.1.3 by itself. A fresh
 bootstrap today would be another build, not a reconstruction of that release.
 
-No bootstrap, package installation, source build, target execution or physical
-inventory was performed for this report. No new owner-machine test is required
-to review this source inventory.
+The saved `base-0.1-packages.txt` now supplies observed package names and
+versions; section 2 transcribes all its entries. It does not identify a Base
+release artifact or supply the post-packing file inventory. No new bootstrap,
+package installation, source build or target execution was performed for this
+report.
 
 ## 1. Directly selected packages
 
@@ -73,7 +76,81 @@ It is unpacked into the host-side `$MOJT_LAB/tools` area. The `musl` in this
 tool archive's name does not select musl for the Base rootfs. This external
 static tool and the `xbps` package requested inside the rootfs are distinct.
 
-## 2. Additional inputs and dependency evidence
+## 2. Observed bootstrap package inventory
+
+Evidence: the supplied `base-0.1-packages.txt`, SHA256
+`baf54bc46516128e5427f97da956ace5b1c533e9215734cbbf99e2c8e4aa1bad`. It contains
+29 unique `ii` (installed) entries. All eleven package names requested by
+`bootstrap/void.sh` occur in the list; the other eighteen are additional to
+that explicit selection. The file does not record dependency edges, installation
+time, the bootstrap source revision or a final Base image identity.
+
+Versions below include Void's packaging revision suffix (`_N`). This is the
+saved build's observed inventory, not a reconstruction using today's repository.
+
+| Package | Observed version/revision | Relation to the bootstrap request |
+| --- | --- | --- |
+| `acl` | `2.4.0_1` | Additional |
+| `attr` | `2.6.0_1` | Additional |
+| `base-files` | `0.146_1` | Explicit |
+| `bzip2` | `1.0.8_2` | Additional |
+| `ca-certificates` | `20250419+3.131.1_2` | Explicit |
+| `coreutils` | `9.4_3` | Explicit |
+| `dash` | `0.5.12_3` | Explicit |
+| `findutils` | `4.10.0_1` | Explicit |
+| `glibc` | `2.41_1` | Explicit |
+| `gmp` | `6.3.0_1` | Additional |
+| `grep` | `3.12_1` | Explicit |
+| `gzip` | `1.14_1` | Explicit |
+| `libarchive` | `3.8.9_1` | Additional |
+| `libcap` | `2.78_1` | Additional |
+| `libcrypto3` | `3.6.5_1` | Additional |
+| `liblz4` | `1.10.0_1` | Additional |
+| `liblzma` | `5.8.3_1` | Additional |
+| `libpcre2` | `10.49_1` | Additional |
+| `libssl3` | `3.6.5_1` | Additional |
+| `libxbps` | `0.60.7_1` | Additional |
+| `libxcrypt-compat` | `4.4.38_1` | Additional |
+| `libzstd` | `1.5.7_1` | Additional |
+| `openssl` | `3.6.5_1` | Additional |
+| `run-parts` | `5.23.2_1` | Additional |
+| `sed` | `4.10_1` | Explicit |
+| `tar` | `1.35_1` | Explicit |
+| `xbps` | `0.60.7_1` | Explicit |
+| `xbps-triggers` | `0.131_1` | Additional |
+| `zlib` | `1.3.2_1` | Additional |
+
+The eighteen additional packages can be grouped by function without claiming
+that this table establishes their precise dependency graph:
+
+| Function | Additional packages in the saved inventory |
+| --- | --- |
+| ACLs, extended attributes and capabilities | `acl`, `attr`, `libcap` |
+| Arithmetic and regular expressions | `gmp`, `libpcre2` |
+| Archive/compression support | `libarchive`, `bzip2`, `liblz4`, `liblzma`, `libzstd`, `zlib` |
+| TLS/crypto and certificate maintenance | `openssl`, `libcrypto3`, `libssl3`, `run-parts` |
+| XBPS support | `libxbps`, `xbps-triggers` |
+| Legacy password-hashing compatibility | `libxcrypt-compat` |
+
+`libxbps` and `xbps-triggers` are therefore observed installed packages, rather
+than just candidates suggested by current recipes. The packer has no general
+removal rule for their library/script payloads. Which other support libraries
+remain necessary after removing the XBPS commands still requires consumer/file
+analysis; their presence is not evidence that they are all removable.
+
+There are no `bash`, `python3`, compiler, `libgcc` or LZO-package entries in this
+list. This establishes the absence of those package entries, not a per-file
+executable/library absence proof. In particular, a library package entry such
+as `libzstd` does not establish that a `zstd` command is shipped.
+
+The saved inventory and the separately reviewed Void recipe snapshot are not
+identical versions: for example, observed `gzip` is `1.14_1`, `libarchive` is
+`3.8.9_1` and `ca-certificates` is `20250419+3.131.1_2`, while the recipe snapshot
+has `1.15_1`, `3.8.11_1` and `20250419+3.134_1`, respectively. Use the saved list
+for observed versions and the source snapshot only for the explicitly scoped
+recipe evidence below.
+
+### Dependency evidence from the separate source snapshot
 
 Eleven requested names do not imply eleven installed packages. XBPS resolves
 runtime dependencies. Source-recipe build dependencies are not an installed
@@ -92,18 +169,23 @@ mapping. Subpackage splitting matters too.
 | [`ca-certificates`](https://github.com/void-linux/void-packages/blob/2004b86d9c55f9a553cf88a30cce01a8c9960d97/srcpkgs/ca-certificates/template) | `openssl`, `run-parts` | Certificate selection can bring command-line utilities as well as certificate data |
 | [`glibc`](https://github.com/void-linux/void-packages/blob/2004b86d9c55f9a553cf88a30cce01a8c9960d97/srcpkgs/glibc/template) | `libxcrypt-compat` under `CHROOT_READY` | Compatibility content is conditional recipe evidence, not a recovered historical installation record |
 
-These declarations explain likely additional package families. They do not
-establish the exact resolved binary dependency closure of Base 0.1.3.
+These declarations help explain the observed additional package families. The
+saved inventory establishes package presence; neither it nor these separate
+recipes alone establish every dependency edge or bind the inventory to a
+specific Base 0.1.3 archive.
 
-### Library families to account for
+### Recipe clues for library consumers
 
-| Family | Evidence in the reviewed source recipes | Status of the inventory claim |
+The package list establishes presence; these recipes suggest consumer
+relationships to investigate without establishing the historical ELF graph.
+
+| Family | Evidence in the reviewed source recipes | Scope of inference |
 | --- | --- | --- |
-| GMP, ACL/extended-attribute support and capabilities | `coreutils` uses `gmp-devel`, `acl-devel`, `libcap-devel`; `sed` and `tar` use ACL build inputs; ACL uses attr inputs | Runtime-library candidates; inspect binary metadata to establish actual linking and installed packages |
-| PCRE2 | `grep` uses `pcre2-devel`; PCRE2 splits its shared libraries into `libpcre2` | Candidate support for the selected grep build; do not infer that the separate PCRE command package is installed |
-| XBPS/archive support | `xbps` uses zlib, OpenSSL and libarchive build inputs and splits shared XBPS libraries into `libxbps` | Candidate bootstrap support retained by the current non-pruning packer if present |
-| Compression/crypto support behind libarchive | Its recipe enables ACL/xattrs, LZO, LZ4, OpenSSL and Zstd and uses zlib, bzip2 and liblzma inputs | Candidate transitive support; this does not imply installation of each compressor's executable |
-| Compiler support libraries | Void maps `libgcc_s.so.1` to the `libgcc` package | Conditional on actual binary requirements; a mapping alone is not evidence that it is installed |
+| GMP, ACL/extended-attribute support and capabilities | `coreutils` uses `gmp-devel`, `acl-devel`, `libcap-devel`; `sed` and `tar` use ACL build inputs; ACL uses attr inputs | `gmp`, `acl`, `attr` and `libcap` are observed; actual per-binary linking needs ELF evidence |
+| PCRE2 | `grep` uses `pcre2-devel`; PCRE2 splits its shared libraries into `libpcre2` | `libpcre2` is observed; the separate `pcre2` command package is not listed |
+| XBPS/archive support | `xbps` uses zlib, OpenSSL and libarchive build inputs and splits shared XBPS libraries into `libxbps` | These runtime families are observed; the packer retains their unfiltered files, but does not establish which remain needed |
+| Compression/crypto support behind libarchive | Its recipe enables ACL/xattrs, LZO, LZ4, OpenSSL and Zstd and uses zlib, bzip2 and liblzma inputs | Several matching families are observed; no LZO-package entry is listed. Do not equate this separate recipe's enabled features with the historical build |
+| Compiler support libraries | Void maps `libgcc_s.so.1` to the `libgcc` package | `libgcc` is not listed; the mapping is not installation evidence |
 
 The additional recipe sources are
 [`coreutils`](https://github.com/void-linux/void-packages/blob/2004b86d9c55f9a553cf88a30cce01a8c9960d97/srcpkgs/coreutils/template),
@@ -199,12 +281,13 @@ requirement for tools merely visible in a composed System's interactive PATH.
 Indirect packages and script interpreters require the same evidence distinction
 as shared libraries; "not directly requested" is not a complete absence proof.
 
-For exact historical versions and per-file confirmation, useful additional
-inputs are the retained `packages.txt`, `manifest.toml` and a listing of the
-specific release's `rootfs.tar.zst` (or its immutable Base tree). They refine this
-inventory; they are not prerequisites for discussing the eleven explicit inputs
-and the documented packing rules. Do not run a fresh moving-repository bootstrap
-solely to claim an inventory of an old release.
+The historical bootstrap package names and versions are now captured above.
+For binding them to a particular Base release and confirming final files, useful
+additional inputs are that release's `manifest.toml`, retained `packages.txt`
+and a listing of its `rootfs.tar.zst` (or immutable Base tree). These refine the
+post-packing inventory; they are not prerequisites for discussing the observed
+29-package input and the documented packing rules. Do not run a fresh
+moving-repository bootstrap solely to claim an inventory of an old release.
 
 The next phase can map loader/library consumers across Base, System and Ports
 once the intended Base content is discussed. This report does not select a
