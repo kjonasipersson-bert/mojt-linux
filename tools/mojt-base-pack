@@ -4,7 +4,9 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """Pack a bootstrapped rootfs into one versioned Mojt Base release.
 
-Host requirements: Python >= 3.11, GNU cp, GNU tar, zstd, root privileges.
+Host requirements: Python >= 3.11, GNU cp, GNU tar, zstd.
+Root privileges preserve source ownership; --normalize-owner produces a fully
+root-owned archive from an unprivileged private source-build tree.
 Never modifies the supplied rootfs. The resulting image carries defaults in
 /usr/etc; a future installer owns persistent /etc and /var.
 """
@@ -57,10 +59,11 @@ def main():
     parser.add_argument("rootfs", type=Path, help="bootstrapped rootfs (left untouched)")
     parser.add_argument("config", type=Path, help="TOML source manifest")
     parser.add_argument("output", type=Path, help="directory for releases")
-    parser.add_argument("--packages", type=Path, help="optional XBPS package inventory")
+    parser.add_argument("--packages", type=Path, help="optional package/source inventory")
+    parser.add_argument("--normalize-owner", action="store_true", help="archive all files as root:root (permits unprivileged source builds)")
     args = parser.parse_args()
 
-    if os.geteuid() != 0:
+    if os.geteuid() != 0 and not args.normalize_owner:
         die("run as root, e.g. sudo ./mojt-base-pack ROOTFS base.toml RELEASES")
     for tool in ("cp", "tar", "zstd"):
         if not shutil.which(tool):
@@ -115,7 +118,8 @@ def main():
         # cp -a SRC/. also copies the source root directory's ownership and
         # mode onto the destination. Normalize only the staged filesystem root;
         # other paths keep their package-supplied metadata. Never change ROOTFS.
-        os.chown(stage, 0, 0)
+        if os.geteuid() == 0:
+            os.chown(stage, 0, 0)
         os.chmod(stage, 0o755)
 
         # Base carries vendor defaults, not machine-specific /etc state.
@@ -177,6 +181,7 @@ def main():
         image = release / "rootfs.tar.zst"
         subprocess.run([
             "tar", "--sort=name", "--numeric-owner", "--acls", "--xattrs",
+            *(["--owner=0", "--group=0"] if args.normalize_owner else []),
             "--one-file-system", "-I", "zstd -7 -T0", "-cf", str(image),
             "-C", str(stage), ".",
         ], check=True)

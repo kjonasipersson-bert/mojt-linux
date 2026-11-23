@@ -17,6 +17,7 @@ for how the code works now.
 
 - [Base content inventory from the Void construction path](base-content-inventory.md)
 - [Source-built Base proposal and preliminary libc review](base-source-build-review.md)
+- [Source Base producer verification](base-source-producer-test.md)
 
 ## Extracted historical records
 

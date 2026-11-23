@@ -14,13 +14,13 @@ interfaces. The [architecture](architecture.md) defines the area boundaries.
 
 | Area | Implemented behavior | Main remaining boundary |
 | --- | --- | --- |
-| Base | Whole-release construction, native import/realization/status, exact compatible boot selection and return | Moving-policy upgrades and source/backend expansion |
+| Base | Whole-release construction, a standalone pinned source producer, native import/realization/status, exact compatible boot selection and return | Source-built release boot acceptance and moving-policy upgrades |
 | System | Coherent profiles, native composition/component import, live installation with boot preparation, prepared-entry activation and status | General service/runtime-dependency upgrades and state migrations |
 | Kernel | Exact local/source installation, retained origin/modules, preparation/selection/return and pinned LTS/stable builds with a bundled configuration | Moving-policy acquisition and broader hardware coverage |
 | Ports | Parallel versions, independent wishes, atomic profiles, explicit/following activation, history and active-version manuals | Native Port publication, cleanup and broader provider coverage |
 | Filesystem | Writable persistent root/local storage, immutable selected releases, persistent configuration/data/homes | Explicit incompatible-layout and data/schema migrations |
 | Interaction | Readable running/next/prepared entries, change/reboot previews and phase completion messages | Continued feedback on real administrative workflows |
-| MBT | Private build environments, Kernel build/packaging and fresh native-v2 bootstrap | Complete source builds of Base and Mojt-owned System components |
+| MBT | Private build environments, Kernel build/packaging and fresh native-v2 bootstrap | Integrating the standalone Base producer, native toolchain control and source builds of Mojt-owned System components |
 
 ## Next work for planning
 
@@ -33,8 +33,10 @@ interfaces. The [architecture](architecture.md) defines the area boundaries.
 2. Continue focused usability work and MBT development against the installed
    workflows. Keep activation a bounded atomic choice; construction belongs to
    preparation, and full audits remain explicit.
-3. Extend pinned source builds beyond the Kernel to Base and Mojt-owned System
-   components, reusing the existing build environments and native package format.
+3. Validate the [source-built Base](base-source-build.md) with retained System,
+   Kernel and state, then integrate its producer/toolchain into MBT. Extend
+   pinned source builds to Mojt-owned System components using the existing
+   native package format.
 
 These are priorities for scoping, not a commitment to new command names or a
 reason to repeat unchanged test matrices. Performance profiling remains available

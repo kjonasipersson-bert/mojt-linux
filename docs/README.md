@@ -17,6 +17,7 @@ references describe the implementation and supported limits at this commit:
 - [Component System generations and optional firmware](system-components.md)
 - [Normal System operation and audit boundaries](system-normal-operation.md)
 - [Base import](base-installation.md) and [Base boot preparation/selection](base-boot-staging.md)
+- [Build an independent Base from source](base-source-build.md)
 - [System/Base ABI requirements](system-manifest.md#base-abi-requirements) and [read-only libc inventory](libc-inventory.md)
 - [Native-v2 selection](native-system-selection.md) and [handover](native-system-handover.md)
 - [System assembly](system-nix-vm.md), [accounts](system-accounts.md), [console/time](system-console-time.md) and [manuals/environment](system-environment.md)
@@ -34,8 +35,9 @@ The [Base content inventory](reports/base-content-inventory.md) reviews the Void
 construction inputs and packing rules as evidence for defining a source-built
 Base. It does not change the current release contents or decide libc/ABI policy.
 The [source-build and libc review](reports/base-source-build-review.md) proposes
-a smaller input set and identifies current compatibility gates and open runtime
-questions; it is not an implemented Base builder or a completed ABI validation.
+a smaller input set and identifies compatibility gates and open runtime
+questions. The [source producer](base-source-build.md) implements the first
+private build path; runtime/boot acceptance remains a separate step.
 
 ## Test procedures and historical evidence
 
