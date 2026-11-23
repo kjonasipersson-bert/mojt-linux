@@ -6,8 +6,8 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Local Base 0.2.0 to 0.2.1 update: short VM test
 
-This is an acceptance procedure, not a completed VM result. It tests the public
-MBT build and installed MPM workflow. Keep the physical installation and old VM
+This report contains the acceptance procedure and the recorded VM result below.
+It tests the public MBT build and installed MPM workflow. Keep the physical installation and old VM
 images unchanged. One new disposable VM starts with the retained source Base
 0.2.0 and current System tooling; a separate read-only disk supplies Base 0.2.1.
 No marked test release, mandatory separate stage, or return round is needed.
@@ -20,6 +20,7 @@ at `$HOME/mojt-base-result`. The saved input check locates the retained Kernel
 and System export. Use new output paths:
 
 ```sh
+cd "$HOME/mojt-base-src"
 python3 -I -B tools/mbt build base \
   --output "$HOME/mojt-base-021-result" --jobs 2
 
@@ -89,6 +90,30 @@ systemctl --failed --no-pager
 PASS requires Base 0.2.1, glibc 2.44, https=443/tcp, tcp=6, both markers unchanged,
 matching running/next boot, the original System/Kernel and no failed units.
 Stop here; no automatic return selection or cleanup is part of this test.
+
+## Recorded VM result: 2026-11-23
+
+The owner reported that the complete procedure passed using ordinary MBT/MPM
+commands from revision `ec955c561f330d68c475e714d4fedfee5899d9c4`.
+The supplied post-reboot output confirms:
+
+- `/usr/lib/os-release` identifies Base 0.2.1.
+- Running and next boot both reference Base artifact prefix `c31da01d8e8d`.
+- Prepared entries retain Base 0.2.0 (`2bc563193e99`) and Base 0.2.1
+  (`611f10570204`); the latter is running and selected. Both use
+  Kernel `6.12.107-mojt1`.
+- Service lookup resolves `https` to `443/tcp`; protocol lookup resolves `tcp`
+  to `6 TCP`.
+- Both `/etc/mojt-base-update-check` and `/var/mojt-base-update-check` still
+  contain `keep me`.
+- `systemctl --failed` lists zero failed units.
+
+The libc-version command was mistyped as `etconf GNU_LIBC_VERSION`, so this
+transcript does not contain a new runtime libc-version observation. The packaged
+CI libc check passed separately; that is not a substitute for a command observed
+in this VM. This result establishes the reported local install/preparation,
+selection and reboot workflow, not physical-machine acceptance, remote package
+distribution or Nix-toolchain self-hosting.
 
 ## Size observation before this change
 
