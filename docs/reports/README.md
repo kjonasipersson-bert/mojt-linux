@@ -16,6 +16,7 @@ for how the code works now.
 ## Engineering reviews and inventories
 
 - [Base content inventory from the Void construction path](base-content-inventory.md)
+- [Source-built Base proposal and preliminary libc review](base-source-build-review.md)
 
 ## Extracted historical records
 

@@ -291,4 +291,6 @@ moving-repository bootstrap solely to claim an inventory of an old release.
 
 The next phase can map loader/library consumers across Base, System and Ports
 once the intended Base content is discussed. This report does not select a
-glibc version, toolchain, ABI policy or source-build implementation.
+glibc version, toolchain, ABI policy or source-build implementation. The
+[source-build and libc review](base-source-build-review.md) develops the initial
+content proposal and distinguishes current metadata gates from runtime evidence.

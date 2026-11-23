@@ -32,6 +32,9 @@ include proposed policies; proposals are not implemented commands.
 The [Base content inventory](reports/base-content-inventory.md) reviews the Void
 construction inputs and packing rules as evidence for defining a source-built
 Base. It does not change the current release contents or decide libc/ABI policy.
+The [source-build and libc review](reports/base-source-build-review.md) proposes
+a smaller input set and identifies current compatibility gates and open runtime
+questions; it is not an implemented Base builder or a completed ABI validation.
 
 ## Test procedures and historical evidence
 
