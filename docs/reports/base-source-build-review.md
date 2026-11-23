@@ -21,12 +21,13 @@ set, not a proven minimum or a complete build-tool dependency closure.
 
 glibc 2.44 is a reasonable candidate for the new build. Matching Nixpkgs' upstream
 version is neither required to run its existing programs nor sufficient to
-replace their runtime. A current metadata equality rule also blocks a Base
-libc-version change before runtime compatibility is considered.
+replace their runtime. Source review found an exact metadata equality check
+that incorrectly blocked newer Base libc versions; the correction and limits
+are recorded below.
 
-The next implementation should establish the exact running System's runtime
-boundaries with one bounded read-only diagnostic, then build the chosen content
-into a new private Base tree. Existing content/selection must remain intact.
+The standalone [libc inventory](../libc-inventory.md) can establish the running
+System's observed runtime boundaries, including in an older VM. The next build
+step is a new private Base tree. Existing content/selection must remain intact.
 
 ## 1. Proposed initial build contents
 
@@ -114,32 +115,36 @@ Source review does not enumerate every service subprocess, shared object or
 module loaded on the physical target. A report of thirteen source projects
 must not be presented as demonstrated full System compatibility yet.
 
-## 3. Current ABI metadata is stricter than the intended lifecycle
+## 3. Metadata equality bug and correction
 
 `mojt_system.finalize_manifest` copies `base_record['abi']` into the System's
-requirements. `mojt_system_manifest.check` compares that whole dictionary with
-the selected Base facts using equality. This is not a minimum glibc requirement
-or a measured ELF symbol requirement.
+requirements. At the reviewed runtime revision, `mojt_system_manifest.check`
+compared that whole dictionary with the selected Base facts using equality.
+This accidentally pinned System to a libc version and contradicted independent
+Base upgrades. It was not a measured ELF symbol requirement.
 
 A local synthetic check using the existing `tests/test_system_manifest.py`
-fixtures gives:
+fixtures reproduced the bug. The corrected checker gives:
 
-| System declaration | Candidate Base facts | Current metadata result |
+| System declaration | Candidate Base facts | Corrected metadata result |
 | --- | --- | --- |
 | glibc 2.41 | glibc 2.41 | Compatible |
-| glibc 2.41 | glibc 2.44 | Refused: `declared Base ABI differs` |
+| glibc 2.41 | glibc 2.44 | Compatible; formerly refused by equality |
+| glibc 2.41 | glibc 2.40 | Refused: below minimum |
+| glibc 2.41 | another libc family or major ABI | Refused |
 
-The nine existing `ManifestTests` also pass locally. These are pure metadata
-checks, not physical runtime/boot tests. A numerically equal version is not an
-ELF/loader/library compatibility proof either.
+The checker now treats required Base facts as requirements: glibc versions are
+a numeric minimum within the same major ABI, while other required facts retain
+exact comparisons. Additional Base facts do not pin the System. Records are
+not rewritten or relabelled. Focused tests cover newer/older versions, unknown
+versions, libc families and other ABI requirements, plus the Base preflight's
+retention of the selected System and Kernel.
 
-Before admitting Base 2.44 with current System binaries, define how to express
-their actual Base requirements and test the result. Preserve the meaning of
-existing serialized declarations: do not silently reinterpret an old exact
-requirement as a lower bound, erase the version field or relabel glibc 2.44 as
-2.41. A reviewed System metadata successor may be needed even when its service
-binaries remain the same. New capability/requirement semantics need an explicit
-supported representation and older-reader behavior.
+This fixes declaration policy, not runtime ABI compatibility. The copied build
+version remains a conservative declared minimum, not a measured symbol floor.
+Older embedded management/boot code retains its equality rule until replaced
+through normal generation delivery; changing a source checkout does not patch
+prepared entries. See the [current contract](../system-manifest.md#base-abi-requirements).
 
 Base staging also requires Kernel bounds bound to the candidate Base artifact,
 and checks persistent state and shell/layout compatibility. Correcting the
@@ -223,17 +228,21 @@ release acceptance; normal installation keeps its bounded transaction.
 
 ### First: observe the actual installed boundary
 
-One diagnostic should read the running Base/System identities and inspect only
+`tools/mojt-libc-inventory.py` reads the running Base/System identities and inspects only
 the selected examples: Base `sh`/core tools/getent, System systemd/Python/Bash/
 sshd/login and representative Ports such as Git/Neovim. Use standard ELF tools
 for interpreter/needed paths/version requirements and runtime probes/maps for
 what actually loads. Do not infer a libc from whichever `ldd` is first on PATH
 or count every libc in a transitive store closure as loaded in one process.
 
-Record local identity and DNS lookup, UTF-8 locale handling, certificate/time
-data references and known module boundaries. Mark unavailable tools or untested
-features explicitly. Do not compile, relink, change configuration, start a new
-service, scan all installed generations or modify selection for this diagnostic.
+It records local identity/localhost resolution and System UTF-8 locale handling;
+external DNS is optional. PT_INTERP inspection works without binutils; available
+`readelf` adds NEEDED/RPATH/RUNPATH and GLIBC version requirements. Missing tools
+and programs are observations, not invented compatibility results. It does not
+compile, relink, change configuration, start services, enumerate all installed
+generations or change selection. An older VM supplies evidence only for its own
+Base/System/Ports. Certificate/time data and PAM service acceptance remain
+separate checks before admitting a source-built Base.
 
 ### Then: one small source builder
 
@@ -282,6 +291,6 @@ Primary upstream sources checked on the review date:
   [NSS data-file patch](https://github.com/NixOS/nixpkgs/blob/804068b712dc9794d8d25d7af3912c5f45d14d9d/pkgs/development/libraries/glibc/nix-nss-open-files.patch)
 - [Nixpkgs locales and host data](https://nixos.org/manual/nixpkgs/unstable/#locales)
 
-Only source review and the local synthetic metadata checks were performed.
-No target ELF/runtime audit, native Base build, physical boot, complete package
+Source review, local metadata regressions and local standalone diagnostic tests
+were performed. No target ELF/runtime audit, native Base build, physical boot, complete package
 dependency graph or general cross-libc/plugin compatibility is claimed.

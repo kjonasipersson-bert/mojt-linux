@@ -54,6 +54,39 @@ class ManifestTests(unittest.TestCase):
         c["ports"]["capabilities"]["writer"] = "future-v2"
         self.assertFalse(model.check(manifest(),c)["compatible"])
 
+    def test_glibc_requirement_allows_compatible_newer_base_without_rewriting_manifest(self):
+        m = manifest(); before = copy.deepcopy(m)
+        for version in ("2.41", "2.41.0", "2.41.1", "2.44", "2.100"):
+            with self.subTest(version=version):
+                c = context(); c["base_abi"]["libc_version"] = version
+                self.assertTrue(model.check(m, c)["compatible"])
+        self.assertEqual(m, before)
+
+    def test_older_unknown_and_different_major_glibc_are_refused(self):
+        for version in ("2.9", "2.40", "1.99", "3.0", "2.44_1", "future", None):
+            with self.subTest(version=version):
+                c = context(); c["base_abi"]["libc_version"] = version
+                self.assertFalse(model.check(manifest(), c)["compatible"])
+        c = context(); del c["base_abi"]["libc_version"]
+        self.assertFalse(model.check(manifest(), c)["compatible"])
+
+    def test_extra_base_facts_do_not_pin_system_but_required_facts_remain_exact(self):
+        d = manifest()["description"]; d["requirements"]["base_abi"] = {"libc":"glibc"}
+        self.assertTrue(model.check(model.create(d), context())["compatible"])
+        d["requirements"]["base_abi"]["loader_contract"] = "native-v1"
+        self.assertFalse(model.check(model.create(d), context())["compatible"])
+        c = context(); c["base_abi"]["loader_contract"] = "native-v2"
+        self.assertFalse(model.check(model.create(d), c)["compatible"])
+        c["base_abi"]["loader_contract"] = "native-v1"
+        self.assertTrue(model.check(model.create(d), c)["compatible"])
+
+    def test_non_glibc_versions_do_not_inherit_glibc_policy(self):
+        d = manifest()["description"]; d["requirements"]["base_abi"]["libc"] = "other"
+        c = context(); c["base_abi"]["libc"] = "other"
+        self.assertTrue(model.check(model.create(d), c)["compatible"])
+        c["base_abi"]["libc_version"] = "2.44"
+        self.assertFalse(model.check(model.create(d), c)["compatible"])
+
     def test_architecture_abi_layout_and_system_shell_are_checked(self):
         for key, value in (("architecture","aarch64"),("base_abi",{"libc":"other"}),
                            ("state_layout",2),("required_system_paths",["/run/mojt-system/bin/missing"])):

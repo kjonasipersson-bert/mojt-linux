@@ -32,7 +32,9 @@ jobs:
           python3 -B -m unittest discover -s tests -p 'test_mpm_usability.py' -v
           sudo env PYTHONPATH=tests python3 -B -m unittest test_mpm_usability test_system_usability -v
       - name: Check fresh Ports capability gates in System metadata
-        run: python3 -B -m unittest discover -s tests -p 'test_system_manifest.py' -v
+        run: |
+          python3 -B -m unittest discover -s tests -p 'test_system_manifest.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_libc_inventory.py' -v
       - name: Check Kernel tracks, standard OpenSSH setup and legacy delivery
         run: |
           sudo apt-get install -y openssh-server

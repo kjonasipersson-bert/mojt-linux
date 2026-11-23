@@ -6,12 +6,11 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # System manifest and declared compatibility
 
-This limited increment describes a completed System and checks explicit
-installation requirements. It does not implement `mpm system upgrade`, change
-GRUB/next-boot selection, migrate state or modify a running System. The next
-milestone is native System composition install/status, followed by authorized
-initialization and existing-disk activation. Image assembly and Kernel builds
-on Mojt already have separate recorded acceptance.
+The System manifest describes a completed System and its explicit installation
+requirements. The pure compatibility model compares declarations without I/O;
+installation, boot preparation and selection use that model at their boundaries.
+The model itself does not change next boot, migrate state or modify a running
+System.
 
 ## Manifest
 
@@ -33,7 +32,7 @@ release format or conflate a System label with its content identity.
 SHA256 of canonical JSON for the complete description. The description records:
 
 - Human build label and Base architecture.
-- Exact declared Base ABI and persistent state-layout requirements.
+- Declared Base ABI requirements and an exact persistent state-layout requirement.
 - Supported Ports read/write formats and capability identifiers.
 - Available executable `/run/mojt-system/bin/*` paths.
 - Opaque backend artifact/provenance records: this adapter records the retained
@@ -57,11 +56,35 @@ inventorying a candidate. New runtimes advertise `mojt-ports-profile-v1` and
 Future writers must update both declarations and their actual validation, with
 an appropriate compatibility test.
 
+## Base ABI requirements
+
+`requirements.base_abi` expresses required facts, not an exact copy of the Base
+identity. Each required fact must be present. Additional facts in a Base release
+do not pin the System to that release.
+
+For `libc = "glibc"`, `libc_version` is the minimum supported upstream version
+within the same major ABI. Comparison is numeric: a requirement of `2.41` allows
+`2.41`, `2.41.0` and `2.44`, but refuses `2.40`, a different major version,
+missing versions and unrecognized version strings. Versions have two or three
+numeric components; distribution package revisions are not libc versions.
+Other required ABI facts and non-glibc versions still require exact matches.
+
+The builder currently copies the build Base's ABI facts as a conservative
+baseline. It does not calculate the minimum from ELF symbols. The serialized
+manifest and its identity stay unchanged by compatibility checking. Older
+management runtimes use dictionary equality and may refuse a newer Base; use
+updated management/boot tooling for a Base transition. Existing immutable
+releases and prepared boot entries are not patched in place.
+
+This declaration policy permits independent Base upgrades. It does not replace
+the checks for architecture, state layout, Kernel bounds, account shells and
+available System paths, or prove that arbitrary libc builds/plugins interoperate.
+
 ## Preflight
 
 Before publishing the new image, the builder compares each candidate with its
-private copied installation state. It checks architecture, exact declared Base
-ABI, state-layout version, Ports read and write formats/capabilities, and
+private copied installation state. It checks architecture, declared Base ABI
+requirements, state-layout version, Ports read and write formats/capabilities, and
 persistent accounts' required `/run/mojt-system/` shells. A candidate whose MPM
 cannot read/write the actual shared Ports profile format is rejected.
 The comparison uses installation facts, not the running System's version label.
