@@ -25,7 +25,9 @@ class PreparationTests(unittest.TestCase):
         (self.old/'image/disk.img').write_bytes(b'existing VM must survive')
         self.build = self.root/'base-build'; self.release = self.build/'releases/base-0.2.0-x86_64'
         self.release.mkdir(parents=True)
-        (self.build/'result.json').write_text(json.dumps(dict(format='mojt-base-source-build-v1', release=str(self.release))))
+        (self.build/'result.json').write_text(json.dumps(dict(format='mojt-base-source-build-v1',
+            release=str(self.release), phases=[dict(phase='Build glibc', seconds=90.55),
+                                              dict(phase='Package release', seconds=0.125)])))
         self.kernel = self.root/'kernel.tar.zst'; self.kernel.write_bytes(b'locator fixture; archive reader checks later')
         self.payload = self.root/'system-export'; self.payload.mkdir()
         (self.payload/'system.json').write_text('{"fixture":"metadata locator"}')
@@ -54,6 +56,23 @@ class PreparationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'new nonsymlink'):
             prepare.inputs(self.args)
         self.assertEqual(before, self.snapshot())
+
+    def test_build_report_size_and_object_limits_remain_enforced(self):
+        path = self.build/'result.json'
+        with mock.patch.object(prepare.artifact, 'MAX_METADATA', 64):
+            with self.assertRaisesRegex(ValueError, 'exceeds size limit'):
+                prepare.read_build_result(path)
+        for content in ('[]', '{malformed'):
+            with self.subTest(content=content):
+                path.write_text(content)
+                with self.assertRaises(ValueError):
+                    prepare.read_build_result(path)
+
+    def test_canonical_input_metadata_still_rejects_floats(self):
+        self.seed['unexpected_timing'] = 0.125; self.save()
+        with self.assertRaisesRegex(ValueError, 'no floats/custom types'):
+            prepare.inputs(self.args)
+        self.assertFalse(self.args.output.exists())
 
     def test_saved_verified_flag_cannot_cover_changed_system_inputs(self):
         (self.payload/'system.json').write_text('{"changed":true}')

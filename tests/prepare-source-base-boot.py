@@ -22,6 +22,16 @@ require = shared['require']
 read = artifact.read_json
 
 
+def read_build_result(path):
+    """Build reports contain floating-point timings, unlike canonical metadata."""
+    with path.open('rb') as stream:
+        raw = stream.read(artifact.MAX_METADATA + 1)
+    require(len(raw) <= artifact.MAX_METADATA, 'Base build result exceeds size limit')
+    result = json.loads(raw)
+    require(isinstance(result, dict), 'expected a Base build result object')
+    return result
+
+
 def inputs(args):
     """Saved metadata supplies locators, never commands, output paths or authority."""
     seed = read(args.from_check)
@@ -29,7 +39,7 @@ def inputs(args):
             'expected the saved native-v2 VM input-check.json')
     build = args.base_build.resolve(strict=True)
     require(not (build/'INCOMPLETE').exists(), 'Base build is incomplete')
-    result = read(build/'result.json')
+    result = read_build_result(build/'result.json')
     require(result.get('format') == 'mojt-base-source-build-v1', 'unsupported Base build result')
     release = Path(result['release'])
     require(release.is_absolute() and release == release.resolve(strict=True)
