@@ -280,6 +280,7 @@ def main(argv=None):
     require('/nix/store/' not in cc, 'use a plain native GCC for this first bootstrap')
     implementation = {name:sha(REPO/name) for name in ('tools/mojt-base-build.py', 'tools/mojt-base-pack',
         'bootstrap/tar-acl-2.4.patch', 'bootstrap/licenses/gcc-runtime-exception.txt')}
+    os.umask(0o022)  # Public runtime files; the workspace itself stays private.
     output.mkdir(parents=True, mode=0o700); cache.mkdir(parents=True, exist_ok=True)
     root = output/'rootfs'; root.mkdir(); skeleton(root)
     logs = output/'logs'; logs.mkdir()

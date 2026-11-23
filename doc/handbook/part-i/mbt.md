@@ -25,7 +25,7 @@ From a repository checkout, use `python3 tools/mbt`. Its supported operations ar
 | `mbt package` | A native archive from prepared inputs, or archive verification |
 | `mbt bootstrap` | A fresh image or installation onto explicitly prepared mounted partitions |
 
-Base also has a standalone [source-build script](../../../docs/base-source-build.md)
+Base also has a standalone [source-build script](https://github.com/kjonasipersson-bert/mojt-linux/blob/main/docs/base-source-build.md)
 for a native x86-64 Linux build host. It produces a whole Base release without
 Void/XBPS. It is not yet exposed as `mbt build base` or delivered in installed
 MBT; run it from a repository checkout. Its build output is separate from

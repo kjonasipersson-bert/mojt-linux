@@ -45,12 +45,18 @@ class SourceBuildTests(unittest.TestCase):
     def test_failed_input_leaves_incomplete_workspace_without_a_release(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); output = root/'work'
-            with mock.patch.object(builder.shutil, 'which', return_value='/usr/bin/gcc'), \
-                 mock.patch.object(builder, 'fetch', side_effect=ValueError('bad source')):
-                with self.assertRaisesRegex(ValueError, 'bad source'):
-                    builder.main(['--output', str(output), '--cache', str(root/'cache')])
+            previous = os.umask(0o077)
+            try:
+                with mock.patch.object(builder.shutil, 'which', return_value='/usr/bin/gcc'), \
+                     mock.patch.object(builder, 'fetch', side_effect=ValueError('bad source')):
+                    with self.assertRaisesRegex(ValueError, 'bad source'):
+                        builder.main(['--output', str(output), '--cache', str(root/'cache')])
+            finally:
+                os.umask(previous)
             self.assertTrue((output/'INCOMPLETE').is_file())
             self.assertFalse((output/'releases').exists())
+            self.assertEqual(output.stat().st_mode & 0o777, 0o700)
+            self.assertEqual((output/'rootfs/usr').stat().st_mode & 0o777, 0o755)
 
     def test_nested_upstream_license_texts_are_kept(self):
         with tempfile.TemporaryDirectory() as tmp:
