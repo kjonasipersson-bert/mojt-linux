@@ -14,7 +14,7 @@ interfaces. The [architecture](architecture.md) defines the area boundaries.
 
 | Area | Implemented behavior | Main remaining boundary |
 | --- | --- | --- |
-| Base | Whole-release construction, a standalone pinned source producer, native import/realization/status, exact compatible boot selection and return | Shared table defaults, physical source-Base acceptance and moving-policy upgrades |
+| Base | Whole-release construction, a standalone pinned source producer with shared table defaults, native import/realization/status, exact compatible boot selection and return | Physical source-Base acceptance and moving-policy upgrades |
 | System | Coherent profiles, native composition/component import, live installation with boot preparation, prepared-entry activation and status | General service/runtime-dependency upgrades and state migrations |
 | Kernel | Exact local/source installation, retained origin/modules, preparation/selection/return and pinned LTS/stable builds with a bundled configuration | Moving-policy acquisition and broader hardware coverage |
 | Ports | Parallel versions, independent wishes, atomic profiles, explicit/following activation, history and active-version manuals | Native Port publication, cleanup and broader provider coverage |
@@ -33,9 +33,9 @@ interfaces. The [architecture](architecture.md) defines the area boundaries.
 2. Continue focused usability work and MBT development against the installed
    workflows. Keep activation a bounded atomic choice; construction belongs to
    preparation, and full audits remain explicit.
-3. Deliver Base-owned service/protocol defaults in planned Base 0.2.1, following
-   the [libc/shared runtime contract](libc-contract.md). Complete physical
-   source-Base acceptance and integrate the [producer](base-source-build.md)
+3. Complete physical source-Base acceptance against the
+   [libc/shared runtime contract](libc-contract.md), and integrate the
+   [producer](base-source-build.md)
    and controlled toolchain into MBT. Extend
    pinned source builds to Mojt-owned System components using the existing
    native package format.

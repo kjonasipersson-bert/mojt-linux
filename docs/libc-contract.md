@@ -38,7 +38,7 @@ their conservative Base ABI minimum is not a measured ELF symbol floor. See
 ## 2. Shared service and protocol tables belong to Base
 
 Base is the supplier of the standard text service/protocol databases. The
-planned first delivery is **Base 0.2.1**:
+source producer includes these defaults starting with **Base 0.2.1**:
 
 - Release defaults: `/usr/etc/services` and `/usr/etc/protocols`.
 - Machine-visible configuration: `/etc/services` and `/etc/protocols`.
@@ -131,7 +131,7 @@ explicit verification remains available.
 | --- | --- |
 | Independent Base and retained provider runtimes | Implemented for the current source Base and native System/Ports mechanisms |
 | Base C/C.UTF-8 and System locale default | Implemented; not a promise of richer locales for every historical runtime |
-| Base-owned service/protocol defaults | Decided; targeted for Base 0.2.1, not yet delivered by the current 0.2.0 producer |
+| Base-owned service/protocol defaults | Implemented by the Base 0.2.1 producer under `/usr/etc`; existing missing-default preparation preserves machine copies |
 | Runtime-scoped additional locale data | Decided policy; existing package arrangements can supply it, but general automatic Mojt matching/import/wrapping is not implemented |
 | General pinned Mojt target SDK | Future MBT work; installing a GCC Port does not create it |
 | Reference-aware runtime/data GC | Future work; no collection command is introduced |

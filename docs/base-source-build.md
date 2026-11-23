@@ -38,7 +38,7 @@ Build into a **new** directory outside the checkout:
 python3 -I -B tools/mojt-base-build.py --output "$HOME/mojt-base-result" --jobs 2
 ```
 
-The default release version is `0.2.0`; `--version` selects another dotted Base
+The default release version is `0.2.1`; `--version` selects another dotted Base
 version. `--jobs` controls upstream make parallelism. Use a path containing only
 ordinary letters, numbers, `/`, `.`, `_`, `+` and `-`.
 
@@ -55,7 +55,8 @@ evaluation. Initial source hashes were cross-checked against the recorded
 Nixpkgs source recipes; GNU/Linux projects are built directly, without their
 Nix packaging or Void patches. Dash's upstream archive is fetched from Debian's
 mirror and has the same pinned upstream archive hash. GNU tar carries a small
-reviewed ACL 2.4 name-conflict patch, retained in the repository.
+reviewed ACL 2.4 name-conflict patch, retained in the repository. The IANA table
+archive is pinned separately using its upstream release-asset SHA256.
 
 Build order:
 
@@ -64,7 +65,8 @@ Build order:
    alone does not force the installed Kernel to match it.
 3. Build attr, ACL, libcap, GMP and PCRE2 against that staged runtime.
 4. Build dash, coreutils, grep, sed, findutils, tar and gzip against it.
-5. Add Mojt defaults/licenses, remove build-only inputs and debug sections,
+5. Add Mojt defaults/licenses and the pinned IANA service/protocol tables,
+   remove build-only inputs and debug sections,
    inspect ELF dependencies/script interpreters, and package the Base using the
    existing packer. glibc's ldd uses the Base shell and ordinary English quoting;
    its optional Bash/Perl debugging and timezone-selection scripts are omitted.
@@ -84,12 +86,14 @@ not a new audit performed during normal system boot.
 The intended feature set includes ACL/xattr support, capability-aware coreutils,
 GMP, PCRE grep, and glibc's C/C.UTF-8 baseline. Translated message catalogs,
 compiler/development files, a Kernel, Python, init, PAM, SSH and firmware are not
-Base runtime inputs. This initial producer does not add a CA bundle, complete
-timezone database or IANA service/protocol tables; System's separate CA/TZDIR
-inputs remain unchanged. Standalone data selections can be extended explicitly.
-The [runtime contract](libc-contract.md#2-shared-service-and-protocol-tables-belong-to-base)
-assigns service/protocol tables to Base, with delivery planned for 0.2.1. The
-current producer still defaults to 0.2.0 and does not yet implement that addition.
+Base runtime inputs. Base 0.2.1 includes `iana-etc` 20251215 as plain-text defaults
+under `/usr/etc/services` and `/usr/etc/protocols`, with its source hash and MIT
+notice retained in the release. These tables require no additional runtime
+library. Existing machine copies are preserved; missing copies can be added by
+the normal missing-default preparation described in the
+[runtime contract](libc-contract.md#2-shared-service-and-protocol-tables-belong-to-base).
+The producer does not add a CA bundle or complete timezone database; System's
+separate CA/TZDIR inputs remain unchanged.
 
 ## Runtime and libc ownership
 
@@ -114,7 +118,7 @@ is outside this build command.
 
 The output directory contains:
 
-- `releases/base-0.2.0-x86_64/`: `rootfs.tar.zst`, checksum, manifest and inventory.
+- `releases/base-0.2.1-x86_64/`: `rootfs.tar.zst`, checksum, manifest and inventory.
 - `result.json`: source/compiler provenance, phase durations and release path.
 - `logs/`: configure/build/install/pack logs, one file per phase.
 - `rootfs/`: staged runtime tree; source/object directories remain for diagnosis.

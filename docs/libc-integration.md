@@ -25,7 +25,7 @@ and distinguishes pending delivery from current behavior.
 | `LANG`, `LC_*` and locale data | Base builds C/C.UTF-8 data; Base profile and System environment default empty/unset `LANG` to `C.UTF-8` | The receiving libc must support the selected locale and its data; an inherited `LC_ALL`/`LC_*` can override `LANG` |
 | Timezone data and `/etc/localtime` | System retains tzdata and supplies a default `TZDIR`; the administrator chooses machine timezone state | Programs consult their configured timezone inputs; a copied TZif file is persistent data, while a store symlink remains a reference to one particular output |
 | Certificate trust data | System retains `cacert` and exports `SSL_CERT_FILE`/`NIX_SSL_CERT_FILE` | Programs honoring those settings use that bundle; this is a data/library-specific interface, not a libc loader choice |
-| `/etc/services`, `/etc/protocols` | Base is the decided supplier; current 0.2.0 producer does not explicitly deliver the tables | Planned 0.2.1 defaults under `/usr/etc`, with missing-only installation into `/etc`; consumer/provider overrides remain possible |
+| `/etc/services`, `/etc/protocols` | Base 0.2.1 supplies pinned IANA defaults under `/usr/etc` | Missing-only installation into `/etc` preserves machine copies; consumer/provider overrides remain possible |
 | `/bin/sh` and basic Unix commands | Base; System wrappers/start scripts invoke them before executing provider programs | Process launch and command interfaces join the layers without combining the two processes' libc implementations |
 | Kernel system-call interface | Selected Kernel and its supported features | All runtimes use the same Kernel; retaining a libc object does not supply a different Kernel or establish every program's feature requirements |
 
@@ -75,15 +75,12 @@ run with its own retained libc while still inheriting the machine's `LANG`;
 matching that setting and any required locale data is a separate question from
 which loader starts its compiler.
 
-The source Base does not deliver a CA bundle, full timezone database or IANA
-service/protocol tables. System explicitly supplies the first two. Its role list
-does not select an IANA table package or generate `/etc/services` and
-`/etc/protocols`. Existing persistent files can satisfy that need on a particular
-machine, but they are not supplied by a fresh source Base/System combination.
-The [contract](libc-contract.md#2-shared-service-and-protocol-tables-belong-to-base)
-assigns these tables to Base, with first delivery planned for 0.2.1. This pending
-delivery is not a claim that every current program needs those databases or
-that every lookup has been tested and failed.
+The source Base does not deliver a CA bundle or full timezone database; System
+supplies those inputs. Base 0.2.1 supplies the IANA service/protocol tables as
+plain-text defaults. Fresh initialization or explicit missing-default preparation
+adds `/etc/services` and `/etc/protocols` when absent. Existing copies remain
+persistent machine configuration, as specified by the
+[contract](libc-contract.md#2-shared-service-and-protocol-tables-belong-to-base).
 
 Machine-local timezone selection is independent of selecting code. The
 documented [timezone procedure](system-environment.md) copies a TZif file into
@@ -97,7 +94,7 @@ such references from ELF dependencies alone.
 | Area | Decision and remaining implementation |
 | --- | --- |
 | Richer locales and old provider runtimes | Compatible data follows the consumer when needed; C/POSIX fallback is explicit and scoped. General automatic matching/import remains unimplemented |
-| Service/protocol databases | Base supplies pinned defaults under `/usr/etc`, added to `/etc` only when missing; delivery is planned for 0.2.1 |
+| Service/protocol databases | Implemented in the Base 0.2.1 producer: pinned defaults under `/usr/etc`, added to `/etc` only when missing |
 | External NSS/PAM/application modules | Support is feature-specific; local accounts do not imply arbitrary identity-provider/module support |
 | Compiling for Mojt Base | A target SDK must identify compiler/binutils, headers/startup objects/libc and compiler-runtime inputs; the general MBT interface remains future work |
 | Retention/GC | Retain consumer closures and declared data references; the collector remains future work |

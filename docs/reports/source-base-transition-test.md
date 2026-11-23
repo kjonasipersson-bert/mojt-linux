@@ -29,7 +29,7 @@ TEST=(python3 -I -B tests/prepare-source-base-transition.py
   --output "$HOME/mojt-base-switch-test")
 "${TEST[@]}" --check-inputs
 "${TEST[@]}"
-bash "$HOME/mojt-base-switch-test/run-qemu.sh"
+QEMU_MEMORY_MIB=4096 bash "$HOME/mojt-base-switch-test/run-qemu.sh"
 ```
 
 The paths are examples; `--vm` identifies the image directory containing
@@ -62,7 +62,7 @@ reboot
 The launcher exits on reboot. Start the **same copied VM** again on the host:
 
 ```sh
-bash "$HOME/mojt-base-switch-test/run-qemu.sh"
+QEMU_MEMORY_MIB=4096 bash "$HOME/mojt-base-switch-test/run-qemu.sh"
 ```
 
 Inside Mojt:
@@ -96,5 +96,17 @@ It refuses phases after successful selection; use `after` and `check-back` for
 the actual reboot checks. A passing `stage --dry-run` alone is not preparation
 or boot acceptance.
 
-Record VM results separately from fixture tests. Publishing this procedure does
-not establish successful reboot/return acceptance on the owner's VM.
+## Recorded acceptance: 2026-11-23
+
+The owner completed the Debian-host source build and first VM boot with Base
+0.2.0, glibc 2.44 and retained Kernel 6.12.107-mojt1, with no failed systemd
+units. The copied VM then completed the switch to `0.2.0-test1` and return to
+`0.2.0`: unchanged System/Kernel, account/machine identity and persistent state.
+Both prepared Base entries remained available.
+
+The initial 1 GiB VM ran out of memory while constructing the new early-boot
+payload. Relaunching the same copy with `QEMU_MEMORY_MIB=4096` and running
+`python3 /root/bt.py resume` completed preparation. The launch commands above
+allow that construction headroom; this is not a measured minimum for normal
+Mojt runtime use. This acceptance covers Base 0.2.0 and its marked successor,
+not the added Base 0.2.1 tables or a physical-machine Base update.

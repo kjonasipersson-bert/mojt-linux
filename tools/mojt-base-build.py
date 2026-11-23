@@ -20,6 +20,7 @@ REPO = Path(__file__).resolve().parents[1]
 LOCK = REPO/'bootstrap/base-sources.json'
 ORDER = ('glibc', 'attr', 'acl', 'libcap', 'gmp', 'pcre2', 'dash', 'coreutils',
          'grep', 'sed', 'findutils', 'tar', 'gzip')
+DATA = ('iana-etc',)
 TOOLS = ('gcc', 'make', 'as', 'ld', 'ar', 'ranlib', 'strip', 'gawk', 'bison', 'm4', 'perl',
          'rsync', 'patch', 'pkg-config', 'readelf', 'curl', 'tar', 'zstd', 'xz', 'bzip2')
 FLAGS = {
@@ -48,7 +49,8 @@ def sources(path):
     value = json.loads(Path(path).read_text())
     require(value['format'] == 1 and value['architecture'] == 'x86_64', 'unsupported Base source lock')
     rows = value['sources']
-    require(len(rows) == len(ORDER) + 1 and {r['name'] for r in rows} == {*ORDER, 'linux-headers'}, 'incomplete source set')
+    require(len(rows) == len(ORDER) + len(DATA) + 1
+            and {r['name'] for r in rows} == {*ORDER, *DATA, 'linux-headers'}, 'incomplete source set')
     for row in rows:
         require(re.fullmatch(r'[a-z0-9.-]+', row['version']) and row['url'].startswith('https://')
                 and re.fullmatch(r'[0-9a-f]{64}', row['sha256']), 'invalid pinned source: ' + row['name'])
@@ -108,10 +110,23 @@ def defaults(root):
         path = root/'usr/etc'/name; path.write_text(data); path.chmod(0o600 if name == 'shadow' else 0o644)
 
 
+def network_defaults(root, source):
+    """Pinned plain-text machine defaults, not another runtime dependency."""
+    for name in ('services', 'protocols'):
+        path = source/name; target = root/'usr/etc'/name
+        require(path.is_file() and not path.is_symlink(), 'missing/linked IANA table: ' + name)
+        require(not os.path.lexists(target), 'refuse to replace staged default: ' + name)
+        shutil.copyfile(path, target); target.chmod(0o644)
+
+
 def licenses(root, trees):
     for name, tree in trees.items():
         if name == 'linux-headers':continue
         destination = root/'usr/share/licenses'/name; destination.mkdir(parents=True)
+        if name == 'iana-etc':
+            # The data release omits the project's license; retain its pinned
+            # upstream MIT notice separately, with provenance in the source lock.
+            shutil.copyfile(REPO/'bootstrap/licenses/iana-etc-MIT.txt', destination/'LICENSE')
         for folder in (tree, tree/'doc'):
             if not folder.is_dir():continue
             for path in folder.iterdir():
@@ -256,7 +271,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, default=Path('base-result'))
     parser.add_argument('--cache', type=Path, default=Path.home()/'.cache/mojt/base-sources')
-    parser.add_argument('--version', default='0.2.0')
+    parser.add_argument('--version', default='0.2.1')
     parser.add_argument('--jobs', type=int, default=2)
     parser.add_argument('--offline', action='store_true')
     parser.add_argument('--dry-run', action='store_true')
@@ -267,7 +282,7 @@ def main(argv=None):
     require(not os.path.lexists(args.output), 'output already exists; choose a new private directory: ' + str(args.output))
     output = args.output.resolve(); cache = args.cache.resolve()
     require(re.fullmatch(r'/[A-Za-z0-9_./+-]+', str(output)), 'build output path needs plain shell-safe characters')
-    print(f"Base {args.version}; glibc {rows['glibc']['version']}; {len(ORDER)} source projects + build-only Linux headers")
+    print(f"Base {args.version}; glibc {rows['glibc']['version']}; {len(ORDER)} source projects + build-only Linux headers + IANA tables")
     print('Order: ' + ' -> '.join(ORDER)); print(f'Output: {output}; jobs: {args.jobs}')
     if args.dry_run:
         print('Preview only; no downloads, compiler execution or output writes.'); return
@@ -279,7 +294,7 @@ def main(argv=None):
     # wrapper which injects another libc. Compiler-provider integration is separate.
     require('/nix/store/' not in cc, 'use a plain native GCC for this first bootstrap')
     implementation = {name:sha(REPO/name) for name in ('tools/mojt-base-build.py', 'tools/mojt-base-pack',
-        'bootstrap/tar-acl-2.4.patch', 'bootstrap/licenses/gcc-runtime-exception.txt')}
+        'bootstrap/tar-acl-2.4.patch', 'bootstrap/licenses/gcc-runtime-exception.txt', 'bootstrap/licenses/iana-etc-MIT.txt')}
     os.umask(0o022)  # Public runtime files; the workspace itself stays private.
     output.mkdir(parents=True, mode=0o700); cache.mkdir(parents=True, exist_ok=True)
     root = output/'rootfs'; root.mkdir(); skeleton(root)
@@ -299,7 +314,7 @@ def main(argv=None):
         elapsed = time.monotonic()-start; timings.append(dict(phase=label, seconds=elapsed))
         print(f'{label}: done ({elapsed:.2f} s)', flush=True)
     trees = {}
-    for name in ('linux-headers', *ORDER):
+    for name in ('linux-headers', *ORDER, *DATA):
         print('Source: ' + name, flush=True)
         archive = fetch(rows[name], cache, args.offline)
         trees[name] = unpack(archive, output/('source-' + name))
@@ -308,14 +323,14 @@ def main(argv=None):
     licenses(root, trees)
     provenance = root/'usr/share/mojt'; provenance.mkdir(parents=True)
     shutil.copyfile(LOCK, provenance/'base-sources.json')
-    defaults(root); prune(root)
+    defaults(root); network_defaults(root, trees['iana-etc']); prune(root)
     elf_count = audit(root, output)
     runtime['installed_sha256'] = sha(root/'usr/lib/libgcc_s.so.1')
     config = output/'base.toml'
     config.write_text(f'format=1\n[base]\nname="mojt"\nversion="{args.version}"\narchitecture="x86_64"\n'
         f'[abi]\nlibc="glibc"\nlibc_version="{rows["glibc"]["version"]}"\n[build]\nbackend="source"\n')
     inventory = output/'packages.txt'
-    inventory.write_text(''.join(f'{name} {rows[name]["version"]} sha256:{rows[name]["sha256"]}\n' for name in ORDER)
+    inventory.write_text(''.join(f'{name} {rows[name]["version"]} sha256:{rows[name]["sha256"]}\n' for name in (*ORDER, *DATA))
         + f'bootstrap libgcc_s.so.1 input-sha256:{runtime["input_sha256"]} installed-sha256:{runtime["installed_sha256"]}\n'
         + ''.join(f'producer {name} sha256:{checksum}\n' for name,checksum in implementation.items()))
     run('Pack Base release', [sys.executable, '-I', '-B', REPO/'tools/mojt-base-pack', root, config,
