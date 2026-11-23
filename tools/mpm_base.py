@@ -289,11 +289,13 @@ def prepare(root, body, *, verify_installed=True):
         machine_configuration='unchanged',compatibility='not-evaluated-for-a-deployment'))
 
 
-def install(root, archive, identifier, *, dry_run=False, yes=False, acquisition=None, tar='tar'):
-    io.identifier(identifier);root=target(root,write=True);info=store_info(root)
+def install(root, archive, identifier=None, *, dry_run=False, yes=False, acquisition=None, tar='tar'):
+    if identifier is not None:io.identifier(identifier)
+    else:require(archive is not None and acquisition is None,'an exact artifact ID is required without a local archive')
+    root=target(root,write=True);info=store_info(root)
     acquisition=artifact.parse_json(artifact.canonical(acquisition)) if acquisition is not None else None
     # Exact repeats consume retained bytes, not a vanished original locator.
-    if info and os.path.lexists(object_path(root,identifier)):
+    if identifier is not None and info and os.path.lexists(object_path(root,identifier)):
         body,receipt=object_record(root,identifier,verify=True)
         plan=prepare(root,body)
         if plan['description']['action']=='no-change':
@@ -307,6 +309,7 @@ def install(root, archive, identifier, *, dry_run=False, yes=False, acquisition=
             checksum,size=io.frozen_copy(archive,work/'archive.tar.zst')
             frozen_encoding=dict(sha256=checksum,size=size)
             body=artifact.verify(work/'archive.tar.zst',identifier,max_uncompressed=acquisition['max_expanded'] if acquisition else None)
+            identifier=body['id']
             acceptable(body);io.unpack_regular(work/'archive.tar.zst',body,wrapper)
             io.acquisition_trust(acquisition,identifier,artifact.file_sha(work/'archive.tar.zst'),(work/'archive.tar.zst').stat().st_size)
             inner,_,_=inner_tar(wrapper,body,work)

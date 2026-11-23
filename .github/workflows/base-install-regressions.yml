@@ -66,6 +66,7 @@ jobs:
         run: |
           python3 -B -m unittest discover -s tests -p 'test_mpm_base.py' -v
           sudo env PYTHONPATH=tests python3 -B -m unittest discover -s tests -p 'test_mpm_base.py' -v
+          sudo env PYTHONPATH=tests python3 -B -m unittest test_base_update_flow -v
       - name: Check read-only Base transition evidence and declared compatibility
         run: |
           python3 -B -m unittest discover -s tests -p 'test_mpm_base_transition.py' -v

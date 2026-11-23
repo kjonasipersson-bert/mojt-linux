@@ -30,9 +30,9 @@ those other components. Boot activation selects the next start and leaves
 the running system in place. Persistent `/etc` and `/var` keep their state;
 missing defaults follow the add-missing policy below.
 
-This is the accepted user model, not a claim that MPM Base commands or an
-existing-disk updater are implemented. See the [MPM contract](mpm.md) and
-[generation experiment](boot-generations.md) for the implementation boundary.
+Exact local Base installation, preparation and selection are implemented;
+[the local workflow](base-update-workflow.md) joins them. Finding and acquiring a
+new published release by a moving policy remains future work.
 
 ## Release files
 

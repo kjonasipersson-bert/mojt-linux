@@ -6,11 +6,12 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Exact Base boot staging and selection
 
-Implemented experimental subset, extending the accepted serial native-disk
-Kernel constructor. This does not implement the draft generalized v2 deployment
-protocol or native System installation. It retains the selected measured System
-manifest/generation and exact Kernel. Native System artifact composition remains
-a later integration gate; no substitute identity is invented.
+Explicit Base preparation retains the selected System and exact Kernel.
+Normal live native-v2 installation includes this work; see the
+[Base update workflow](base-update-workflow.md). This page also records the
+legacy native-disk constructor and its explicit context-file interface.
+On native-v2, omitted context means an exact selected-Kernel target constraint,
+not an inherited compatibility range.
 
 ```
 mpm base stage --artifact sha256:FULL_BASE_ID \

@@ -6,10 +6,13 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Exact Base installation and status
 
-[Base installation](mpm-base-contract.md) means retained exact content **and**
-a validated rootfs realization. It changes neither machine configuration nor
-boot selection. [Base staging/selection/return](base-boot-staging.md) operates on
-that installed content as a separate step.
+[Base content installation](mpm-base-contract.md) means retained exact content
+**and** a validated rootfs realization. Normal live `mpm base install` also adds
+missing regular defaults and prepares a boot entry, leaving next boot unchanged.
+`--content-only` and explicit offline targets retain content alone. Local
+`mpm base upgrade --from-file FILE` additionally offers selection for next boot.
+See the [normal Base workflow](base-update-workflow.md). Explicit staging and
+selection remain available as advanced operations.
 
 ## One target and two inputs
 
@@ -36,7 +39,8 @@ meaning as the existing Kernel source input. It holds the accepted source
 binding through cache verification and final installation. Source preview reads
 only frozen metadata, not the payload. Local preview freezes/verifies the wrapper
 and audits the nested rootfs in temporary scratch space, without target writes.
-No implicit refresh, source build, default merge, account setup or boot change.
+No implicit refresh, source build, replacement of existing defaults or account setup occurs.
+The live preparation phase is separate from archive acceptance; dry-run never applies it.
 
 Successful realization requires root to preserve numeric ownership and reviewed
 Unix metadata. Mutation requires administrator authority; read-only status needs
@@ -107,8 +111,10 @@ integrity means verified at installation; `--verify` rechecks retained archives,
 wrapper and rootfs inventory. Unsupported/corrupt required records fail visibly.
 Status creates no store, target, lock or selection and performs no cleanup.
 
-Installation alone does not prepare a selectable boot entry. Use the
-[Base deployment workflow](base-boot-staging.md) with the declared Kernel bounds.
+Content-only installation does not prepare a selectable boot entry. Normal live
+installation includes preparation; [explicit staging](base-boot-staging.md) remains
+available. Native-v2 updates default to the exact selected Kernel as their local
+target constraint; `--base-context` can supply explicit bounds instead.
 Moving-policy acquisition and general lifecycle migrations remain separate work.
 
 ## Validation

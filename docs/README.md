@@ -19,6 +19,7 @@ references describe the implementation and supported limits at this commit:
 - [Base import](base-installation.md) and [Base boot preparation/selection](base-boot-staging.md)
 - [Build an independent Base from source](base-source-build.md)
 - [Libc/shared runtime contract v1 and delivery status](libc-contract.md)
+- [Build and update a local Base](base-update-workflow.md)
 - [Libc runtime ownership and shared boundaries](mpm-libc-policy.md), [System/Base ABI requirements](system-manifest.md#base-abi-requirements) and [optional libc inventory](libc-inventory.md)
 - [Shared libc resources, responsibilities and implementation limits](libc-integration.md)
 - [Native-v2 selection](native-system-selection.md) and [handover](native-system-handover.md)

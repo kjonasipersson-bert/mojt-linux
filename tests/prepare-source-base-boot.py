@@ -56,17 +56,42 @@ def inputs(args):
             'System export record changed since the saved VM input check')
     args.base_release = release; args.kernel_package = kernel_file
     args.expected_kernel = kernel['artifact']; args.system_payload = payload; args.path_file = None
+    update=getattr(args,'update_package',None)
+    if update is not None:
+        require(update.is_file() and not update.is_symlink(),'regular native Base update archive required')
+        body=artifact.verify(update)
+        require(body['kind']=='base' and body['name']=='mojt','update input must be a complete Mojt Base package')
     output = shared['fresh_output'](args.output, (REPO, args.from_check, build, kernel_file, payload))
     return seed, output
 
 
 def bootstrap_command(args, output, packed):
-    return [sys.executable, '-I', '-B', REPO/'tools/mojt_bootstrap.py',
+    command = [sys.executable, '-I', '-B', REPO/'tools/mojt_bootstrap.py',
         '--base-package', output/'base-package'/packed['archive']['file'],
         '--base-artifact', packed['artifact']['id'], '--base-context', output/'base-context.json',
         '--kernel-registry', output/'kernel-registry', '--kernel-artifact', args.expected_kernel,
         '--system-payload', args.system_payload, '--system-generation', 'system-source-base-test',
         '--busybox', args.busybox, '--output', output/'image']
+    if getattr(args,'with_build_tools',False):command.append('--with-build-tools')
+    return command
+
+
+def update_disk(output, package):
+    """Attach one frozen package read-only; the guest uses ordinary MPM."""
+    import mojt_boot
+    data=output/'update-input';data.mkdir()
+    body=artifact.verify(package)
+    frozen=data/'base.tar.zst';shutil.copyfile(package,frozen)
+    require(artifact.verify(frozen)==body,'Base update package changed while copying')
+    disk=output/'update-input.img'
+    with disk.open('xb') as stream:stream.truncate((frozen.stat().st_size//1024**2+32)*1024**2)
+    subprocess.run(['mkfs.ext4','-F','-q','-L','MOJT_BASE_UPDATE','-d',str(data),str(disk)],check=True)
+    disk.chmod(0o400)
+    original=(output/'image/run-qemu.sh').read_text()
+    script=shared['launcher'](original,output/'image',disk)
+    launcher=output/'run-qemu.sh';launcher.write_text(script);launcher.chmod(0o755)
+    subprocess.run(['bash','-n',str(launcher)],check=True)
+    return launcher
 
 
 def main(argv=None):
@@ -75,6 +100,8 @@ def main(argv=None):
     parser.add_argument('--base-build', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--busybox', type=Path, default=Path('/usr/bin/busybox'))
+    parser.add_argument('--with-build-tools',action='store_true',help='include the current MBT frontend and fixed build resources')
+    parser.add_argument('--update-package',type=Path,help='attach this native Base package on a separate read-only input disk')
     parser.add_argument('--check-inputs', action='store_true', help='read/verify inputs without sudo or output writes')
     args = parser.parse_args(argv)
     require(os.geteuid() != 0, 'run as the ordinary Debian user; only new-image assembly invokes sudo')
@@ -114,6 +141,7 @@ def main(argv=None):
             'completed bootstrap differs from requested Base/Kernel')
     launcher = output/'image/run-qemu.sh'
     require(launcher.is_file(), 'completed VM launcher missing')
+    if args.update_package is not None:launcher=update_disk(output,args.update_package)
     (output/'INCOMPLETE').unlink()
     print('READY: '+str(launcher))
     print('One fresh VM; retained System package inputs and exact Kernel. Start it separately.')

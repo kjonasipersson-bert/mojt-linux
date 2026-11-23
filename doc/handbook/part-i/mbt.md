@@ -22,14 +22,16 @@ From a repository checkout, use `python3 tools/mbt`. Its supported operations ar
 | --- | --- |
 | `mbt env` | A private pinned image or Kernel tool environment |
 | `mbt build kernel` | A versioned Kernel and matching modules in a workspace |
+| `mbt build base` | A source-built Base release and native MPM package, with size measurements |
 | `mbt package` | A native archive from prepared inputs, or archive verification |
 | `mbt bootstrap` | A fresh image or installation onto explicitly prepared mounted partitions |
 
-Base also has a standalone [source-build script](https://github.com/kjonasipersson-bert/mojt-linux/blob/main/docs/base-source-build.md)
-for a native x86-64 Linux build host. It produces a whole Base release without
-Void/XBPS. It is not yet exposed as `mbt build base` or delivered in installed
-MBT; run it from a repository checkout. Its build output is separate from
-installation and boot selection.
+`mbt build base --output base-result --jobs 2` builds the pinned Base 0.2.1
+release and a native archive under `base-result/package`. It reports compressed
+and regular-file payload sizes. It requires a plain host GCC and native build
+utilities; the current bootstrap rejects Nix compiler wrappers. Availability in
+MBT does not supply those tools or create a self-hosting toolchain. See the
+[Base build reference](https://github.com/kjonasipersson-bert/mojt-linux/blob/main/docs/base-source-build.md).
 
 For a complete installed-system journey, including background compilation over
 SSH, installation, next-boot selection and return, see

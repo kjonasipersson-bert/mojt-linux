@@ -4,7 +4,8 @@
 """Internal, explicitly authorized missing-default preparation; no install hooks.
 
 This narrow protocol precedes the general saved-plan/lifecycle executor. It is
-not called by install, stage, select, login or a package-supplied executable.
+Live Base install can explicitly authorize missing regular defaults before
+staging. Stage/select/login and package-supplied executables never apply them.
 """
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -131,8 +132,8 @@ def prepare(root, identifier, paths):
     root = base.target(root)
     info = base.store_info(root)
     require(info is not None, 'installed Base store required for defaults')
-    body, receipt = base.object_record(root, identifier, verify=True)
-    realization = base.realization(root, identifier, receipt, verify=True)
+    body, receipt = base.object_record(root, identifier, verify=base.io.preparation_verify())
+    realization = base.realization(root, identifier, receipt, verify=base.io.preparation_verify())
     require(realization is not None, 'verified Base realization required')
     tree = base.realization_path(root, identifier) / 'tree/rootfs'
     require(type(paths) in (list, tuple) and 0 < len(paths) <= MAX_ACTIONS

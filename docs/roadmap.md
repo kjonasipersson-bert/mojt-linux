@@ -20,7 +20,7 @@ interfaces. The [architecture](architecture.md) defines the area boundaries.
 | Ports | Parallel versions, independent wishes, atomic profiles, explicit/following activation, history and active-version manuals | Native Port publication, cleanup and broader provider coverage |
 | Filesystem | Writable persistent root/local storage, immutable selected releases, persistent configuration/data/homes | Explicit incompatible-layout and data/schema migrations |
 | Interaction | Readable running/next/prepared entries, change/reboot previews and phase completion messages | Continued feedback on real administrative workflows |
-| MBT | Private build environments, Kernel build/packaging and fresh native-v2 bootstrap | Integrating the standalone Base producer, native toolchain control and source builds of Mojt-owned System components |
+| MBT | Private build environments, Kernel and source Base build/packaging with size reporting, and fresh native-v2 bootstrap | Native toolchain control and source builds of Mojt-owned System components |
 
 ## Next work for planning
 
@@ -35,8 +35,7 @@ interfaces. The [architecture](architecture.md) defines the area boundaries.
    preparation, and full audits remain explicit.
 3. Complete physical source-Base acceptance against the
    [libc/shared runtime contract](libc-contract.md), and integrate the
-   [producer](base-source-build.md)
-   and controlled toolchain into MBT. Extend
+   [producer](base-source-build.md) with a controlled toolchain in MBT. Extend
    pinned source builds to Mojt-owned System components using the existing
    native package format.
 4. Add scoped retention/GC for accumulated generations and their unreferenced
@@ -56,7 +55,7 @@ when a concrete bottleneck justifies another change.
 - Installed content is not automatically an upgrade wish. Upgrade scope follows
   recorded wishes and explicit requests.
 - Preparation, next-boot selection and running identity stay distinct. Normal
-  live System install includes preparation; Base/Kernel install integration is
+  live System and Base install include preparation; Kernel install integration is
   still separate. Offline/content-only import remains useful.
 - Persistent configuration, databases and local files survive code changes and
   return. Schema rollback is not automatic.

@@ -17,6 +17,7 @@ import tarfile
 import time
 
 REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(REPO/'tools'))
 LOCK = REPO/'bootstrap/base-sources.json'
 ORDER = ('glibc', 'attr', 'acl', 'libcap', 'gmp', 'pcre2', 'dash', 'coreutils',
          'grep', 'sed', 'findutils', 'tar', 'gzip')
@@ -267,8 +268,22 @@ def build_projects(output, root, trees, jobs, environment, cc, run):
     return runtime
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+def release_size(release):
+    """Archive payload bytes, not filesystem allocation or build-workspace size."""
+    image = release/'rootfs.tar.zst';size = dict(compressed_bytes=image.stat().st_size, file_bytes=0, files=0, entries=0)
+    with subprocess.Popen(['zstd','-q','-d','-c','--',str(image)],stdout=subprocess.PIPE) as process:
+        with tarfile.open(fileobj=process.stdout,mode='r|') as archive:
+            for member in archive:
+                size['entries'] += 1
+                if member.isfile():size['file_bytes'] += member.size;size['files'] += 1
+        require(process.wait() == 0,'Base size measurement failed')
+    return size
+
+
+def main(argv=None, *, prog=None):
+    parser = argparse.ArgumentParser(prog=prog,description=__doc__,
+        epilog='Current bootstrap requires plain host GCC; Nix compiler wrappers are not supported. '
+               'Builds do not install or select a Base. Existing output directories are refused.')
     parser.add_argument('--output', type=Path, default=Path('base-result'))
     parser.add_argument('--cache', type=Path, default=Path.home()/'.cache/mojt/base-sources')
     parser.add_argument('--version', default='0.2.1')
@@ -293,7 +308,7 @@ def main(argv=None):
     # This first native bootstrap expects a plain host GCC, not a provider
     # wrapper which injects another libc. Compiler-provider integration is separate.
     require('/nix/store/' not in cc, 'use a plain native GCC for this first bootstrap')
-    implementation = {name:sha(REPO/name) for name in ('tools/mojt-base-build.py', 'tools/mojt-base-pack',
+    implementation = {name:sha(REPO/name) for name in ('tools/mojt-base-build.py', 'tools/mojt-base-pack', 'tools/mojt_artifact.py',
         'bootstrap/tar-acl-2.4.patch', 'bootstrap/licenses/gcc-runtime-exception.txt', 'bootstrap/licenses/iana-etc-MIT.txt')}
     os.umask(0o022)  # Public runtime files; the workspace itself stays private.
     output.mkdir(parents=True, mode=0o700); cache.mkdir(parents=True, exist_ok=True)
@@ -340,9 +355,21 @@ def main(argv=None):
                   compiler_path=cc, compiler_runtime=runtime, elf_files=elf_count, phases=timings,
                   release=str(output/'releases'/f'base-{args.version}-x86_64'),
                   libc_sharing='Independent FHS Base runtime; no substitution of retained Nix runtimes.')
+    release = Path(result['release'])
+    result['size'] = release_size(release)
+    import mojt_artifact as artifact
+    specification,attachments = artifact.base_input(release,1)
+    # A complete native package is the input to the existing MPM installer.
+    # Keep it beside the release rather than modifying that release in place.
+    package = artifact.pack(release,specification,output/'package',attachments,numeric_owner=(0,0))
+    result['package'] = dict(path=str(output/'package'/package['archive']['file']),
+        artifact=package['artifact']['id'],sha256=package['archive']['sha256'],bytes=package['archive']['size'])
     (output/'result.json').write_text(json.dumps(result, indent=2)+'\n')
     (output/'INCOMPLETE').unlink()
     print('READY: ' + result['release'] + '\nPackages only; no installation or boot selection changed.')
+    size=result['size'];print('Base size: %.2f MiB compressed; %.2f MiB file payload; %d regular files' %
+        (size['compressed_bytes']/1024**2,size['file_bytes']/1024**2,size['files']))
+    print('MPM package: '+result['package']['path'])
 
 
 if __name__ == '__main__':

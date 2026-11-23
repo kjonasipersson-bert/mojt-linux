@@ -72,11 +72,19 @@ class FrontendTests(unittest.TestCase):
 
     def test_each_helper_has_scoped_help_without_loading_a_provider(self):
         for args,usage in ((['env','--help'],'mbt env'),(['bootstrap','--help'],'mbt bootstrap'),(['build','kernel','--help'],'mbt build kernel'),
-                           (['package','--help'],'mbt package')):
+                           (['build','base','--help'],'mbt build base'),(['package','--help'],'mbt package')):
             with self.subTest(args=args):
                 result=subprocess.run([sys.executable,'-I','-B',str(REPO/'tools/mbt'),*args],capture_output=True,text=True,
                                       env={'PATH':'/absent','PYTHONPATH':'/untrusted'})
                 self.assertEqual(result.returncode,0,result.stderr);self.assertIn('usage: '+usage,result.stdout)
+
+    def test_real_base_preview_uses_bundled_sources_and_preserves_the_checkout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output=Path(tmp)/'base'
+            result=subprocess.run([sys.executable,'-I','-B',str(REPO/'tools/mbt'),'build','base',
+                '--output',str(output),'--dry-run'],cwd=tmp,capture_output=True,text=True,env={'PATH':'/absent'})
+            self.assertEqual(result.returncode,0,result.stderr)
+            self.assertIn('Base 0.2.1',result.stdout);self.assertFalse(output.exists())
 
 
 class BuilderDeliveryTests(unittest.TestCase):
@@ -113,6 +121,10 @@ class BuilderDeliveryTests(unittest.TestCase):
         installed=[sys.executable,'-I','-B',str(profile/'tools/mbt')]
         result=subprocess.run([*installed,'--help'],cwd=fixture.root,capture_output=True,text=True,env={'PATH':'/absent'})
         self.assertEqual(result.returncode,0,result.stderr)
+        result=subprocess.run([*installed,'build','base','--output',str(fixture.root/'base'),'--dry-run'],
+                              cwd=fixture.root,capture_output=True,text=True,env={'PATH':'/absent'})
+        self.assertEqual(result.returncode,0,result.stderr);self.assertIn('IANA tables',result.stdout)
+        self.assertFalse((fixture.root/'base').exists())
         if not shutil.which('zstd'):return  # Pure delivery/help remains checked without the archive codec.
         source=fixture.root/'package-input';source.mkdir();(source/'marker').write_text('frozen native payload\n')
         spec=fixture.root/'spec.json';shutil.copyfile(REPO/'manifests/artifact-port-example.json',spec)

@@ -21,6 +21,7 @@ for how the code works now.
 - [Source Base producer verification](base-source-producer-test.md)
 - [First source-built Base boot procedure](source-base-first-boot.md)
 - [Source Base switch and return on a copied VM](source-base-transition-test.md)
+- [Local Base 0.2.0 to 0.2.1 update and size observation](base-local-update-test.md)
 
 ## Extracted historical records
 

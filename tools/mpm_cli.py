@@ -135,7 +135,7 @@ def dispatch(args, runtime):
     action = command[1] if len(command) > 1 else None
     if area in ('base','system') and action in (None,'--help','-h'):
         print('usage: mpm '+area+' {install,status,activate,upgrade,stage,select,rollback,search,show,versions} ...')
-        print('install retains content; activate/upgrade --artifact ID selects next boot; --dry-run previews.')
+        print('Live install includes preparation; --content-only retains content. Activate/upgrade selects next boot; --dry-run previews.')
         return 0
     if runtime is not None and os.geteuid() != 0:
         readonly = (command[2:] in (["--help"], ["-h"]) or
@@ -150,6 +150,10 @@ def dispatch(args, runtime):
         if not readonly:
             raise ValueError("shared installation changes require an administrator")
     if area in ('base','system','kernel') and action in ('activate','upgrade','stage','select','rollback'):
+        if area == 'base' and action == 'upgrade' and option(command,'--from-file'):
+            require_codec(runtime,command)
+            from mpm_base_cli import main
+            return main(command[1:],runtime=runtime)
         if roots:raise ValueError('boot operations use --disk-root, not --root')
         from mpm_boot_selection import present
         target = None

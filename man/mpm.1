@@ -52,7 +52,7 @@ selections are separate. An artifact identity from
 .B list --exact
 identifies an installed build; it is not itself an upgrade request.
 .SH BASE CONTENT AND NEXT BOOT
-.BI "base install --from-file " "ARCHIVE --expected-id sha256:FULL_ID"
+.BI "base install --from-file " "ARCHIVE [--expected-id sha256:FULL_ID]"
 retains the verified complete Base and publishes a validated rootfs realization.
 Use --dry-run for a read-only target preview or -y to accept that operation.
 Alternatively use --source NAME with --expected-id and --archive-sha256 HEX;
@@ -61,9 +61,23 @@ Source preview reads metadata only and does not claim rootfs verification.
 .PP
 New System payloads retain GNU tar alongside zstd for the reviewed Base extractor.
 Realization preserves numeric owners, modes, supported links and extended metadata;
-it requires an administrator. No defaults are copied into machine /etc, no state
-is initialized and no current link, boot menu or running content is changed.
+it requires an administrator. With --content-only, no defaults are copied into machine /etc, no state
+is initialized and no current link, boot menu or running content is changed
+by the content-only import. On a live native-v2 installation, normal install
+then adds approved missing regular defaults and prepares a boot entry, leaving
+next boot unchanged. --content-only and explicit offline --disk-root skip that phase.
+Existing machine files are never replaced. Missing account files, directories
+or symlink defaults require separate supported preparation.
 The first subset rejects unsupported required dependencies/requirements.
+.PP
+.BI "base upgrade --from-file " "ARCHIVE [--expected-id sha256:FULL_ID]"
+installs, adds approved missing defaults, prepares and offers next-boot selection
+on the running native-v2 installation. No automatic reboot. A local archive may
+omit --expected-id: ordinary verification derives its identity, not publisher trust.
+Preparation failure retains content and any added defaults; retry the command.
+Without --base-context, native-v2 Base preparation targets only the exact selected
+Kernel upstream version, not an inherited support range. Explicit context bounds
+remain supported. --verify audits retained content during preparation.
 .PP
 .BI "base stage --artifact " "sha256:FULL_ID --base-context FILE"
 verifies installed Base against selected System/Kernel and actual state, then
