@@ -87,5 +87,14 @@ test Base's `/usr/lib` marker, with the same System/Kernel and persistent state.
 The test leaves its checkpoint and markers on this disposable copy. A failure
 stops the driver without automatic reboot, return selection or cleanup.
 
+If content installation succeeded but preparation/selection stopped, keep the
+same VM and checkpoint, update `/root/bt.py` to the matching revised test driver,
+then run `python3 /root/bt.py resume`. This reuses the installed Base, verifies
+existing Kernel bounds, and continues preparation/selection without reinstalling
+or creating new markers. It also works after a reboot into the original Base.
+It refuses phases after successful selection; use `after` and `check-back` for
+the actual reboot checks. A passing `stage --dry-run` alone is not preparation
+or boot acceptance.
+
 Record VM results separately from fixture tests. Publishing this procedure does
 not establish successful reboot/return acceptance on the owner's VM.

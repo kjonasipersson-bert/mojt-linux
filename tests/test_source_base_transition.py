@@ -129,6 +129,41 @@ class DeliveryTests(unittest.TestCase):
 
 
 class GuestTests(unittest.TestCase):
+    def test_resume_retries_preparation_without_reinstalling_or_replacing_bounds(self):
+        import mpm_boot_status
+        original=fixtures.bound(fixtures.fixture());candidate='sha256:'+'9'*64
+        state=dict(phase='started',original=original,candidate=candidate,initial_boot='older-boot')
+        plan=dict(candidate=candidate,release='0.2.0-test1')
+        old=mpm_boot_status.description(original)
+        bounds=dict(format=fixtures.catalog.BASE_FORMAT,base=dict(artifact=candidate,release=plan['release']),
+            platform=old['platform'],kernel_min=old['kernel']['upstream'],kernel_max=old['kernel']['upstream'])
+        with tempfile.TemporaryDirectory() as temporary,\
+             mock.patch.object(guest,'LAB',Path(temporary)),\
+             mock.patch.object(guest,'status',mpm_boot_status,create=True),\
+             mock.patch.object(guest,'catalog',fixtures.catalog,create=True),\
+             mock.patch.object(guest,'artifact',fixtures.artifact,create=True),\
+             mock.patch.object(guest,'io_native',fixtures.io,create=True),\
+             mock.patch.object(guest,'transaction',fixtures.tx,create=True),\
+             mock.patch.object(guest,'running',return_value=original),\
+             mock.patch.object(guest,'boot_id',return_value='resumed-boot'),\
+             mock.patch.object(guest,'check'),mock.patch.object(guest,'select') as select,\
+             mock.patch.object(guest,'call') as call:
+            path=Path(temporary)/'bounds.json';fixtures.io.write_json(path,bounds);before=path.stat()
+            call.side_effect=ValueError('injected preparation failure')
+            with self.assertRaisesRegex(ValueError,'preparation failure'):guest.resume(state,plan)
+            self.assertEqual(state['phase'],'started');select.assert_not_called()
+            call.side_effect=None;call.return_value=dict(selected=original['id'],deployment='sha256:'+'8'*64)
+            guest.resume(state,plan)
+            self.assertEqual(state['phase'],'selected');self.assertEqual(state['initial_boot'],'resumed-boot')
+            self.assertEqual(path.stat().st_ino,before.st_ino)
+            self.assertEqual(host.read(path),bounds)
+            self.assertTrue(all(c.args[:2]==('base','stage') for c in call.call_args_list))
+            select.assert_called_once_with('sha256:'+'8'*64,original['id'])
+            call.reset_mock();guest.resume(dict(state,phase='staged'),plan)
+            call.assert_not_called()  # A completed preparation needs only selection.
+            with self.assertRaisesRegex(ValueError,'started/staged'):
+                guest.resume(dict(state,phase='return-selected'),plan)
+
     def test_calls_use_the_installed_mpm_and_checkpoint_can_be_updated(self):
         with mock.patch.object(guest.subprocess,'run',return_value=subprocess.CompletedProcess([],0,'{"changed":true}','')) as run:
             self.assertTrue(guest.call('base','status')['changed'])

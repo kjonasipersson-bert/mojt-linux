@@ -81,8 +81,30 @@ def select(deployment,expected):
     require(chosen['state']=='known' and chosen['record']['id']==deployment,'next boot was not selected')
 
 
+def resume(state,plan):
+    require(state['phase'] in ('started','staged'),'resume needs started/staged checkpoint; phase: '+state['phase'])
+    current=running();require(current==state['original'],'resume needs the original running deployment')
+    check(state,plan,candidate=False)
+    if state['phase']=='started':
+        old=status.description(current)
+        bounds=dict(format=catalog.BASE_FORMAT,base=dict(artifact=plan['candidate'],release=plan['release']),
+            platform=old['platform'],kernel_min=old['kernel']['upstream'],kernel_max=old['kernel']['upstream'])
+        catalog.base_context(bounds);path=LAB/'bounds.json'
+        if path.exists():require(artifact.read_json(path)==bounds,'saved Kernel bounds differ')
+        else:io_native.write_json(path,bounds)
+        print('Prepare the installed Base for boot...',flush=True)
+        staged=call('base','stage','--artifact',plan['candidate'],'--base-context',str(path),'-y')
+        require(staged['selected']==current['id'] and running()==current,'staging changed selection or running')
+        check(state,plan,candidate=False)
+        state.update(phase='staged',deployment=staged['deployment']);checkpoint(state)
+    state['initial_boot']=boot_id();checkpoint(state)
+    print('Select the prepared Base for next boot...',flush=True)
+    select(state['deployment'],current['id']);state['phase']='selected';checkpoint(state)
+    print('PASS: marked Base prepared; only next boot changed. Reboot, then run: python3 /root/bt.py after')
+
+
 def start(plan):
-    require(not LAB.exists(),'test already started; preserve its checkpoint')
+    require(not LAB.exists(),'test already started; use resume to continue its checkpoint')
     current=running();old=status.description(current)
     require(current==plan['original'] and old['base']['release']=='0.2.0','start from the copied source Base 0.2.0 VM')
     require(not os.path.lexists(plan['marker']),'Base test marker already exists')
@@ -96,21 +118,14 @@ def start(plan):
     state=dict(format=FORMAT,phase='started',original=current,candidate=plan['candidate'],token=token,
         markers=markers,fingerprint=fingerprint(),initial_boot=boot_id())
     checkpoint(state);check(state,plan,candidate=False)
+    print('Install Base content...',flush=True)
     call('base','install','--from-file',str(archive),'--expected-id',plan['candidate'],'-y')
-    bounds=dict(format=catalog.BASE_FORMAT,base=dict(artifact=plan['candidate'],release=plan['release']),
-        platform=old['platform'],kernel_min=old['kernel']['upstream'],kernel_max=old['kernel']['upstream'])
-    catalog.base_context(bounds);io_native.write_json(LAB/'bounds.json',bounds)
-    staged=call('base','stage','--artifact',plan['candidate'],'--base-context',str(LAB/'bounds.json'),'-y')
-    require(staged['selected']==current['id'] and running()==current,'installation/staging changed selection or running')
-    check(state,plan,candidate=False)
-    state.update(phase='staged',deployment=staged['deployment']);checkpoint(state)
-    select(state['deployment'],current['id']);state['phase']='selected';checkpoint(state)
-    print('PASS: marked Base prepared; only next boot changed. Reboot, then run: python3 /root/bt.py after')
+    resume(state,plan)
 
 
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action',choices=('start','after','check-back'))
+    parser.add_argument('action',choices=('start','resume','after','check-back'))
     args=parser.parse_args(argv);require(os.geteuid()==0,'run as root inside the disposable copied Mojt VM')
     if not os.path.ismount(INPUTS):
         INPUTS.mkdir(parents=True,exist_ok=True)
@@ -127,16 +142,19 @@ def main(argv=None):
         state=artifact.read_json(LAB/'state.json')
         require(state['format']==FORMAT and state['candidate']==plan['candidate']
                 and state['original']==plan['original'],'test checkpoint/input disk differs')
-        if args.action=='after':
-            require(state['phase']=='selected' and boot_id()!=state['initial_boot'],'after requires a real candidate boot')
+        if args.action=='resume':resume(state,plan)
+        elif args.action=='after':
+            require(state['phase']=='selected','candidate not selected; phase: '+state['phase']+' (use resume after interrupted preparation)')
+            require(boot_id()!=state['initial_boot'],'reboot into the candidate before after')
             check(state,plan,candidate=True)
             state['candidate_boot']=boot_id();checkpoint(state)
             select(state['original']['id'],state['deployment']);state['phase']='return-selected';checkpoint(state)
             print('PASS: marked Base running; same System/Kernel and state. Original Base now selected.')
             print('Reboot, then run: python3 /root/bt.py check-back')
         else:
-            require(state['phase'] in ('return-selected','complete') and boot_id()!=state['candidate_boot'],
-                    'check-back requires a real return boot')
+            require(state['phase'] in ('return-selected','complete'),
+                    'return not selected; phase: '+state['phase']+' (run after on the candidate, or resume interrupted preparation)')
+            require(boot_id()!=state['candidate_boot'],'reboot into the original Base before check-back')
             check(state,plan,candidate=False);state['phase']='complete';checkpoint(state)
             print('PASS: own Base switched in and out; System/Kernel and persistent state preserved.')
 
