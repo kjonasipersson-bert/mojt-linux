@@ -129,3 +129,5 @@ build epoch do not by themselves establish byte-identical reproducibility.
 Building a release is not boot acceptance. First verify the producer output,
 then use a separate explicit VM installation/boot test with retained recovery
 content before changing an existing machine's Base.
+The [first-boot procedure](reports/source-base-first-boot.md) reuses a saved
+System export and Kernel in one separately constructed native-v2 VM.
