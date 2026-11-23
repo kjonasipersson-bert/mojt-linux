@@ -36,6 +36,9 @@ supported persistent-state formats can impose additional requirements.
 The [libc runtime map](mpm-libc-policy.md) describes Base and retained provider
 ownership, the distinction between compiler and target runtimes, and shared
 configuration/module boundaries.
+The [integration resource map](libc-integration.md) distinguishes machine-owned
+configuration, System services, runtime-owned modules/data and future SDK/GC
+requirements.
 
 Exact boot references record repeatable **choices**, not a dependency on exactly
 those release versions. Preparation constructs a requested supported combination;

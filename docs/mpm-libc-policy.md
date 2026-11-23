@@ -69,6 +69,9 @@ normal-install compatibility scan.
 
 ## Shared configuration and module boundaries
 
+The [resource/responsibility map](libc-integration.md) records concrete shared
+inputs, their current suppliers and the remaining integration decisions.
+
 Separate executable/library references do not make separate host environments.
 The following are integration boundaries, not evidence that two libc objects
 are linked into the same process:
