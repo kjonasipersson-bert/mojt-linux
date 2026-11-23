@@ -11,6 +11,8 @@ Reviewed 2026-11-23, using Mojt runtime sources from
 [saved 29-package inventory](base-content-inventory.md#2-observed-bootstrap-package-inventory).
 This is a design/evidence report, not an implemented build interface or a claim
 that a new Base has booted with an existing System.
+The standalone [source producer](../base-source-build.md) implements the initial
+native-host build path separately from this preliminary review.
 
 ## Result
 

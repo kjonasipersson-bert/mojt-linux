@@ -114,6 +114,23 @@ class PreparationTests(Fixture):
         self.assertEqual(self.destination().read_bytes(), b'edited later\n')
         self.assertEqual(state['observed'][0]['sha256'], hashlib.sha256(b'edited later\n').hexdigest())
 
+    def test_network_table_defaults_add_missing_protocols_and_preserve_local_services(self):
+        archive, body = self.package(version='0.2.1', extra=[
+            entry('usr/etc/services', b'https 443/tcp\n', mode=0o644),
+            entry('usr/etc/protocols', b'tcp 6 TCP\n', mode=0o644)])
+        base.install(self.root, archive, body['id'], yes=True)
+        services = self.root/'state/etc/services'
+        services.write_bytes(b'local-service 12345/tcp\n');services.chmod(0o600)
+        before = services.stat()
+        plan = defaults.prepare(self.root, body['id'], ['services', 'protocols'])
+        self.assertTrue(defaults.initialize(self.root, plan, yes=True)['changed'])
+        self.assertEqual(services.read_bytes(), b'local-service 12345/tcp\n')
+        self.assertEqual((services.stat().st_ino, stat.S_IMODE(services.stat().st_mode)), (before.st_ino, 0o600))
+        protocols = self.root/'state/etc/protocols'
+        self.assertEqual(protocols.read_bytes(), b'tcp 6 TCP\n')
+        self.assertEqual((protocols.stat().st_uid, stat.S_IMODE(protocols.stat().st_mode)), (0, 0o644))
+        self.assertFalse(defaults.initialize(self.root, plan, yes=True)['changed'])
+
     def test_source_mode_retained_without_umask_dependency(self):
         archive, body = self.package(extra=[entry('usr/etc/private.conf', b'private\n', mode=0o600)])
         base.install(self.root, archive, body['id'], yes=True)

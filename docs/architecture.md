@@ -33,6 +33,15 @@ A retained provider closure with its own libc does not acquire that Base-libc
 dependency merely by belonging to System. Kernel capabilities, modules and
 supported persistent-state formats can impose additional requirements.
 
+The [libc runtime map](mpm-libc-policy.md) describes Base and retained provider
+ownership, the distinction between compiler and target runtimes, and shared
+configuration/module boundaries.
+The [version 1 runtime contract](libc-contract.md) defines the decided ownership,
+locale/data and retention requirements, with pending implementation marked.
+The [integration resource map](libc-integration.md) distinguishes machine-owned
+configuration, System services, runtime-owned modules/data and future SDK/GC
+requirements.
+
 Exact boot references record repeatable **choices**, not a dependency on exactly
 those release versions. Preparation constructs a requested supported combination;
 it does not build every possible cross-product of retained releases. Unsatisfied

@@ -118,7 +118,7 @@ may require exact-build matches, feature checks, or narrower constraints.
 A declared `provides` is not a substitute for checking the actual ABI.
 For a Nix executable, a libc already supplied by its exact closure is not an
 unresolved dependency on Base's libc version. External module/host boundaries
-still require checks; see the [mixed-libc proposal](mpm-libc-policy.md).
+need explicit integration contracts; see [libc runtime ownership](mpm-libc-policy.md).
 
 ## 2. Operations
 

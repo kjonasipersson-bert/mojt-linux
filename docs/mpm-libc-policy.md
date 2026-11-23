@@ -4,150 +4,115 @@ Copyright (C) 2026 Jonas Persson
 SPDX-License-Identifier: GPL-2.0-only
 -->
 
-# MPM libc and mixed Nix closures — proposal 1
+# Libc runtime ownership
 
-Proposed 2026-10-27; companion to the [selector/catalog contract](mpm-selectors.md).
-Facts below describe the backend; the numbered rules are proposed Mojt policy.
-**Deferred:** per the owner's 2026-10-27 direction, selector implementation does
-not actively solve libc coexistence or desktop integration. Keep these risks
-visible and preserve exact opaque dependency identities. The runtime tests
-below are future libc/integration work, not evidence claimed by the pure parser
-or a prerequisite for this read-only resolver increment.
-No loader changes, dependency substitutions or new compatibility enforcement
-are implemented by this documentation change.
+The [libc/shared runtime contract, version 1](libc-contract.md) defines the
+decided requirements and their implementation status. This page describes the
+current mechanisms and runtime map.
 
-## Why several glibc versions are expected
+Base, System and Ports have independent runtime ownership. Mojt does not select
+one machine-wide active glibc for all programs. The source-built Base and the
+retained Nix objects can contain different glibc builds, including different
+builds with the same upstream version number.
 
-Normal Nixpkgs Linux executables use store-specific linker/library references.
-Nix retains runtime output closures, rather than requiring one machine-wide
-library version. Base's Void-derived libc and different Nix libc objects can
-therefore coexist. Different applications, helper subprocesses and System
-generations may use different objects without selecting a global active glibc.
+## The current runtime map
 
-A transitive closure may contain multiple libc objects; that does not mean one
-ELF process loads all of them. A launcher can start another program with its
-own loader. Store references are not process isolation: kernel, configuration,
-users, service protocols and some dynamically discovered modules remain shared.
+| Consumer | Loader/libc ownership | What identifies it |
+| --- | --- | --- |
+| Native programs in source Base 0.2.0 | Mojt-built glibc 2.44 under `/usr/lib`, exposed through the standard x86-64 loader paths | Whole Base artifact and its source/build provenance |
+| Nix-provided System executables | Exact provider loader and libraries retained with their respective programs | Imported output identities, references and ELF interpreter/library paths |
+| Nix-provided Ports executables | The same mechanism, independently for each installed application/toolchain build | Exact application artifact and retained provider closure |
+| Static BusyBox in early/final boot | Self-contained executable, supplied separately from Base | Retained boot/System input; no external glibc |
 
-**For Mojt:** a newer Nix glibc normally avoids requiring a Base glibc replacement
-for an otherwise supported Nix executable. It does not establish that every
-Nix package works on an older Base or Kernel.
+The [Base producer](base-source-build.md) builds its Unix programs and supporting
+libraries against its own staged runtime, and rejects accidental runtime
+references to Nix or the build workspace. Its initial `libgcc_s.so.1` is an
+explicit bootstrap binary input, recorded separately from glibc source inputs.
+The Base runtime does not contain a compiler SDK or libc development headers.
 
-## Proposed policy
+For an exact dynamic ELF executable, its declared interpreter and library search
+references determine normal loader resolution under its configured environment.
+The Nix package origin alone does not identify a universal libc version. A
+closure can contain multiple libc objects for different executables, and shell
+wrappers can launch programs with their own runtime references.
 
-1. **Freeze the real runtime.** An artifact records its backend output/NAR
-   identity and transitive references. Where audited, record ELF interpreter,
-   runtime libc object(s) and validation evidence. Do not reduce identity to
-   app version plus a glibc version string: patches/build options matter too.
-   Do not infer an application's libc from whichever getconf/ldd is on PATH.
+Changing Base does not relink retained Nix programs or redirect their loader.
+Conversely, installing another libc as a Port does not repair programs which
+still reference an older object. Their consumer artifacts must change. Provider
+dependencies stay retained with their consumers; cleanup cannot choose one libc
+by newest version and remove the others.
 
-2. **No global substitution.** Do not overwrite Base's libc/loader, create a
-   machine-wide symlink to the newest Nix libc, rewrite ELF interpreters on
-   activation, or merge libraries into a shared search directory. A Ports
-   glibc import cannot alter System service execution or Base ABI ownership.
+This map describes the runtime ownership model. Exact store hashes belong to
+the selected artifacts and installation records; they are not distribution-wide
+constants. Optional [ELF/process inventory](libc-inventory.md) can investigate an
+unknown reference or a suspected runtime problem. Repeating live process maps
+is not required for every unchanged imported program or Base selection.
 
-3. **Controlled integration, not arbitrary in-process mixing.** Plugins,
-   Python native extensions, PAM/NSS modules and graphics drivers are loaded
-   into a host process and need a compatible runtime/ABI arrangement.
-   Nix-store coexistence alone does not prove that arrangement. Preserve the
-   package's declared module environment and audit external module boundaries.
-   Sharing an IPC protocol or starting another executable is a separate boundary;
-   it still needs protocol/configuration checks, but does not itself link the
-   two processes' libc objects into one ELF process.
+## An older compiler is two different runtime questions
 
-4. **No global library-path fix.** Mojt profiles do not set a universal
-   LD_LIBRARY_PATH or LD_PRELOAD to combine Base/System/Ports libraries.
-   Do not add global GCONV_PATH or LOCPATH as a workaround either.
-   Necessary application-specific wrappers must declare and retain their exact
-   references and be tested; record diagnostic environment overrides separately.
-   Existing inherited user settings are not proof of a clean-runtime result.
+A request for an older GCC release selects a package release from the configured
+catalog; the exact accepted provider build determines its dependencies. GCC's
+version number alone does not fix a glibc version, and an old GCC build can have
+a different runtime from the current Base without replacing Base.
 
-5. **Locales must match the consumer.** Nixpkgs documents different locale archive
-   formats and its LOCALE_ARCHIVE patch. Do not promise that one global archive
-   works with every libc object. Keep the tested C.UTF-8 baseline; richer locale
-   support needs compatible, closure-owned data and per-application handling
-   where necessary. Test both libc families. LANG/LC_* choosing a locale does
-   not supply or verify its binary data. Locale/collation changes can also affect
-   application data such as database indexes; switching executables is not a
-   data-format rollback.
+Distinguish:
 
-6. **Audit shared identity/configuration services.** /etc/passwd, group, resolver
-   and nsswitch configuration are shared state. An NSS module selected there
-   can be dynamically loaded into programs using different libc builds.
-   Initially verify local files/DNS behavior for each tested runtime, including
-   non-root lookup, and do not add a global NSS/PAM module merely because its
-   executable works. In particular, an older Base process must not accidentally
-   consume a Nix module requiring an incompatible newer libc ABI.
+1. **Running the compiler:** GCC and its helper programs use their retained
+   executable/library references, just as other Ports do.
+2. **Running its output:** the linked program uses the target headers, startup
+   objects, libc, compiler runtime libraries and loader selected by the complete
+   build toolchain. Compiler configuration, Nix wrappers, sysroot and link flags
+   participate in that selection.
 
-7. **Check the actual host boundary.** Record declared platform, CPU and kernel/
-   feature requirements plus verified/incompatible/unknown status. Reject known
-   incompatibility without changing another area. Unknown requirements must
-   remain visible; an ELF ABI note or a libc version alone is not complete proof.
-   How to enforce experimental versus production unknown-capability policy is
-   separate work, not an extra approval mechanism added by this proposal.
+Installing GCC does not itself promise that its output targets Mojt Base's libc.
+The existing Base producer deliberately uses a plain native GCC with an explicit
+staged target sysroot instead of assuming that a Nix compiler wrapper targets
+Base. A general selectable Mojt SDK/toolchain contract remains future MBT work;
+this document introduces no new compiler selector, automatic retargeting or
+normal-install compatibility scan.
 
-8. **Security repair follows consumers.** Importing a patched glibc beside an old
-   one leaves old consumers on their old runtime. A selected catalog can prefer
-   a replacement application build with a different dependency closure even
-   when its upstream release is unchanged. Propose that as an artifact/closure
-   upgrade for following requests. Keep exact artifact locks unchanged; report
-   affected pins and available repair targets without calling them patched.
-   System repairs publish a new System generation; Base repairs use a new Base
-   release. Dependency reuse never merges those activation scopes.
+## Shared configuration and module boundaries
 
-9. **Retain until all references are released.** Installed artifacts, retained
-   deployments and future project locks protect their complete closures.
-   A retained old libc still takes disk space and may remain vulnerable.
-   GC cannot choose a single newest libc and delete others by name/version.
-   Running-process safety and store-root release need a separate GC design;
-   a live memory mapping alone is not assumed to be a sufficient store root.
+The [resource/responsibility map](libc-integration.md) records concrete shared
+inputs, their current suppliers and the remaining integration decisions.
 
-## Worked dependency-only replacement
+Separate executable/library references do not make separate host environments.
+The following are integration boundaries, not evidence that two libc objects
+are linked into the same process:
 
-Illustrative catalog records, not measured glibc versions from the hello test:
+| Boundary | Shared input or interaction | Mojt's present arrangement |
+| --- | --- | --- |
+| Host/user lookup | `/etc/nsswitch.conf`, `/etc/hosts`, resolver configuration and account databases | Persistent machine files; account setup requires local NSS `files` entries |
+| Authentication/modules | PAM configuration selects code loaded into the login process | System supplies explicit `/run/mojt-system/pam/` module paths; Base supplies no PAM runtime |
+| Locale selection/data | `LANG`/`LC_*` select behavior; libc locates its supported locale data | Base supplies C/C.UTF-8 data; System defaults unset `LANG` to `C.UTF-8` |
+| Time and TLS data | Programs consult configured timezone and certificate paths | System exports its retained `TZDIR` and certificate references |
 
-| Artifact | Application release | Runtime | Role |
-| --- | --- | --- | --- |
-| A | hello 2.12.3 | libc object L1 | Retained exact pin or old installed build |
-| B | hello 2.12.3 | patched/rebuilt libc object L2 | Explicitly preferred build in a new view |
+Configured external NSS services, PAM modules and application plugins need a
+compatible arrangement for the process loading them. They are different from
+starting a separate executable. Mere presence in a shared directory is not a
+module compatibility contract. Mojt does not merge the runtimes with a global
+`LD_LIBRARY_PATH`, `LD_PRELOAD`, `LOCPATH` or `GCONV_PATH`.
 
-A and B must have distinct artifact/closure records when their exact runtime
-references differ. Approved upgrade may move a following request A -> B without
-changing its release selector. An exact request or exact active artifact remains
-on A. System's reference to L1 remains until a System operation changes its
-own composition. The Nix store can reuse identical dependencies across all of
-these consumers without merging their policies.
+DNS and C.UTF-8 are useful small diagnostic examples when these boundaries
+change, not mandatory tests for every Nix import. A libc-based hostname lookup
+can check the resolver/NSS configuration used by that consumer. A direct DNS
+query tool need not exercise that path. DNS success is not a general ELF ABI
+guarantee; network failure alone does not establish a libc problem.
 
-The owner already tested real hello 2.12.1 -> 2.12.3, exact recovery and VM A/B/A.
-Those tests did not capture interpreter/libc identities and do not establish
-this same-release/different-libc scenario.
+C.UTF-8 is relevant because it is the delivered default when the user has not
+chosen another locale. Acceptance can check that an affected runtime supports
+that setting. This neither establishes identical collation between runtimes nor
+proves that every retained glibc can read one common binary locale archive.
+Nixpkgs documents consumer-dependent locale data on non-NixOS hosts. Broader
+locale/module support requires a separate, explicit contract. These checks
+belong to focused build/release acceptance or diagnosis, not the ordinary
+installation/activation path.
 
-## Evidence required for the next runtime test
+## References
 
-- Two real consumers backed by different measured libc objects, with source
-  pins, output paths, NAR hashes and complete output closures retained.
-- Read-only ELF interpreter/needed-library inspection and trusted-program
-  execution under a recorded clean environment; distinguish build metadata
-  from the objects actually loaded. Preserve diagnostic loader output.
-- Simultaneous availability and execution after following upgrade and exact
-  recovery; byte-for-byte identical pinned artifact/reference records.
-- Identity/group lookup, DNS/HTTPS, C.UTF-8 and separately provisioned richer
-  locales; then an explicit compatible module/plugin integration case.
-- A same-release replacement case where closure/artifact changes; if binary
-  substitutes do not provide one, record that gap rather than invent a rebuild
-  or trigger an unapproved source build.
-- The next VM round checks these alongside retained System/Base choices and
-  kernel compatibility. Destructive GC and arbitrary plugin mixing are not
-  part of this acceptance test.
-
-## Primary sources checked
-
-- [Nix 2.35 output closures and store addressing](https://nix.dev/manual/nix/2.35/glossary).
-- [Nixpkgs purity and toolchain](https://nixos.org/manual/nixpkgs/unstable/#chap-stdenv).
-- [Nixpkgs locales and LOCALE_ARCHIVE](https://nixos.org/manual/nixpkgs/unstable/#locales).
-- [GNU libc dynamic linker hardening](https://sourceware.org/glibc/manual/2.43/html_node/Dynamic-Linker-Hardening.html).
-- [GNU libc NSS services](https://sourceware.org/glibc/manual/2.43/html_node/Adding-another-Service-to-NSS.html).
-- [GNU libc locale names/data](https://sourceware.org/glibc/manual/2.43/html_node/Locale-Names.html).
-
-Backend behavior supports coexistence; it is not an upstream guarantee of Mojt
-host integration. The rules and tests above are Mojt's proposed consequences.
+- [System/Base ABI requirements](system-manifest.md#base-abi-requirements)
+- [GNU libc NSS configuration](https://sourceware.org/glibc/manual/2.44/html_node/NSS-Configuration-File.html)
+- [GNU libc locale names/data](https://sourceware.org/glibc/manual/2.44/html_node/Locale-Names.html)
+- [Nixpkgs locales and toolchain wrappers](https://nixos.org/manual/nixpkgs/unstable/)
+- [GCC directory/sysroot options](https://gcc.gnu.org/onlinedocs/gcc/Directory-Options.html)
+- [Historical mixed-libc policy proposal](reports/libc-policy-proposal-2026-10.md)

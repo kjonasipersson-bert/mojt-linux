@@ -6,6 +6,12 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Read-only libc inventory
 
+This is an optional diagnostic for an unknown reference or a concrete runtime
+problem. The [runtime ownership map](mpm-libc-policy.md) describes normal Base,
+System and Ports linkage; unchanged Nix imports do not require a fresh process
+inventory. Its DNS and locale probes exercise selected shared configuration/data
+boundaries, not a general proof of libc ABI compatibility.
+
 Run `tools/mojt-libc-inventory.py` **inside the running Mojt guest**, not on its
 Debian host. An older VM is useful: the report identifies its Base, System and
 Kernel. Its observations apply to those versions, not automatically to another

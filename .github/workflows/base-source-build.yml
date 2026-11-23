@@ -1,0 +1,56 @@
+# Mojt Linux
+# Copyright (C) 2026 Jonas Persson
+# SPDX-License-Identifier: GPL-2.0-only
+name: Source Base build
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'tools/mojt-base-build.py'
+      - 'tools/mojt-base-pack'
+      - 'bootstrap/base-sources.json'
+      - 'bootstrap/tar-acl-2.4.patch'
+      - 'bootstrap/licenses/**'
+      - '.github/workflows/base-source-build.yml'
+
+jobs:
+  source-base:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native bootstrap tools
+        run: sudo apt-get update && sudo apt-get install -y build-essential python3 gawk bison m4 perl rsync patch pkg-config binutils curl zstd xz-utils bzip2 gettext texinfo
+      - name: Check producer boundaries
+        run: python3 -B -m unittest discover -s tests -p 'test_base_source_build.py' -v
+      - name: Compile and package a private Base as the ordinary runner
+        run: python3 -I -B tools/mojt-base-build.py --output "$RUNNER_TEMP/base-build" --cache "$RUNNER_TEMP/base-sources" --jobs 2
+      - name: Exercise packaged libc, shell, Unix features and local identity
+        run: |
+          mkdir "$RUNNER_TEMP/base-smoke"
+          tar --zstd -xf "$RUNNER_TEMP/base-build/releases/base-0.2.1-x86_64/rootfs.tar.zst" -C "$RUNNER_TEMP/base-smoke"
+          cp -a "$RUNNER_TEMP/base-smoke/usr/etc/." "$RUNNER_TEMP/base-smoke/etc/"
+          sudo chroot "$RUNNER_TEMP/base-smoke" /bin/sh -ec '
+            test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.44"
+            LC_ALL=C.UTF-8 locale charmap | grep -x UTF-8
+            getent passwd root
+            getent hosts localhost
+            getent services https/tcp | grep -E "[[:space:]]443/tcp([[:space:]]|$)"
+            getent protocols tcp | grep -E "[[:space:]]6([[:space:]]|$)"
+            test -f /usr/share/licenses/iana-etc/LICENSE
+            printf "abc\n" | grep -P "a.c"
+            printf "z\na\n" | sort | grep -x a
+            printf "Mojt\n" | gzip | gzip -d | grep -x Mojt
+            tar --help | grep -- --acls
+            ldd /usr/bin/ls | grep libc.so.6
+          '
+      - name: Retain release, provenance and failure logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-base
+          path: |
+            ${{ runner.temp }}/base-build/releases/
+            ${{ runner.temp }}/base-build/result.json
+            ${{ runner.temp }}/base-build/logs/

@@ -1,0 +1,102 @@
+{
+  "format": 1,
+  "architecture": "x86_64",
+  "source_date_epoch": 1792886400,
+  "hash_provenance": "Nixpkgs 804068b712dc9794d8d25d7af3912c5f45d14d9d source archive hashes; Linux kernel.org sha256sums.asc; iana-etc release asset SHA256",
+  "sources": [
+    {
+      "name": "glibc",
+      "version": "2.44",
+      "url": "https://ftp.gnu.org/gnu/glibc/glibc-2.44.tar.xz",
+      "sha256": "37f600f2bef3c5e8300147059568b2a2e40a7ad6ccc65ce942556d49429cc667"
+    },
+    {
+      "name": "attr",
+      "version": "2.6.0",
+      "url": "https://download.savannah.nongnu.org/releases/attr/attr-2.6.0.tar.gz",
+      "sha256": "d42fa374513180bb48cb11a46696f488240e5124ff1e6ad88b0abff706985612"
+    },
+    {
+      "name": "acl",
+      "version": "2.4.0",
+      "url": "https://download.savannah.nongnu.org/releases/acl/acl-2.4.0.tar.gz",
+      "sha256": "73c853c3d44e1f693e5a96a986f1bd19d3d0dac2c7d453e796177774bc4e5f6a"
+    },
+    {
+      "name": "libcap",
+      "version": "2.78",
+      "url": "https://mirrors.edge.kernel.org/pub/linux/libs/security/linux-privs/libcap2/libcap-2.78.tar.xz",
+      "sha256": "0d621e562fd932ccf67b9660fb018e468a683d7b827541df27813228c996bb11"
+    },
+    {
+      "name": "gmp",
+      "version": "6.3.0",
+      "url": "https://ftp.gnu.org/gnu/gmp/gmp-6.3.0.tar.bz2",
+      "sha256": "ac28211a7cfb609bae2e2c8d6058d66c8fe96434f740cf6fe2e47b000d1c20cb"
+    },
+    {
+      "name": "pcre2",
+      "version": "10.49",
+      "url": "https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.49/pcre2-10.49.tar.bz2",
+      "sha256": "53c156e1ba416a20da8e65395daa132da0d80e76910424caca3fcdae7831d384"
+    },
+    {
+      "name": "dash",
+      "version": "0.5.13.5",
+      "url": "https://deb.debian.org/debian/pool/main/d/dash/dash_0.5.13.5.orig.tar.gz",
+      "sha256": "40090101a2a491f13e901d3d48e90414f26634628b9bfff35ff540363c227a7d"
+    },
+    {
+      "name": "coreutils",
+      "version": "9.12",
+      "url": "https://ftp.gnu.org/gnu/coreutils/coreutils-9.12.tar.xz",
+      "sha256": "a480198559733e9b3da999e90543ac6f888a2caa544d8d664c5a1f17e528e210"
+    },
+    {
+      "name": "grep",
+      "version": "3.12",
+      "url": "https://ftp.gnu.org/gnu/grep/grep-3.12.tar.xz",
+      "sha256": "2649b27c0e90e632eadcd757be06c6e9a4f48d941de51e7c0f83ff76408a07b9"
+    },
+    {
+      "name": "sed",
+      "version": "4.10",
+      "url": "https://ftp.gnu.org/gnu/sed/sed-4.10.tar.xz",
+      "sha256": "b8e72182b2ec96a3574e2998c47b7aaa64cc20ce000d8e9ac313cc07cecf28c7"
+    },
+    {
+      "name": "findutils",
+      "version": "4.11.0",
+      "url": "https://ftp.gnu.org/gnu/findutils/findutils-4.11.0.tar.xz",
+      "sha256": "bfd19cb06cc71f3352d567e90284d8cdac02ac89774bbeadf0b533b0c11432fd"
+    },
+    {
+      "name": "tar",
+      "version": "1.35",
+      "url": "https://ftp.gnu.org/gnu/tar/tar-1.35.tar.xz",
+      "sha256": "4d62ff37342ec7aed748535323930c7cf94acf71c3591882b26a7ea50f3edc16"
+    },
+    {
+      "name": "gzip",
+      "version": "1.15",
+      "url": "https://ftp.gnu.org/gnu/gzip/gzip-1.15.tar.xz",
+      "sha256": "9aa0cc780dec156b8282844833b342ab7cb08c25d2cd9a1869cdd0df31deff48"
+    },
+    {
+      "name": "iana-etc",
+      "version": "20251215",
+      "url": "https://github.com/Mic92/iana-etc/releases/download/20251215/iana-etc-20251215.tar.gz",
+      "sha256": "c75695a85e583f2e175e7e671f03bddd989857bab10889764c1bb3b7abd206c3",
+      "license": "MIT",
+      "license_source": "https://github.com/Mic92/iana-etc/blob/9d9a34cef5d474d018e8c6dd9e5428143f08649a/LICENSE"
+    },
+    {
+      "name": "linux-headers",
+      "version": "6.18.63",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.63.tar.xz",
+      "sha256": "81764a545072d160748beff4d9de2e7d95aa9f16e8261110288f067a2cc61d71"
+    }
+  ],
+  "copyright": "Copyright (C) 2026 Jonas Persson",
+  "license": "GPL-2.0-only"
+}
