@@ -223,7 +223,7 @@ release in the 3.0 line and `gimp@=3.0` as an exact release identifier
 is implemented on the selector branch with an initial dotted-numeric adapter.
 The [selector/catalog contract](../mpm-selectors.md) documents pure policy and
 Nix transaction integration, series aliases and explicit format-3 adoption.
-Other version adapters and [libc integration](../mpm-libc-policy.md) remain deferred.
+Other version adapters and [libc integration](libc-policy-proposal-2026-10.md) remain deferred.
 
 Nix is the current experimental Ports provider after the binary-import and pacman
 comparisons; it is not a required dependency of the future MPM core. The full selector/project-lock policies remain design requirements. For early Mojt versions, Nix is

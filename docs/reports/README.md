@@ -17,6 +17,7 @@ for how the code works now.
 
 - [Base content inventory from the Void construction path](base-content-inventory.md)
 - [Source-built Base proposal and preliminary libc review](base-source-build-review.md)
+- [Historical mixed-libc policy proposal](libc-policy-proposal-2026-10.md)
 - [Source Base producer verification](base-source-producer-test.md)
 - [First source-built Base boot procedure](source-base-first-boot.md)
 - [Source Base switch and return on a copied VM](source-base-transition-test.md)

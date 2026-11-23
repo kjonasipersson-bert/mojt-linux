@@ -34,7 +34,7 @@ The current Ports frontend uses independent configuration/interactive wishes
 and complete profiles; older format-3 adoption belongs to the separately invoked
 prototype. The [selector/catalog contract](../mpm-selectors.md) records the original
 grammar and integration history. See section 6 for the current delivered path.
-The [mixed-libc analysis](../mpm-libc-policy.md) is deferred reference work. Linking
+The [mixed-libc analysis](libc-policy-proposal-2026-10.md) is deferred reference work. Linking
 a proposal here does not make its remaining details accepted or implemented.
 
 The guiding rule is that Mojt can update **Base, System, Kernel, and Ports
