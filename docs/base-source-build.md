@@ -87,6 +87,9 @@ compiler/development files, a Kernel, Python, init, PAM, SSH and firmware are no
 Base runtime inputs. This initial producer does not add a CA bundle, complete
 timezone database or IANA service/protocol tables; System's separate CA/TZDIR
 inputs remain unchanged. Standalone data selections can be extended explicitly.
+The [runtime contract](libc-contract.md#2-shared-service-and-protocol-tables-belong-to-base)
+assigns service/protocol tables to Base, with delivery planned for 0.2.1. The
+current producer still defaults to 0.2.0 and does not yet implement that addition.
 
 ## Runtime and libc ownership
 

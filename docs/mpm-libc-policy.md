@@ -6,6 +6,10 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Libc runtime ownership
 
+The [libc/shared runtime contract, version 1](libc-contract.md) defines the
+decided requirements and their implementation status. This page describes the
+current mechanisms and runtime map.
+
 Base, System and Ports have independent runtime ownership. Mojt does not select
 one machine-wide active glibc for all programs. The source-built Base and the
 retained Nix objects can contain different glibc builds, including different

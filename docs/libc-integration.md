@@ -11,6 +11,8 @@ loader and libraries. This document identifies the machine resources that those
 otherwise independent runtimes share. It describes current source-built Base
 and generated System behavior. Existing administrator configuration can differ
 from initial defaults; publishing a new release does not replace that state.
+The [version 1 contract](libc-contract.md) records the decided ownership rules
+and distinguishes pending delivery from current behavior.
 
 ## Resource and responsibility map
 
@@ -23,7 +25,7 @@ from initial defaults; publishing a new release does not replace that state.
 | `LANG`, `LC_*` and locale data | Base builds C/C.UTF-8 data; Base profile and System environment default empty/unset `LANG` to `C.UTF-8` | The receiving libc must support the selected locale and its data; an inherited `LC_ALL`/`LC_*` can override `LANG` |
 | Timezone data and `/etc/localtime` | System retains tzdata and supplies a default `TZDIR`; the administrator chooses machine timezone state | Programs consult their configured timezone inputs; a copied TZif file is persistent data, while a store symlink remains a reference to one particular output |
 | Certificate trust data | System retains `cacert` and exports `SSL_CERT_FILE`/`NIX_SSL_CERT_FILE` | Programs honoring those settings use that bundle; this is a data/library-specific interface, not a libc loader choice |
-| `/etc/services`, `/etc/protocols` | No explicit delivery in source Base or the generated System role list | Consumers of named service/protocol databases may need these tables or their supported provider-specific overrides; availability is not implied by a complete ELF closure |
+| `/etc/services`, `/etc/protocols` | Base is the decided supplier; current 0.2.0 producer does not explicitly deliver the tables | Planned 0.2.1 defaults under `/usr/etc`, with missing-only installation into `/etc`; consumer/provider overrides remain possible |
 | `/bin/sh` and basic Unix commands | Base; System wrappers/start scripts invoke them before executing provider programs | Process launch and command interfaces join the layers without combining the two processes' libc implementations |
 | Kernel system-call interface | Selected Kernel and its supported features | All runtimes use the same Kernel; retaining a libc object does not supply a different Kernel or establish every program's feature requirements |
 
@@ -78,8 +80,10 @@ service/protocol tables. System explicitly supplies the first two. Its role list
 does not select an IANA table package or generate `/etc/services` and
 `/etc/protocols`. Existing persistent files can satisfy that need on a particular
 machine, but they are not supplied by a fresh source Base/System combination.
-This is a delivery gap to scope, not a claim that every current program needs
-those databases or that every lookup has been tested and failed.
+The [contract](libc-contract.md#2-shared-service-and-protocol-tables-belong-to-base)
+assigns these tables to Base, with first delivery planned for 0.2.1. This pending
+delivery is not a claim that every current program needs those databases or
+that every lookup has been tested and failed.
 
 Machine-local timezone selection is independent of selecting code. The
 documented [timezone procedure](system-environment.md) copies a TZif file into
@@ -88,18 +92,18 @@ An administrator-created reference into a store output needs its own retained
 lifetime; replacing code or eventually collecting generations cannot infer all
 such references from ELF dependencies alone.
 
-## Decisions still needed for the integration contract
+## Contract decisions and implementation limits
 
-| Question | Current limit and next decision |
+| Area | Decision and remaining implementation |
 | --- | --- |
-| Richer locales and old provider runtimes | Define how an affected consumer receives compatible locale data or an explicit supported setting; avoid one global archive for every libc |
-| Service/protocol databases | Decide whether a pinned common table set is supplied as Base defaults or System data, with the existing preservation policy for machine edits |
-| External NSS/PAM/application modules | State the supported module environment for a concrete feature before adding it; local accounts do not imply arbitrary identity-provider support |
-| Compiling for Mojt Base | Define the compiler/binutils, target headers/startup objects/libc and compiler-runtime inputs as a toolchain; installing an older GCC alone does not select a Mojt SDK |
-| Retention/GC | Preserve consumer closures and deliberately retained data references; do not delete older libc/data objects merely because a newer Base or provider version exists |
+| Richer locales and old provider runtimes | Compatible data follows the consumer when needed; C/POSIX fallback is explicit and scoped. General automatic matching/import remains unimplemented |
+| Service/protocol databases | Base supplies pinned defaults under `/usr/etc`, added to `/etc` only when missing; delivery is planned for 0.2.1 |
+| External NSS/PAM/application modules | Support is feature-specific; local accounts do not imply arbitrary identity-provider/module support |
+| Compiling for Mojt Base | A target SDK must identify compiler/binutils, headers/startup objects/libc and compiler-runtime inputs; the general MBT interface remains future work |
+| Retention/GC | Retain consumer closures and declared data references; the collector remains future work |
 
-These are contract decisions, not new commands, migrations or normal-install
-audits. Kernel/platform requirements and state-format compatibility remain
+The [contract](libc-contract.md) defines these requirements; it adds no new
+commands, migrations or normal-install audits. Kernel/platform requirements and state-format compatibility remain
 separate existing boundaries. No support for migrating a Void-built Base layout
 is implied by this map.
 
