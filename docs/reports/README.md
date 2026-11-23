@@ -19,6 +19,7 @@ for how the code works now.
 - [Source-built Base proposal and preliminary libc review](base-source-build-review.md)
 - [Source Base producer verification](base-source-producer-test.md)
 - [First source-built Base boot procedure](source-base-first-boot.md)
+- [Source Base switch and return on a copied VM](source-base-transition-test.md)
 
 ## Extracted historical records
 

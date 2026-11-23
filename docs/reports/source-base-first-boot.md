@@ -99,3 +99,7 @@ alone needs diagnosis; it does not automatically establish a libc problem.
 Record the actual output and distinguish local tests, this guest boot and any
 later physical-machine or generation-transition test. No successful guest boot
 is claimed merely by publishing this procedure.
+
+The subsequent [source Base switch and return test](source-base-transition-test.md)
+uses a copy of this working VM and a marked successor of the same source Base.
+It does not require a Void-built installation.
