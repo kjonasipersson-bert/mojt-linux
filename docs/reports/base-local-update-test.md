@@ -108,10 +108,10 @@ The supplied post-reboot output confirms:
   contain `keep me`.
 - `systemctl --failed` lists zero failed units.
 
-The libc-version command was mistyped as `etconf GNU_LIBC_VERSION`, so this
-transcript does not contain a new runtime libc-version observation. The packaged
-CI libc check passed separately; that is not a substitute for a command observed
-in this VM. This result establishes the reported local install/preparation,
+The owner subsequently ran `getconf GNU_LIBC_VERSION` in the booted Base 0.2.1
+VM and supplied the output `glibc 2.44`. This completes the runtime libc check
+in addition to the separate packaged CI check. The procedure is recorded as
+PASS. This result establishes the reported local install/preparation,
 selection and reboot workflow, not physical-machine acceptance, remote package
 distribution or Nix-toolchain self-hosting.
 
