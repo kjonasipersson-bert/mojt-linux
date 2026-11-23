@@ -13,6 +13,10 @@ Historical "next"/"pending" statements apply to the recorded revision. Use the
 [Handbook](../../doc/handbook/README.md) and [current documentation](../README.md)
 for how the code works now.
 
+## Engineering reviews and inventories
+
+- [Base content inventory from the Void construction path](base-content-inventory.md)
+
 ## Extracted historical records
 
 - [Project introduction and validation history](README-history.md)

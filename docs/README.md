@@ -29,6 +29,10 @@ current capabilities from future priorities. The [distribution contract](distrib
 [lifecycle proposal](mpm-lifecycle.md) and [decision register](distribution-decisions.md)
 include proposed policies; proposals are not implemented commands.
 
+The [Base content inventory](reports/base-content-inventory.md) reviews the Void
+construction inputs and packing rules as evidence for defining a source-built
+Base. It does not change the current release contents or decide libc/ABI policy.
+
 ## Test procedures and historical evidence
 
 [Test reports](reports/README.md) retain dated observations, measurements,
