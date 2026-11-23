@@ -108,5 +108,18 @@ class BaseUpdateFlow(unittest.TestCase):
         self.assertEqual(code,1,err)
         self.assertEqual(selection.selected(self.root)[0]['description']['selected'],self.before)
 
+    def test_post_publication_flush_failure_reports_unknown_selection_and_retains_the_new_entry(self):
+        import mpm_transaction as transaction
+        choose=selection.select
+        def uncertain(*args,**kwargs):
+            choose(*args,**kwargs)
+            raise transaction.PublicationUncertain('final directory flush failed')
+        with mock.patch.object(selection,'select',side_effect=uncertain):
+            code,out,err=self.run_cli('upgrade','--from-file',str(self.archive),'-y','--json')
+        self.assertEqual(code,1);result=json.loads(out)
+        self.assertIsNone(result['selection_changed']);self.assertTrue(result['publication_uncertain'])
+        self.assertTrue(result['prepared']);self.assertIn('inspect mpm base status',err)
+        self.assertNotEqual(selection.selected(self.root)[0]['description']['selected'],self.before)
+
 
 if __name__=='__main__':unittest.main()

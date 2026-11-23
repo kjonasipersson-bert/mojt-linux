@@ -122,6 +122,7 @@ def _main(argv,*,runtime=None):
                                     tar=str(runtime.helpers/'tar') if runtime else 'tar')
         if not args.dry_run and not result.get('cancelled') and preparing:
             identifier=result['plan']['description']['artifact']
+            selecting=False
             try:
                 base.require(selection.selected(root)[0]['description']['selected']==selected,'selected deployment changed during installation; retry preparation')
                 prepared=prepare_installed(root,identifier,runtime=live,bounds=bounds,verify=args.verify,yes=args.yes)
@@ -129,13 +130,17 @@ def _main(argv,*,runtime=None):
                 result=dict(result,content_changed=result['changed'],changed=result['changed'] or prepared['changed'],
                     prepared=True,preparation=prepared,selection_changed=False,running_changed=False)
                 if choosing:
+                    selecting=True
                     chosen=selection.select(root,prepared['deployment'],area='base',expected_selected=selected,
                         yes=args.yes,verify=args.verify)
                     result.update(selection_changed=chosen['changed'],selection=chosen,changed=result['changed'] or chosen['changed'])
             except (OSError,ValueError,KeyError,TypeError,subprocess.CalledProcessError,tarfile.TarError) as error:
+                if selecting and getattr(error,'committed',False):
+                    result.update(selection_changed=None,publication_uncertain=True)
                 if args.json:print(json.dumps(dict(result,prepared=result.get('prepared',False),error=str(error)),indent=2,sort_keys=True))
                 raise ValueError('Base content is installed; added missing defaults are retained. '
-                    'Preparation/selection did not complete: '+str(error)) from error
+                    'Preparation/selection did not complete: '+str(error)+
+                    ('; boot publication may have completed, inspect mpm base status' if result.get('publication_uncertain') else '')) from error
         else:result=dict(result,prepared=False,selection_changed=False,
             preparation_skipped='preview/cancelled' if args.dry_run or result.get('cancelled') else 'content-only requested' if getattr(args,'content_only',False) else 'no live native-v2 boot context')
     if args.json or args.action in ('stage','select','rollback') or args.action=='install' and live is None:
