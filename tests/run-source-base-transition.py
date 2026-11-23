@@ -22,8 +22,7 @@ def require(ok,message):
 
 
 def call(*args):
-    result=subprocess.run([str(RUNTIME/'bin/mpm'),*args,'--json'],text=True,capture_output=True)
-    print(result.stderr,end='',file=sys.stderr,flush=True)
+    result=subprocess.run([str(RUNTIME/'bin/mpm'),*args,'--json'],text=True,stdout=subprocess.PIPE)
     require(result.returncode==0,'MPM operation failed: '+result.stdout)
     return json.loads(result.stdout)
 

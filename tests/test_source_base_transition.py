@@ -133,6 +133,7 @@ class GuestTests(unittest.TestCase):
         with mock.patch.object(guest.subprocess,'run',return_value=subprocess.CompletedProcess([],0,'{"changed":true}','')) as run:
             self.assertTrue(guest.call('base','status')['changed'])
             self.assertEqual(run.call_args.args[0],['/run/mojt-system/bin/mpm','base','status','--json'])
+            self.assertNotIn('stderr',run.call_args.kwargs)  # Phase output stays live.
         with tempfile.TemporaryDirectory() as temporary,\
              mock.patch.object(guest,'LAB',Path(temporary)),\
              mock.patch.object(guest,'io_native',fixtures.io,create=True),\
