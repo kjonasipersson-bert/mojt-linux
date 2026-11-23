@@ -15,15 +15,11 @@ import subprocess
 import sys
 
 REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO/'tools'))
+import mojt_artifact as artifact
 shared = runpy.run_path(str(Path(__file__).with_name('prepare-kernel-source-boot.py')))
 require = shared['require']
-
-
-def read(path):
-    with Path(path).open('rb') as stream:
-        raw = stream.read(1024*1024+1)
-    require(len(raw) <= 1024*1024, 'unbounded test input: '+str(path))
-    return json.loads(raw)
+read = artifact.read_json
 
 
 def inputs(args):
