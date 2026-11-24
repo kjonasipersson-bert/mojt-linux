@@ -13,6 +13,7 @@ references describe the implementation and supported limits at this commit:
 
 - [Architecture](architecture.md) and [persistent state](state-layout.md)
 - [MPM contract](mpm.md), [Ports](mpm-ports.md) and [management workflow](management-workflow.md)
+- [Installer media and mounted bootstrap](mounted-installation.md)
 - [System installation/boot updates](system-transition.md) and [native System packaging](system-packaging.md)
 - [Component System generations and optional firmware](system-components.md)
 - [Normal System operation and audit boundaries](system-normal-operation.md)

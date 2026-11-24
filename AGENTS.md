@@ -60,6 +60,15 @@ preserve upstream licenses.
   file/directory sync counts and complete operation time, and report nested
   timings without double counting. Include interruption/retry and fallback tests.
 
+## Installer development
+
+- Use the [installation guide](docs/mounted-installation.md) for media builds
+  and mounted bootstrap. The [installer acceptance report](docs/reports/installer-test.md)
+  describes the offline two-disk VM procedure and physical coverage.
+- Exercise partitioning on a new disposable virtual disk. Keep the installer
+  image separate and disconnect it before testing the target's first boot.
+  Physical disk erasure requires explicit authorization for the identified disk.
+
 ## Documentation is a current interface contract
 
 - The Handbook, README, architecture and operational/reference documentation

@@ -4,22 +4,15 @@ Copyright (C) 2026 Jonas Persson
 SPDX-License-Identifier: GPL-2.0-only
 -->
 
-# USB startup, then installation to prepared SSD partitions
+# Installer media and mounted bootstrap
 
-The first native-v2 mounted installer reuses the existing fresh bootstrap:
-exact Base/Kernel inputs and the frozen System payload are assembled privately,
-installed through MPM, and admitted/selected through the same boot APIs. The
-completed filesystem can be packed into an image or copied to explicitly mounted
-target partitions. MPM's installed/selected/running model and update commands are
-unchanged. There is no public planning verb, package hook or second package database.
-
-The physical sequence is USB boot, SSD installation, SSD boot, then ordinary
-MPM/MBT timings and compilation on SSD. USB is the startup/installation medium;
-no heavy physical compiler or rollback matrix is required on it.
+Mojt uses a raw disk image for installation media. The whole-disk installer
+prepares the confirmed target and delegates content installation to the same
+native-v2 bootstrap used for explicitly mounted target partitions.
 
 ## Whole-disk installation
 
-Run the following as root from the prepared UEFI USB image described below.
+Run the following as root from the prepared UEFI installation image described below.
 
 ```sh
 /var/lib/mojt/installer-tools/run /run/mojt-system/bin/mbt install
@@ -49,9 +42,9 @@ the ordinary native-v2 layout, with writable state and read-only release content
   device/filesystem identities and a root UUID duplicated on another device fail
   inspection. The target cannot be the running installation's disk.
 - Target transport must match the selected early-boot profile. VirtIO block is
-  supported for the VM; the hardware profile also supports AHCI SATA and USB
-  storage/UAS. Internal NVMe, encrypted roots and logical volumes require a
-  supported subsequent profile; they are not silently accepted.
+  supported for the VM. The ThinkPad profile adds AHCI SATA and USB storage/UAS.
+  The generic PC profile also supports NVMe and VirtIO SCSI. Encrypted roots
+  and logical volumes are outside the supported target layout.
 
 `mbt bootstrap` accepts explicitly prepared partitions. The separate
 `mbt install` command can partition and format the confirmed whole disk. Device preparation and the choice to erase a disk happen as a
@@ -60,10 +53,26 @@ privileges are needed even for the mounted preview, which reads block metadata.
 
 ## Prepare a self-contained installer image
 
-Build the supported USB image with the already reviewed exact bootstrap inputs
-and add `--with-build-tools --with-installer-inputs`. For a nominal 32-GB medium,
-use `--disk-size-mib 24576` and inspect its actual capacity before a separate image
-write. Retain the accepted original VM and its build outputs.
+Build manually from exact reviewed Base and Kernel artifacts, Base compatibility
+evidence, an exported System payload, and static BusyBox. This example produces
+a serial VirtIO image. For a physical USB installer, select the tested target
+hardware profile and supply its firmware inputs. Use a Btrfs-capable Kernel
+even when the installer image itself uses ext4. Choose a System step 12 export
+to include the OpenSSL helper for signed Base repository access.
+
+```sh
+sudo ./tools/mbt bootstrap \
+  --base-package BASE_ARCHIVE --base-artifact BASE_ID --base-context BASE_CONTEXT \
+  --kernel-registry KERNEL_REGISTRY --kernel-artifact KERNEL_ID \
+  --system-payload SYSTEM_EXPORT --system-generation system-installer \
+  --with-build-tools --with-installer-inputs \
+  --root-fs ext4 --disk-size-mib 24576 --output INSTALLER_DIR
+```
+
+Substitute full artifact IDs and paths. Add `--hardware-profile PROFILE
+--firmware-root FIRMWARE_DIR` for the physical profile. The example 24 GiB
+image fits a USB drive with at least that much actual capacity. The output
+directory must be new.
 
 `--with-installer-inputs` carries a closed data directory at
 `/var/lib/mojt/installer-inputs` in persistent state. Its versioned `inputs.json`
@@ -97,19 +106,29 @@ mbt env --profile image --source-manifest /run/mojt-system/ports.toml \
   --output /var/lib/mojt/installer-tools -y
 ```
 
-This supplies host chroot/mount, disk tools, `mkfs.btrfs`, copy/sync and GRUB. The environment and its retained provider closure travel
-with the USB. The actual SSD installation can then run offline from its carried
-inputs. Shut the VM down cleanly before copying/writing its image. Do not move
-the private tool environment to a different guest path.
+Use networking for this preparation when the Nix outputs are not already
+available. Verify the launcher inside the guest and power off cleanly.
+
+```sh
+/var/lib/mojt/installer-tools/run /run/mojt-system/bin/mbt install --help
+poweroff
+```
+
+The prepared `INSTALLER_DIR/disk.img` can be copied as `install.img` or
+attached directly as a raw boot disk. Copy or write the image only after
+shutdown. For USB, identify the intended whole USB device by model, capacity,
+and serial number, unmount its partitions, and use a disk-image writer to
+overwrite that device. The private tool environment keeps its guest path and
+travels inside the raw image with the retained inputs.
 
 ## Preview the mounted target
 
 After the separately reviewed SSD preparation, mount root at `/run/mojt-target-root`
-and the ESP at `/run/mojt-target-esp` (example mountpoints). Use `/run` for new
-mountpoint directories because the running Base root is read-only. Mount them
-writable and root-controlled; for FAT, use suitable root UID/GID and masks. Neither filesystem
-is formatted by the following commands. As root, use installed MBT through the
-private installation environment:
+and the ESP at `/run/mojt-target-esp` (example mountpoints). Mount them writable
+and root-controlled, with suitable root UID/GID and masks for FAT32. For Btrfs,
+mount the top-level subvolume with `subvolid=5` and add `--root-fs btrfs` to
+both commands below. The examples use the default ext4 target filesystem.
+As root, use installed MBT through the private installation environment.
 
 ```sh
 /var/lib/mojt/installer-tools/run /run/mojt-system/bin/mbt bootstrap \
@@ -151,7 +170,9 @@ artifacts, realizations, provider content, boot records and `state`; it is not a
 traditional root for `chroot /run/mojt-target-root`.
 
 MBT holds cooperating locks on the disk/partition devices and open mountpoint
-descriptors. After rechecking target identity/emptiness/capacity, it writes
+descriptors. It binds the opened mountpoint by Linux mount ID and verifies
+the partition identity separately, including the single Btrfs backing device.
+After rechecking target identity, emptiness and capacity, it writes
 `.mojt-bootstrap-incomplete`, copies the completed tree preserving ownership,
 modes, links and special files, then verifies the copied native-v2 proofs and
 selection. The root filesystem is flushed before the fallback EFI directory is
@@ -178,27 +199,10 @@ authoritative after updates. Mounted target ownership is never handed to a sudo
 caller. Default installation verification remains enabled; normal boot still
 does not scan complete payloads.
 
-## Focused validation and remaining hardware check
+## Acceptance and diagnostics
 
-Tests exercise fixed input-data expansion/corruption refusal, mount/device guards,
-copy/verification failures, target flush ordering and the late-publication case.
-The joined root/archive fixture reuses the common hardware constructor and MPM
-proofs, copies a real fixture tree, checks the copied selection and portable input
-data, and proves the image writer/handoff is not used. Kernel/block metadata,
-firmware/ELF bytes, provider execution and the EFI binary are fixture boundaries;
-this is not a real installed-disk boot result.
-
-The focused VirtIO VM acceptance passed on 2026-11-12: the installed MBT consumed
-the carried inputs, installed to separate prepared GPT/ext4/FAT32 target
-partitions, and the target booted with the installer disk detached and separate
-UEFI variable storage. The target root UUID and exact selected/running deployment
-agreed; login and HTTPS worked, with no failed units. This is a VM installation
-and boot result, not physical hardware acceptance or a complete source rebuild.
-
-Next, prepare the 24-GiB installer with the supported hardware profile for the
-32-GB USB medium. Boot that USB, install to separately identified/prepared SSD
-partitions, then boot the SSD before compilation/performance measurements.
-Actual hardware installation/boot remains an owner check. The previous
-Kernel/Base/System A/B/A matrix need not be repeated. After SSD boot, use the
-[lightweight timing guide](physical-performance.md) for first/repeated commands
-and a fresh compiler build on SSD.
+Use the [offline two-disk VM procedure](reports/installer-test.md) before testing
+an installer change on physical hardware. In a failed install, retain the last
+installer output and the target image. Check the incomplete marker and whether
+the fallback EFI file was published before planning a retry. Physical install
+and boot coverage is tracked in the [roadmap](roadmap.md).

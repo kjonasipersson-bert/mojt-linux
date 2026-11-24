@@ -20,6 +20,7 @@ interfaces. The [architecture](architecture.md) defines the area boundaries.
 | Ports | Parallel versions, independent wishes, atomic profiles, explicit/following activation, history and active-version manuals | Native Port publication, cleanup and broader provider coverage |
 | Filesystem | Writable persistent root/local storage, immutable selected releases, persistent configuration/data/homes | Explicit incompatible-layout and data/schema migrations |
 | Interaction | Readable running/next/prepared entries, change/reboot previews and phase completion messages | Continued feedback on real administrative workflows |
+| Installation | Offline whole-disk installation from prepared UEFI media, with Btrfs and optional partition-backed swap | Physical hardware acceptance and automated media builds |
 | MBT | Private build environments, Kernel and source Base build/packaging with size reporting, fresh native-v2 bootstrap and signed Base catalog preparation | Native toolchain control and source builds of Mojt-owned System components |
 
 ## Next work for planning
@@ -79,8 +80,10 @@ when a concrete bottleneck justifies another change.
   arbitrary package hooks.
 - Add supported native Ports distribution, explicit retention/garbage collection
   and further version-policy/provider integration.
-- Develop bootstrap choices for directory targets, disk images and physical
-  disks, with defined machine profiles and local/media/repository inputs.
+- Automate the production of bootable `install.img` media using pinned Base,
+  System, Kernel and hardware-profile inputs. Include the offline tool closure,
+  verify the resulting image with a two-disk UEFI smoke test and decide where
+  the build belongs in the release workflow.
 - Expand representative hardware and failure/recovery coverage as supported
   features change.
 

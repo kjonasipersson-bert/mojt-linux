@@ -28,6 +28,7 @@ separation of a base operating system and Ports.
 
 - [Mojt Handbook](doc/handbook/README.md): concepts, MPM/MBT commands and the
   filesystem layout.
+- [Installing Mojt](doc/handbook/part-i/installing-mojt.md): offline UEFI installation from prepared media.
 - [Architecture](docs/architecture.md): layer boundaries, boot selection and
   persistent state.
 - [Documentation index](docs/README.md): reference material, proposals and test
@@ -83,7 +84,7 @@ Base has a pinned source builder; Nix remains the binary provider for System
 and Ports. Neither provider defines Mojt's area or release model. The
 [signed Base repository prototype](docs/native-repository.md) joins native
 publication, HTTPS acquisition and the ordinary MPM install/upgrade flow.
-A general production installer, broader native repository coverage and complete
+Physical installer coverage, broader native repository coverage and complete
 source self-hosting remain development work.
 
 [Working instructions](AGENTS.md) govern changes and documentation. The

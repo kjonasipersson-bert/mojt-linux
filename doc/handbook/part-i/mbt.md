@@ -26,6 +26,7 @@ From a repository checkout, use `python3 tools/mbt`. Its supported operations ar
 | `mbt repo prepare` | A signed Base catalog and publication receipt, without uploading |
 | `mbt package` | A native archive from prepared inputs, or archive verification |
 | `mbt bootstrap` | A fresh image or installation onto explicitly prepared mounted partitions |
+| `mbt install` | [Offline whole-disk installation](installing-mojt.md) from prepared installation media |
 
 `mbt build base --output base-result --jobs 2` builds the pinned Base 0.2.1
 release and a native archive under `base-result/package`. It reports compressed

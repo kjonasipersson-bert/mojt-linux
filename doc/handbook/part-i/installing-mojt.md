@@ -8,12 +8,14 @@ SPDX-License-Identifier: GPL-2.0-only
 
 [Handbook](../README.md) · [Previous: Introduction](introduction.md) · [Next: MPM](mpm.md)
 
-Boot the Mojt installation USB in x86-64 UEFI mode. Use a builder-enabled
-image prepared with `--with-build-tools --with-installer-inputs` and the
-private image tool environment. The medium carries the Base, System, and Kernel
-inputs and can install offline.
+Use a prepared Mojt `install.img` for the target's hardware profile. The
+raw image can boot as a virtual disk or be written to a USB drive. It carries
+the Base, System, Kernel, and tools needed for an offline installation. See
+the [media preparation guide](https://github.com/kjonasipersson-bert/mojt-linux/blob/main/docs/mounted-installation.md#prepare-a-self-contained-installer-image)
+if you need to build the image yourself.
 
-As root on the USB system, run
+Boot the medium in x86-64 UEFI mode with Secure Boot disabled for the unsigned
+bootloader. As root on the installation system, run
 
 ```sh
 /var/lib/mojt/installer-tools/run /run/mojt-system/bin/mbt install
@@ -24,11 +26,13 @@ Check the device name, model, capacity, and serial number where shown. Typing
 the displayed device path confirms erasing the entire disk. The installer
 creates a GPT disk with a 128 MiB FAT32 EFI partition, an optional swap
 partition, and Btrfs on the remaining space. Choose a new root password when
-prompted. After installation, shut down, remove the USB, and boot from the
-target disk.
+prompted. Wait for `Mojt installed`, then power off, remove or detach the
+installation medium, and boot from the target disk. Log in with the password
+you just set. Use `cat /usr/lib/os-release` to check the running Base and
+`cat /proc/swaps` to check that any requested swap partition is active.
 
-The installer supports one whole disk with a storage driver supported by the
-installation kit's hardware profile. It uses the console keyboard layout of
-the booted medium. See the [USB preparation guide](https://github.com/kjonasipersson-bert/mojt-linux/blob/main/docs/mounted-installation.md#prepare-a-self-contained-installer-image).
+The installer uses one whole disk with a storage driver supported by the
+installation kit's hardware profile. The prompts use the console keyboard
+layout of the booted medium.
 
 [Previous: Introduction](introduction.md) · [Next: MPM](mpm.md)
