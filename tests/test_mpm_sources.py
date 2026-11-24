@@ -187,7 +187,7 @@ class SourceTests(unittest.TestCase):
     def test_delivered_copy_flow_without_checkout_or_provider(self):
         tools = self.work / 'delivered'; tools.mkdir()
         for name in ('mpm', 'mpm_cli.py', 'mpm_sources.py', 'mpm_sources_cli.py', 'mpm_native_cache.py',
-                     'mpm_transaction.py', 'mpm_request_plan.py', 'mpm_requests.py', 'mpm_selection.py', 'mojt_artifact.py'):
+                     'mpm_https.py', 'mpm_native_io.py', 'mpm_transaction.py', 'mpm_request_plan.py', 'mpm_requests.py', 'mpm_selection.py', 'mojt_artifact.py'):
             shutil.copyfile(Path(sources.__file__).parent / name, tools / name)
         source_file = self.work / 'source.json'; source_file.write_bytes(fixture.raw(self.source))
         def call(root, *args):

@@ -11,6 +11,13 @@ Implemented bounded integration in consolidation steps 1 and 2. It connects
 frontend delivered in System. Python remains in System. No Nix import, global
 compiler/libc change, service activation or boot publication is involved.
 
+The [signed Base repository](native-repository.md) also supports HTTPS sources:
+`source add NAME --url URL --key-file PUBLIC_PEM` registers owner-selected trust,
+and `source update NAME` authenticates one complete signed catalog. Local source
+commands below retain their protected-directory behavior. Base source installation
+can resolve the accepted release with `mpm base install --source NAME`; it does
+not refresh implicitly.
+
 ## Command flow
 
 The source and policy files use the versioned records in
@@ -39,7 +46,7 @@ current snapshot while retaining previous records. Editing an original input
 policy file after registration does not reconfigure the accepted copy. Reconfigure
 through `source add --replace` to change authorization.
 
-`update` reads only `snapshot.json`, `catalog.json` and `acquisition-map.json`
+For a local-directory source, `update` reads `snapshot.json`, `catalog.json` and `acquisition-map.json`
 relative to the registered repository root, plus descriptors named by that map.
 `--snapshot-file`, `--catalog-file` and `--acquisition-file` change these confined
 relative metadata locations. Absolute paths, escapes, unsafe links and special

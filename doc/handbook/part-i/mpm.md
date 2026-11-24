@@ -71,6 +71,24 @@ the managed installation. An explicit target is offline inspection and does not
 inherit the host's running identity. Global `--root` names a Ports registry,
 rather than a disk installation; do not use it as a substitute for `--disk-root`.
 
+A configured signed Base repository also supports the ordinary update flow:
+
+```sh
+mpm source update mojt-base
+mpm base upgrade --source mojt-base
+mpm base status
+```
+
+MPM authenticates the accepted catalog and imports the selected native Base
+package before preparing/selecting next boot. `mpm base install --source
+mojt-base` prepares without selecting it. Neither command reboots automatically.
+System and Kernel keep their independent selections; existing `/etc` and `/var`
+are preserved. Registration requires a publisher public key obtained through a
+trusted channel and a repository-enabled System with retained OpenSSL. See
+[Signed Base repository](https://github.com/kjonasipersson-bert/mojt-linux/blob/main/docs/native-repository.md)
+for registration, exact-version selection and publication. A source metadata
+refresh alone never installs packages.
+
 ## 3.3. Install and use a Port
 
 On a configured installed System, MPM uses the System's pinned provider source.

@@ -29,6 +29,9 @@ mbt \- prepare private build tools and create Mojt build/package results
 --inputs DIRECTORY --target-root DIRECTORY --efi-directory DIRECTORY
 [--expected-root-uuid UUID --expected-efi-partuuid UUID] [--dry-run]
 [--system-generation NAME]
+.PP
+.B mbt repo prepare
+[--config TOML_FILE] --output NEW_DIRECTORY
 .SH DESCRIPTION
 Experimental interface for review. MBT delegates to the existing environment,
 Kernel/Base build, native artifact and image tools. Use each command's --help for flags.
@@ -82,6 +85,16 @@ component without opening or repackaging its data. --generation NAME sets the
 label; --revision N advances the baseline packaging revision by N (default 1).
 It neither installs nor selects output. The assembled --tree route remains
 available for bootstrap. See docs/system-components.md.
+.TP
+.B repo prepare
+Verify existing native Mojt Base x86_64 archives and sign a complete finite
+catalog with standard OpenSSL 3+ Ed25519. The TOML configuration declares
+format=1, name, channel, sequence, key and a packages array of archive/url pairs.
+Paths are absolute or relative to the config. The default config is repository.toml.
+The new output contains CHANNEL.json, public.pem and publication.json; archives
+are referenced without copying. Private key bytes stay on the publishing host.
+Upload exact archives with ordinary GitHub tools, then publish signed metadata.
+Nothing is uploaded, installed or selected by this command. See docs/native-repository.md.
 .TP
 .B bootstrap
 With --output, create a NEW regular UEFI/GPT native-v2 image with serial console and VirtIO.

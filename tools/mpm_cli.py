@@ -150,7 +150,7 @@ def dispatch(args, runtime):
         if not readonly:
             raise ValueError("shared installation changes require an administrator")
     if area in ('base','system','kernel') and action in ('activate','upgrade','stage','select','rollback'):
-        if area == 'base' and action == 'upgrade' and option(command,'--from-file'):
+        if area == 'base' and action == 'upgrade' and (option(command,'--from-file') or option(command,'--source')):
             require_codec(runtime,command)
             from mpm_base_cli import main
             return main(command[1:],runtime=runtime)

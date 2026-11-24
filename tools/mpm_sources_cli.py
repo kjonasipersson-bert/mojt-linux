@@ -6,6 +6,7 @@ import argparse
 import json
 from pathlib import Path
 import sys
+import tempfile
 
 import mpm_sources as sources
 
@@ -23,8 +24,12 @@ def parser(area):
         if action in ('add', 'update', 'show'):
             sub.add_argument('name')
         if action == 'add':
-            sub.add_argument('--from-file', type=Path, required=True)
-            sub.add_argument('--policy-file', type=Path, required=True)
+            origin=sub.add_mutually_exclusive_group(required=True)
+            origin.add_argument('--from-file', type=Path)
+            origin.add_argument('--url', help='signed HTTPS Base repository metadata')
+            sub.add_argument('--policy-file', type=Path)
+            sub.add_argument('--key-file', type=Path, help='publisher Ed25519 public PEM key, obtained independently')
+            sub.add_argument('--channel', default='stable')
             sub.add_argument('--replace', action='store_true')
         if action == 'update':
             sub.add_argument('--snapshot-file', default='snapshot.json', help='relative to registered source root')
@@ -58,7 +63,7 @@ def confirm(args, plan):
     return True
 
 
-def main(area, argv, *, root=None, runtime=None):
+def _main(area, argv, *, root=None, runtime=None):
     args = parser(area).parse_args(argv)
     if root is not None and args.root is not None:
         raise ValueError('specify --root only once')
@@ -73,6 +78,22 @@ def main(area, argv, *, root=None, runtime=None):
         if args.action == 'show':
             result = sources.inspect(root, args.name, args.snapshot)
         elif args.action == 'add':
+            if args.url:
+                sources.require(args.key_file is not None and args.policy_file is None,
+                                '--url requires --key-file; do not also specify --policy-file')
+                with args.key_file.open(encoding='ascii') as stream:key=stream.read(513)
+                source,policy=sources.https_source(args.name,args.url,key,channel=args.channel)
+                # Registration copies the policy into its protected registry;
+                # no persistent auxiliary policy file is needed.
+                with tempfile.TemporaryDirectory(prefix='mojt-source-policy-') as tmp:
+                    policy_file=Path(tmp)/'policy.json';policy_file.write_bytes(sources.encoded(policy));policy_file.chmod(0o600)
+                    kwargs=dict(source=source,policy_file=policy_file,replace=args.replace)
+                    plan=sources.prepare_add(root,args.name,**kwargs)
+                    if not confirm(args,plan):return 0
+                    result=sources.add(root,args.name,plan,**kwargs)
+                print(json.dumps(result,indent=2));return 0
+            sources.require(args.policy_file is not None and args.key_file is None,
+                            '--from-file requires --policy-file; --key-file belongs to --url')
             kwargs = dict(source=protected_json(args.from_file), policy_file=args.policy_file, replace=args.replace)
             plan = sources.prepare_add(root, args.name, **kwargs)
             if not confirm(args, plan):
@@ -81,7 +102,9 @@ def main(area, argv, *, root=None, runtime=None):
         else:
             files = dict(snapshot_file=args.snapshot_file, catalog_file=args.catalog_file,
                          acquisition_file=args.acquisition_file)
-            plan = sources.prepare_update(root, args.name, **files)
+            plan,objects,_ = sources.frozen_update(root, args.name, **files)
+            proof=objects[0]['description']['provider_snapshot']
+            if proof is not None:files['proof']=proof
             if not confirm(args, plan):
                 return 0
             result = sources.update(root, args.name, plan, **files)
@@ -95,3 +118,8 @@ def main(area, argv, *, root=None, runtime=None):
         result = sources.fetch(source_root, root, args.source, args.artifact, plan, **selection)
     print(json.dumps(result, indent=2))
     return 0
+
+
+def main(area,argv,*,root=None,runtime=None):
+    with sources.cache.https.io.preparation():
+        return _main(area,argv,root=root,runtime=runtime)

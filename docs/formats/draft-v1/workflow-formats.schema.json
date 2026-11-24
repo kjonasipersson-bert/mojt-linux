@@ -523,6 +523,60 @@
                 "trust"
               ],
               "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "$ref": "common.schema.json#/$defs/token"
+                },
+                "provider": {
+                  "const": "native"
+                },
+                "channel": {
+                  "$ref": "common.schema.json#/$defs/token"
+                },
+                "location": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "https-repository"
+                    },
+                    "url": {
+                      "$ref": "#/$defs/https_url"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "url"
+                  ],
+                  "additionalProperties": false
+                },
+                "trust": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "ed25519"
+                    },
+                    "policy": {
+                      "$ref": "common.schema.json#/$defs/id"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "policy"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "name",
+                "provider",
+                "channel",
+                "location",
+                "trust"
+              ],
+              "additionalProperties": false
             }
           ]
         }
@@ -599,6 +653,9 @@
                 },
                 {
                   "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/signed_repository"
                 }
               ]
             },
@@ -695,7 +752,14 @@
                             "paths": {
                               "type": "array",
                               "items": {
-                                "$ref": "common.schema.json#/$defs/path"
+                                "anyOf": [
+                                  {
+                                    "$ref": "common.schema.json#/$defs/path"
+                                  },
+                                  {
+                                    "$ref": "#/$defs/https_url"
+                                  }
+                                ]
                               },
                               "minItems": 1,
                               "maxItems": 4096
@@ -1746,6 +1810,72 @@
         "format",
         "id",
         "description"
+      ],
+      "additionalProperties": false
+    },
+    "https_url": {
+      "type": "string",
+      "minLength": 10,
+      "maxLength": 4096,
+      "pattern": "^https://[^\\s]+$"
+    },
+    "signed_repository": {
+      "type": "object",
+      "properties": {
+        "format": {
+          "const": "mojt-signed-repository-v1"
+        },
+        "signature": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/]{86}==$"
+        },
+        "repository": {
+          "type": "object",
+          "properties": {
+            "format": {
+              "const": "mojt-native-repository-v1"
+            },
+            "name": {
+              "$ref": "common.schema.json#/$defs/token"
+            },
+            "channel": {
+              "$ref": "common.schema.json#/$defs/token"
+            },
+            "sequence": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9223372036854775807
+            },
+            "catalog": {
+              "type": "object"
+            },
+            "acquisition": {
+              "$ref": "#/$defs/acquisition_map"
+            },
+            "descriptors": {
+              "type": "object",
+              "maxProperties": 64,
+              "additionalProperties": {
+                "type": "object"
+              }
+            }
+          },
+          "required": [
+            "format",
+            "name",
+            "channel",
+            "sequence",
+            "catalog",
+            "acquisition",
+            "descriptors"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "format",
+        "repository",
+        "signature"
       ],
       "additionalProperties": false
     }

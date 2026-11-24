@@ -36,7 +36,7 @@ reference binds its named adapter/source identity/trust policy independently.
 `provider_snapshot` is metadata-provider provenance, not a replacement for those
 per-offer bindings. This distinction preserves Mojt's own catalog authority.
 
-Native source locations are canonical absolute trusted directory paths, not URLs
+Local native source locations are canonical absolute trusted directory paths, not URLs
 or arbitrary relative paths. Verify ownership/symlink containment on read and
 freeze accepted metadata bytes. Source identity includes channel/location/policy;
 a change is explicit source reconfiguration, not a hidden locator substitution.
@@ -105,3 +105,16 @@ native store receipt protocol only after dependency closure retention. A cache
 miss is availability failure, not permission to build from source or try another
 provider. No physical cache GC is introduced; future collection must honor all
 retention roots and cannot classify every uninstalled blob as dispensable.
+
+## Signed HTTPS Base extension
+
+The implemented [signed Base repository](../../native-repository.md) adds a
+native `https-repository` location, `ed25519` trust policy and signed envelope
+in `provider_snapshot`. Remote archive `paths` are signed absolute HTTPS URLs;
+local archive paths remain confined relative paths. The source kind, never an
+untrusted path string alone, chooses the transport. Snapshots bind the current
+protected owner policy, exact signed catalog/map bytes and embedded descriptor
+objects. Remote refresh enforces a monotonic signed sequence; deliberate older
+accepted snapshots remain usable under unchanged authorization. No automatic
+expiry or key-rotation service is implemented. The existing local variant still
+requires `provider_snapshot: null` and explicit owner trust.

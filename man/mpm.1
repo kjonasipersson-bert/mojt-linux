@@ -55,7 +55,9 @@ identifies an installed build; it is not itself an upgrade request.
 .BI "base install --from-file " "ARCHIVE [--expected-id sha256:FULL_ID]"
 retains the verified complete Base and publishes a validated rootfs realization.
 Use --dry-run for a read-only target preview or -y to accept that operation.
-Alternatively use --source NAME with --expected-id and --archive-sha256 HEX;
+Alternatively use --source NAME to resolve the newest stable release from an
+already accepted Base catalog; --release mojt@=VERSION-rN pins an exact release.
+--expected-id and --archive-sha256 remain optional exact constraints.
 --snapshot, --sources-root and --cache-root have the Kernel source meanings.
 Source preview reads metadata only and does not claim rootfs verification.
 .PP
@@ -72,7 +74,9 @@ The first subset rejects unsupported required dependencies/requirements.
 .PP
 .BI "base upgrade --from-file " "ARCHIVE [--expected-id sha256:FULL_ID]"
 installs, adds approved missing defaults, prepares and offers next-boot selection
-on the running native-v2 installation. No automatic reboot. A local archive may
+on the running native-v2 installation. The alternative --source NAME uses the
+accepted Base catalog with the same optional exact constraints as install.
+No implicit source refresh or automatic reboot. A local archive may
 omit --expected-id: ordinary verification derives its identity, not publisher trust.
 Preparation failure retains content and any added defaults; retry the command.
 Without --base-context, native-v2 Base preparation targets only the exact selected
@@ -232,9 +236,17 @@ preserves its snapshot; changing source/policy needs --replace and resets curren
 metadata. Previous records and snapshots remain retained. Editing the original
 policy file does not change the adopted policy; reconfigure explicitly.
 .TP
+.BI "source add " "NAME --url HTTPS_URL --key-file PUBLIC_PEM [--channel stable] [--replace]"
+Register a signed Base repository with an independently trusted Ed25519 public
+key. Retains protected URL/key/name/channel and byte-limit policy; no network read.
+Requires the selected System's retained OpenSSL helper when accepting metadata.
+.TP
 .BI "source update " "NAME"
-Accept snapshot.json, catalog.json and acquisition-map.json under the registered
-local repository root, together with verified external descriptors. Optional
+For HTTPS sources, download and authenticate one signed Base catalog. Reject
+metadata rollback or changed contents at the same sequence. No automatic expiry
+or key-rotation service is provided. For local sources, accept snapshot.json,
+catalog.json and acquisition-map.json under the registered local repository root,
+together with verified external descriptors. Optional
 --snapshot-file, --catalog-file and --acquisition-file select confined relative
 metadata paths. Publish all accepted bytes before one current snapshot pointer.
 An invalid refresh preserves the last good snapshot. No payload is fetched,

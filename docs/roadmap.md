@@ -14,15 +14,21 @@ interfaces. The [architecture](architecture.md) defines the area boundaries.
 
 | Area | Implemented behavior | Main remaining boundary |
 | --- | --- | --- |
-| Base | Whole-release construction, a standalone pinned source producer with shared table defaults, native import/realization/status, exact compatible boot selection and return | Physical source-Base acceptance and moving-policy upgrades |
+| Base | Whole-release construction, a standalone pinned source producer with shared table defaults, native import/realization/status, exact compatible boot selection/return and signed Base source upgrades | Physical source-Base acceptance and wider repository/channel policies |
 | System | Coherent profiles, native composition/component import, live installation with boot preparation, prepared-entry activation and status | General service/runtime-dependency upgrades and state migrations |
 | Kernel | Exact local/source installation, retained origin/modules, preparation/selection/return and pinned LTS/stable builds with a bundled configuration | Moving-policy acquisition and broader hardware coverage |
 | Ports | Parallel versions, independent wishes, atomic profiles, explicit/following activation, history and active-version manuals | Native Port publication, cleanup and broader provider coverage |
 | Filesystem | Writable persistent root/local storage, immutable selected releases, persistent configuration/data/homes | Explicit incompatible-layout and data/schema migrations |
 | Interaction | Readable running/next/prepared entries, change/reboot previews and phase completion messages | Continued feedback on real administrative workflows |
-| MBT | Private build environments, Kernel and source Base build/packaging with size reporting, and fresh native-v2 bootstrap | Native toolchain control and source builds of Mojt-owned System components |
+| MBT | Private build environments, Kernel and source Base build/packaging with size reporting, fresh native-v2 bootstrap and signed Base catalog preparation | Native toolchain control and source builds of Mojt-owned System components |
 
 ## Next work for planning
+
+The [signed Base repository prototype](native-repository.md) supplies the first
+publication/acquisition path. Exercise an actual publisher-owned key and GitHub
+Release, then the ordinary Base update in a repository-enabled System. Extending
+that same boundary to native System/Kernel publication remains a separate step;
+Nix-backed applications do not need to be republished as Mojt archives.
 
 1. Validate the generic PC hardware profile on representative physical machines.
    The profile includes broader firmware inputs, udev probing and NVMe/SATA/USB
@@ -67,7 +73,8 @@ when a concrete bottleneck justifies another change.
 - Build Base and Mojt-owned System components from pinned sources/recipes on
   Mojt. Assembling prebuilt inputs and building a Kernel do not establish full
   source self-hosting.
-- Define authenticated native release publication, signing and trusted channels.
+- Extend the signed Base prototype to additional native categories and channel
+  policies, with explicit key rotation/revocation and freshness contracts.
 - Complete supported lifecycle/initialization/migration contracts without
   arbitrary package hooks.
 - Add supported native Ports distribution, explicit retention/garbage collection

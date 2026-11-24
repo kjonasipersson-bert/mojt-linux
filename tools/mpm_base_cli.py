@@ -47,16 +47,18 @@ def _main(argv,*,runtime=None):
     sub=p.add_subparsers(dest='action',required=True)
     install=sub.add_parser('install');origin=install.add_mutually_exclusive_group(required=True)
     origin.add_argument('--from-file',type=Path);origin.add_argument('--source')
-    upgrade=sub.add_parser('upgrade');upgrade.add_argument('--from-file',type=Path,required=True)
+    upgrade=sub.add_parser('upgrade');upgrade_origin=upgrade.add_mutually_exclusive_group(required=True)
+    upgrade_origin.add_argument('--from-file',type=Path);upgrade_origin.add_argument('--source')
     upgrade.add_argument('--expected-selected')
     install.add_argument('--content-only',action='store_true',help='retain content without defaults or boot preparation')
     for command in (install,upgrade):
-        command.add_argument('--expected-id',help='optional expected artifact ID for a local archive; required with --source')
+        command.add_argument('--expected-id',help='optional exact native artifact ID')
+        command.add_argument('--release',help='source selector, e.g. mojt or mojt@=0.2.1-r1 (default: mojt)')
         command.add_argument('--base-context',type=Path,help='explicit Kernel bounds; default is the exact selected Kernel only')
         command.add_argument('--verify',action='store_true',help='explicitly audit retained content during preparation')
         command.add_argument('--dry-run',action='store_true');command.add_argument('-y','--yes',action='store_true')
-    for flag in ('archive-sha256','snapshot'):install.add_argument('--'+flag)
-    for flag in ('sources-root','cache-root'):install.add_argument('--'+flag,type=Path)
+        for flag in ('archive-sha256','snapshot'):command.add_argument('--'+flag)
+        for flag in ('sources-root','cache-root'):command.add_argument('--'+flag,type=Path)
     stage=sub.add_parser('stage');stage.add_argument('--artifact',required=True)
     stage.add_argument('--base-context',required=True,type=Path)
     stage.add_argument('--baseline');stage.add_argument('--dry-run',action='store_true')
@@ -100,7 +102,7 @@ def _main(argv,*,runtime=None):
         live=runtime if runtime is not None and args.disk_root is None and selection.present(root) else None
         preparing=live is not None and not getattr(args,'content_only',False)
         choosing=args.action=='upgrade'
-        base.require(not choosing or preparing,'local Base upgrade requires a running native-v2 installation; use install --content-only for an offline target')
+        base.require(not choosing or preparing,'Base upgrade requires a running native-v2 installation; use install --content-only for an offline target')
         bounds=base.read(args.base_context) if args.base_context is not None else None
         selected=selection.selected(root)[0]['description']['selected'] if preparing else None
         if choosing:base.require(args.expected_selected is None or args.expected_selected==selected,'selected deployment changed; repeat preview')
@@ -110,14 +112,16 @@ def _main(argv,*,runtime=None):
         source=getattr(args,'source',None) is not None
         with ui.phase('Install Base content'):
             if source:
-                base.require(args.expected_id is not None and args.archive_sha256 is not None,'--source requires --expected-id and --archive-sha256')
-                from mpm_base_source import install as acquire
-                result=acquire(root,args.sources_root or (runtime.sources if runtime else Path('/var/lib/mojt/sources')),
+                from mpm_base_source import install as acquire,resolve
+                source_root=args.sources_root or (runtime.sources if runtime else Path('/var/lib/mojt/sources'))
+                identifier,checksum,snapshot=resolve(source_root,args.source,selector=args.release,
+                    identifier=args.expected_id,archive_sha256=args.archive_sha256,snapshot=args.snapshot)
+                result=acquire(root,source_root,
                     args.cache_root or (runtime.cache if runtime else Path('/var/lib/mojt/cache')),
-                    args.source,args.expected_id,archive_sha256=args.archive_sha256,snapshot=args.snapshot,
+                    args.source,identifier,archive_sha256=checksum,snapshot=snapshot,
                     dry_run=args.dry_run,yes=args.yes,tar=str(runtime.helpers/'tar') if runtime else 'tar')
             else:
-                base.require(not any(getattr(args,name,None) is not None for name in ('archive_sha256','snapshot','sources_root','cache_root')),'source/cache flags require --source')
+                base.require(not any(getattr(args,name,None) is not None for name in ('release','archive_sha256','snapshot','sources_root','cache_root')),'source/cache flags require --source')
                 result=base.install(root,args.from_file,args.expected_id,dry_run=args.dry_run,yes=args.yes,
                                     tar=str(runtime.helpers/'tar') if runtime else 'tar')
         if not args.dry_run and not result.get('cancelled') and preparing:
@@ -160,7 +164,8 @@ def _main(argv,*,runtime=None):
 
 
 def main(argv,*,runtime=None):
-    try:return _main(argv,runtime=runtime)
+    try:
+        with base.io.preparation():return _main(argv,runtime=runtime)
     except (OSError,ValueError,KeyError,TypeError,RecursionError,EOFError,subprocess.CalledProcessError,tarfile.TarError) as error:
         print('mpm base: '+str(error),file=sys.stderr)
         return 1

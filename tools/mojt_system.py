@@ -36,6 +36,7 @@ ROLES = {
     9: {"tzdata": "tzdata", "man-db": "man-db"},
     10: {"shadow": "shadow", "pam": "pam", "sudo": "sudo"},
     11: {"openssh": "openssh"},
+    12: {"openssl": "openssl.bin"},
 }
 ADMIN_COMMANDS = {
     "procps": ("ps", "top", "free", "pgrep", "uptime"),
@@ -79,7 +80,7 @@ MPM_FILES = (
     "mpm", "mpm-system", "mpm_cli.py", "mpm_catalog.py", "mpm_selection.py", "mpm_boot_selection.py", "mpm_boot_update.py",
     "mpm_selector_ports.py", "mpm_system.py", "mpm_system_model.py", "mpm_system_cli.py", "mpm_system_source.py", "mpm_system_transition.py", "mpm_boot_v2.py", "mpm_boot_v2_store.py", "mpm_boot_inventory.py", "mpm_boot_early.py", "mpm_boot_constructor.py", "mpm_boot_base.py", "mpm_boot_handover.py", "mpm_nix_boot.py", "mpm_boot_status.py", "mpm_base.py", "mpm_base_transition.py", "mpm_base_boot.py", "mpm_base_cli.py", "mpm_base_source.py", "mpm_base_status.py",
     "mpm_native_io.py", "mpm_ui.py", "mpm_man.py", "mojt-base-install", "mpm_kernel.py", "mpm_kernel_source.py", "mpm_deployment.py", "mpm_kernel_boot.py",
-    "mpm_transaction.py", "mpm_defaults.py", "mpm_management.py", "mpm_requests.py", "mpm_request_plan.py", "mpm_sources.py", "mpm_sources_cli.py",
+    "mpm_transaction.py", "mpm_defaults.py", "mpm_management.py", "mpm_requests.py", "mpm_request_plan.py", "mpm_sources.py", "mpm_sources_cli.py", "mpm_https.py",
     "mpm_ports_profile.py", "mpm_ports_cli.py", "mpm_ports_nix_source.py", "mpm_nix_binary.py", "mpm_native_cache.py", "mojt_artifact.py", "mojt_boot.py", "mojt_system.py",
     "mojt_system_manifest.py", "mojt_native_image.py", "mojt-vm-build.py",
     "mojt_hardware.py", "mojt_generations.py", "mojt_accounts.py", "mojt-system-inspect.py",
@@ -89,7 +90,7 @@ MPM_FILES = (
 # environments; this code list is inventoried as part of the System profile.
 MBT_FILES = ('mbt','mbt_cli.py','mojt-build-env.py','mojt-kernel-build.py','mojt-base-build.py','mojt-base-pack',
              'mojt-artifact-pack.py','mojt_system_package.py','mojt_bootstrap.py','mojt-privileged-setup.py',
-             'mbt_runtime.py','mojt-console-size.py','mojt_mounted_install.py','mojt_bootstrap_inputs.py')
+             'mbt_runtime.py','mojt-console-size.py','mojt_mounted_install.py','mojt_bootstrap_inputs.py','mojt-repository.py')
 # Fixed assembly inputs at their repository-relative paths, so an installed
 # builder can assemble its successor without carrying a checkout.
 MBT_SOURCE_FILES = ('tests/check-mojt-system.sh','manifests/mpm-release-example.json',
@@ -129,7 +130,7 @@ def require(condition, message):
 
 
 def roles(step):
-    require(type(step) is int and step in ROLES, "System step must be an integer from 1 to 11")
+    require(type(step) is int and step in ROLES, "System step must be an integer from 1 to 12")
     result = {key: value for n in range(1, step + 1) for key, value in ROLES[n].items()}
     if step >= 9:
         result.update(MANUAL_ROLES)
@@ -653,12 +654,18 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
         (system / "libexec/mpm/bin/tar").symlink_to(tar_helper)
         if helper is not None:
             (system / "libexec/mpm/bin/zstd").symlink_to(helper)
+        crypto_helper = retained_command(payload, record, "openssl")
+        if record['step'] >= 12:
+            require(crypto_helper is not None, 'repository System needs retained OpenSSL')
+        if crypto_helper is not None:
+            (system / 'libexec/mpm/bin/openssl').symlink_to(crypto_helper)
+            (system / 'bin/openssl').symlink_to(crypto_helper)
         if with_build_tools:
             require(helper is not None, "builder System needs retained zstd for native packaging")
             (system / "bin/zstd").symlink_to(helper)
         write(system / "mpm-runtime.json", json.dumps(dict(
             format="mojt-mpm-runtime-v1", python=python, files=list(MPM_FILES),
-            helpers={"zstd": helper, "tar": tar_helper}, ports_root="/var/lib/mojt/ports",
+            helpers={"zstd": helper, "tar": tar_helper, "openssl": crypto_helper}, ports_root="/var/lib/mojt/ports",
             kernel_root="/run/mojt-disk/kernel", disk_root="/run/mojt-disk"), indent=2) + "\n")
         source = record["source"]
         write(system / "ports.toml", 'format = 1\n[nixpkgs]\n' +

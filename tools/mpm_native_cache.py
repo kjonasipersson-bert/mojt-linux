@@ -1,7 +1,7 @@
 # Mojt Linux
 # Copyright (C) 2026 Jonas Persson
 # SPDX-License-Identifier: GPL-2.0-only
-"""Explicitly owner-trusted local native acquisition; cache, never installation."""
+"""Owner-authorized local/HTTPS native acquisition; cache, never installation."""
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
@@ -15,6 +15,7 @@ import uuid
 import mojt_artifact as artifact
 import mpm_requests as model
 import mpm_transaction as tx
+import mpm_https as https
 from mpm_request_plan import record, reference
 from mpm_selection import Catalog
 
@@ -90,10 +91,16 @@ def cache_root(path, *, write=False):
 
 
 def local_source(policy_file, source):
-    """Protected local policy and exact source binding, shared with registration."""
+    """Protected owner policy and exact source binding, shared with registration."""
     policy_file=Path(os.path.abspath(policy_file))
     policy_raw=read_file(policy_file.parent,policy_file.name)
-    policy_record=artifact.parse_json(policy_raw);policy=envelope(policy_record,POLICY)
+    policy_record=artifact.parse_json(policy_raw)
+    if policy_record.get('format')==https.POLICY:
+        envelope(policy_record,https.POLICY);envelope(source,'mojt-source-v1')
+        directory=https.policy(source,policy_record)
+        for key in ('name','channel'):model.token(policy_record['description'][key])
+        return directory,policy_raw,policy_record
+    policy=envelope(policy_record,POLICY)
     fields(policy,('name','provider','channel','root','max_archive','max_expanded'))
     require(policy['provider']=='native','unsupported local policy provider')
     for key in ('name','channel'):model.token(policy[key])
@@ -114,11 +121,19 @@ def metadata(*, policy_file, source, snapshot, catalog_bytes, acquisition_bytes)
     policy = policy_record['description']; src = source['description']
     snap=envelope(snapshot,'mojt-source-snapshot-v1')
     fields(snap,('source','catalog','acquisition','provider_snapshot','trust_policy'))
-    require(snap['source']==source['id'] and snap['trust_policy']==policy_record['id'] and snap['provider_snapshot'] is None,'source snapshot binding differs')
+    remote=policy_record['format']==https.POLICY
+    require(snap['source']==source['id'] and snap['trust_policy']==policy_record['id'],'source snapshot binding differs')
+    if remote:
+        repo=https.repository(snap['provider_snapshot'],source,policy_record)
+        require(catalog_bytes==model.canonical(repo['catalog'])+b'\n' and
+            acquisition_bytes==model.canonical(repo['acquisition'])+b'\n','signed repository metadata binding differs')
+    else:require(snap['provider_snapshot'] is None,'source snapshot binding differs')
     fields(snap['catalog'],('format','sha256','size'));fields(snap['acquisition'],('id','sha256','size'))
     bound(catalog_bytes,snap['catalog']);bound(acquisition_bytes,snap['acquisition'])
     require(snap['catalog']['format']=='mpm-release-catalog-v1','unsupported catalog acquisition format')
     catalog=Catalog.from_dict(artifact.parse_json(catalog_bytes))
+    if remote:require(catalog.area=='base' and catalog.name=='mojt' and catalog.platform=='x86_64-linux',
+                      'HTTPS prototype supports Mojt Base x86_64 only')
     require(catalog.channel==src['channel'],'catalog/source channel differs')
     mapping=artifact.parse_json(acquisition_bytes);md=envelope(mapping,'mojt-acquisition-map-v1')
     fields(md,('catalog_sha256','offers'))
@@ -136,7 +151,9 @@ def metadata(*, policy_file, source, snapshot, catalog_bytes, acquisition_bytes)
         for encoding in offer['archives']:
             fields(encoding,('sha256','size','paths'));encodings.append(hex_sha(encoding['sha256']));size(encoding['size'])
             require(type(encoding['paths']) is list and encoding['paths'] and encoding['paths']==sorted(set(encoding['paths'])),'invalid mirror paths')
-            for name in encoding['paths']:artifact.relative(name)
+            for name in encoding['paths']:
+                if remote:https.url(name)
+                else:artifact.relative(name)
         require(encodings==sorted(set(encodings)),'duplicate/unordered encodings')
     require(keys==sorted(set(keys)),'duplicate/unordered offers')
     return directory, policy_raw, policy_record, catalog, mapping
@@ -168,7 +185,10 @@ def inputs(cache, *, policy_file, source, snapshot, catalog_bytes, acquisition_b
     cached_descriptor='metadata/'+offer['descriptor']['sha256']
     descriptor_raw = descriptor_bytes
     if descriptor_raw is None:
-        descriptor_raw=read_file(root,cached_descriptor) if os.path.lexists(root/cached_descriptor) else read_file(directory,offer['descriptor']['path'])
+        if os.path.lexists(root/cached_descriptor):descriptor_raw=read_file(root,cached_descriptor)
+        elif policy_record['format']==https.POLICY:
+            descriptor_raw=model.canonical(snapshot['description']['provider_snapshot']['repository']['descriptors'][offer['descriptor']['path']])+b'\n'
+        else:descriptor_raw=read_file(directory,offer['descriptor']['path'])
     body = descriptor_binding(descriptor_raw, offer, catalog, policy, kind)
     binding=dict(artifact=body['id'],archive={k:encoding[k] for k in ('sha256','size')},source_snapshot=snapshot['id'],acquisition_map=mapping['id'],descriptor=body['id'],trust_policy=policy_record['id'])
     plan=record(PLAN,dict(cache=str(root),policy_file=str(policy_file),policy_raw_sha256=hashlib.sha256(policy_raw).hexdigest(),source=source['id'],kind=kind,binding=binding,descriptor_bytes=offer['descriptor'],archive_paths=encoding['paths'],max_expanded=policy['max_expanded']))
@@ -235,11 +255,16 @@ def acquire(cache, plan, *, sync=tx.sync_directory, **kwargs):
                     require(length==encoding['size'] and hashlib.file_digest(stream,'sha256').hexdigest()==encoding['sha256'],'cached archive bytes differ')
                 verify_path=blob
             else:
-                # Explicit first listed local mirror. A failed/unsafe input is
+                # Explicit first listed mirror. A failed/unsafe input is
                 # not permission to silently select a different transport.
-                with confined(kwargs['source']['description']['location']['path'],d['archive_paths'][0]) as (stream,length):
-                    require(length==encoding['size'],'archive size differs')
-                    temporary=stage_bytes(root,iter(lambda:stream.read(128*1024),b''),encoding)
+                if kwargs['source']['description']['location']['kind']=='https-repository':
+                    from mpm_ui import phase
+                    with phase('Download exact native archive'):
+                        temporary=stage_bytes(root,https.chunks(d['archive_paths'][0],encoding['size']),encoding)
+                else:
+                    with confined(kwargs['source']['description']['location']['path'],d['archive_paths'][0]) as (stream,length):
+                        require(length==encoding['size'],'archive size differs')
+                        temporary=stage_bytes(root,iter(lambda:stream.read(128*1024),b''),encoding)
                 verify_path=temporary
             verified=artifact.verify(verify_path,binding['artifact'],max_uncompressed=d['max_expanded'])
             require(verified==body,'embedded/external descriptor differs')
