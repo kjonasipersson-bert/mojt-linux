@@ -291,7 +291,7 @@ def main(argv=None):
         elif args.source is not None:
             require(args.archive_sha256 is not None, "--source requires --archive-sha256")
             from mpm_kernel_source import install as from_source
-            result = from_source(root, args.sources_root or Path('/var/lib/mojt/sources'),
+            result = from_source(root, args.sources_root or Path('/var/lib/mojt/sources/kernel'),
                 args.cache_root or Path('/var/lib/mojt/cache'), args.source, args.expected_id,
                 archive_sha256=args.archive_sha256, snapshot=args.snapshot,
                 dry_run=args.dry_run, yes=args.yes)

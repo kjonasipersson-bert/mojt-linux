@@ -17,7 +17,7 @@ Ports state and resolver catalogs keep their formats and source bindings.
 From the repository root, with Python 3.11 or later:
 
 ```sh
-python3 -B tools/mpm catalog search neovim --catalog manifests/mpm-discovery-example.json
+python3 -B tools/mpm ports search neovim --catalog manifests/mpm-discovery-example.json
 python3 -B tools/mpm ports search nvim --catalog manifests/mpm-discovery-example.json
 python3 -B tools/mpm ports search --description Lua --catalog manifests/mpm-discovery-example.json
 python3 -B tools/mpm ports show neovim --catalog manifests/mpm-discovery-example.json

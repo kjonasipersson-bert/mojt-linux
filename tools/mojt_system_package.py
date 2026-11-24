@@ -180,7 +180,7 @@ def package(tree, generation, upstream, revision, output, *, adapter):
     return dict(kit=kit, output=str(output), changed=True, activation=False)
 
 
-def package_installed(root, baseline, output, *, label, revision=1, firmware='none', resources=None):
+def package_installed(root, baseline, output, *, label, revision=1, firmware='none', resources=None, openssl_reference=None):
     """Build a small Runtime successor and references; never copy firmware data."""
     import copy
     import mbt_runtime
@@ -199,6 +199,14 @@ def package_installed(root, baseline, output, *, label, revision=1, firmware='no
     roles={r['role']:r['reference'] for r in old['components']}
     runtime_paths=[r['path'] for r in old['profile'] if r['source']['reference']==roles['runtime']]
     firmware_paths=('kernel/lib/firmware','kernel/licenses')
+    dependencies=system.retained_providers(root,baseline)
+    crypto=None
+    if openssl_reference is not None:
+        from mpm_nix_binary import NixBinaryAdapter,store_path
+        identity=NixBinaryAdapter.identity(openssl_reference)
+        artifact.require('openssl' in identity['commands'],'OpenSSL output has no openssl command')
+        crypto=str(store_path(identity['output'])/'bin/openssl')
+        dependencies=sorted({artifact.canonical(r):r for r in [*dependencies,openssl_reference]}.values(),key=artifact.canonical)
     with tempfile.TemporaryDirectory(prefix='.mojt-components-',dir=output.parent) as temporary:
         work=Path(temporary);content=work/'runtime';content.mkdir();kit=work/'kit';kit.mkdir()
         for name in runtime_paths:
@@ -238,10 +246,26 @@ def package_installed(root, baseline, output, *, label, revision=1, firmware='no
             (content/'hardware.json').chmod(0o444)
             (content/'firmware-update.json').unlink(missing_ok=True)
         names=management.literal(content/'tools/mojt_system.py','MPM_FILES')
+        marker=content/'mpm-runtime.json'
+        if marker.exists():
+            runtime=artifact.read_json(marker)
+            artifact.require(runtime.get('format')=='mojt-mpm-runtime-v1','unsupported MPM runtime marker')
+            runtime['files']=list(names)
+            if crypto is not None:
+                for name in ('bin/openssl','libexec/mpm/bin/openssl'):
+                    target=content/name
+                    artifact.require(not os.path.lexists(target) or target.is_symlink() and os.readlink(target)==crypto,
+                                     'refusing to replace an existing OpenSSL helper')
+                    if not os.path.lexists(target):
+                        artifact.require(target.parent.is_dir() and not target.parent.is_symlink(),'missing/linked helper directory')
+                        target.symlink_to(crypto)
+                runtime['helpers']['openssl']=crypto
+            marker.unlink();marker.write_bytes(raw(runtime));marker.chmod(0o444)
+        else:artifact.require(crypto is None,'OpenSSL helper needs an existing MPM runtime marker')
         support=management.produce(content/'tools',names)
         provenance=dict(source_generation=baseline,resources={n:hashlib.sha256(v).hexdigest() for n,v in resources.items()})
         spec=dict(format=artifact.SPEC_FORMAT,kind='system',name='mojt-system-runtime',platform=body['platform'],
-            version=version,dependencies=system.retained_providers(root,baseline),requirements={},provides={},provenance=provenance,
+            version=version,dependencies=dependencies,requirements={},provides={},provenance=provenance,
             metadata=dict(system_role='component',**({'runtime_outputs':dict(format='mojt-profile-runtime-outputs-v1',producer='mojt-privileged-v1',
                 paths=manifest['description']['provenance']['runtime_outputs'])} if manifest['description']['provenance'].get('runtime_outputs') else {})))
         runtime=artifact.pack(content,spec,kit/'runtime',numeric_owner=(0,0))

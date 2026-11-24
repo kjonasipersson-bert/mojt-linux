@@ -83,6 +83,9 @@ component references and a small profile, without copying a complete profile.
 Firmware is omitted by default; --firmware keep reuses the retained firmware
 component without opening or repackaging its data. --generation NAME sets the
 label; --revision N advances the baseline packaging revision by N (default 1).
+--openssl-output /nix/store/EXACT-openssl-bin adds an already installed OpenSSL
+output as an exact independently retained dependency, with ordinary public/private
+command links. It never fetches/builds that output or retargets an existing helper.
 It neither installs nor selects output. The assembled --tree route remains
 available for bootstrap. See docs/system-components.md.
 .TP

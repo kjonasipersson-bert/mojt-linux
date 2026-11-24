@@ -190,7 +190,7 @@ class KernelSourceTests(unittest.TestCase):
             self.assertEqual(cli.main(['kernel', 'install', '--source', self.f.name, '--dry-run'], runtime=runtime), 0)
             args = run.call_args.args[0]
             self.assertIn(str(disk/'kernel'), args)
-            self.assertEqual(args[args.index('--sources-root')+1], str(self.f.root))
+            self.assertEqual(args[args.index('--sources-root')+1], str(self.f.root/'kernel'))
             self.assertEqual(args[args.index('--cache-root')+1], str(self.f.cache))
         self.assertFalse(self.root.exists()); self.assertFalse(self.f.cache.exists())
 

@@ -12,10 +12,10 @@ frontend delivered in System. Python remains in System. No Nix import, global
 compiler/libc change, service activation or boot publication is involved.
 
 The [signed Base repository](native-repository.md) also supports HTTPS sources:
-`source add NAME --url URL --key-file PUBLIC_PEM` registers owner-selected trust,
-and `source update NAME` authenticates one complete signed catalog. Local source
+`mpm base repo add NAME --url URL --key-file PUBLIC_PEM` registers owner-selected trust,
+and `mpm base repo update NAME` authenticates one complete signed catalog. Local source
 commands below retain their protected-directory behavior. Base source installation
-can resolve the accepted release with `mpm base install --source NAME`; it does
+can resolve the accepted release with `mpm base install mojt@0.2 --repo NAME`; it does
 not refresh implicitly.
 
 ## Command flow
@@ -28,14 +28,14 @@ delivered. On an installed machine, mutation requires an administrator. The sour
 checkout can use a private owner-controlled lab with explicit roots.
 
 ```sh
-mpm source add local --from-file /protected/source.json \
+mpm kernel repo add local --from-file /protected/source.json \
     --policy-file /protected/policy.json --dry-run
-mpm source add local --from-file /protected/source.json \
+mpm kernel repo add local --from-file /protected/source.json \
     --policy-file /protected/policy.json
-mpm source update local --dry-run
-mpm source update local
-mpm source list
-mpm source show local --json
+mpm kernel repo update local --dry-run
+mpm kernel repo update local
+mpm kernel repo list
+mpm kernel repo show local --json
 ```
 
 `add` adopts the exact source and a copy of its protected owner policy. It does
@@ -44,7 +44,7 @@ A repeat identical registration keeps its accepted snapshot. Changing the source
 channel, location or policy needs explicit `add ... --replace`; this clears the
 current snapshot while retaining previous records. Editing an original input
 policy file after registration does not reconfigure the accepted copy. Reconfigure
-through `source add --replace` to change authorization.
+through `mpm kernel repo add --replace` to change authorization.
 
 For a local-directory source, `update` reads `snapshot.json`, `catalog.json` and `acquisition-map.json`
 relative to the registered repository root, plus descriptors named by that map.
@@ -64,15 +64,15 @@ the pre-existing explicit Nix-backed Ports bundle workflow remains available.
 Exact native acquisition is a separate action:
 
 ```sh
-mpm cache fetch "$ARTIFACT" --source local --kind kernel \
+mpm kernel repo fetch "$ARTIFACT" --repo local \
     --archive-sha256 "$ARCHIVE_SHA256" --dry-run
-mpm cache fetch "$ARTIFACT" --source local --kind kernel \
+mpm kernel repo fetch "$ARTIFACT" --repo local \
     --archive-sha256 "$ARCHIVE_SHA256"
 ```
 
 `ARTIFACT` is a full `sha256:` native artifact ID. `ARCHIVE_SHA256` is one raw
 64-hex compressed encoding approved by the accepted map. The two identities are
-different. `--kind` accepts base, system, kernel or port. Fetch defaults to the
+different. The public command area determines the artifact kind. Fetch defaults to the
 current accepted snapshot; `--snapshot ID` pins an already retained older one.
 An older snapshot is usable only if it still binds the currently registered source
 and policy. A newer snapshot of the same source does not revoke an explicit pin;
@@ -85,10 +85,10 @@ The narrow acquisition plan is not the general saved execution/approval protocol
 
 ## Paths, publication and inspection
 
-Source registry defaults to `/var/lib/mojt/sources`; native cache defaults to
+Each area has its own registry at `/var/lib/mojt/sources/AREA`; native cache defaults to
 `/var/lib/mojt/cache`, alongside the existing machine state. `--root` selects the
-source registry for source commands and the cache for cache commands. Fetch's
-`--sources-root` can explicitly select another source registry. Do not put either
+area registry for repo metadata commands and the cache for repo fetch. Fetch's
+`--repos-root` can explicitly select another source registry. Do not put either
 root inside the other. Target parents must exist and satisfy ownership checks.
 
 The version marker is `{"format":"mojt-source-registry-v1"}` in `registry.json`.
@@ -125,6 +125,7 @@ cover four category namespaces and full byte verification.
 
 The cache output is still acquisition evidence. The [Kernel source-install join](kernel-source-install.md)
 now passes an exact acquired archive to the existing installer, retaining source
-provenance and keeping boot selection separate. Native Ports publication, Base/System install and
-deployment integration, remote authentication/signing, pruning and lifecycle
-recovery remain explicit gates in the governing six-step roadmap.
+provenance and keeping boot selection separate. Base and System also have native
+install joins; the [Base HTTPS repository](native-repository.md) authenticates
+signed remote publication. Native Ports publication, pruning and lifecycle
+recovery remain separate work.

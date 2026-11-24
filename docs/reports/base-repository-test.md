@@ -15,8 +15,8 @@ limits are in [Signed Base repository](../native-repository.md).
 ## 1. Debian host: prepare the publication
 
 Work in **`$HOME/mojt-base-src`**. The existing build report must be at
-`$HOME/mojt-base-021-result/result.json`. GitHub CLI must already be authenticated
-as an account permitted to publish to `kjonasipersson-bert/mojt-linux`.
+`$HOME/mojt-base-021-result/result.json`. Publish with an account permitted to create a GitHub Release in
+`kjonasipersson-bert/mojt-linux`; the GitHub website is sufficient.
 Do not send the private key or its passphrase in chat.
 
 ```bash
@@ -64,11 +64,13 @@ public-key fingerprint for the guest check. The private key remains under
 
 ## 2. Publish the exact archive, then the channel
 
-Still on Debian, in **`$HOME/mojt-base-src`**. This block makes the public
-`base-0.2.1-r1` release from a draft, then publishes metadata to a separate
-`repository-base-stable` branch. It does not update `main`, merge the code PR,
-overwrite an existing release, or force-push a branch. Use this first-publication
-procedure once. The signed URL must match the actual asset filename.
+Still on Debian, in **`$HOME/mojt-base-src`**. On the GitHub website, create a
+release tagged `base-0.2.1-r1`, upload the exact archive listed in
+`$HOME/mojt-repository-test/publication-1/publication.json`, and publish it.
+Do not replace an existing published asset. No `gh` command is required.
+
+After the archive is publicly downloadable at the URL in the signed metadata,
+publish the already signed channel files with ordinary Git:
 
 ```bash
 bash <<'MOJT_PUBLISH'
@@ -77,14 +79,6 @@ cd "$HOME/mojt-base-src"
 LAB="$HOME/mojt-repository-test"
 REPO=kjonasipersson-bert/mojt-linux
 REVISION=$(git rev-parse HEAD)
-PACKAGE=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["assets"][0]["file"])' \
-  "$LAB/publication-1/publication.json")
-gh release create base-0.2.1-r1 "$PACKAGE" --repo "$REPO" \
-  --target "$REVISION" --title 'Mojt Base 0.2.1-r1' \
-  --notes 'Whole source-built Mojt Base 0.2.1 package for x86_64.' --draft
-gh release view base-0.2.1-r1 --repo "$REPO"
-gh release edit base-0.2.1-r1 --repo "$REPO" --draft=false
-
 git worktree add --detach "$LAB/channel-checkout" "$REVISION"
 cd "$LAB/channel-checkout"
 mkdir -p repository/base
@@ -112,21 +106,21 @@ set -euo pipefail
 cd "$HOME/mojt-base-src"
 LAB="$HOME/mojt-repository-test"
 MPM=(python3 -I -B tools/mpm)
-"${MPM[@]}" source add mojt-base --root "$LAB/sources" \
+"${MPM[@]}" base repo add mojt-base --root "$LAB/sources" \
   --url https://raw.githubusercontent.com/kjonasipersson-bert/mojt-linux/repository-base-stable/repository/base/stable.json \
   --key-file "$LAB/publication-1/public.pem" -y
-"${MPM[@]}" source update mojt-base --root "$LAB/sources" -y
-"${MPM[@]}" source show mojt-base --root "$LAB/sources"
+"${MPM[@]}" base repo update mojt-base --root "$LAB/sources" -y
+"${MPM[@]}" base repo show mojt-base --root "$LAB/sources"
 readarray -t EXACT < <(python3 - "$LAB/publication-1/stable.json" <<'PY'
 import json,sys
 c=json.load(open(sys.argv[1]))['repository']['catalog']['candidates'][0]
 print(c['artifact']);print(c['integrity']['sha256'])
 PY
 )
-"${MPM[@]}" cache fetch "${EXACT[0]}" --source mojt-base --kind base \
-  --archive-sha256 "${EXACT[1]}" --sources-root "$LAB/sources" --root "$LAB/cache" -y
-"${MPM[@]}" cache fetch "${EXACT[0]}" --source mojt-base --kind base \
-  --archive-sha256 "${EXACT[1]}" --sources-root "$LAB/sources" --root "$LAB/cache" -y
+"${MPM[@]}" base repo fetch "${EXACT[0]}" --repo mojt-base \
+  --archive-sha256 "${EXACT[1]}" --repos-root "$LAB/sources" --root "$LAB/cache" -y
+"${MPM[@]}" base repo fetch "${EXACT[0]}" --repo mojt-base \
+  --archive-sha256 "${EXACT[1]}" --repos-root "$LAB/sources" --root "$LAB/cache" -y
 MOJT_FETCH
 ```
 
@@ -134,90 +128,92 @@ Expect one metadata download, the declared Base release, `copied: true` on first
 fetch, and `copied: false`/`changed: false` on the repeat. Report the first error,
 or the final cache result and public-key fingerprint. No new build is needed.
 
-## 4. Optional complete VM update
+## 4. Existing Mojt VM: install the repository-enabled System tools
 
-This is the target-side acceptance after publication. The previous System export
-has no repository crypto helper; a new export/image is explicit. Use the retained
-Base **0.2.0** build only to start the disposable VM, then install the published
-0.2.1 through ordinary MPM. No Void compatibility or physical install is involved.
+Use the already running **Mojt VM**, logged in as root. Keep its current Base,
+Kernel, disk and configuration. The ordinary Ports installation has already
+acquired this exact OpenSSL output:
+`/nix/store/gvglnxscmvx4mh9my0cy0xgi0l1z6l9s-openssl-3.5.9-bin`.
+The new System owns its own exact reference; it does not depend on Ports aliases.
 
-From Debian, enter `distrobox enter mojt-mpm-nix`, then run as the ordinary user:
+Fetch the reviewed commit's source archive into a new directory under
+`/var/lib/mojt`, extract it into `source`, and enter that source directory.
+From **that Mojt checkout root**, package just a Runtime successor:
 
 ```bash
-cd "$HOME/mojt-base-src"
-python3 -I -B tools/mojt-system-prepare.py --step 12 \
-  --output "$HOME/mojt-repository-system" --dry-run
-python3 -I -B tools/mojt-system-prepare.py --step 12 \
-  --output "$HOME/mojt-repository-system" -y
-exit
+WORK=$(mktemp -d /var/lib/mojt/repository-tools.XXXXXX)
+python3 -I -B tools/mbt package system --running --firmware keep \
+  --openssl-output /nix/store/gvglnxscmvx4mh9my0cy0xgi0l1z6l9s-openssl-3.5.9-bin \
+  --generation system-repository-tools --output "$WORK/kit" >"$WORK/result.json"
 ```
 
-This imports binary System outputs from the exporter's explicit retained source
-pin, including OpenSSL. It does not compile Base or a Kernel. Back on Debian,
-in **`$HOME/mojt-base-src`**, reuse the saved Kernel locator with the new export:
+Then, in the same shell, import that package with installed MPM and prepare it
+with the candidate's new management code. This uses normal System APIs and
+preserves running/next boot. The selected older manager does not yet authorize
+the new helper addition, which is why the retained candidate frontend prepares
+this first tooling transition:
 
 ```bash
-cd "$HOME/mojt-base-src"
-python3 - <<'PY'
-import hashlib,json
+python3 - "$WORK" <<'PYTHON'
+import json,subprocess,sys
 from pathlib import Path
-home=Path.home();lab=home/'mojt-repository-test';payload=home/'mojt-repository-system'
-seed=json.loads((home/'mojt-normal-boot.CY1x3d/vm/input-check.json').read_text())
-seed['system']['path']=str(payload)
-seed['system']['record_sha256']=hashlib.sha256((payload/'system.json').read_bytes()).hexdigest()
-(lab/'input-check.json').write_text(json.dumps(seed,indent=2)+'\n')
-PY
-TEST=(python3 -I -B tests/prepare-source-base-boot.py
-  --from-check "$HOME/mojt-repository-test/input-check.json"
-  --base-build "$HOME/mojt-base-result" --with-build-tools
-  --output "$HOME/mojt-repository-vm")
-"${TEST[@]}" --check-inputs
-"${TEST[@]}"
-QEMU_MEMORY_MIB=4096 bash "$HOME/mojt-repository-vm/image/run-qemu.sh"
+work=Path(sys.argv[1]);kit=work/'kit'
+r=json.loads((work/'result.json').read_text());identifier=r['artifact']
+command=['mpm','system','install','--from-file',str(kit/r['generation']),
+         '--expected-id',identifier,'--content-only','-y']
+for relative in r['dependency_files']:command+=['--dependency-file',str(kit/relative)]
+subprocess.run(command,check=True)
+profile=Path('/run/mojt-disk/realizations/system')/identifier.removeprefix('sha256:')/'profile'
+subprocess.run([sys.executable,'-I','-B',str(profile/'tools/mpm-system'),
+                'system','stage','--artifact',identifier,'-y'],check=True)
+PYTHON
+mpm system activate
 ```
 
-The helper verifies the actual inputs and creates a new image only. It asks for a
-VM root password through ordinary bootstrap. In the **new Mojt VM**, log in as
-root. Download the public key and compare its SHA256 with the trusted Debian
-output before registering it:
+Choose `system-repository-tools`, review the concrete next-boot change, and
+approve it. Reboot and relaunch **the same VM disk** on Debian:
+
+```bash
+QEMU_MEMORY_MIB=4096 bash "$HOME/mojt-base-update-test/run-qemu.sh"
+```
+
+In **Mojt**, confirm the running System and new public interface:
+
+```sh
+mpm system status
+mpm base upgrade --help
+openssl version
+```
+
+Register the same public Base repository under its area. Old unscoped
+registrations remain on disk; no automatic migration or private key is needed.
+Download the public key and verify the independently recorded fingerprint:
 
 ```sh
 curl -fL https://raw.githubusercontent.com/kjonasipersson-bert/mojt-linux/repository-base-stable/repository/base/public.pem \
   -o /root/mojt-base-public.pem
-sha256sum /root/mojt-base-public.pem
+printf '%s  %s\n' 02ab200c8be22fbf66a41c3ef165d7effa75559066b09684ffedaac9b8b3b808 /root/mojt-base-public.pem | sha256sum -c -
 ```
 
-After the fingerprints match:
+After that check succeeds:
 
 ```sh
-printf 'keep me\n' >/etc/mojt-repo-check
-printf 'keep me\n' >/var/mojt-repo-check
-mpm source add mojt-base \
+mpm base repo add mojt-base \
   --url https://raw.githubusercontent.com/kjonasipersson-bert/mojt-linux/repository-base-stable/repository/base/stable.json \
   --key-file /root/mojt-base-public.pem
-mpm source update mojt-base
-mpm base upgrade --source mojt-base --dry-run
-mpm base upgrade --source mojt-base
+mpm base update
+mpm base upgrade mojt@0.2 --dry-run
+mpm base upgrade mojt@0.2
 mpm base status
-reboot
-```
-
-Approve the missing defaults and proposed next-boot selection. Relaunch the same
-VM image on Debian with the QEMU command above, then check in **Mojt**:
-
-```sh
-cat /usr/lib/os-release
-getconf GNU_LIBC_VERSION
-getent services https/tcp
-getent protocols tcp
-cat /etc/mojt-repo-check /var/mojt-repo-check
-mpm base status
+mpm base upgrade --dry-run
 systemctl --failed --no-pager
 ```
 
-Expected: Base 0.2.1/glibc 2.44, both markers retained, IANA lookups succeed,
-running/next boot agree, System/Kernel unchanged and no failed units. That is the
-single new acceptance; a return round is unnecessary here.
+Expected: the prepared Base is still 0.2.1, status reports the saved `mojt@0.2`
+request, and the last preview follows it without an explicit selector. No extra
+Base reboot is needed when this exact Base is already running/selected. System
+and Kernel do not change during these Base commands. This checks repository
+client delivery and saved-policy reuse, not a new Base version transition.
 
 ## Automated evidence and remaining boundary
 
@@ -227,6 +223,9 @@ signatures/keys, TLS errors, HTTP redirects, transfer bounds, corrupted archives
 sequence rollback/equivocation, key/location reconfiguration and offline cache
 reuse. A private user namespace also exercises real Base content import; the
 executor filesystem does not support POSIX ACLs, so this is not ACL evidence.
-System fixtures check step-12 retained-helper delivery and unchanged earlier
-roles. These are not a real published GitHub or VM acceptance. Record those
+System fixtures check retained-helper delivery, independent provider references
+and unchanged earlier export roles. A local run on 2026-11-24 passed 74 focused
+repository, Base flow, System component, dispatcher and adapter tests in a
+private root user namespace. A subsequent focused run passed 18 tests with one
+unmapped-UID namespace test skipped. Neither run boots the owner's VM. These are not a real published GitHub or VM acceptance. Record those
 results separately after running the corresponding sections above.

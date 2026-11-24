@@ -66,11 +66,11 @@ Moving a kit requires new explicit location/policy metadata, not rewriting an
 accepted snapshot behind MPM's back.
 
 ```sh
-mpm source add system-kit --from-file /KIT/source.json \
+mpm system repo add system-kit --from-file /KIT/source.json \
   --policy-file /KIT/policy.json --dry-run
-mpm source add system-kit --from-file /KIT/source.json \
+mpm system repo add system-kit --from-file /KIT/source.json \
   --policy-file /KIT/policy.json -y
-mpm source update system-kit -y
+mpm system repo update system-kit -y
 
 mpm system install --source system-kit --expected-id sha256:GENERATION_ID \
   --archive-sha256 ARCHIVE_SHA256 --dry-run

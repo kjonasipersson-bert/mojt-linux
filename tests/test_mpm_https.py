@@ -187,7 +187,7 @@ class RepositoryTests(unittest.TestCase):
         from mpm_base_cli import main
         self.add();self.update()
         with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(main(['install','--source','mojt-base','--disk-root',str(self.f.root),
+            self.assertEqual(main(['install','mojt@0.2','--repo','mojt-base','--disk-root',str(self.f.root),
                 '--sources-root',str(self.root),'--cache-root',str(self.cache),'--content-only','-y']),0)
         self.assertTrue(fixture.base.realization_path(self.f.root,self.body['id']).is_dir())
 
@@ -199,6 +199,58 @@ class RepositoryTests(unittest.TestCase):
             (profile/'libexec/mpm/bin').mkdir(parents=True)
             (profile/'libexec/mpm/bin/openssl').symlink_to(shutil.which('openssl'))
             self.assertEqual(https.verify(self.proof,self.public),self.proof['repository'])
+
+    def test_saved_series_stays_within_major_and_exact_pin_survives_withdrawal(self):
+        import mpm_base_request as requests
+        self.add();self.update()
+        request,before=requests.choose(self.root,selector='mojt@0')
+        self.assertIsNone(before)
+        self.assertTrue(requests.save(self.root,request,before,'a'*32))
+        self.publish(2,'1.0.0');self.update()
+        with self.assertRaisesRegex(ValueError,'no eligible'):
+            requests.choose(self.root,installation='a'*32)
+        # Restore a catalog containing a newer release within the saved series.
+        self.publish(3,'0.3.0');self.update()
+        updated,previous=requests.choose(self.root,installation='a'*32)
+        self.assertEqual(updated['selection']['candidate']['upstream_version'],'0.3.0')
+        self.assertTrue(requests.save(self.root,updated,previous,'a'*32))
+        self.publish(4,'0.2.2');self.update()
+        with self.assertRaisesRegex(ValueError,'downgrade'):
+            requests.choose(self.root,installation='a'*32)
+        pinned,previous=requests.choose(self.root,selector='mojt@=0.2.2-r1')
+        requests.save(self.root,pinned,previous,'a'*32)
+        self.publish(5,'1.0.0');self.update()
+        kept,_=requests.choose(self.root,installation='a'*32)
+        self.assertEqual(kept,pinned)
+        self.assertEqual(requests.read(self.root)['description']['selection'],pinned['selection'])
+
+    def test_missing_wish_explicit_latest_and_lost_update_guard(self):
+        import mpm_base_request as requests
+        self.add();self.update()
+        with self.assertRaisesRegex(ValueError,'choose a Base update series'):
+            requests.choose(self.root)
+        latest,previous=requests.choose(self.root,selector='mojt')
+        requests.save(self.root,latest,previous,'a'*32)
+        self.publish(2,'1.0.0');self.update()
+        updated,previous=requests.choose(self.root,installation='a'*32)
+        self.assertEqual(updated['selection']['candidate']['upstream_version'],'1.0.0')
+        with self.assertRaisesRegex(ValueError,'another installation'):
+            requests.choose(self.root,installation='b'*32)
+        requests.save(self.root,updated,previous,'a'*32)
+        with self.assertRaisesRegex(ValueError,'changed during'):
+            requests.save(self.root,latest,previous,'a'*32)
+
+    def test_area_frontend_rejects_wrong_catalog_and_old_global_commands(self):
+        import mpm_cli
+        self.add()
+        with contextlib.redirect_stderr(io.StringIO()),contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(mpm_cli.main(['kernel','update','--root',str(self.root),'-y']),1)
+            for area in ('source','cache','catalog'):
+                self.assertEqual(mpm_cli.main([area,'--help']),1)
+        self.assertIsNone(sources.current(self.root,'mojt-base')['description']['snapshot'])
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(mpm_cli.main(['base','update','--root',str(self.root),'-y']),0)
+        self.assertIsNotNone(sources.current(self.root,'mojt-base')['description']['snapshot'])
 
 
 if __name__=='__main__':unittest.main()

@@ -27,14 +27,14 @@ mpm base install --from-file /packages/base-EXACT.tar.zst \
     --expected-id sha256:FULL_ARTIFACT_ID --dry-run
 mpm base install --from-file /packages/base-EXACT.tar.zst \
     --expected-id sha256:FULL_ARTIFACT_ID -y
-mpm base install --source local --expected-id sha256:FULL_ARTIFACT_ID \
+mpm base install --repo local --expected-id sha256:FULL_ARTIFACT_ID \
     --archive-sha256 FULL_ARCHIVE_SHA256 --dry-run
 mpm base status
 mpm base status --verify --json
 ```
 
 The IDs above are placeholders, not runnable example values. Source install
-also supports `--snapshot`, `--sources-root` and `--cache-root`, with the same
+also supports `--snapshot`, `--repos-root` and `--cache-root`, with the same
 meaning as the existing Kernel source input. It holds the accepted source
 binding through cache verification and final installation. Source preview reads
 only frozen metadata, not the payload. Local preview freezes/verifies the wrapper

@@ -122,16 +122,28 @@ def inspect(root, name, snapshot=None):
                 local_directory_available=Path(source['description']['location']['path']).is_dir() if local else None)
 
 
-def list_sources(root):
+def names(root):
     root = registry(root)
-    names = root / 'names'
-    if not names.exists():
-        return []
-    result = []
-    for directory in sorted(names.iterdir()):
-        if current(root, directory.name) is not None:
-            result.append(inspect(root, directory.name))
-    return result
+    directory=root/'names'
+    if not directory.exists():return []
+    return [p.name for p in sorted(directory.iterdir()) if current(root,p.name) is not None]
+
+
+def list_sources(root):return [inspect(root,name) for name in names(root)]
+
+
+def area_root(area,runtime=None):
+    require(area in ('base','system','kernel','ports'),'unsupported repository area')
+    return (runtime.sources if runtime else Path('/var/lib/mojt/sources'))/area
+
+
+def choose(root,name=None):
+    if name is not None:
+        require(current(root,name) is not None,'repository is not registered: '+name)
+        return name
+    available=names(root)
+    require(len(available)==1,'configure one repository or choose --repo NAME')
+    return available[0]
 
 
 def change_plan(root, name, before, after, raw=()):
@@ -156,7 +168,7 @@ def prepare_add(root, name, *, source, policy_file, replace=False):
 
 
 def frozen_update(root, name, *, snapshot_file='snapshot.json', catalog_file='catalog.json',
-                  acquisition_file='acquisition-map.json',proof=None):
+                  acquisition_file='acquisition-map.json',proof=None,expected_area=None):
     root = registry(root)
     before = current(root, name)
     require(before is not None, 'source is not registered')
@@ -192,6 +204,7 @@ def frozen_update(root, name, *, snapshot_file='snapshot.json', catalog_file='ca
     args = dict(policy_file=policy_file, source=source, snapshot=snapshot,
                 catalog_bytes=catalog_raw, acquisition_bytes=mapping_raw)
     _, _, policy, catalog, mapping = cache.metadata(**args)
+    require(expected_area is None or catalog.area==expected_area,'repository catalog belongs to another area')
     raw = [catalog_raw, mapping_raw]
     total = len(snapshot_raw) + sum(map(len, raw))
     require(total <= MAX_FROZEN, 'source metadata exceeds frozen byte limit')

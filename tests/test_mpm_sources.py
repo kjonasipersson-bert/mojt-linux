@@ -191,31 +191,31 @@ class SourceTests(unittest.TestCase):
             shutil.copyfile(Path(sources.__file__).parent / name, tools / name)
         source_file = self.work / 'source.json'; source_file.write_bytes(fixture.raw(self.source))
         def call(root, *args):
-            result = subprocess.run([sys.executable, '-I', '-B', str(tools / 'mpm'), '--root', str(root), *args],
+            result = subprocess.run([sys.executable, '-I', '-B', str(tools / 'mpm'), *args, '--root', str(root)],
                 cwd='/', text=True, capture_output=True, env=dict(os.environ, PYTHONPATH='/invalid'))
             self.assertEqual(result.returncode, 0, result.stderr); return json.loads(result.stdout)
-        args = ('source', 'add', self.name, '--from-file', str(source_file), '--policy-file', str(self.policy))
+        args = ('kernel','repo', 'add', self.name, '--from-file', str(source_file), '--policy-file', str(self.policy))
         call(self.root, *args, '--dry-run'); self.assertFalse(self.root.exists())
-        call(self.root, *args, '-y'); call(self.root, 'source', 'update', self.name, '-y')
-        args = ('cache', 'fetch', self.f.body['id'], '--sources-root', str(self.root), '--source', self.name,
+        call(self.root, *args, '-y'); call(self.root, 'kernel','repo', 'update', self.name, '-y')
+        args = ('kernel','repo', 'fetch', self.f.body['id'], '--repos-root', str(self.root), '--repo', self.name,
                 '--kind', 'kernel', '--archive-sha256', self.selection()['archive_sha256'])
         self.assertTrue(call(self.cache, *args, '--dry-run')['dry_run']); self.assertFalse(self.cache.exists())
         self.assertTrue(call(self.cache, *args, '-y')['changed']); self.assertFalse(call(self.cache, *args, '-y')['changed'])
-        self.assertEqual(call(self.root, 'source', 'show', self.name)['snapshot']['id'], self.f.args['snapshot']['id'])
+        self.assertEqual(call(self.root, 'kernel','repo', 'show', self.name)['snapshot']['id'], self.f.args['snapshot']['id'])
 
     def test_system_readonly_access_and_codec_gate(self):
         runtime = dataclasses.replace(cli.Runtime(), sources=self.root, cache=self.cache,
                                       helpers=self.work / 'no-codec', system_bin=self.work / 'no-bin')
         ordinary_uid = os.geteuid() or 1000
         with mock.patch.object(cli.os, 'geteuid', return_value=ordinary_uid):
-            for argv in (['source', 'add'], ['source', 'update'], ['cache', 'fetch']):
+            for argv in (['base','repo', 'add'], ['base', 'update'], ['base','repo', 'fetch']):
                 with contextlib.redirect_stderr(io.StringIO()) as err:
                     self.assertEqual(cli.main(argv, runtime=runtime), 1); self.assertIn('administrator', err.getvalue())
             with contextlib.redirect_stdout(io.StringIO()) as out:
-                self.assertEqual(cli.main(['source', 'list', '--json'], runtime=runtime), 0)
+                self.assertEqual(cli.main(['base','repo', 'list', '--json'], runtime=runtime), 0)
                 self.assertEqual(json.loads(out.getvalue()), [])
         with mock.patch.object(cli.os, 'geteuid', return_value=0), contextlib.redirect_stderr(io.StringIO()) as err:
-            self.assertEqual(cli.main(['cache', 'fetch', self.f.body['id'], '--source', self.name,
+            self.assertEqual(cli.main(['kernel','repo', 'fetch', self.f.body['id'], '--repo', self.name,
                 '--kind', 'kernel', '--archive-sha256', self.selection()['archive_sha256'], '-y'], runtime=runtime), 1)
             self.assertIn('retained zstd', err.getvalue())
         self.assertFalse(self.root.exists()); self.assertFalse(self.cache.exists())

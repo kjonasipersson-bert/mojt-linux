@@ -23,6 +23,23 @@ import mpm_system_transition as transition
 
 
 class ReviewTests(unittest.TestCase):
+    def test_new_crypto_helper_requires_matching_public_alias_and_cannot_retarget(self):
+        old=manifests.create(dict(label='crypto',architecture='x86_64',
+            requirements=dict(base_abi={'libc':'glibc'},state_layout=1),
+            support=dict(ports=dict(read=[],write=[],capabilities=[])),provides=[],
+            artifacts={'fixture':True},provenance={'fixture':True},profile={}))
+        d=copy.deepcopy(old['description'])
+        target='/nix/store/'+'a'*32+'-openssl/bin/openssl'
+        d['profile']={'bin/openssl':{'link':target},'libexec/mpm/bin/openssl':{'link':target},
+                      'mpm-runtime.json':{'sha256':'b'*64,'mode':0o444}}
+        candidate=manifests.create(d)
+        self.assertTrue(transition.tooling_review(old,candidate)['description']['compatible'])
+        d['profile']['libexec/mpm/bin/openssl']['link']=target+'-other'
+        bad=manifests.create(d)
+        self.assertFalse(transition.tooling_review(old,bad)['description']['compatible'])
+        d['profile']['bin/openssl']['link']=target+'-other'
+        self.assertFalse(transition.tooling_review(candidate,manifests.create(d))['description']['compatible'])
+
     def test_tooling_only_policy_and_exact_provider_preservation_are_pure(self):
         old = manifests.create(dict(label='same-label', architecture='x86_64',
             requirements=dict(base_abi={'libc':'glibc'}, state_layout=1), support=dict(ports=dict(read=[], write=[], capabilities=[])),

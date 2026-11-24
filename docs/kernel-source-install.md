@@ -29,7 +29,8 @@ refresh under the same source/policy does not replace that planned snapshot.
 An authorization reconfiguration invalidates the old source binding.
 
 Source/cache defaults come from the selected System runtime, including explicit
-Runtime overrides in an installed copy. `--sources-root` and `--cache-root`
+Runtime overrides in an installed copy. The source registry is the Kernel area
+at `/var/lib/mojt/sources/kernel`. `--sources-root` and `--cache-root`
 override them. The installed Kernel registry still defaults to
 `/run/mojt-disk/kernel`; standalone checkout use retains its explicit `--root`
 or `/var/lib/mojt/kernel` default. The three roots must be disjoint. File-based

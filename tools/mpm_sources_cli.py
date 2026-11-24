@@ -11,8 +11,8 @@ import tempfile
 import mpm_sources as sources
 
 
-def parser(area):
-    p = argparse.ArgumentParser(prog='mpm ' + area, description=__doc__)
+def parser(area,domain=None):
+    p = argparse.ArgumentParser(prog='mpm '+domain+' repo' if domain else 'mpm '+area, description=__doc__)
     actions = p.add_subparsers(dest='action', required=True)
     for action in (('add', 'update', 'list', 'show') if area == 'source' else ('fetch',)):
         sub = actions.add_parser(action)
@@ -22,7 +22,7 @@ def parser(area):
             sub.add_argument('--dry-run', action='store_true')
             sub.add_argument('-y', '--yes', action='store_true')
         if action in ('add', 'update', 'show'):
-            sub.add_argument('name')
+            sub.add_argument('name',**({'nargs':'?'} if action=='update' else {}))
         if action == 'add':
             origin=sub.add_mutually_exclusive_group(required=True)
             origin.add_argument('--from-file', type=Path)
@@ -39,9 +39,10 @@ def parser(area):
             sub.add_argument('--snapshot', help='retained exact snapshot under the currently authorized source')
         if action == 'fetch':
             sub.add_argument('artifact', help='exact native sha256 artifact identity')
-            sub.add_argument('--source', required=True)
-            sub.add_argument('--sources-root', type=Path)
-            sub.add_argument('--kind', choices=sources.cache.artifact.KINDS, required=True)
+            sub.add_argument('--repo' if domain else '--source',dest='source',required=True)
+            sub.add_argument('--repos-root' if domain else '--sources-root',dest='sources_root',type=Path)
+            sub.add_argument('--kind',choices=sources.cache.artifact.KINDS,required=domain is None,
+                             default=('port' if domain=='ports' else domain))
             sub.add_argument('--archive-sha256', required=True, help='one approved compressed encoding')
     return p
 
@@ -63,12 +64,19 @@ def confirm(args, plan):
     return True
 
 
-def _main(area, argv, *, root=None, runtime=None):
-    args = parser(area).parse_args(argv)
+def _main(area, argv, *, root=None, runtime=None,domain=None):
+    args = parser(area,domain).parse_args(argv)
     if root is not None and args.root is not None:
         raise ValueError('specify --root only once')
+    def register(target,name,plan,**kwargs):
+        target=Path(target)
+        if domain and target==sources.area_root(domain,runtime) and not target.parent.exists():
+            parent=sources.cache.tx.protected_directory(target.parent,write=True,label='Repository areas')
+            parent.mkdir(mode=0o755);sources.cache.tx.sync_directory(parent.parent)
+        return sources.add(target,name,plan,**kwargs)
     if area == 'source':
-        root = args.root or root or (runtime.sources if runtime else Path('/var/lib/mojt/sources'))
+        root = args.root or root or (sources.area_root(domain,runtime) if domain else
+                                    runtime.sources if runtime else Path('/var/lib/mojt/sources'))
         if args.action == 'list':
             rows = sources.list_sources(root)
             print(json.dumps(rows, indent=2) if args.json else '\n'.join(
@@ -77,8 +85,11 @@ def _main(area, argv, *, root=None, runtime=None):
             return 0
         if args.action == 'show':
             result = sources.inspect(root, args.name, args.snapshot)
+            if domain and result['catalog'] is not None:
+                sources.require(result['catalog']['area']==domain,'repository catalog belongs to another area')
         elif args.action == 'add':
             if args.url:
+                sources.require(domain in (None,'base'),'HTTPS publisher currently supports Base only')
                 sources.require(args.key_file is not None and args.policy_file is None,
                                 '--url requires --key-file; do not also specify --policy-file')
                 with args.key_file.open(encoding='ascii') as stream:key=stream.read(513)
@@ -90,7 +101,7 @@ def _main(area, argv, *, root=None, runtime=None):
                     kwargs=dict(source=source,policy_file=policy_file,replace=args.replace)
                     plan=sources.prepare_add(root,args.name,**kwargs)
                     if not confirm(args,plan):return 0
-                    result=sources.add(root,args.name,plan,**kwargs)
+                    result=register(root,args.name,plan,**kwargs)
                 print(json.dumps(result,indent=2));return 0
             sources.require(args.policy_file is not None and args.key_file is None,
                             '--from-file requires --policy-file; --key-file belongs to --url')
@@ -98,19 +109,27 @@ def _main(area, argv, *, root=None, runtime=None):
             plan = sources.prepare_add(root, args.name, **kwargs)
             if not confirm(args, plan):
                 return 0
-            result = sources.add(root, args.name, plan, **kwargs)
+            result = register(root, args.name, plan, **kwargs)
         else:
             files = dict(snapshot_file=args.snapshot_file, catalog_file=args.catalog_file,
                          acquisition_file=args.acquisition_file)
-            plan,objects,_ = sources.frozen_update(root, args.name, **files)
-            proof=objects[0]['description']['provider_snapshot']
-            if proof is not None:files['proof']=proof
-            if not confirm(args, plan):
-                return 0
-            result = sources.update(root, args.name, plan, **files)
+            if domain:files['expected_area']=domain
+            names=[args.name] if args.name is not None else sources.names(root)
+            sources.require(names,'no repository configured; use mpm '+str(domain)+' repo add')
+            results=[]
+            for name in names:
+                selected=dict(files)
+                plan,objects,_=sources.frozen_update(root,name,**selected)
+                proof=objects[0]['description']['provider_snapshot']
+                if proof is not None:selected['proof']=proof
+                if confirm(args,plan):results.append(sources.update(root,name,plan,**selected))
+            if not results:return 0
+            result=results[0] if len(results)==1 else dict(repositories=results)
     else:
         root = args.root or root or (runtime.cache if runtime else Path('/var/lib/mojt/cache'))
-        source_root = args.sources_root or (runtime.sources if runtime else Path('/var/lib/mojt/sources'))
+        source_root = args.sources_root or (sources.area_root(domain,runtime) if domain else
+                                           runtime.sources if runtime else Path('/var/lib/mojt/sources'))
+        if domain:sources.require(args.kind==('port' if domain=='ports' else domain),'fetch kind differs from command area')
         selection = dict(kind=args.kind, archive_sha256=args.archive_sha256, snapshot=args.snapshot)
         plan = sources.prepare_fetch(source_root, root, args.source, args.artifact, **selection)
         if not confirm(args, plan):
@@ -120,6 +139,6 @@ def _main(area, argv, *, root=None, runtime=None):
     return 0
 
 
-def main(area,argv,*,root=None,runtime=None):
+def main(area,argv,*,root=None,runtime=None,domain=None):
     with sources.cache.https.io.preparation():
-        return _main(area,argv,root=root,runtime=runtime)
+        return _main(area,argv,root=root,runtime=runtime,domain=domain)

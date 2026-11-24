@@ -27,7 +27,13 @@ New System exports made with `mojt-system-prepare.py --step 12` include
 The assembler retains `libexec/mpm/bin/openssl` for MPM and exposes the ordinary
 `openssl` command. Existing exports keep their declared roles. Installed MPM
 requires the retained helper; it does not substitute an executable from Ports.
-A checkout on a normal build host uses the host's OpenSSL command.
+A checkout on a normal build host uses the host's OpenSSL command. An existing
+Mojt System can package a successor using `mbt package system --running
+--openssl-output /nix/store/EXACT-openssl-bin --output NEW_DIRECTORY`. This
+retains the already registered output and closure independently of Ports and
+adds the public/private OpenSSL aliases. It does not fetch or compile OpenSSL,
+replace an existing different helper, or change Base/Kernel. Installation,
+preparation, selection and reboot remain explicit MPM operations.
 
 ## Register, refresh, install
 
@@ -36,13 +42,13 @@ check its fingerprint independently. Register its exact metadata URL and key as
 administrator; replace the example URL and key path with your publisher's values:
 
 ```sh
-mpm source add mojt-base \
+mpm base repo add mojt-base \
   --url https://raw.githubusercontent.com/OWNER/REPO/main/repository/base/stable.json \
   --key-file /protected/mojt-base-public.pem
-mpm source update mojt-base
-mpm source show mojt-base
-mpm base install --source mojt-base --dry-run
-mpm base install --source mojt-base
+mpm base update
+mpm base repo show mojt-base
+mpm base install mojt@0.2 --repo mojt-base --dry-run
+mpm base install mojt@0.2 --repo mojt-base
 mpm base status
 ```
 
@@ -50,9 +56,31 @@ Registration reads no network data. `update` downloads **one** signed metadata
 file, authenticates it, validates its catalog/offers/descriptors and atomically
 adopts the complete snapshot. It does not download package bodies or change an
 installation. Installation uses the accepted snapshot without an implicit
-refresh. The existing resolver selects the newest declared stable release;
-`--release mojt@=0.2.1-r1` selects an exact retained catalog release. Unknown
-compatibility is checked against the actual target during boot preparation;
+refresh. Select an update wish explicitly on first use. The common Ports
+selector rules also apply to Base:
+
+| Request | Upgrade scope |
+| --- | --- |
+| `mojt@15` | Stable releases within major 15, including 15.1 to 15.2 |
+| `mojt@15.1` | Stable releases with numeric prefix 15.1, including package revisions |
+| `mojt@=15.1-r1` | The exact accepted artifact and closure |
+| `mojt` | Latest stable, including a new major version |
+
+A normal live repository install/upgrade saves **one** Base wish after content
+installation succeeds, before boot preparation. `mpm base upgrade` without a
+selector follows it and refuses a catalog downgrade. With no saved wish it asks
+for an explicit selector; `-y` does not choose an unrestricted policy. Supplying
+a selector replaces the wish. `--repo NAME` selects a configured repository;
+with one repository it can be omitted. Retained Base generations are not upgrade
+wishes. `mpm base status` displays the saved wish. Local-file imports, offline and
+content-only operations do not replace it. Preview/cancellation saves nothing.
+A preparation or selection failure retains accepted content and the wish for
+retry; it does not silently broaden the series. Declining next-boot selection
+also retains the already installed content and wish.
+
+An exact wish keeps its authorized historical snapshot even after catalog
+withdrawal; changing the registered key/location requires an explicit new wish.
+Unknown compatibility is checked against the target during boot preparation;
 a publisher signature is not a boot-compatibility claim.
 
 `install` imports the selected package, adds approved missing regular defaults
@@ -60,9 +88,9 @@ and prepares a boot entry. It leaves running and next boot unchanged. To install
 prepare and select next boot in one ordinary flow:
 
 ```sh
-mpm source update mojt-base
-mpm base upgrade --source mojt-base --dry-run
-mpm base upgrade --source mojt-base
+mpm base update
+mpm base upgrade --dry-run
+mpm base upgrade
 mpm base status
 ```
 
@@ -73,8 +101,21 @@ System and Kernel, with compatibility checked during preparation. Existing
 Preview validates catalog/installation metadata; boot compatibility is checked
 when preparing the actual package.
 
+Repository registrations and the Base wish live under
+`/var/lib/mojt/sources/base`; System, Kernel and Ports use their own area
+subdirectories. Old unscoped registry files are retained, never adopted
+implicitly. Register the public endpoint/key under the chosen area. The wish is a protected `base-request.json` envelope
+(`mojt-base-update-request-v1`) with `repo`, exact `source`/`snapshot` IDs, the
+shared resolver's `selection`, and the target artifact store's `installation`
+UUID. It is published under the repository writer lock after checking the prior
+wish and current repository authorization. It is desired update policy, not a
+claim that boot preparation or selection succeeded. The archive
+cache remains shared at `/var/lib/mojt/cache`. Public commands begin with Base,
+System, Kernel or Ports; `source`, `cache` and `catalog` are not top-level areas.
+`mpm AREA repo fetch` remains an exact diagnostic acquisition operation.
+
 Advanced callers can still supply `--expected-id`, `--archive-sha256`,
-`--snapshot`, `--sources-root` and `--cache-root`. A supplied encoding must match
+`--snapshot`, `--repos-root` and `--cache-root`. A supplied encoding must match
 the selected catalog release. A historical snapshot must remain authorized by
 the currently registered source/key. Offline `--disk-root` installation and
 `--content-only` retain their content-only semantics. The local-file interfaces
@@ -171,7 +212,7 @@ A failed signature, TLS transfer, size/hash check or metadata refresh preserves
 the last good snapshot. A lower refresh sequence or changed content at the same
 sequence is rejected. Already accepted exact older snapshots remain available
 for deliberate pins/rollback. Changing URL/key/policy requires explicit
-`source add --replace`, clears current metadata and invalidates old authorization.
+`base repo add --replace`, clears current metadata and invalidates old authorization.
 Cache acquisition can reuse accepted metadata/archive bytes with the server
 offline; it still checks authorization and cached bytes. A successful signature
 is reused only within the current command, not as a durable bypass.

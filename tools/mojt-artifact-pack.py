@@ -32,6 +32,7 @@ def main(argv=None, *, prog=None):
     system_input.add_argument("--tree",type=Path)
     system_input.add_argument("--running",action="store_true",help="package a component-based successor of the running native System")
     system.add_argument("--firmware",choices=("none","keep"),default="none",help="component System firmware selection (default: none)")
+    system.add_argument("--openssl-output",help="retain an exact installed Nix OpenSSL output in the new running-System successor")
     system.add_argument("--generation")
     system.add_argument("--version")
     system.add_argument("--revision", type=int)
@@ -59,8 +60,16 @@ def main(argv=None, *, prog=None):
                 baseline=description(running)['system']['artifact'];body,_=system.object_record(runtime.disk,baseline)
                 revision=1 if args.revision is None else args.revision
                 label=args.generation or 'system-'+body['version']['upstream']+'-r'+str(body['version']['revision']+revision)
-                result=package_installed(runtime.disk,baseline,args.output,label=label,revision=revision,firmware=args.firmware)
+                crypto=None
+                if args.openssl_output is not None:
+                    from mpm_nix_binary import NixBinaryAdapter
+                    adapter=NixBinaryAdapter(runtime.system_bin/'nix-store')
+                    crypto=adapter.local_reference(args.openssl_output)
+                    adapter.verify_path(crypto,args.openssl_output+'/bin/openssl',executable=True)
+                result=package_installed(runtime.disk,baseline,args.output,label=label,revision=revision,
+                    firmware=args.firmware,openssl_reference=crypto)
             else:
+                artifact.require(args.openssl_output is None,'--openssl-output requires --running')
                 from mojt_system_package import package
                 from mpm_nix_binary import NixBinaryAdapter
                 artifact.require(all(v is not None for v in (args.generation,args.version,args.revision,args.nix_store)),
