@@ -136,6 +136,16 @@ def empty(path, *, root=False):
                 'target is not empty: ' + str(point))
 
 
+def mount_identity(fd, mount_id):
+    # A Btrfs subvolume may report a different st_dev from mountinfo. The
+    # kernel's mount ID identifies the opened mount directly on every filesystem.
+    fields = Path(f'/proc/self/fdinfo/{fd}').read_text().splitlines()
+    ids = [line.partition(':')[2].strip() for line in fields if line.startswith('mnt_id:')]
+    require(ids == [str(mount_id)], 'mountpoint identity changed')
+    info = os.fstat(fd)
+    return [info.st_dev, info.st_ino]
+
+
 def inspect(root, esp, *, fresh=True, root_fs='ext4'):
     require(os.geteuid() == 0, 'mounted target inspection requires an administrator')
     root, esp = (Path(os.path.abspath(p)) for p in (root, esp))
@@ -162,9 +172,12 @@ def inspect(root, esp, *, fresh=True, root_fs='ext4'):
         require(not any(Path(r['path']) != path and path in Path(r['path']).parents for r in rows),
                 'nested target mounts are unsupported')
         entry = probe_partition(row, role=role)
-        info = path.stat()
-        require(f'{os.major(info.st_dev)}:{os.minor(info.st_dev)}' == row['device'], 'mountpoint device changed')
-        entry.update(path=str(path), mount_id=row['id'], directory=[info.st_dev, info.st_ino])
+        fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            directory = mount_identity(fd, row['id'])
+        finally:
+            os.close(fd)
+        entry.update(path=str(path), mount_id=row['id'], directory=directory)
         targets.append(entry)
         if fresh:empty(path, root=role == 'root')
     r, e = targets
@@ -217,8 +230,11 @@ def locked(value):
                     f'{os.major(info.st_rdev)}:{os.minor(info.st_rdev)}' == names[name], 'target device changed')
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         for role in ('root', 'efi'):
-            fd = os.open(value[role]['path'], os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            target = value[role]
+            fd = os.open(target['path'], os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
             stack.callback(os.close, fd)
+            require(mount_identity(fd, target['mount_id']) == target['directory'],
+                    'opened target directory changed')
         recheck(value, fresh=True)
         yield
 
