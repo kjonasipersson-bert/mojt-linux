@@ -228,7 +228,8 @@ class CliTests(unittest.TestCase):
                                    ("ports", "show", ("neovim",)),
                                    ("ports", "versions", ("neovim",)),
                                    ("kernel", "search", ("linux",)),
-                                   ("catalog", "search", ("linux",)),
+                                   ("base", "search", ("mojt",)),
+                                   ("system", "search", ("mojt",)),
                                    ("kernel", "resolve", ("--policy", "latest-lts", "--base-context", str(self.base)))]:
             with self.subTest(action=action):
                 run = self.cli(area, action, *args, "--catalog", str(self.catalog), "--json")
@@ -239,12 +240,15 @@ class CliTests(unittest.TestCase):
         for content in ('{"format":"unknown"}', '{"format":1,"format":2}', '{"x":NaN}', '{'):
             self.catalog.write_text(content)
             before = self.snapshot()
-            self.cli("catalog", "search", "linux", "--catalog", str(self.catalog), success=False)
+            error = self.cli("kernel", "search", "linux", "--catalog", str(self.catalog), success=False)
+            self.assertNotIn("unsupported operation", error.stderr)
             self.assertEqual(before, self.snapshot())
         self.cli("kernel", "resolve", "--policy", "latest-lts", "--catalog", str(self.catalog),
                  success=False)  # Missing selected Base context.
 
     def test_scoped_area_cannot_be_overridden(self):
+        error = self.cli("catalog", "search", "linux", "--catalog", str(self.catalog), success=False)
+        self.assertIn("unsupported operation", error.stderr)
         self.cli("ports", "search", "linux", "--area", "kernel", "--catalog", str(self.catalog), success=False)
 
     def test_fresh_ports_dispatch_never_falls_back_to_the_prototype(self):

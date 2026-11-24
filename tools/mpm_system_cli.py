@@ -71,7 +71,7 @@ def main(argv, *, runtime=None):
                 if args.source is not None:
                     base.require(args.archive_sha256 is not None and not args.dependency_file, '--source requires --archive-sha256 and obtains components from the same snapshot')
                     from mpm_system_source import install as acquire
-                    result = acquire(root, args.sources_root or (runtime.sources if runtime else Path('/var/lib/mojt/sources')),
+                    result = acquire(root, args.sources_root or (runtime.sources/'system' if runtime else Path('/var/lib/mojt/sources/system')),
                         args.cache_root or (runtime.cache if runtime else Path('/var/lib/mojt/cache')), args.source, args.expected_id,
                         archive_sha256=args.archive_sha256, snapshot=args.snapshot, dry_run=args.dry_run, yes=args.yes, adapters=adapters, verify=args.verify)
                 else:

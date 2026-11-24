@@ -103,9 +103,9 @@ mpm base install --from-file /packages/base-EXACT.tar.zst \
 mpm base install --from-file /packages/base-EXACT.tar.zst \
   --expected-id sha256:FULL_ARTIFACT_ID -y
 
-mpm base install --source local --expected-id sha256:FULL_ARTIFACT_ID \
+mpm base install --repo local --expected-id sha256:FULL_ARTIFACT_ID \
   --archive-sha256 FULL_ARCHIVE_SHA256 --dry-run
-mpm base install --source local --expected-id sha256:FULL_ARTIFACT_ID \
+mpm base install --repo local --expected-id sha256:FULL_ARTIFACT_ID \
   --archive-sha256 FULL_ARCHIVE_SHA256 -y
 
 mpm base status

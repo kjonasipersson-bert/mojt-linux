@@ -32,11 +32,20 @@ class DispatchTests(unittest.TestCase):
              mock.patch.object(update,'main',return_value=0) as run:
             for area in ('base','system','kernel'):
                 for action in ('activate','upgrade','stage','select','rollback'):
-                    self.assertEqual(cli.main([area,action,'--dry-run'],runtime=runtime),0)
-                    self.assertEqual(run.call_args.args,(area,[action,'--dry-run']))
+                    arguments=[action,'--dry-run']
+                    if area=='base' and action=='upgrade':arguments+=['--artifact','sha256:'+'a'*64]
+                    self.assertEqual(cli.main([area,*arguments],runtime=runtime),0)
+                    self.assertEqual(run.call_args.args,(area,arguments))
                     self.assertEqual(run.call_args.kwargs,dict(runtime=runtime))
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(cli.main(['system','plan']),1)
+
+    def test_base_repository_upgrade_dispatches_to_base_flow(self):
+        import mpm_base_cli as base_cli
+        with mock.patch.object(cli.os,'geteuid',return_value=0),mock.patch.object(cli,'require_codec'), \
+             mock.patch.object(base_cli,'main',return_value=0) as run:
+            self.assertEqual(cli.main(['base','upgrade','mojt@15','--dry-run'],runtime=cli.Runtime()),0)
+            self.assertEqual(run.call_args.args,(['upgrade','mojt@15','--dry-run'],))
 
     def test_native_activation_and_selection_need_no_codec_unless_verifying(self):
         import mpm_boot_update as update
@@ -180,7 +189,7 @@ sys.exit(main(args,runtime=r))
             cwd="/", env=dict(os.environ, PATH=""), text=True, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("catalog", result.stdout)
-        self.assertIn("Kernel selection changes next boot", result.stdout)
+        self.assertIn("running code changes after reboot", result.stdout)
 
     def test_installed_catalog_reads_explicit_snapshot_without_provider_files(self):
         catalog = self.fixture.fixture.work / "catalog.json"

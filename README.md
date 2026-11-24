@@ -79,10 +79,12 @@ additional dependencies. Mount, chroot and disk tests need the relevant Linux
 privileges. Base itself has no Python runtime requirement; System supplies MPM's
 management runtime.
 
-Void/static XBPS is a Base bootstrap backend. Nix is the current binary provider
-for System and Ports. Neither backend defines Mojt's area or release model.
-A general production installer, signed native release distribution and complete
-source builds remain development work.
+Base has a pinned source builder; Nix remains the binary provider for System
+and Ports. Neither provider defines Mojt's area or release model. The
+[signed Base repository prototype](docs/native-repository.md) joins native
+publication, HTTPS acquisition and the ordinary MPM install/upgrade flow.
+A general production installer, broader native repository coverage and complete
+source self-hosting remain development work.
 
 [Working instructions](AGENTS.md) govern changes and documentation. The
 [Handbook website guide](docs/handbook-web.md) describes local mdBook builds and

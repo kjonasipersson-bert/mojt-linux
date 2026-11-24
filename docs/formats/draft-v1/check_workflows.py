@@ -129,7 +129,10 @@ def validate(value):
                 need(len(own) == (1 if area_doc else 0), 'incomplete Kernel configuration')
     elif fmt == 'mojt-source-v1':
         if d['provider'] == 'native':
-            core.path_gate(d['location']['path'], True)
+            if d['location']['kind']=='local-directory':core.path_gate(d['location']['path'], True)
+            else:
+                import mpm_https
+                mpm_https.url(d['location']['url'])
     elif fmt == 'mojt-acquisition-map-v1':
         core.sorted_unique(d['offers'], lambda r:keyref(r['reference']))
         for offer in d['offers']:
@@ -140,7 +143,10 @@ def validate(value):
             for archive in offer['archives']:
                 core.sorted_unique(archive['paths'])
                 for path in archive['paths']:
-                    core.path_gate(path)
+                    if path.startswith('https://'):
+                        import mpm_https
+                        mpm_https.url(path)
+                    else:core.path_gate(path)
     elif fmt == 'mojt-cache-record-v1':
         need(d['artifact'] == d['descriptor'], 'cached wrong native descriptor')
         datetime.fromisoformat(d['verified_utc'].replace('Z','+00:00'))

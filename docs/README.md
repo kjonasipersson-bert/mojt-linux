@@ -50,3 +50,8 @@ acceptance guides describe repeatable test procedures; neither kind of document
 is the current user/interface contract. Old reports may describe commands and
 limitations superseded by later code. Use the Handbook/current references above
 for normal administration.
+
+The [signed Base repository](native-repository.md) documents native publication,
+trust setup, HTTPS acquisition and ordinary Base upgrades. The
+[first-publication test](reports/base-repository-test.md) keeps acceptance steps
+separate from that current interface contract.

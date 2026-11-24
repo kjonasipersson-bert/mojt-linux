@@ -327,3 +327,11 @@ Do not repeat every old component/version cross-product.
 That proves the joined VM workflow, not real hardware. Then use a separately
 identified dedicated physical disk for the same profile. Choosing and writing
 that destination is a separate explicit operation, outside `mbt bootstrap`.
+
+## Native repository publication
+
+`mbt repo prepare --config repository.toml --output NEW_DIRECTORY` verifies
+existing native Base archives and prepares signed metadata, the public key and a
+publication receipt. It neither uploads assets nor installs/selects a package.
+Standard OpenSSL handles Ed25519 signing; the private key remains on the
+publishing host. See [Signed Base repository](native-repository.md).

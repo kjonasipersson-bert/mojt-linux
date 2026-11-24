@@ -61,6 +61,8 @@ jobs:
           python3 -B -m unittest discover -s tests -p 'test_mpm_kernel.py' -v
           python3 -B -m unittest discover -s tests -p 'test_mpm_sources.py' -v
           python3 -B -m unittest discover -s tests -p 'test_mpm_native_cache.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_mpm_https.py' -v
+          sudo env PYTHONPATH=tests python3 -B -m unittest test_mpm_https.RepositoryTests.test_base_cli_resolves_and_imports_into_offline_target -v
           python3 -B -m unittest discover -s tests -p 'test_mojt_artifact.py' -v
       - name: Check exact Base import, realization, source origin and read-only status
         run: |

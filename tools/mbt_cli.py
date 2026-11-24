@@ -8,7 +8,7 @@ import sys
 
 # Files are selected by manager-owned constants, never user paths or PATH.
 HELPERS = {'env':'mojt-build-env.py','kernel':'mojt-kernel-build.py','base':'mojt-base-build.py',
-           'package':'mojt-artifact-pack.py','bootstrap':'mojt_bootstrap.py'}
+           'package':'mojt-artifact-pack.py','bootstrap':'mojt_bootstrap.py','repo':'mojt-repository.py'}
 
 
 def helper(name):
@@ -21,11 +21,12 @@ def helper(name):
 
 
 def usage():
-    print('usage: mbt {env,build,package,bootstrap} ...\n'
+    print('usage: mbt {env,build,package,bootstrap,repo} ...\n'
           '  env             create a private pinned image/kernel tool environment\n'
           '  build kernel    compile a separate Kernel and matching modules\n'
           '  build base      build and package a complete source Base (plain host GCC)\n'
           '  package         package kernel/base/system inputs, or verify an archive\n'
+          '  repo prepare    prepare signed Base repository metadata for publication\n'
           '  bootstrap       create a native-v2 image or install to prepared mounted partitions\n'
           'Use mbt COMMAND --help for options; build accepts kernel or base.\n'
           'Experimental syntax. Builds/packages do not install or select next boot.\n'
@@ -38,6 +39,7 @@ def dispatch(args):
     if command == 'env':name,prog = 'env','mbt env'
     elif command == 'package':name,prog = 'package','mbt package'
     elif command == 'bootstrap':name,prog = 'bootstrap','mbt bootstrap'
+    elif command == 'repo':name,prog = 'repo','mbt repo'
     elif command == 'build':
         if not rest or rest in (['--help'],['-h']):
             print('usage: mbt build {kernel,base} ...\nUse --dry-run to preview; kernel --resume reuses a verified incomplete workspace.')

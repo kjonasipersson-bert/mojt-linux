@@ -32,11 +32,13 @@ class Components(Fixture):
         (content/'version').write_text('system-native-test\n')
         licenses=content/'kernel/licenses/vendor';licenses.mkdir(parents=True)
         (licenses/'copyright').write_text('upstream fixture attribution\n')
+        (content/'libexec/mpm/bin').mkdir(parents=True)
+        (content/'mpm-runtime.json').write_bytes(artifact.canonical(dict(format='mojt-mpm-runtime-v1',files=[],helpers={})))
         result=pack(content,spec('component'),self.work/'firmware-original')
         self.component=result['artifact'];self.component_archive=self.work/'firmware-original'/result['archive']['file']
         self.reference=dict(provider='native',artifact=self.component['id'])
         d=copy.deepcopy(self.composition['description']);d['components']=[dict(role='runtime',reference=self.reference)]
-        d['profile']=[dict(path=n,source=dict(reference=self.reference,path=n)) for n in ('bin','kernel','start','tools','version')]
+        d['profile']=[dict(path=n,source=dict(reference=self.reference,path=n)) for n in ('bin','kernel','libexec','mpm-runtime.json','start','tools','version')]
         self.composition=base.record(model.FORMAT,d)
         self.archive,self.body=self.package(self.composition)
         self.install()
@@ -70,6 +72,42 @@ class Components(Fixture):
         previous=base.read(system.realization_path(self.root,a['artifact'])/'profile/manifest.json')
         self.assertTrue(transition.profile_review(previous,manifest,profile)['description']['compatible'])
         system.realization(self.root,b['artifact'],verify=True)
+
+    def test_packaged_crypto_helper_is_an_independent_exact_system_dependency(self):
+        import tarfile
+        from mpm_nix_boot import NixBootAdapter
+        output='/nix/store/'+'a'*32+'-openssl-bin'
+        ref=dict(provider='nix',identity=dict(format='mojt-nix-output-v1',output=output,
+            closure=[dict(path=output,nar_hash='sha256:'+'b'*52)],commands=['openssl']))
+        kit=self.work/'crypto'
+        adapter=NixBootAdapter('/pinned/nix-store')
+        result=packaging.package_installed(self.root,self.body['id'],kit,label='crypto',openssl_reference=ref,adapter=adapter)
+        archive=kit/result['dependency_files'][0]
+        body=artifact.verify(archive)
+        self.assertIn(ref,body['dependencies'])
+        # Frozen adapter bytes accepted by the source-Base System before the
+        # repository builder was added. A builder-only addition must not change
+        # this provider runtime or weaken its transition gate.
+        accepted='f05169d5ca796b9150f40dbefbbd8d5b66cf55376116e4a356365431a9118d99'
+        candidate=next(r for r in body['files'] if r['path']=='payload/tools/mpm_nix_binary.py')
+        self.assertEqual(candidate['sha256'],accepted)
+        manifest=base.read(system.realization_path(self.root,self.body['id'])/'profile/manifest.json')
+        before={'tools/mpm_nix_binary.py':dict(sha256=accepted,mode=0o444)}
+        after={'tools/mpm_nix_binary.py':dict(sha256=candidate['sha256'],mode=0o444)}
+        review=transition.providers(manifest,manifest,[ref],{'nix':adapter},baseline_refs=[ref],inventories=(before,after))
+        self.assertTrue(review['compatible'],review)
+        after['tools/mpm_nix_binary.py']['sha256']='f'*64
+        review=transition.providers(manifest,manifest,[ref],{'nix':adapter},baseline_refs=[ref],inventories=(before,after))
+        self.assertFalse(review['compatible'])
+        self.assertIn('provider runtime change',review['errors'][0])
+        raw=subprocess.run(['zstd','-dc',str(archive)],check=True,capture_output=True).stdout
+        import io
+        with tarfile.open(fileobj=io.BytesIO(raw)) as stream:
+            for name in ('bin/openssl','libexec/mpm/bin/openssl'):
+                self.assertEqual(stream.getmember('./system/payload/'+name).linkname,output+'/bin/openssl')
+            marker=artifact.parse_json(stream.extractfile('./system/payload/mpm-runtime.json').read())
+        self.assertEqual(marker['helpers']['openssl'],output+'/bin/openssl')
+        self.assertIn('mpm_base_request.py',marker['files'])
 
     def test_minimal_generation_has_no_firmware_component_or_bulk_payload(self):
         candidate=self.build(label='minimal',firmware='none');self.import_package(candidate)

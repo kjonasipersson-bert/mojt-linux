@@ -116,3 +116,14 @@ actual return rather than treating a reader declaration as boot evidence.
 See [normal operation boundaries](system-normal-operation.md), the
 [component acceptance procedure](reports/system-components-test.md) and the
 [normal-operation test](reports/system-normal-operation-test.md).
+
+## Retain OpenSSL for repository-enabled management tools
+
+`mbt package system --running --openssl-output /nix/store/EXACT-openssl-bin
+--output NEW_DIRECTORY` can add the already registered output's exact closure
+and `bin/openssl` / `libexec/mpm/bin/openssl` links. This adds a System-owned
+provider reference even if the output was originally acquired with Ports.
+Ports activation/removal therefore does not govern management tool availability.
+The builder does not fetch, compile or globally activate OpenSSL. Existing
+helper targets cannot be replaced by this addition. The new System must still
+be installed, prepared and selected through MPM, then booted.

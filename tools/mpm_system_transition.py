@@ -189,10 +189,15 @@ def tooling_review(selected, candidate, *, firmware=None, inventories=None, allo
     blocked = []
     for path in changed:
         allowed = (path.startswith(('tools/', 'tests/')) or path in ('tools', 'tests', 'bin/mpm', 'bin/man', 'bin/manpath', 'bin/mojt-system-inspect', 'bin/mbt', 'share/man/man1/mpm.1',
-                   'share/man/man1/mbt.1','mbt-runtime.json','share/mbt/kernel-first-build.json') + paths.MBT_SOURCE_FILES
+                   'share/man/man1/mbt.1','mbt-runtime.json','mpm-runtime.json','share/mbt/kernel-first-build.json') + paths.MBT_SOURCE_FILES
                    or path.startswith('bin/') and path not in before and path in after
                    or path in ('share', 'share/man', 'share/man/man1') and path not in before and after.get(path, {}).get('directory') is True
                    or path in ('share/mbt','man','manifests','bootstrap','bootstrap/licenses') and all(row is None or row.get('directory') is True for row in (before.get(path),after.get(path))))
+        if path=='libexec/mpm/bin/openssl' and path not in before:
+            # The public and private aliases must name the same exact provider
+            # executable. Installation separately checks their retained closure.
+            allowed=(after.get(path,{}).get('link') is not None and
+                     after[path]['link']==after.get('bin/openssl',{}).get('link'))
         if path == 'version':
             allowed = after.get(path, {}).get('sha256') == hashlib.sha256((new['label'] + '\n').encode()).hexdigest()
         if not allowed and path not in firmware_paths and path not in allowed_data:blocked.append(path)

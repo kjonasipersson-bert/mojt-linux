@@ -14,8 +14,9 @@ remains authoritative. This increment does not complete either milestone.
 `tools/mpm_native_cache.py` implements `prepare(cache, **inputs)` and
 `acquire(cache, accepted_plan, **inputs)`. It ships with the MPM runtime in System.
 The [installed source/cache frontend](source-runtime-integration.md) now joins
-named registrations, frozen snapshots and exact acquisition. Connections to area
-installers remain pending.
+named registrations, frozen snapshots and exact acquisition. Base and Kernel source installers reuse this cache; source acquisition does not
+itself install content. The [signed Base repository](native-repository.md) adds
+authenticated HTTPS without changing the local-directory interface.
 
 ## Inputs and authorization
 
@@ -61,8 +62,9 @@ source. Registration copies the accepted policy to its protected registry, then
 fetch selects that registered policy. It never accepts a replacement policy from
 an unprivileged fetch request.
 
-Native HTTP(S), signature verification, revocation services and implicit source
-refresh are unsupported. Other provider bindings can be retained as metadata;
+Authenticated HTTPS is supported for the signed Base repository variant. Plain
+HTTP, revocation services and implicit source refresh are unsupported. Other
+provider bindings can be retained as metadata;
 this API neither executes those providers nor copies their store paths.
 
 ## Preparation and acquisition

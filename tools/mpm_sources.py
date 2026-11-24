@@ -25,6 +25,17 @@ def digest(raw):
     return hashlib.sha256(raw).hexdigest()
 
 
+def https_source(name,url,key,*,channel='stable'):
+    """Owner-selected endpoint/key; neither is discovered from remote metadata."""
+    cache.model.token(name);cache.model.token(channel)
+    policy=record(cache.https.POLICY,dict(name=name,provider='native',channel=channel,
+        url=cache.https.url(url),public_key=cache.https.public_key(key),
+        max_archive=1024**3,max_expanded=4*1024**3))
+    source=record('mojt-source-v1',dict(name=name,provider='native',channel=channel,
+        location=dict(kind='https-repository',url=url),trust=dict(kind='ed25519',policy=policy['id'])))
+    return source,policy
+
+
 def registry(path, *, write=False):
     root = cache.tx.protected_directory(path, write=write, label='Sources')
     if root.exists() and set(p.name for p in root.iterdir()) - {'.lock'}:
@@ -103,23 +114,36 @@ def inspect(root, name, snapshot=None):
     require(registration is not None, 'source is not registered')
     source, _ = configuration(root, registration)
     args = load(root, name, snapshot) if snapshot or registration['description']['snapshot'] else None
+    local=source['description']['location']['kind']=='local-directory'
     return dict(format='mojt-source-status-v1', registration=registration,
                 source=source, snapshot=args['snapshot'] if args else None,
                 catalog=cache.artifact.parse_json(args['catalog_bytes']) if args else None,
                 refresh_required=args is None, snapshot_age='unknown',
-                local_directory_available=Path(source['description']['location']['path']).is_dir())
+                local_directory_available=Path(source['description']['location']['path']).is_dir() if local else None)
 
 
-def list_sources(root):
+def names(root):
     root = registry(root)
-    names = root / 'names'
-    if not names.exists():
-        return []
-    result = []
-    for directory in sorted(names.iterdir()):
-        if current(root, directory.name) is not None:
-            result.append(inspect(root, directory.name))
-    return result
+    directory=root/'names'
+    if not directory.exists():return []
+    return [p.name for p in sorted(directory.iterdir()) if current(root,p.name) is not None]
+
+
+def list_sources(root):return [inspect(root,name) for name in names(root)]
+
+
+def area_root(area,runtime=None):
+    require(area in ('base','system','kernel','ports'),'unsupported repository area')
+    return (runtime.sources if runtime else Path('/var/lib/mojt/sources'))/area
+
+
+def choose(root,name=None):
+    if name is not None:
+        require(current(root,name) is not None,'repository is not registered: '+name)
+        return name
+    available=names(root)
+    require(len(available)==1,'configure one repository or choose --repo NAME')
+    return available[0]
 
 
 def change_plan(root, name, before, after, raw=()):
@@ -144,31 +168,58 @@ def prepare_add(root, name, *, source, policy_file, replace=False):
 
 
 def frozen_update(root, name, *, snapshot_file='snapshot.json', catalog_file='catalog.json',
-                  acquisition_file='acquisition-map.json'):
+                  acquisition_file='acquisition-map.json',proof=None,expected_area=None):
     root = registry(root)
     before = current(root, name)
     require(before is not None, 'source is not registered')
     source, policy_file = configuration(root, before)
-    directory = source['description']['location']['path']
-    snapshot_raw = cache.read_file(directory, snapshot_file)
-    catalog_raw = cache.read_file(directory, catalog_file)
-    mapping_raw = cache.read_file(directory, acquisition_file)
-    snapshot = cache.artifact.parse_json(snapshot_raw)
+    remote=source['description']['location']['kind']=='https-repository'
+    if remote:
+        require((snapshot_file,catalog_file,acquisition_file)==('snapshot.json','catalog.json','acquisition-map.json'),
+                'HTTPS repositories use one signed metadata file')
+        if proof is None:
+            from mpm_ui import phase
+            with phase('Download signed repository metadata'):
+                proof=cache.artifact.parse_json(cache.https.read(source['description']['location']['url']))
+        repo=cache.https.repository(proof,source,cache.artifact.parse_json(cache.read_file(policy_file.parent,policy_file.name)))
+        previous=before['description']['snapshot']
+        if previous is not None:
+            old=read_object(root,previous,'mojt-source-snapshot-v1')['description']['provider_snapshot']
+            old_sequence=old['repository']['sequence']
+            require(repo['sequence']>=old_sequence,'repository metadata rollback refused')
+            require(repo['sequence']!=old_sequence or proof==old,'repository changed without advancing sequence')
+        catalog_raw=encoded(repo['catalog']);mapping_raw=encoded(repo['acquisition'])
+        snapshot=record('mojt-source-snapshot-v1',dict(source=source['id'],
+            catalog=dict(format='mpm-release-catalog-v1',sha256=digest(catalog_raw),size=len(catalog_raw)),
+            acquisition=dict(id=repo['acquisition']['id'],sha256=digest(mapping_raw),size=len(mapping_raw)),
+            provider_snapshot=proof,trust_policy=source['description']['trust']['policy']))
+        snapshot_raw=encoded(snapshot)
+    else:
+        require(proof is None,'signed metadata requires an HTTPS source')
+        directory = source['description']['location']['path']
+        snapshot_raw = cache.read_file(directory, snapshot_file)
+        catalog_raw = cache.read_file(directory, catalog_file)
+        mapping_raw = cache.read_file(directory, acquisition_file)
+        snapshot = cache.artifact.parse_json(snapshot_raw)
     args = dict(policy_file=policy_file, source=source, snapshot=snapshot,
                 catalog_bytes=catalog_raw, acquisition_bytes=mapping_raw)
     _, _, policy, catalog, mapping = cache.metadata(**args)
+    require(expected_area is None or catalog.area==expected_area,'repository catalog belongs to another area')
     raw = [catalog_raw, mapping_raw]
     total = len(snapshot_raw) + sum(map(len, raw))
     require(total <= MAX_FROZEN, 'source metadata exceeds frozen byte limit')
     kind = 'port' if catalog.area == 'ports' else catalog.area
     require(kind in cache.artifact.KINDS, 'unsupported native catalog area')
     refs = set()
+    if remote:
+        require(set(repo['descriptors'])=={o['descriptor']['path'] for o in mapping['description']['offers']},
+                'signed descriptor set differs from offers')
     for offer in mapping['description']['offers']:
         require(offer['reference']['provider'] == 'native', 'source update needs an adapter for non-native offers')
         evidence = offer['descriptor']
         total += evidence['size']
         require(total <= MAX_FROZEN, 'source metadata exceeds frozen byte limit')
-        descriptor = cache.read_file(directory, evidence['path'])
+        descriptor = encoded(repo['descriptors'][evidence['path']]) if remote else cache.read_file(directory, evidence['path'])
         cache.descriptor_binding(descriptor, offer, catalog, policy['description'], kind)
         for encoding in offer['archives']:
             cache.size(encoding['size'], policy['description']['max_archive'])

@@ -1,7 +1,7 @@
 # Mojt Linux
 # Copyright (C) 2026 Jonas Persson
 # SPDX-License-Identifier: GPL-2.0-only
-"""Accepted local source -> shared verified cache -> content-only Base installer."""
+"""Accepted source -> shared verified cache -> content-only Base installer."""
 import json
 import os
 import sys
@@ -10,6 +10,31 @@ import mpm_base as base
 import mpm_sources as sources
 
 FORMAT='mojt-base-source-install-plan-v1'
+
+
+def resolve(source_root,name,*,selector=None,identifier=None,archive_sha256=None,snapshot=None):
+    """Select only from an already accepted snapshot; never refresh implicitly."""
+    from mpm_selection import Catalog,resolve as choose
+    args=sources.load(source_root,name,snapshot)
+    catalog=Catalog.from_dict(sources.cache.artifact.parse_json(args['catalog_bytes']))
+    base.require(catalog.area=='base' and catalog.platform=='x86_64-linux','source is not a Base x86_64 catalog')
+    if identifier is None:
+        candidate=choose(catalog,selector or 'mojt',platform='x86_64-linux').candidate
+        identifier=candidate.artifact
+        approved=candidate.integrity['sha256']
+    else:
+        rows=[c for c in catalog.candidates if c.artifact==identifier]
+        base.require(rows,'artifact absent from accepted Base catalog')
+        if selector is not None:
+            base.require(choose(catalog,selector).candidate.artifact==identifier,'release selector and expected artifact differ')
+        approved=rows[0].integrity['sha256']
+    if archive_sha256 is not None:
+        mapping=sources.cache.artifact.parse_json(args['acquisition_bytes'])
+        encodings={e['sha256'] for o in mapping['description']['offers']
+            if o['reference']==dict(provider='native',artifact=identifier) for e in o['archives']}
+        base.require(archive_sha256 in encodings,'archive encoding differs from selected release')
+        approved=archive_sha256
+    return identifier,approved,args['snapshot']['id']
 
 
 def targets(root,source_root,cache_root):

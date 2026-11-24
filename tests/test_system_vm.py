@@ -67,7 +67,7 @@ class SystemVmTests(unittest.TestCase):
                 "curl": ["bin/curl"], "cacert": [], "iproute2": ["bin/ip", "bin/ss"],
                 "nix": ["bin/nix", "bin/nix-store", "bin/nix-instantiate"], "python": ["bin/python3"], "tar": ["bin/tar"],
                 "shell": ["bin/bash"], "tzdata": [], "man-db": ["bin/man", "bin/manpath"],
-                "openssh": ["bin/sshd", "bin/ssh-keygen"],
+                "openssh": ["bin/sshd", "bin/ssh-keygen"], "openssl": ["bin/openssl"],
                 "shadow": ["bin/" + n for n in system.accounts.COMMANDS],
                 "pam": ["bin/unix_chkpwd"], "sudo": ["bin/sudo", "sbin/visudo"],
                 "kmod": ["bin/modprobe", "bin/lsmod", "bin/modinfo"],
@@ -147,9 +147,17 @@ class SystemVmTests(unittest.TestCase):
         self.assertEqual(set(system.roles(1)), {"systemd"})
         self.assertTrue(set(system.roles(1)) < set(system.roles(2)) < set(system.roles(3))
                         < set(system.roles(4)) < set(system.roles(5)) < set(system.roles(6)) < set(system.roles(7)))
-        for value in (0, 12, True, "1"):
+        for value in (0, 13, True, "1"):
             with self.assertRaises(ValueError):
                 system.roles(value)
+
+    def test_step12_retains_repository_crypto_in_system(self):
+        directory,record=self.install(12,'password')
+        expected=record['packages']['openssl']['output']+'/bin/openssl'
+        self.assertEqual(str((directory/'libexec/mpm/bin/openssl').readlink()),expected)
+        self.assertEqual(str((directory/'bin/openssl').readlink()),expected)
+        self.assertEqual(json.loads((directory/'mpm-runtime.json').read_text())['helpers']['openssl'],expected)
+        self.assertNotIn('openssl',system.roles(11))
 
     def test_step11_exposes_ssh_tools_without_enabling_or_configuring_a_server(self):
         directory,record=self.install(11,"password")

@@ -29,17 +29,14 @@ def option(args, name):
 
 
 def help_text():
-    print("usage: mpm {source,cache,catalog,kernel,ports,base,system} ...\n"
-          "  source                  add, update, list, show (explicit local metadata)\n"
-          "  cache                   fetch (exact native archive; no installation)\n"
-          "  catalog                 explicit local catalog discovery\n"
-          "  kernel                  install, status, activate, upgrade, stage, select, rollback, resolve\n"
-          "  ports                   install, activate, upgrade, update, apply, remove, reset, list, history\n"
-          "                          installed pinned provider, or explicit --sources FILE\n"
-          "  base                    install, status, activate, upgrade, stage, select, rollback; search, show, versions with --catalog FILE\n"
-          "  system                  install, status, activate, upgrade, stage, select, rollback; search, show, versions with --catalog FILE\n"
-          "System install retains native content only; Base/Kernel selection changes next boot only.\n"
-          "Install retains content; Kernel selection changes next boot, never the running Kernel.")
+    print("usage: mpm {base,system,kernel,ports} ...\n"
+          "  base, system, kernel    install, status, activate, upgrade, stage, select, rollback\n"
+          "  ports                   install, activate, upgrade, update, remove, list, history\n"
+          "  AREA repo               add, list, show, update, fetch (area-scoped repositories)\n"
+          "  AREA update             refresh accepted repository metadata (Ports: saved provider requests)\n"
+          "  AREA search/show/versions --catalog FILE: explicit catalog discovery\n"
+          "Base upgrade [mojt@SERIES] follows one saved update request; boot changes require approval.\n"
+          "Live installation includes boot preparation; running code changes after reboot.")
 
 
 def require_codec(runtime, args):
@@ -134,23 +131,30 @@ def dispatch(args, runtime):
     area = command[0] if command else None
     action = command[1] if len(command) > 1 else None
     if area in ('base','system') and action in (None,'--help','-h'):
-        print('usage: mpm '+area+' {install,status,activate,upgrade,stage,select,rollback,search,show,versions} ...')
+        print('usage: mpm '+area+' {install,status,activate,upgrade,update,repo,stage,select,rollback,search,show,versions} ...')
         print('Live install includes preparation; --content-only retains content. Activate/upgrade selects next boot; --dry-run previews.')
         return 0
     if runtime is not None and os.geteuid() != 0:
         readonly = (command[2:] in (["--help"], ["-h"]) or
             area in ("base", "system") and action in (None,"status","--help","-h") or
-            area == "source" and action in (None, "list", "show", "--help", "-h") or
-            area == "cache" and action in (None, "--help", "-h") or
-            area == "catalog" and action in ("search", "show", "versions", "resolve-kernel", "--help", "-h") or
+            area in ('base','system','kernel','ports') and action=='repo' and
+                (len(command)<3 or command[2] in ('list','show','--help','-h') or '--help' in command or '-h' in command) or
             area == "kernel" and action in (None, "status", "plan", "resolve", "--help", "-h") or
             area == "ports" and action in (None, "status", "list", "history", "resolve", "search", "info", "--help", "-h") or
             area in ("base", "system", "ports", "kernel") and
                 action in ("search", "show", "versions") and option(command, "--catalog"))
         if not readonly:
             raise ValueError("shared installation changes require an administrator")
+    if area in ('base','system','kernel','ports') and action=='repo' or area in ('base','system','kernel') and action=='update':
+        if roots:raise ValueError('repository commands use --root after the area/repo command')
+        from mpm_sources_cli import main
+        arguments=command[2:] if action=='repo' else ['update',*command[2:]]
+        mode='cache' if arguments and arguments[0]=='fetch' else 'source'
+        if mode=='cache' and '--dry-run' not in arguments:require_codec(runtime,arguments)
+        return main(mode,arguments or ['--help'],runtime=runtime,domain=area)
     if area in ('base','system','kernel') and action in ('activate','upgrade','stage','select','rollback'):
-        if area == 'base' and action == 'upgrade' and option(command,'--from-file'):
+        if area == 'base' and action == 'upgrade' and not option(command,'--artifact'):
+            if roots:raise ValueError('Base commands use --disk-root, not --root')
             require_codec(runtime,command)
             from mpm_base_cli import main
             return main(command[1:],runtime=runtime)
@@ -180,12 +184,6 @@ def dispatch(args, runtime):
             if not tool.is_file() or not os.access(tool,os.X_OK):raise ValueError("selected System has no retained GNU tar helper; Base realization unavailable")
         from mpm_base_cli import main
         return main(command[1:] or ["--help"],runtime=runtime)
-    if area in ("source", "cache"):
-        if area == "cache" and action == "fetch" and "--dry-run" not in command:
-            require_codec(runtime, command)
-        from mpm_sources_cli import main
-        root = Path(roots[-1].split("=", 1)[1] if len(roots) == 1 else roots[-1]) if roots else None
-        return main(area, command[1:] or ["--help"], root=root, runtime=runtime)
     if area == "kernel" and action in (None, "-h", "--help"):
         help_text()
         return 0
@@ -219,14 +217,11 @@ def dispatch(args, runtime):
         if action == "install" and option(command, "--source") and runtime is not None:
             command = list(command)
             if not option(command, "--sources-root"):
-                command += ["--sources-root", str(runtime.sources)]
+                command += ["--sources-root", str(runtime.sources / "kernel")]
             if not option(command, "--cache-root"):
                 command += ["--cache-root", str(runtime.cache)]
         from mpm_kernel import main
         return main([*roots, *command[1:]])
-    if area == "catalog" and not roots:
-        from mpm_catalog import main
-        return main(command[1:])
     if area == "ports" and action == "resolve":
         return resolve_ports(command[2:])
     if area in ("base", "system", "kernel", "ports") and (

@@ -45,18 +45,23 @@ def prepare_installed(root, identifier, *, runtime, bounds=None, verify=False, y
 def _main(argv,*,runtime=None):
     p=argparse.ArgumentParser(prog='mpm base')
     sub=p.add_subparsers(dest='action',required=True)
-    install=sub.add_parser('install');origin=install.add_mutually_exclusive_group(required=True)
-    origin.add_argument('--from-file',type=Path);origin.add_argument('--source')
-    upgrade=sub.add_parser('upgrade');upgrade.add_argument('--from-file',type=Path,required=True)
+    install=sub.add_parser('install')
+    upgrade=sub.add_parser('upgrade')
     upgrade.add_argument('--expected-selected')
     install.add_argument('--content-only',action='store_true',help='retain content without defaults or boot preparation')
     for command in (install,upgrade):
-        command.add_argument('--expected-id',help='optional expected artifact ID for a local archive; required with --source')
+        command.add_argument('selector',nargs='?',help='saved Base request: mojt@0.2, mojt@=0.2.1-r1, or explicit mojt for latest stable')
+        command.add_argument('--from-file',type=Path)
+        command.add_argument('--repo',dest='source',help='choose a configured Base repository')
+        command.add_argument('--source',dest='source',help=argparse.SUPPRESS)
+        command.add_argument('--release',help=argparse.SUPPRESS)
+        command.add_argument('--expected-id',help='optional exact native artifact ID')
         command.add_argument('--base-context',type=Path,help='explicit Kernel bounds; default is the exact selected Kernel only')
         command.add_argument('--verify',action='store_true',help='explicitly audit retained content during preparation')
         command.add_argument('--dry-run',action='store_true');command.add_argument('-y','--yes',action='store_true')
-    for flag in ('archive-sha256','snapshot'):install.add_argument('--'+flag)
-    for flag in ('sources-root','cache-root'):install.add_argument('--'+flag,type=Path)
+        for flag in ('archive-sha256','snapshot'):command.add_argument('--'+flag)
+        command.add_argument('--repos-root','--sources-root',dest='sources_root',type=Path)
+        command.add_argument('--cache-root',type=Path)
     stage=sub.add_parser('stage');stage.add_argument('--artifact',required=True)
     stage.add_argument('--base-context',required=True,type=Path)
     stage.add_argument('--baseline');stage.add_argument('--dry-run',action='store_true')
@@ -81,6 +86,12 @@ def _main(argv,*,runtime=None):
             from mpm_boot_status import read_running
             running=read_running(runtime)
         result=inspect(root,verify=args.verify,running_record=running)
+        if runtime is not None and args.disk_root is None:
+            import mpm_base_request as requests
+            import mpm_sources as repos
+            saved=requests.read(repos.area_root('base',runtime))
+            if saved and saved['description']['installation']==base.store_info(root)['installation']:
+                result['update_request']=saved['description']
     elif args.action in ('stage','select','rollback'):
         baseline=args.baseline
         if baseline is None and runtime is not None and args.disk_root is None:
@@ -100,26 +111,55 @@ def _main(argv,*,runtime=None):
         live=runtime if runtime is not None and args.disk_root is None and selection.present(root) else None
         preparing=live is not None and not getattr(args,'content_only',False)
         choosing=args.action=='upgrade'
-        base.require(not choosing or preparing,'local Base upgrade requires a running native-v2 installation; use install --content-only for an offline target')
+        base.require(not choosing or preparing,'Base upgrade requires a running native-v2 installation; use install --content-only for an offline target')
         bounds=base.read(args.base_context) if args.base_context is not None else None
         selected=selection.selected(root)[0]['description']['selected'] if preparing else None
         if choosing:base.require(args.expected_selected is None or args.expected_selected==selected,'selected deployment changed; repeat preview')
         if preparing:
             print('This command adds missing regular Base defaults and prepares boot; existing /etc files are preserved.',file=sys.stderr)
             print('Next boot '+('is selected after approval' if choosing else 'stays unchanged')+'; no automatic reboot.',file=sys.stderr,flush=True)
-        source=getattr(args,'source',None) is not None
+        import mpm_sources as repos
+        import mpm_base_request as requests
+        source=args.from_file is None
+        request=previous=None
+        selector=args.selector or args.release
+        base.require(not (args.selector and args.release),'specify one Base selector')
+        source_root=(args.sources_root or repos.area_root('base',runtime)) if source else None
         with ui.phase('Install Base content'):
             if source:
-                base.require(args.expected_id is not None and args.archive_sha256 is not None,'--source requires --expected-id and --archive-sha256')
-                from mpm_base_source import install as acquire
-                result=acquire(root,args.sources_root or (runtime.sources if runtime else Path('/var/lib/mojt/sources')),
+                from mpm_base_source import install as acquire,resolve
+                if args.expected_id is None:
+                    request,previous=requests.choose(source_root,selector=selector,repo=args.source,snapshot=args.snapshot,
+                        installation=(base.store_info(root) or {}).get('installation'))
+                    args.source=request['repo']
+                    args.expected_id=request['selection']['candidate']['artifact']
+                    args.snapshot=request['snapshot']
+                    from mpm_selection import Selection,render_selector
+                    choice=Selection.from_dict(request['selection'])
+                    print('Base request: '+render_selector(choice.selector)+' (repo '+request['repo']+')'+
+                          '; release '+choice.candidate.release_id,file=sys.stderr,flush=True)
+                else:
+                    args.source=repos.choose(source_root,args.source)
+                identifier,checksum,snapshot=resolve(source_root,args.source,selector=selector,
+                    identifier=args.expected_id,archive_sha256=args.archive_sha256,snapshot=args.snapshot)
+                result=acquire(root,source_root,
                     args.cache_root or (runtime.cache if runtime else Path('/var/lib/mojt/cache')),
-                    args.source,args.expected_id,archive_sha256=args.archive_sha256,snapshot=args.snapshot,
+                    args.source,identifier,archive_sha256=checksum,snapshot=snapshot,
                     dry_run=args.dry_run,yes=args.yes,tar=str(runtime.helpers/'tar') if runtime else 'tar')
             else:
-                base.require(not any(getattr(args,name,None) is not None for name in ('archive_sha256','snapshot','sources_root','cache_root')),'source/cache flags require --source')
+                base.require(not any(getattr(args,name,None) is not None for name in ('selector','source','release','archive_sha256','snapshot','sources_root','cache_root')),'repository flags cannot be combined with --from-file')
                 result=base.install(root,args.from_file,args.expected_id,dry_run=args.dry_run,yes=args.yes,
                                     tar=str(runtime.helpers/'tar') if runtime else 'tar')
+        content_changed=result['changed']
+        if request is not None:
+            result['update_request']=request
+            result['request_changed']=False
+            if preparing and not args.dry_run and not result.get('cancelled'):
+                try:
+                    result['request_changed']=requests.save(source_root,request,previous,base.store_info(root)['installation'])
+                    result['changed']=result['changed'] or result['request_changed']
+                except (OSError,ValueError) as error:
+                    raise ValueError('Base content retained; boot unchanged. Could not save update request: '+str(error)) from error
         if not args.dry_run and not result.get('cancelled') and preparing:
             identifier=result['plan']['description']['artifact']
             selecting=False
@@ -127,7 +167,7 @@ def _main(argv,*,runtime=None):
                 base.require(selection.selected(root)[0]['description']['selected']==selected,'selected deployment changed during installation; retry preparation')
                 prepared=prepare_installed(root,identifier,runtime=live,bounds=bounds,verify=args.verify,yes=args.yes)
                 base.require(prepared['selected']==selected,'selected deployment changed during preparation; repeat preview')
-                result=dict(result,content_changed=result['changed'],changed=result['changed'] or prepared['changed'],
+                result=dict(result,content_changed=content_changed,changed=result['changed'] or prepared['changed'],
                     prepared=True,preparation=prepared,selection_changed=False,running_changed=False)
                 if choosing:
                     selecting=True
@@ -140,6 +180,7 @@ def _main(argv,*,runtime=None):
                 if args.json:print(json.dumps(dict(result,prepared=result.get('prepared',False),error=str(error)),indent=2,sort_keys=True))
                 raise ValueError('Base content is installed; added missing defaults are retained. '
                     'Preparation/selection did not complete: '+str(error)+
+                    ('; accepted Base update request retained' if request is not None else '')+
                     ('; boot publication may have completed, inspect mpm base status' if result.get('publication_uncertain') else '')) from error
         else:result=dict(result,prepared=False,selection_changed=False,
             preparation_skipped='preview/cancelled' if args.dry_run or result.get('cancelled') else 'content-only requested' if getattr(args,'content_only',False) else 'no live native-v2 boot context')
@@ -156,11 +197,16 @@ def _main(argv,*,runtime=None):
     else:
         result['staged_deployments']=ui.prepared_rows(root,'base',result['installed'])
         ui.status('base',result)
+        if result.get('update_request'):
+            from mpm_selection import Selection,render_selector
+            wish=result['update_request']
+            print('Update request: '+render_selector(Selection.from_dict(wish['selection']).selector)+' (repo '+wish['repo']+')')
     return 0
 
 
 def main(argv,*,runtime=None):
-    try:return _main(argv,runtime=runtime)
+    try:
+        with base.io.preparation():return _main(argv,runtime=runtime)
     except (OSError,ValueError,KeyError,TypeError,RecursionError,EOFError,subprocess.CalledProcessError,tarfile.TarError) as error:
         print('mpm base: '+str(error),file=sys.stderr)
         return 1

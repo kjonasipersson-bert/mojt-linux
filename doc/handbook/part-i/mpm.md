@@ -71,6 +71,28 @@ the managed installation. An explicit target is offline inspection and does not
 inherit the host's running identity. Global `--root` names a Ports registry,
 rather than a disk installation; do not use it as a substitute for `--disk-root`.
 
+A configured signed Base repository also supports the ordinary update flow:
+
+```sh
+mpm base update
+mpm base upgrade mojt@0.2
+mpm base status
+```
+
+MPM authenticates the accepted catalog and imports the selected native Base
+package before preparing/selecting next boot. `mpm base install mojt@0.2` prepares without selecting it. Neither command reboots automatically.
+System and Kernel keep their independent selections; existing `/etc` and `/var`
+are preserved. Registration requires a publisher public key obtained through a
+trusted channel and a repository-enabled System with retained OpenSSL. See
+[Signed Base repository](https://github.com/kjonasipersson-bert/mojt-linux/blob/main/docs/native-repository.md)
+for registration, exact-version selection and publication. The first repository installation/upgrade needs an explicit wish, such as
+`mojt@0.2`. Later `mpm base upgrade` follows it. A numeric series stays within
+that prefix; `mojt@=0.2.1-r1` pins one exact release, while explicit `mojt` allows
+latest stable across major versions. Retained generations are not upgrade
+requests. `mpm base repo add/list/show` configures repositories in the Base area;
+`--repo NAME` chooses among several. A metadata refresh alone never installs
+packages. See `mpm base status` for the saved wish.
+
 ## 3.3. Install and use a Port
 
 On a configured installed System, MPM uses the System's pinned provider source.

@@ -64,6 +64,31 @@ class BaseUpdateFlow(unittest.TestCase):
             code=cli.main(list(args),runtime=self.runtime)
         return code,stdout.getvalue(),stderr.getvalue()
 
+    def test_repository_request_survives_preparation_failure_and_ordinary_retry(self):
+        import test_mpm_https as repositories
+        import mpm_base_request as requests
+        repo=repositories.RepositoryTests();repo.setUp();self.addCleanup(repo.doCleanups)
+        import mbt_cli
+        config=repo.work/'flow.toml';output=repo.work/'flow-publication'
+        shutil.copyfile(self.archive,repo.web/self.archive.name)
+        config.write_text('format=1\nname="mojt-base"\nchannel="stable"\nsequence=2\nkey='+json.dumps(str(repo.key))+
+            '\n[[packages]]\narchive='+json.dumps(str(self.archive))+'\nurl='+json.dumps(repo.url+'/'+self.archive.name)+'\n')
+        mbt_cli.helper('repo').prepare(config,output)
+        shutil.copyfile(output/'stable.json',repo.web/'stable.json')
+        repo.add();repo.update()
+        args=['--repos-root',str(repo.root),'--cache-root',str(repo.cache),'-y','--json']
+        code,out,err=self.run_cli('upgrade','mojt@0.2',*args,'--dry-run')
+        self.assertEqual(code,0,err);self.assertIsNone(requests.read(repo.root))
+        self.assertFalse(base.object_path(self.root,self.identifier).exists())
+        code,out,err=self.run_cli('upgrade','mojt@0.2',*args,failed=True)
+        self.assertEqual(code,1);self.assertIn('update request retained',err)
+        self.assertEqual(selection.selected(self.root)[0]['description']['selected'],self.before)
+        saved=requests.read(repo.root)
+        self.assertEqual(saved['description']['installation'],base.store_info(self.root)['installation'])
+        code,out,err=self.run_cli('upgrade',*args)
+        self.assertEqual(code,0,err);self.assertTrue(json.loads(out)['prepared'])
+        self.assertEqual(requests.read(repo.root),saved)
+
     def test_install_and_upgrade_preserve_local_config_and_other_boot_inputs(self):
         original=selection.ready(self.root,self.before)['record']['description']['inputs']['description']
         code,out,err=self.run_cli('install','--from-file',str(self.archive),'-y','--json')
@@ -84,6 +109,8 @@ class BaseUpdateFlow(unittest.TestCase):
         self.assertEqual((services.read_bytes(),services.stat().st_ino),self.services)
 
     def test_preview_content_only_wrong_id_and_preparation_failure_leave_selection(self):
+        code,out,err=self.run_cli('install','mojt@15','--from-file',str(self.archive),'-y')
+        self.assertEqual(code,1);self.assertIn('cannot be combined',err)
         code,out,err=self.run_cli('install','--from-file',str(self.archive),'--dry-run','--json')
         self.assertEqual(code,0,err);self.assertFalse(json.loads(out)['prepared'])
         self.assertFalse(base.object_path(self.root,self.identifier).exists())

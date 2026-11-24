@@ -72,7 +72,7 @@ class FrontendTests(unittest.TestCase):
 
     def test_each_helper_has_scoped_help_without_loading_a_provider(self):
         for args,usage in ((['env','--help'],'mbt env'),(['bootstrap','--help'],'mbt bootstrap'),(['build','kernel','--help'],'mbt build kernel'),
-                           (['build','base','--help'],'mbt build base'),(['package','--help'],'mbt package')):
+                           (['build','base','--help'],'mbt build base'),(['package','--help'],'mbt package'),(['repo','--help'],'mbt repo')):
             with self.subTest(args=args):
                 result=subprocess.run([sys.executable,'-I','-B',str(REPO/'tools/mbt'),*args],capture_output=True,text=True,
                                       env={'PATH':'/absent','PYTHONPATH':'/untrusted'})

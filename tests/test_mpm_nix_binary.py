@@ -36,6 +36,16 @@ class NixAdapterTests(unittest.TestCase):
             return ''
         raise AssertionError(args)
 
+    def test_local_reference_reads_registered_closure_without_realisation(self):
+        from mojt_system_package import local_reference
+        with mock.patch.object(Path,'is_dir',return_value=False):
+            self.assertEqual(local_reference(self.adapter,self.output),self.ref)
+        self.assertEqual([c[1:3] for c in self.calls],[['--query','--requisites'],['--query','--hash']])
+        self.assertFalse((self.root/'retained/nix').exists())
+        self.bad=True
+        with self.assertRaisesRegex(ValueError,'local Nix closure'):
+            local_reference(self.adapter,self.output)
+
     def test_readonly_description_and_binary_only_retention_protocol(self):
         self.assertEqual(self.adapter.describe(self.ref,self.root)['commands'],{})
         self.assertEqual(self.calls,[]);self.assertEqual(list((self.root/'retained').iterdir()),[])

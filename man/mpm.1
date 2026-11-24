@@ -55,8 +55,11 @@ identifies an installed build; it is not itself an upgrade request.
 .BI "base install --from-file " "ARCHIVE [--expected-id sha256:FULL_ID]"
 retains the verified complete Base and publishes a validated rootfs realization.
 Use --dry-run for a read-only target preview or -y to accept that operation.
-Alternatively use --source NAME with --expected-id and --archive-sha256 HEX;
---snapshot, --sources-root and --cache-root have the Kernel source meanings.
+Alternatively use base install mojt@SERIES [--repo NAME] with an accepted
+Base repository. Use mojt@=VERSION-rN for an exact release, or explicit mojt for
+latest stable across major versions. --expected-id and --archive-sha256 remain
+optional exact constraints. --snapshot, --repos-root and --cache-root select
+accepted metadata and storage.
 Source preview reads metadata only and does not claim rootfs verification.
 .PP
 New System payloads retain GNU tar alongside zstd for the reviewed Base extractor.
@@ -72,7 +75,17 @@ The first subset rejects unsupported required dependencies/requirements.
 .PP
 .BI "base upgrade --from-file " "ARCHIVE [--expected-id sha256:FULL_ID]"
 installs, adds approved missing defaults, prepares and offers next-boot selection
-on the running native-v2 installation. No automatic reboot. A local archive may
+on the running native-v2 installation. The repository form is
+base upgrade [mojt@SERIES] [--repo NAME]. It follows the one saved Base wish
+when no selector is given; without a saved wish an explicit selector is required.
+A numeric prefix stays in that series, including revisions; an exact release
+keeps its accepted artifact/closure even after withdrawal. Bare mojt explicitly
+allows latest stable across major versions. Ordinary upgrades refuse downgrades.
+Live repository installation saves the wish after accepted content installation,
+before boot preparation. Preparation/selection failure or a declined boot choice
+retains the wish for retry. Preview, cancelled acquisition, local-file imports and
+content-only/offline installs do not replace it. Status shows the saved wish.
+No implicit source refresh or automatic reboot. A local archive may
 omit --expected-id: ordinary verification derives its identity, not publisher trust.
 Preparation failure retains content and any added defaults; retry the command.
 Without --base-context, native-v2 Base preparation targets only the exact selected
@@ -223,49 +236,58 @@ The source frontend's standalone Kernel default is /var/lib/mojt/kernel;
 the installed frontend defaults to the mounted disk's Kernel registry.
 Use a new empty directory for experiments. Never move an initialized root:
 Nix indirect garbage-collection roots refer to its original location.
-.SH SOURCE AND CACHE ACTIONS
+.SH AREA REPOSITORY ACTIONS
 .TP
-.BI "source add " "NAME --from-file SOURCE --policy-file POLICY [--replace]"
+.BI "AREA repo add " "NAME --from-file SOURCE --policy-file POLICY [--replace]"
 Register an exact local native source and adopt its protected owner policy.
 A new source needs an explicit metadata update. Repeating the same registration
 preserves its snapshot; changing source/policy needs --replace and resets current
 metadata. Previous records and snapshots remain retained. Editing the original
 policy file does not change the adopted policy; reconfigure explicitly.
 .TP
-.BI "source update " "NAME"
-Accept snapshot.json, catalog.json and acquisition-map.json under the registered
-local repository root, together with verified external descriptors. Optional
+.BI "AREA repo add " "NAME --url HTTPS_URL --key-file PUBLIC_PEM [--channel stable] [--replace]"
+Register a signed Base repository with an independently trusted Ed25519 public
+key. Retains protected URL/key/name/channel and byte-limit policy; no network read.
+Requires the selected System's retained OpenSSL helper when accepting metadata.
+.TP
+.BI "AREA repo update " "[NAME]"
+For HTTPS sources, download and authenticate one signed Base catalog. Reject
+metadata rollback or changed contents at the same sequence. No automatic expiry
+or key-rotation service is provided. For local sources, accept snapshot.json,
+catalog.json and acquisition-map.json under the registered local repository root,
+together with verified external descriptors. Optional
 --snapshot-file, --catalog-file and --acquisition-file select confined relative
 metadata paths. Publish all accepted bytes before one current snapshot pointer.
 An invalid refresh preserves the last good snapshot. No payload is fetched,
 installed or activated. Initially supports one native release catalog per snapshot.
 .TP
-.BI "source list " "[--json]"
+.BI "AREA repo list " "[--json]"
 List registered names and accepted snapshot IDs without refresh or providers.
 .TP
-.BI "source show " "NAME [--snapshot ID] [--json]"
+.BI "AREA repo show " "NAME [--snapshot ID] [--json]"
 Show the exact accepted registration, snapshot and retained catalog. Report pending
 refresh and local directory presence; snapshot age is unknown. An old snapshot
 must still match the currently registered source and policy.
 .TP
-.BI "cache fetch " "ARTIFACT --source NAME --kind KIND --archive-sha256 HEX"
+.BI "AREA repo fetch " "ARTIFACT --repo NAME --archive-sha256 HEX"
 Acquire one full native sha256 artifact ID with an approved compressed encoding.
-KIND is base, system, kernel or port. --snapshot ID pins a retained snapshot;
+The command area supplies the artifact kind. --snapshot ID pins a retained snapshot;
 otherwise use current accepted metadata. Verify the complete archive before cache
 publication and retain acquisition evidence. This does not install or deploy it.
 .PP
-Source/cache mutation supports --dry-run and -y. Preview writes nothing and does
-not verify the archive body. Normal mutation asks for confirmation unless -y.
-Installed mutation requires an administrator. Source registry defaults to
-/var/lib/mojt/sources; cache defaults to /var/lib/mojt/cache. --root selects the
-registry for source commands and cache for cache commands; --sources-root on
-cache fetch selects its source registry. Parents must already exist.
+AREA is base, system, kernel or ports. There are no source/cache/catalog top-level
+commands. Repository mutation supports --dry-run and -y. Preview writes nothing
+and does not verify the archive body. Installed mutation requires an administrator.
+Registries default to /var/lib/mojt/sources/AREA; the verified archive cache is
+shared at /var/lib/mojt/cache. Old unscoped registrations are retained but not
+adopted implicitly. --root selects the area repository registry, or the cache for
+repo fetch; --repos-root selects the registry used by fetch. Parents must exist.
 .PP
-Source trust comes from explicit protected local owner policy, not SHA256 alone.
-Remote native sources and signing are not provided. Exact Kernel installation
-can consume a named source through the verified cache, as described below;
-Base/System/native Port installation joins remain work. Existing explicit Ports
-source bundles continue to work separately.
+base/system/kernel update is a metadata-only shortcut for repo update;
+without a repository name it refreshes all registered repositories in that area.
+Catalog area must match before publication. Ports update keeps its existing
+provider request semantics. The signed HTTPS publisher currently supports Base;
+local native System/Kernel catalogs retain their existing exact install joins.
 .SH PORTS ACTIONS
 .TP
 .B update

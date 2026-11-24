@@ -167,7 +167,7 @@ class KernelSourceTests(unittest.TestCase):
     def test_delivered_cli_installs_and_inspects_without_provider_or_checkout(self):
         tools = self.f.work / 'delivered'; tools.mkdir()
         for name in ('mpm', 'mpm_cli.py', 'mpm_kernel.py', 'mpm_native_io.py', 'mpm_kernel_source.py', 'mpm_sources.py',
-                     'mpm_sources_cli.py', 'mpm_native_cache.py', 'mpm_transaction.py',
+                     'mpm_sources_cli.py', 'mpm_https.py', 'mpm_native_cache.py', 'mpm_transaction.py',
                      'mpm_request_plan.py', 'mpm_requests.py', 'mpm_selection.py', 'mojt_artifact.py'):
             shutil.copyfile(Path(kernel.__file__).parent / name, tools / name)
         def call(*args):
@@ -190,7 +190,7 @@ class KernelSourceTests(unittest.TestCase):
             self.assertEqual(cli.main(['kernel', 'install', '--source', self.f.name, '--dry-run'], runtime=runtime), 0)
             args = run.call_args.args[0]
             self.assertIn(str(disk/'kernel'), args)
-            self.assertEqual(args[args.index('--sources-root')+1], str(self.f.root))
+            self.assertEqual(args[args.index('--sources-root')+1], str(self.f.root/'kernel'))
             self.assertEqual(args[args.index('--cache-root')+1], str(self.f.cache))
         self.assertFalse(self.root.exists()); self.assertFalse(self.f.cache.exists())
 

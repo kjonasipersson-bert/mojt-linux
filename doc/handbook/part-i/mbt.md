@@ -23,6 +23,7 @@ From a repository checkout, use `python3 tools/mbt`. Its supported operations ar
 | `mbt env` | A private pinned image or Kernel tool environment |
 | `mbt build kernel` | A versioned Kernel and matching modules in a workspace |
 | `mbt build base` | A source-built Base release and native MPM package, with size measurements |
+| `mbt repo prepare` | A signed Base catalog and publication receipt, without uploading |
 | `mbt package` | A native archive from prepared inputs, or archive verification |
 | `mbt bootstrap` | A fresh image or installation onto explicitly prepared mounted partitions |
 
@@ -32,6 +33,12 @@ and regular-file payload sizes. It requires a plain host GCC and native build
 utilities; the current bootstrap rejects Nix compiler wrappers. Availability in
 MBT does not supply those tools or create a self-hosting toolchain. See the
 [Base build reference](https://github.com/kjonasipersson-bert/mojt-linux/blob/main/docs/base-source-build.md).
+
+`mbt repo prepare --config repository.toml --output new-publication` signs a
+finite Base catalog using the publishing host's Ed25519 key and OpenSSL 3+.
+Archives can then be uploaded as GitHub Release assets with standard tools.
+The private key stays outside packages and the source checkout. See
+[repository publication](https://github.com/kjonasipersson-bert/mojt-linux/blob/main/docs/native-repository.md).
 
 For a complete installed-system journey, including background compilation over
 SSH, installation, next-boot selection and return, see
