@@ -242,3 +242,22 @@ The runtime separation fix was checked locally with the accepted pre-repository
 adapter SHA256 and the actual newly packaged Runtime descriptor. The provider
 transition accepts those unchanged bytes and still rejects a changed adapter.
 This is a packaging/transition regression check, not VM boot acceptance.
+
+## Existing-VM acceptance, 2026-11-24
+
+The source-Base Mojt VM booted the repository-enabled System built from
+`d9b6ab5`: `system-repository-tools-2` (`0.2-r2`, artifact prefix
+`0082d4484333`). Running and next boot matched; Base remained 0.2.1 and Kernel
+remained 6.12.107-mojt1. The installed frontend exposed the Base selector/repo
+interface and retained ordinary OpenSSL 3.5.9.
+
+The VM registered the signed GitHub Base repository in the Base area and
+accepted metadata snapshot
+`sha256:3fbab19ced0d74ccb6c09b6c11d7b8c2e3fd1699064236b44a508acda7674a42`.
+`mpm base upgrade mojt@0.2` reused the installed 0.2.1 artifact, completed
+preparation and retained the existing next-boot choice. Status displayed
+`Update request: mojt@0.2 (repo mojt-base)`; a subsequent no-selector upgrade
+preview reused that request. This covers client delivery, authenticated metadata,
+existing-content reuse and persistent update intent. It is not a new Base-version
+transition, an exact/series boundary test on the VM, or physical-machine evidence;
+selector boundaries and refusal cases are covered by the focused automated tests.
