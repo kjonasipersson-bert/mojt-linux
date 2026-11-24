@@ -34,7 +34,8 @@ def code_identity():
 
 def request(value):
     d = base.envelope(value,REQUEST)
-    artifact.fields(d,('tree','result','tree_identity','creator_mount_namespace','seed','archive','system_version','system_revision','code'))
+    artifact.fields(d,('tree','result','tree_identity','creator_mount_namespace','seed','archive','system_version','system_revision','code'), ('root_fs',))
+    native.boot.root_filesystem(d.get('root_fs','ext4'))
     from mpm_deployment import validate_deployment
     old = validate_deployment(d['seed'])
     require(old['platform'] == 'x86_64-linux' and old['boot']['console'] in ('serial','local'),'unsupported bootstrap platform/console')
@@ -90,15 +91,16 @@ def fresh_tree(tree, result, value):
     return old,profile
 
 
-def finalize(*, tree, result, base_package, system_version, system_revision):
+def finalize(*, tree, result, base_package, system_version, system_revision, root_fs="ext4"):
     """Manager-owned tree callback, before mkfs and before image publication."""
     tree,result,base_package = map(lambda p:Path(p).absolute(),(tree,result,base_package))
     require(os.geteuid() == 0,'bootstrap construction requires an administrator')
     seed = base.read(result/'selected-deployment.json')
+    policy = {'root_fs': root_fs} if root_fs != 'ext4' else {}
     value = base.record(REQUEST,dict(tree=str(tree),result=str(result),tree_identity=[tree.stat().st_dev,tree.stat().st_ino],
         creator_mount_namespace=os.readlink('/proc/self/ns/mnt'),seed=seed,
         archive=dict(sha256=artifact.file_sha(base_package),size=base_package.stat().st_size),
-        system_version=system_version,system_revision=system_revision,code=code_identity()))
+        system_version=system_version,system_revision=system_revision,code=code_identity(),**policy))
     fresh_tree(tree,result,value)
     metadata = result/'bootstrap-request.json';base.io.write_json(metadata,value)
     print('Mojt bootstrap: install native content, construct initramfs and select initial deployment...',file=sys.stderr,flush=True)
@@ -219,13 +221,14 @@ def construct(root, runtime, value, work, *, adapter=None):
     realized = system.realization(root,identifier);body,receipt = base.object_record(root,old['base']['artifact'])
     realized_base = base.realization(root,body['id'],receipt)
     kernel_body,_ = kernel.object_record(root/'kernel/installed'/old['kernel']['artifact'][7:],old['kernel']['artifact'],verify=True)
+    root_policy = {'root_fs': d['root_fs']} if 'root_fs' in d else {}
     source = model.record(model.INPUTS,dict(installation=base.store_info(root)['installation'],platform=old['platform'],layout='native-v2',
         base=dict(old['base'],rootfs_sha256=realized_base['description']['rootfs_sha256'],kernel_min=bounds['kernel_min'],
                   kernel_max=bounds['kernel_max'],bounds_evidence=artifact.digest(bounds)),
         system=dict(artifact=identifier,composition=realized['description']['composition'],manifest=realized['description']['manifest'],generation=old['system']['generation']),
         kernel=dict(deployment.kernel_identity(kernel_body),upstream=kernel_body['version']['upstream']),firmware=[],
         boot=dict(root_uuid=old['boot']['root_uuid'],console=old['boot']['console'],
-                  profile=native.hardware.boot_profile(base.read(runtime/'hardware.json')['profile']) if old['boot']['console'] == 'local' else model.PROFILE,extra_args=['quiet']),
+                  profile=native.hardware.boot_profile(base.read(runtime/'hardware.json')['profile']) if old['boot']['console'] == 'local' else model.PROFILE,extra_args=['quiet'],**root_policy),
         constructor=constructor.constructor(python,runtime/'busybox',handover=True),state_requirements=[],management_required=selection.MANAGEMENT_SUPPORT))
     contract = handover.prepare(root,source,plan,adapters=adapters,tar=str(runtime/'libexec/mpm/bin/tar'))
     staged = selection.stage(root,source,bundle,runtime/'busybox',work/'construction',bounds=bounds,adapters=adapters,contract=contract)
@@ -264,7 +267,8 @@ def preflight(args, evidence, *, mounted=False):
     import mpm_management as management
     from mpm_kernel_boot import vm_module
     manager=management.current();vm=vm_module()
-    disk_tools=('sfdisk','blkid','sync','grub-mkstandalone','grub-script-check') if mounted else ('mkfs.ext4',*native.boot.COMMANDS)
+    root_fs = native.boot.root_filesystem(getattr(args,'root_fs','ext4'))
+    disk_tools=('sfdisk','blkid','sync','grub-mkstandalone','grub-script-check') if mounted else ('mkfs.'+root_fs,*native.boot.COMMANDS)
     commands=('cp','cpio','modprobe','zstd','du','openssl',*disk_tools,*TOOLS)
     selected={name:shutil.which(name) for name in commands}
     require(all(selected.values()),'bootstrap host tools missing: '+', '.join(n for n,p in selected.items() if p is None))
@@ -292,6 +296,7 @@ def build(args):
     version = dict(upstream=args.system_version,scheme='dotted-v1',revision=args.system_revision);artifact.version(version)
     require(not getattr(args,'with_installer_inputs',False) or args.with_build_tools,
             '--with-installer-inputs requires --with-build-tools')
+    root_fs = native.boot.root_filesystem(getattr(args,'root_fs','ext4'))
     if getattr(args,'target_root',None) is not None:
         import mojt_mounted_install
         return mojt_mounted_install.build(args)
@@ -304,8 +309,8 @@ def build(args):
         return dict(format='mojt-bootstrap-preview-v1',layout='native-v2',base=preview['base']['id'],kernel=preview['kernel']['id'],
             system_payload=artifact.digest(preview['system_record']),system_version=artifact.version(version),
             boot_profile=native.hardware.boot_profile(args.hardware_profile) if preview['hardware'] is not None else model.PROFILE,hardware_inputs=preview['hardware'],
-            output=str(Path(args.output).absolute()),preflight=checks,image_written=False,boot_acceptance=False)
-    def finish(**values):return finalize(system_version=args.system_version,system_revision=args.system_revision,**values)
+            output=str(Path(args.output).absolute()),root_fs=root_fs,preflight=checks,image_written=False,boot_acceptance=False)
+    def finish(**values):return finalize(system_version=args.system_version,system_revision=args.system_revision,root_fs=root_fs,**values)
     def check(evidence):
         print('Mojt bootstrap: checking prepared manager, host tools and namespace entry...',file=sys.stderr,flush=True)
         preflight(args,evidence)
@@ -315,12 +320,14 @@ def build(args):
     details = image['bootstrap']
     return dict(format='mojt-bootstrap-image-v1',output=image['output'],layout='native-v2',
                 boot_profile=details['deployment']['description']['inputs']['description']['boot']['profile'],
-                deployment=details['deployment']['id'],base=details['base'],system=details['system'],kernel=details['kernel'],boot_acceptance=False)
+                root_fs=root_fs,deployment=details['deployment']['id'],base=details['base'],system=details['system'],kernel=details['kernel'],boot_acceptance=False)
 
 
 def parser(prog=None):
     result = native.parser(prog=prog or 'mbt bootstrap',mounted=True)
     result.description = __doc__
+    result.add_argument('--root-fs', choices=native.boot.ROOT_FILESYSTEMS, default='ext4',
+                        help='root filesystem for a new image or prepared target (default: %(default)s)')
     result.add_argument('--system-version',default=paths.VERSION,help='Mojt System packaging version (not third-party package versions)')
     result.add_argument('--system-revision',type=int,default=1)
     return result

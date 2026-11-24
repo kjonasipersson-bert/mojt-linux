@@ -217,5 +217,27 @@ class UefiTests(unittest.TestCase):
         self.assertEqual(record["root_uuid"], parts["root_uuid"])
 
 
+    @unittest.skipUnless(all(shutil.which(c) for c in boot.COMMANDS +
+                             ("mkfs.btrfs", "blkid", "grub-fstest")),
+                         "Btrfs and UEFI image tools unavailable")
+    def test_real_btrfs_gpt_partition_has_exact_uuid_and_grub_can_read_boot_files(self):
+        tree, record = self.stage()
+        work = self.root / "work"
+        work.mkdir()
+        disk = self.root / "disk.img"
+        parts = boot.build_disk(disk, tree, work, 512, UUID, SYSTEM, "0.1.3", root_fs="btrfs")
+        self.assertEqual(parts["root_fs"], "btrfs")
+        probe = subprocess.check_output(["blkid", "-p", "-O", str(parts["root_offset"]),
+                                         "-S", str(parts["root_bytes"]), "-o", "export", str(disk)],
+                                        text=True).splitlines()
+        self.assertIn("TYPE=btrfs", probe)
+        self.assertIn("UUID=" + record["root_uuid"], probe)
+        prefix = f"(loop0,gpt2)/boot/mojt/{SYSTEM}/0.1.3"
+        for filename, expected in (("vmlinuz", b"synthetic kernel"),
+                                   ("initramfs.cpio.gz", b"synthetic initramfs")):
+            actual = subprocess.check_output(["grub-fstest", str(disk), "cat", f"{prefix}/{filename}"])
+            self.assertEqual(actual, expected)
+
+
 if __name__ == "__main__":
     unittest.main()

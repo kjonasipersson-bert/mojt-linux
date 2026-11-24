@@ -22,13 +22,16 @@ mbt \- prepare private build tools and create Mojt build/package results
 --base-package FILE --base-artifact ID --base-context FILE
 --kernel-registry DIRECTORY --kernel-artifact ID --system-payload DIRECTORY
 --system-generation NAME --output DIRECTORY [--system-version VERSION]
-[--system-revision N] [--with-build-tools] [--with-installer-inputs] [--dry-run]
+[--system-revision N] [--with-build-tools] [--with-installer-inputs] [--root-fs {ext4|btrfs}] [--dry-run]
 [--hardware-profile PROFILE --firmware-root DIRECTORY]
 .PP
 .B mbt bootstrap
 --inputs DIRECTORY --target-root DIRECTORY --efi-directory DIRECTORY
 [--expected-root-uuid UUID --expected-efi-partuuid UUID] [--dry-run]
-[--system-generation NAME]
+[--system-generation NAME] [--root-fs {ext4|btrfs}]
+.PP
+.B mbt install
+[--inputs DIRECTORY]
 .PP
 .B mbt repo prepare
 [--config TOML_FILE] --output NEW_DIRECTORY
@@ -144,8 +147,8 @@ verifies that closed versioned data and supplies the existing exact input flags.
 Competing artifact/provider flags cannot be mixed with it. It loads no hooks/code
 and carries no source installation passwords. SHA256 is not authentication.
 .PP
---target-root and --efi-directory select separate, already mounted empty ext4
-and FAT32 partitions on the same GPT disk. Root may have an empty lost+found;
+--target-root and --efi-directory select separate, already mounted empty ext4 or Btrfs
+root and FAT32 EFI partitions on the same GPT disk. Root may have an empty lost+found;
 existing EFI trees, alias/child mounts, another mounted partition or active swap
 on the disk and unsupported storage profiles are refused. Even preview requires
 root to inspect block metadata. Actual writes require both expected identity
@@ -159,6 +162,16 @@ adoption/resume or automatic cleanup. A late flush failure reports that EFI was
 already published and the target may be bootable. Mounted installation ownership
 stays with root. The initial construction receipt is mounted-install.json under
 the new installation's /var/lib/mojt; MPM records remain current boot authority.
+.SH WHOLE-DISK INSTALLATION
+.B mbt install
+requires root, an interactive terminal, a booted UEFI installation medium,
+and private image tools. It reads the local installer kit from
+/var/lib/mojt/installer-inputs or the path given with --inputs.
+After disk selection, optional swap sizing and exact disk-path confirmation,
+it erases the selected disk, creates a GPT with FAT32 EFI, optional swap and
+Btrfs, then uses the mounted bootstrap. The installed system asks for a new
+root password during construction. Shut down and remove the installation medium
+before booting the new disk.
 .SH DELIVERY
 Builder-enabled System images include the Python frontend, existing helper code,
 this manual, fixed assembly assets and a pinned Kernel recipe example. The

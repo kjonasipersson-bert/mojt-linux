@@ -17,12 +17,30 @@ The physical sequence is USB boot, SSD installation, SSD boot, then ordinary
 MPM/MBT timings and compilation on SSD. USB is the startup/installation medium;
 no heavy physical compiler or rollback matrix is required on it.
 
-## Bounded initial target
+## Whole-disk installation
+
+Run the following as root from the prepared UEFI USB image described below.
+
+```sh
+/var/lib/mojt/installer-tools/run /run/mojt-system/bin/mbt install
+```
+
+This lists unused writable disks and asks for a disk, an optional swap size in
+GiB and exact disk-path confirmation before erasing it. The installer creates
+GPT, a 128 MiB FAT32 ESP, optional partition-backed swap, and single-device Btrfs
+on the rest of the disk. The selected Kernel must supply Btrfs and the profile's
+early storage drivers. The target uses a new root password. Swap is configured
+with a persistent systemd unit using its GPT partition UUID. The keyboard
+layout stays that of the installation console. The installed system retains
+the ordinary native-v2 layout, with writable state and read-only release content.
+
+## Prepared partition installation
 
 - x86-64 UEFI; the existing ThinkPad X1 Carbon 3 local-console USB/SATA profile,
   or the serial VirtIO profile for the focused VM installation test.
-- Already partitioned/formatted GPT disk: one ext4 root partition and one FAT32
+- Already partitioned/formatted GPT disk: one ext4 or Btrfs root partition and one FAT32
   EFI System Partition, mounted at **separate, nonnested** root-owned mountpoints.
+- Btrfs requires `--root-fs btrfs`, a single-device filesystem and a mount of its top-level subvolume.
 - Fresh empty filesystems; root may contain only an empty `lost+found`. An existing
   `EFI` directory is refused, even if empty. Shared ESPs and existing installations
   are outside this first increment.
@@ -35,8 +53,8 @@ no heavy physical compiler or rollback matrix is required on it.
   storage/UAS. Internal NVMe, encrypted roots and logical volumes require a
   supported subsequent profile; they are not silently accepted.
 
-MBT never partitions, formats, resizes, selects an arbitrary disk or writes its
-partition table. Device preparation and the choice to erase a disk happen as a
+`mbt bootstrap` accepts explicitly prepared partitions. The separate
+`mbt install` command can partition and format the confirmed whole disk. Device preparation and the choice to erase a disk happen as a
 separate explicit operation after identifying its model/serial/capacity. Root
 privileges are needed even for the mounted preview, which reads block metadata.
 
@@ -79,8 +97,7 @@ mbt env --profile image --source-manifest /run/mojt-system/ports.toml \
   --output /var/lib/mojt/installer-tools -y
 ```
 
-This supplies the existing image tools plus `blkid`, including host chroot/mount,
-copy/sync and GRUB. The environment and its retained provider closure travel
+This supplies host chroot/mount, disk tools, `mkfs.btrfs`, copy/sync and GRUB. The environment and its retained provider closure travel
 with the USB. The actual SSD installation can then run offline from its carried
 inputs. Shut the VM down cleanly before copying/writing its image. Do not move
 the private tool environment to a different guest path.

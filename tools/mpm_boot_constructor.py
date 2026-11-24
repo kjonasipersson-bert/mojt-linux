@@ -179,6 +179,8 @@ def script(source, interpreter, *, handover=False):
     # through PATH. All runtime bytes came from the explicit trusted adapter.
     import shlex
     python = shlex.quote(interpreter)
+    root_fs = d['boot'].get('root_fs', 'ext4')
+    mount_options = 'ro,subvolid=5' if root_fs == 'btrfs' else 'ro'
     result = '''#!/bin/sh
 # Mojt Linux; Copyright (C) 2026 Jonas Persson; SPDX-License-Identifier: GPL-2.0-only
 PATH=/bin
@@ -203,7 +205,7 @@ while :; do
     [ "$tries" -le 20 ] || panic "exact root UUID unavailable"
     sleep 1
 done
-mount -t ext4 -o ro "$device" /sysroot || panic "cannot mount exact root read-only"
+mount -t '''+root_fs+''' -o '''+mount_options+''' "$device" /sysroot || panic "cannot mount exact root read-only"
 /bin/busybox env -i PATH=/bin LC_ALL=C '''+python+''' -I -S -B /mojt/launch.py --root /sysroot --inputs /mojt/inputs.json --proof /mojt/trees.json \
     >/mojt/verified.json || panic "exact deployment verification failed"
 cat /mojt/verified.json
@@ -256,7 +258,8 @@ def payload_key(source, runtime, *, handover):
     names = ('mpm_boot_constructor.py','mpm_boot_inventory.py','mpm_native_io.py',
              'mpm_kernel_boot.py','mojt-vm-build.py','mojt_hardware.py','mojt_native_image.py')
     return record(PAYLOAD_KEY,dict(platform=d['platform'],kernel=d['kernel'],runtime=runtime['id'],
-        busybox_sha256=producer['busybox_sha256'],profile=d['boot']['profile'],handover=handover,
+        busybox_sha256=producer['busybox_sha256'],profile=d['boot']['profile'],
+        root_fs=d['boot'].get('root_fs', 'ext4'),handover=handover,
         shutdown_sha256=hashlib.sha256(paths.SHUTDOWN.encode()).hexdigest() if handover else None,
         applets=sorted({'findfs','cat','env'} | (paths.SHUTDOWN_APPLETS-{'cp','ln'} if handover else set())),
         producer={name:producer['code'][name] for name in names}))
@@ -365,8 +368,10 @@ def _build_locked(root, source, runtime_directory, busybox, work, *, bounds, ada
         if d['boot']['profile'] in model.HARDWARE_PROFILES:
             machine = hardware.profile_for_boot(d['boot']['profile'])
             vm.module_paths(d['kernel']['release'],module_tree,names=hardware.runtime_modules(machine))
-            modules = vm.module_paths(d['kernel']['release'],module_tree,names=hardware.early_modules(machine))
-        else:modules = vm.module_paths(d['kernel']['release'],module_tree,network=True)
+            modules = vm.module_paths(d['kernel']['release'],module_tree,names=hardware.early_modules(machine, root_fs=d['boot'].get('root_fs', 'ext4')))
+        else:
+            modules = vm.module_paths(d['kernel']['release'],module_tree,network=True,
+                                      root_fs=d['boot'].get('root_fs', 'ext4'))
         for module in modules:
             require(module == module.resolve() and payload/'lib/modules' in module.parents,'early module outside exact Kernel tree')
         modules = decode_modules(modules,work/'decoded-modules')

@@ -466,7 +466,8 @@ def _build(args, vm=None, *, finalize_tree=None, preflight=None,
             copied["metadata"]["kernel_release"], busybox=busybox, boot_mode="uefi", hardware_profile=getattr(args,'hardware_profile',None),
             firmware_root=firmware_root, system_payload=payload, disk_size_mib=args.disk_size_mib, login_mode=args.login_mode,
             root_shell="/run/mojt-system/bin/bash", base_generation=base, system_generation=args.system_generation,
-            additional_generations=None, native_context=context, with_build_tools=getattr(args,"with_build_tools",False))
+            additional_generations=None, native_context=context, with_build_tools=getattr(args,"with_build_tools",False),
+            root_fs=getattr(args,"root_fs","ext4"))
         if getattr(args,'with_installer_inputs',False):
             from mojt_bootstrap_inputs import write
             kit = work/'installer-inputs'
@@ -520,7 +521,7 @@ def parser(prog=None, *, mounted=False):
         parser.add_argument('--with-installer-inputs',action='store_true',help='carry reusable local installation inputs in the new installation')
         destination=parser.add_mutually_exclusive_group(required=True)
         destination.add_argument('--output',type=Path,help='new disk-image output directory')
-        destination.add_argument('--target-root',type=Path,help='empty mounted ext4 target partition')
+        destination.add_argument('--target-root',type=Path,help='empty mounted target root partition')
         parser.add_argument('--efi-directory',type=Path,help='empty mounted FAT32 ESP on the same GPT disk')
         parser.add_argument('--expected-root-uuid',help='required filesystem identity for mounted writes')
         parser.add_argument('--expected-efi-partuuid',help='required GPT ESP identity for mounted writes')

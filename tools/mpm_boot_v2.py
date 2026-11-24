@@ -111,7 +111,8 @@ def inputs(value):
     require(padded_version(b['kernel_min']) <= padded_version(k['upstream']) <= padded_version(b['kernel_max']), 'Kernel outside exact Base bounds')
     require(d['firmware'] == [], 'independent firmware artifacts are unsupported; hardware firmware belongs to System')
     require(d['state_requirements'] == [], 'state-schema requirements need a supported native-v2 handler')
-    policy = d['boot'];artifact.fields(policy, ('root_uuid', 'console', 'profile', 'extra_args'))
+    policy = d['boot'];artifact.fields(policy, ('root_uuid', 'console', 'profile', 'extra_args'), ('root_fs',))
+    boot.root_filesystem(policy.get('root_fs', 'ext4'))
     boot.fs_uuid(policy['root_uuid'])
     require((policy['console'],policy['profile']) in (('serial',PROFILE),*(('local',p) for p in HARDWARE_PROFILES)), 'unsupported native-v2 boot profile')
     arguments(policy['extra_args']);reference(d['constructor'])
@@ -210,7 +211,8 @@ def render(value, entries):
         require(record['id'] == row['deployment'], 'menu deployment identity differs')
         i = actual['inputs']['description']
         require(i['installation'] == d['installation'], 'menu contains a foreign installation')
-        machine = (i['platform'], i['boot']['root_uuid'], i['boot']['console'], i['boot']['profile'])
+        machine = (i['platform'], i['boot']['root_uuid'], i['boot']['console'],
+                   i['boot']['profile'], i['boot'].get('root_fs', 'ext4'))
         if policy is None:
             policy = machine
             text += 'search --no-floppy --fs-uuid --set=root ' + i['boot']['root_uuid'] + '\n'

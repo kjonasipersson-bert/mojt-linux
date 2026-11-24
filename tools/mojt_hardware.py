@@ -33,9 +33,10 @@ PC_FIRMWARE = {
 }
 
 
-def early_modules(profile):
+def early_modules(profile, *, root_fs="ext4"):
     if profile not in PROFILES:raise ValueError("unsupported hardware profile")
-    return PC_EARLY_MODULES if profile == PC_PROFILE else EARLY_MODULES
+    modules = PC_EARLY_MODULES if profile == PC_PROFILE else EARLY_MODULES
+    return tuple(root_fs if name == "ext4" else name for name in modules)
 
 
 def runtime_modules(profile):

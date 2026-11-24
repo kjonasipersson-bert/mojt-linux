@@ -251,6 +251,11 @@ requires root, required image tools and an interactive terminal for the new
 machine's password. An ordinary-user preview does not establish that privileged
 namespace checks or full construction have passed. Bootstrap does not reboot.
 
+For a serial UEFI VM with a Btrfs root, add `--root-fs btrfs` and launch
+the finished VM with the generated `run-qemu.sh`. The image requires
+`mkfs.btrfs` and a Btrfs-capable input Kernel. Ext4 is the default.
+[Image and boot requirements](https://github.com/kjonasipersson-bert/mojt-linux/blob/main/docs/mbt-minimal.md#fresh-native-v2-bootstrap)
+
 `--output` creates a new regular disk image. The separate `--target-root` mode
 requires explicitly identified, empty mounted partitions and does not partition
 or format a device. Both are new-target operations. Updating an existing Mojt

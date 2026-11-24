@@ -15,7 +15,8 @@ MIB = 1024 * 1024
 SECTOR = 512
 ESP_MIB = 128
 COMMANDS = ("sfdisk", "mkfs.vfat", "mcopy", "grub-mkstandalone", "grub-script-check")
-GRUB_MODULES = "part_gpt ext2 fat normal linux search search_fs_uuid serial terminal configfile halt"
+GRUB_MODULES = "part_gpt fat normal linux search search_fs_uuid serial terminal configfile halt"
+ROOT_FILESYSTEMS = {"ext4": "ext2", "btrfs": "btrfs"}
 SERIAL = "serial --unit=0 --speed=115200 --word=8 --parity=no --stop=1\n" \
          "terminal_input serial\nterminal_output serial\n"
 DISK_MOUNT = '''tries=0
@@ -31,6 +32,12 @@ def generation(value):
     if (not isinstance(value, str) or value == "current" or
             not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+-]*", value)):
         raise ValueError("unsafe boot generation")
+    return value
+
+
+def root_filesystem(value):
+    if not isinstance(value, str) or value not in ROOT_FILESYSTEMS:
+        raise ValueError("unsupported root filesystem")
     return value
 
 
@@ -65,11 +72,12 @@ def cmdline(root_uuid, system, base, console="serial"):
             f"mojt.base={generation(base)}")
 
 
-def init_script(script, root_uuid, system, base):
+def init_script(script, root_uuid, system, base, *, root_fs="ext4"):
     """Pin filesystem, Base and System; refuse missing or conflicting selectors."""
     fs_uuid(root_uuid)
     generation(system)
     generation(base)
+    root_fs = root_filesystem(root_fs)
     base_selection = 'version="$(readlink /sysroot/base/current)" || panic "missing base/current"'
     if (script.count(DISK_MOUNT) != 1 or "/sysroot/system/current" not in script or
             script.count(base_selection) != 1):
@@ -101,12 +109,14 @@ while :; do
     [ "$tries" -le 20 ] || panic "Mojt filesystem UUID did not appear"
     sleep 1
 done
-mount -t ext4 -o rw "$mojt_device" /sysroot || panic "cannot mount Mojt ext4 partition"
+mount -t @ROOT_FS@ -o @MOUNT_OPTIONS@ "$mojt_device" /sysroot || panic "cannot mount Mojt @ROOT_FS@ partition"
 [ ! -L /sysroot/base ] || panic "Base directory is a symlink"
 [ ! -L /sysroot/system ] && [ ! -L /sysroot/system/@SYSTEM@ ] ||
     panic "System generation is a symlink"'''
+    mount_options = "rw,subvolid=5" if root_fs == "btrfs" else "rw"
     return script.replace(DISK_MOUNT, discover.replace("@UUID@", root_uuid).replace(
-        "@SYSTEM@", system).replace("@BASE@", base)) \
+        "@SYSTEM@", system).replace("@BASE@", base).replace("@ROOT_FS@", root_fs)
+        .replace("@MOUNT_OPTIONS@", mount_options)) \
         .replace(base_selection, 'version="' + base + '"') \
         .replace("/sysroot/system/current", "/sysroot/system/" + system)
 
@@ -207,9 +217,10 @@ def copy_partition(source, destination, offset, length):
                 outgoing.seek(len(block), 1)
 
 
-def efi_loader(config, work, root_uuid, console):
+def efi_loader(config, work, root_uuid, console, *, root_fs="ext4"):
     """Build the same UUID-bound fallback loader for an image or mounted ESP."""
     fs_uuid(root_uuid)
+    modules = GRUB_MODULES + " " + ROOT_FILESYSTEMS[root_filesystem(root_fs)]
     subprocess.run(["grub-script-check", str(config)], check=True)
     stub = work / "grub-embedded.cfg"
     stub.write_text(terminal(console) + f"if search --no-floppy --fs-uuid --set=mojt_root {root_uuid}; then\n"
@@ -220,17 +231,19 @@ def efi_loader(config, work, root_uuid, console):
     efi = work / "EFI/BOOT"
     efi.mkdir(parents=True)
     loader = efi / "BOOTX64.EFI"
-    subprocess.run(["grub-mkstandalone", "-O", "x86_64-efi", "--modules=" + GRUB_MODULES,
+    subprocess.run(["grub-mkstandalone", "-O", "x86_64-efi", "--modules=" + modules,
                     "--locales=", "--fonts=", "-o", str(loader),
                     "boot/grub/grub.cfg=" + str(stub)], check=True)
     return loader
 
 
-def build_disk(disk, tree, work, size_mib, root_uuid, system, base, console="serial", native_selection=None):
+def build_disk(disk, tree, work, size_mib, root_uuid, system, base, console="serial", native_selection=None,
+               *, root_fs="ext4"):
     """Create a NEW regular GPT disk, with standalone GRUB in the EFI fallback path."""
     parts = layout(size_mib)
     fs_uuid(root_uuid)
     generation(system)
+    root_fs = root_filesystem(root_fs)
     if disk.is_symlink():
         raise ValueError("disk image must not be a symlink")
     with disk.open("xb") as stream:
@@ -242,6 +255,7 @@ def build_disk(disk, tree, work, size_mib, root_uuid, system, base, console="ser
         if choice != native_selection:raise ValueError('native-v2 selection changed before disk construction')
         inputs = entries[choice['description']['selected']]['record']['description']['inputs']['description']
         if (inputs['boot']['root_uuid'] != root_uuid or inputs['boot']['console'] != console
+                or inputs['boot'].get('root_fs', 'ext4') != root_fs
                 or inputs['system']['generation'] != system or inputs['base']['release'] != base):
             raise ValueError('native-v2 boot scope differs from filesystem image')
     subprocess.run(["sfdisk", "--no-reread", "--no-tell-kernel", str(disk)],
@@ -252,12 +266,16 @@ def build_disk(disk, tree, work, size_mib, root_uuid, system, base, console="ser
     if actual["label"] != "gpt" or actual.get("sectorsize") != SECTOR or extents != [
             (parts["esp_offset"], parts["esp_bytes"]), (parts["root_offset"], parts["root_bytes"])]:
         raise ValueError("written GPT differs from planned partition extents")
-    root = work / "mojt.ext4"
+    root = work / ("mojt." + root_fs)
     with root.open("xb") as stream:
         stream.truncate(parts["root_bytes"])
-    subprocess.run(["mkfs.ext4", "-F", "-q", "-L", "MOJT", "-U", root_uuid,
-                    "-d", str(tree), str(root)], check=True)
-    loader = efi_loader(tree / "boot/mojt/grub.cfg", work, root_uuid, console)
+    if root_fs == "btrfs":
+        subprocess.run(["mkfs.btrfs", "-q", "-L", "MOJT", "-U", root_uuid,
+                        "--rootdir", str(tree), str(root)], check=True)
+    else:
+        subprocess.run(["mkfs.ext4", "-F", "-q", "-L", "MOJT", "-U", root_uuid,
+                        "-d", str(tree), str(root)], check=True)
+    loader = efi_loader(tree / "boot/mojt/grub.cfg", work, root_uuid, console, root_fs=root_fs)
     fat = work / "mojt.fat"
     with fat.open("xb") as stream:
         stream.truncate(parts["esp_bytes"])
@@ -265,7 +283,7 @@ def build_disk(disk, tree, work, size_mib, root_uuid, system, base, console="ser
     subprocess.run(["mcopy", "-i", str(fat), "-s", str(work / "EFI"), "::/"], check=True)
     copy_partition(fat, disk, parts["esp_offset"], parts["esp_bytes"])
     copy_partition(root, disk, parts["root_offset"], parts["root_bytes"])
-    return {**parts, "root_uuid": root_uuid, "efi_loader_sha256": digest(loader)}
+    return {**parts, "root_uuid": root_uuid, "root_fs": root_fs, "efi_loader_sha256": digest(loader)}
 
 
 def run_script(network=False, local_console=False, hardware_profile=None):
