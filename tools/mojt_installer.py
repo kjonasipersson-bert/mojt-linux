@@ -22,6 +22,7 @@ import mojt_bootstrap as bootstrap
 import mojt_bootstrap_inputs as inputs
 import mojt_mounted_install as mounted
 import mojt_native_image as native
+from mpm_ui import phase
 
 MIB = boot.MIB
 GIB = 1024 * MIB
@@ -180,21 +181,24 @@ def install(kit):
 
     with workspace() as (work, root, esp):
         origin = {}
-        argv = inputs.expand(['--inputs', str(kit), '--target-root', str(root),
-                              '--efi-directory', str(esp), '--root-fs', 'btrfs'], details=origin)
+        with phase('Verify local installer kit'):
+            argv = inputs.expand(['--inputs', str(kit), '--target-root', str(root),
+                                  '--efi-directory', str(esp), '--root-fs', 'btrfs'], details=origin)
         args = bootstrap.parser().parse_args(argv)
         args.installer_inputs_id = origin['id']
         args.output = work/'unused-image'
-        mounted.check_storage(mounted.storage_drivers(disk['number']), args.hardware_profile)
-        evidence = native.preview(args)
-        bootstrap.preflight(args, evidence, mounted=True)
-        from mpm_kernel_boot import vm_module
-        release = evidence['kernel']['metadata']['kernel_release']
-        module_tree = (args.kernel_registry/'installed'/args.kernel_artifact[7:]/
-                       'payload/lib/modules'/release)
-        vm_module().module_paths(release, module_tree, network=True, root_fs='btrfs',
-                                 names=native.hardware.early_modules(args.hardware_profile, root_fs='btrfs')
-                                 if args.hardware_profile else None)
+        with phase('Check local Base, System and Kernel inputs'):
+            evidence = native.preview(args)
+        with phase('Check installation tools, target storage and boot drivers'):
+            mounted.check_storage(mounted.storage_drivers(disk['number']), args.hardware_profile)
+            bootstrap.preflight(args, evidence, mounted=True)
+            from mpm_kernel_boot import vm_module
+            release = evidence['kernel']['metadata']['kernel_release']
+            module_tree = (args.kernel_registry/'installed'/args.kernel_artifact[7:]/
+                           'payload/lib/modules'/release)
+            vm_module().module_paths(release, module_tree, network=True, root_fs='btrfs',
+                                     names=native.hardware.early_modules(args.hardware_profile, root_fs='btrfs')
+                                     if args.hardware_profile else None)
         print(f"Erase {disk['path']} ({disk['bytes']/GIB:.1f} GiB) and install "
               f"Base {evidence['base']['version']['upstream']} with Linux {release}.")
         print(f"EFI: {boot.ESP_MIB} MiB  Swap: {swap_gib} GiB  Btrfs: remaining space")
