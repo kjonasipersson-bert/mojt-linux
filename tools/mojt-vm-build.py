@@ -528,7 +528,7 @@ def kernel_release_from_path(path):
     return label(path.name[len("vmlinuz-"):])
 
 
-def module_paths(release, modules_dir, network=False, names=None):
+def module_paths(release, modules_dir, network=False, names=None, *, root_fs="ext4"):
     """Resolve exact Kernel dependencies without host modprobe.d policy or loading."""
     root = modules_dir.resolve(strict=True)
     if root.name != release or root.parent.name != "modules" or root.parent.parent.name != "lib":
@@ -536,7 +536,7 @@ def module_paths(release, modules_dir, network=False, names=None):
     seen = set()
     paths = []
     for name in (names if names is not None else
-                 ("virtio_pci", "virtio_blk", "ext4") + (("virtio_net",) if network else ())):
+                 ("virtio_pci", "virtio_blk", boot.root_filesystem(root_fs)) + (("virtio_net",) if network else ())):
         result = subprocess.run(
             ["modprobe", "--config", "/dev/null", "--dirname", str(root.parents[2]),
              "--set-version", release, "--show-depends", name],
@@ -755,6 +755,9 @@ def build(args, *, finalize_tree=None, filesystem_uuid=None, filesystem_writer=N
         fail("explicit boot generations require --boot-mode uefi")
     entries = generations.plan(plan_path, boot.generation)
     native = getattr(args, "native_context", None)
+    root_fs = boot.root_filesystem(getattr(args, "root_fs", "ext4"))
+    if root_fs == "btrfs" and finalize_tree is None:
+        fail("Btrfs requires native-v2 bootstrap")
     if filesystem_writer is not None:
         if finalize_tree is None or filesystem_uuid is None:
             fail('mounted installation requires native-v2 finalization and an explicit filesystem UUID')
@@ -777,7 +780,7 @@ def build(args, *, finalize_tree=None, filesystem_uuid=None, filesystem_writer=N
         boot.generation(explicit_base)
     parts = boot.layout(args.disk_size_mib) if uefi else None
     commands = ["cp", "cpio", "modprobe", "zstd", "du"]
-    if filesystem_writer is None:commands.append("mkfs.ext4")
+    if filesystem_writer is None:commands.append("mkfs." + root_fs)
     if uefi and filesystem_writer is None:
         commands += boot.COMMANDS
     if args.login_mode == "password":
@@ -844,7 +847,8 @@ def build(args, *, finalize_tree=None, filesystem_uuid=None, filesystem_writer=N
         for name in ("etc", "var", "dev", "proc", "sys"):
             require_directory(generation / name, f"Base /{name}")
         modules = module_paths(release, modules_dir, network=network,
-                               names=hardware.early_modules(physical) if physical else None)
+                               names=hardware.early_modules(physical, root_fs=root_fs) if physical else None,
+                               root_fs=root_fs)
         if physical:
             # Validate the runtime drivers now, rather than discovering omissions after boot.
             module_paths(release, modules_dir, names=hardware.runtime_modules(physical))
@@ -910,7 +914,7 @@ def build(args, *, finalize_tree=None, filesystem_uuid=None, filesystem_writer=N
                       "root access on the VM console.", file=sys.stderr)
             root_uuid = (filesystem_uuid or str(uuid.uuid4())) if uefi else None
             if uefi:
-                init_script = boot.init_script(init_script, root_uuid, system_version, version)
+                init_script = boot.init_script(init_script, root_uuid, system_version, version, root_fs=root_fs)
             initramfs = make_initramfs(temp / "initroot", busybox, modules, init_script,
                                       shutdown_script, extra_applets=("findfs",) if uefi else ())
             boot_record = None
@@ -953,7 +957,7 @@ def build(args, *, finalize_tree=None, filesystem_uuid=None, filesystem_writer=N
             disk = result / "disk.img"
             disk_layout = None
             if uefi:
-                options = dict(console=console)
+                options = dict(console=console, root_fs=root_fs)
                 if native_boot is not None:options['native_selection'] = native_boot['selection']
                 disk_layout = boot.build_disk(disk, tree, temp, args.disk_size_mib, root_uuid,
                                               system_version, version, **options)

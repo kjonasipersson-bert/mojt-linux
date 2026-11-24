@@ -23,6 +23,7 @@ for how the code works now.
 - [Source Base switch and return on a copied VM](source-base-transition-test.md)
 - [Local Base 0.2.0 to 0.2.1 update and size observation](base-local-update-test.md)
 - [GitHub Base publication and repository test](base-repository-test.md)
+- [Offline whole-disk installer on a two-disk VM](installer-test.md)
 
 ## Extracted historical records
 

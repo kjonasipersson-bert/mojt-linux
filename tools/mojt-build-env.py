@@ -28,8 +28,9 @@ ROLES = {
     "cpio": ("cpio", ["cpio"]),
     "zstd": ("zstd", ["zstd"]),
     "kmod": ("kmod", ["modprobe", "depmod"]),
+    "btrfs-progs": ("btrfs-progs", ["mkfs.btrfs"]),
     "e2fsprogs": ("e2fsprogs", ["mkfs.ext4", "e2fsck", "debugfs"]),
-    "util-linux": ("util-linux", ["sfdisk", "fallocate", "unshare", "mount", "umount", "blkid"]),
+    "util-linux": ("util-linux", ["sfdisk", "fallocate", "unshare", "mount", "umount", "blkid", "lsblk", "mkswap"]),
     "dosfstools": ("dosfstools", ["mkfs.vfat"]),
     "mtools": ("mtools", ["mcopy"]),
     "grub": ("grub2_efi", ["grub-mkstandalone", "grub-script-check"]),
@@ -39,7 +40,7 @@ ROLES = {
     "cacert": ("cacert", []),
 }
 KERNEL_ROLES = {
-    **ROLES,
+    **{role: tools for role, tools in ROLES.items() if role != "btrfs-progs"},
     "compiler": ("gcc14", ["gcc", "cc", "g++"]),
     "make": ("gnumake", ["make"]),
     "flex": ("flex", ["flex"]),

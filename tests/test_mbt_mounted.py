@@ -145,6 +145,7 @@ class MountedInspectionTests(unittest.TestCase):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
         self.root=Path(self.tmp.name)/'root';self.esp=Path(self.tmp.name)/'esp'
         self.root.mkdir();self.esp.mkdir();self.swap=False;self.duplicate=False
+        self.mount_id_override = {}
         self.rows=[dict(id=i,device='8:'+str(i),root='/',path=str(p),options=['rw'],
                         fstype=fs,source='/dev/test'+str(i))
                    for i,p,fs in ((1,self.root,'ext4'),(2,self.esp,'vfat'))]
@@ -159,9 +160,14 @@ class MountedInspectionTests(unittest.TestCase):
             return True if str(path)=='/sys/dev/block/8:3/partition' else original_file(path)
         def current_read(path,*a,**kw):
             if str(path)=='/proc/swaps':return 'Filename Type Size Used Priority\n'+('/dev/test3 partition 1024 0 -2\n' if self.swap else '')
+            if path.parent == Path('/proc/self/fdinfo'):
+                target = os.readlink(Path('/proc/self/fd')/path.name)
+                for row in self.rows:
+                    if row['path'] == target:
+                        return f"mnt_id:\t{self.mount_id_override.get(target, row['id'])}\n"
             return original_read(path,*a,**kw)
         def probe(row,*,role):
-            return dict(source=row['source'],device=row['device'],disk='/dev/test',disk_device='8:0',
+            return dict(source=row['source'],device='8:1' if role=='root' else '8:2',disk='/dev/test',disk_device='8:0',
                         disk_id=UUID,partuuid=UUID if role=='root' else ESP_UUID,
                         uuid=UUID if role=='root' else '1234-ABCD',start=2048,sectors=100000,sector_size=512)
         def device(path):return Path(path),'8:'+str(path)[-1]
@@ -186,11 +192,21 @@ class MountedInspectionTests(unittest.TestCase):
         self.rows[0]['id']=1;(self.root/'keep').write_text('existing data')
         with self.assertRaisesRegex(ValueError,'not empty'):mounted.inspect(self.root,self.esp)
 
+    def test_btrfs_checks_opened_mount_id_even_when_stat_device_differs(self):
+        self.rows[0].update(device='0:256', fstype='btrfs', super_options=['subvolid=5'])
+        self.assertNotEqual(self.root.stat().st_dev, os.makedev(0, 256))
+        value = mounted.inspect(self.root, self.esp, root_fs='btrfs')
+        self.assertEqual(value['root']['device'], '8:1')
+        mounted.recheck(value, fresh=True)
+        self.mount_id_override[str(self.root)] = 99
+        with self.assertRaisesRegex(ValueError, 'mountpoint identity changed'):
+            mounted.recheck(value, fresh=True)
+
     def test_aliases_child_mounts_live_disk_swap_duplicate_uuid_and_existing_efi_are_refused(self):
         original=copy.deepcopy(self.rows)
         for extra in (dict(self.rows[0],path='/elsewhere'),
                       dict(self.rows[0],path=str(self.root/'child'),device='8:3'),
-                      dict(self.rows[0],path='/running-root',device='8:3')):
+                      dict(self.rows[0],id=3,path='/running-root',device='8:3',source='/dev/test3')):
             self.rows=copy.deepcopy(original)+[extra]
             with self.subTest(extra=extra),self.assertRaises(ValueError):mounted.inspect(self.root,self.esp)
         self.rows=original;self.swap=True
@@ -250,7 +266,7 @@ class PublicationTests(unittest.TestCase):
                 self.assertEqual((self.root/'retained').read_bytes(),b'installed artifact bytes')
                 self.assertFalse((self.esp/'EFI').exists())
             return self.choice,{IDENTITY:{'record':self.deployment}},b'menu'
-        def loader(config,work,*args):
+        def loader(config,work,*args,**kwargs):
             path=work/'loader';path.write_bytes(b'synthetic EFI bytes');return path
         def recheck(value,*,fresh):
             if fresh:mounted.empty(self.root,root=True);mounted.empty(self.esp)

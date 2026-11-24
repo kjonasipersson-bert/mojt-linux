@@ -26,6 +26,7 @@ From a repository checkout, use `python3 tools/mbt`. Its supported operations ar
 | `mbt repo prepare` | A signed Base catalog and publication receipt, without uploading |
 | `mbt package` | A native archive from prepared inputs, or archive verification |
 | `mbt bootstrap` | A fresh image or installation onto explicitly prepared mounted partitions |
+| `mbt install` | [Offline whole-disk installation](installing-mojt.md) from prepared installation media |
 
 `mbt build base --output base-result --jobs 2` builds the pinned Base 0.2.1
 release and a native archive under `base-result/package`. It reports compressed
@@ -250,6 +251,11 @@ The preview validates inputs and reports prerequisites. Actual image creation
 requires root, required image tools and an interactive terminal for the new
 machine's password. An ordinary-user preview does not establish that privileged
 namespace checks or full construction have passed. Bootstrap does not reboot.
+
+For a serial UEFI VM with a Btrfs root, add `--root-fs btrfs` and launch
+the finished VM with the generated `run-qemu.sh`. The image requires
+`mkfs.btrfs` and a Btrfs-capable input Kernel. Ext4 is the default.
+[Image and boot requirements](https://github.com/kjonasipersson-bert/mojt-linux/blob/main/docs/mbt-minimal.md#fresh-native-v2-bootstrap)
 
 `--output` creates a new regular disk image. The separate `--target-root` mode
 requires explicitly identified, empty mounted partitions and does not partition

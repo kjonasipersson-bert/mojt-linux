@@ -18,6 +18,7 @@ language or complete physical installation. MPM's public syntax is unchanged.
 | `mbt env` | `mojt-build-env.py` | Create a new private pinned image/Kernel tool environment |
 | `mbt build kernel` | `mojt-kernel-build.py` | Build a separate versioned Kernel and matching modules |
 | `mbt package` | `mojt-artifact-pack.py` | Package retained inputs or verify a native archive |
+| `mbt install` | [Whole-disk installer](mounted-installation.md#whole-disk-installation) | Partition and install on a confirmed disk from a local kit |
 | `mbt bootstrap` | `mojt_bootstrap.py` and the existing constructor | Install exact inputs and select the first native-v2 deployment on a new image or prepared mounted partitions |
 
 There is no separate `plan` verb. Environment creation and Kernel compilation
@@ -125,7 +126,7 @@ environment nor MBT changes Base libc or claims arbitrary plugin ABI safety.
 ## Fresh native-v2 bootstrap
 
 The [mounted installation increment](mounted-installation.md) adds the same
-construction path for an empty mounted ext4 root and FAT32 ESP on one prepared
+construction path for an empty mounted ext4 or Btrfs root and FAT32 ESP on one prepared
 GPT disk. USB is used for startup/installation; SSD installation precedes the
 physical compiler/performance session. `--with-installer-inputs` carries reusable
 local data, and `--inputs DIRECTORY` consumes it without a checkout. The mounted
@@ -134,7 +135,15 @@ path does not partition, format or overwrite an existing installation.
 The default profile is x86-64, serial console, UEFI/GPT and VirtIO. Bootstrap requires
 an account-enabled step-10 System payload and interactive password login. With
 `--output`, it creates a new regular disk image; this mode accepts no physical
-target device. Neither mode adopts an existing installation or resumes a failed
+target device. Ext4 is the image default. For Btrfs, pass `--root-fs btrfs` when creating an image or installing to
+a prepared mounted Btrfs target. This requires `mkfs.btrfs` (Debian package `btrfs-progs` or a fresh
+MBT `image` environment), GRUB's x86-64 EFI Btrfs module, and Btrfs built
+into the input Kernel or present in its module tree. The root is populated
+directly in the top-level filesystem of a new regular-file disk image. Boot
+it with the generated `run-qemu.sh` and QEMU/OVMF. The separate ext4 serial
+image conversion helper does not apply to this image.
+
+Neither mode adopts an existing installation or resumes a failed
 preparation.
 
 ```sh

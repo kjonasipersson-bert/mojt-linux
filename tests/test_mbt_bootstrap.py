@@ -25,11 +25,11 @@ import mpm_boot_selection as selection
 import mpm_boot_v2 as model
 
 
-def request(tree, result, seed, archive):
+def request(tree, result, seed, archive, **policy):
     return base.record(bootstrap.REQUEST,dict(tree=str(tree),result=str(result),tree_identity=[tree.stat().st_dev,tree.stat().st_ino],
         creator_mount_namespace=os.readlink('/proc/self/ns/mnt'),seed=seed,
         archive=dict(sha256=artifact.file_sha(archive),size=archive.stat().st_size),
-        system_version='0.2',system_revision=1,code=bootstrap.code_identity()))
+        system_version='0.2',system_revision=1,code=bootstrap.code_identity(),**policy))
 
 
 class BoundaryTests(unittest.TestCase):
@@ -161,7 +161,11 @@ class ConstructionTests(unittest.TestCase):
     def test_pc_mounted_target_preserves_generic_profile_in_portable_inputs(self):
         self.hardware_construction(mounted=True,hardware_profile=bootstrap.native.hardware.PC_PROFILE)
 
-    def hardware_construction(self, *, mounted, hardware_profile=bootstrap.native.hardware.PROFILE, after_construct=None):
+    def test_btrfs_mounted_target_publishes_an_efi_loader_and_swap_configuration(self):
+        self.hardware_construction(mounted=True, root_fs='btrfs')
+
+    def hardware_construction(self, *, mounted, hardware_profile=bootstrap.native.hardware.PROFILE,
+                              after_construct=None, root_fs='ext4'):
         import test_native_image as fixtures
         import test_system_vm as system_fixtures
         import test_hardware_boot as hardware_fixtures
@@ -180,6 +184,7 @@ class ConstructionTests(unittest.TestCase):
         f.args.system_payload=source.payload;f.args.login_mode='password'
         foreign_home=f.work/'caller-home';foreign_home.mkdir(mode=0o700);f.args.output=foreign_home/'image'
         f.args.hardware_profile=hardware_profile
+        f.args.root_fs=root_fs
         f.args.firmware_root=hw.firmware(hardware_profile);f.args.with_build_tools=True
         if mounted:
             f.args.with_installer_inputs=True;f.args.system_version='0.2';f.args.system_revision=1
@@ -202,7 +207,12 @@ class ConstructionTests(unittest.TestCase):
             adapter.boot_paths=lambda ref,target:sorted(r['path'].lstrip('/') for r in ref['identity']['objects'])
             adapter.boot_mounts=lambda ref,target:[dict(source='nix',target='nix')]
             prep=Path(tempfile.mkdtemp(prefix='preparation-',dir=f.work));archive=prep/'base.tar.zst';shutil.copyfile(base_package,archive)
-            seed=base.read(result/'selected-deployment.json');value=request(tree,result,seed,archive)
+            policy = {}
+            if root_fs == 'btrfs':
+                from mojt_installer import swap_config
+                swap_config(tree, '12345678-1234-1234-1234-123456789abc')
+                policy['root_fs'] = root_fs
+            seed=base.read(result/'selected-deployment.json');value=request(tree,result,seed,archive,**policy)
             def run(args,**kwargs):
                 if '--load-db' in args:return subprocess.CompletedProcess(args,0)
                 return real_run(args,**kwargs)
@@ -245,9 +255,10 @@ class ConstructionTests(unittest.TestCase):
                 import mojt_bootstrap_inputs as kits
                 target=f.work/'mounted-root';esp=f.work/'mounted-esp';target.mkdir();esp.mkdir()
                 target_uuid='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
-                target_record=dict(root={'path':str(target),'uuid':target_uuid},efi={'path':str(esp)})
-                def loader(config,work,root_uuid,console):
+                target_record=dict(root={'path':str(target),'uuid':target_uuid},efi={'path':str(esp)},root_fs=root_fs)
+                def loader(config,work,root_uuid,console,**options):
                     self.assertEqual(root_uuid,target_uuid);self.assertEqual(console,'local')
+                    self.assertEqual(options['root_fs'],root_fs)
                     path=work/'BOOTX64.EFI';path.write_bytes(b'synthetic loader; not hardware boot acceptance');return path
                 def writer(**values):return installer.publish(target_record,**values)
                 def target_run(name,*args,**kwargs):
@@ -263,6 +274,12 @@ class ConstructionTests(unittest.TestCase):
                 choice,entries,unused=selection.current(target,verify=True)
                 self.assertEqual(choice['description']['selected'],built['deployment'])
                 self.assertEqual(entries[built['deployment']]['record']['description']['inputs']['description']['boot']['root_uuid'],target_uuid)
+                if root_fs == 'btrfs':
+                    policy = entries[built['deployment']]['record']['description']['inputs']['description']['boot']
+                    self.assertEqual(policy['root_fs'], root_fs)
+                    swap, = (target/'state/etc/systemd/system/sysinit.target.wants').glob('*.swap')
+                    self.assertTrue(swap.is_symlink())
+                    self.assertIn('What=/dev/disk/by-partuuid/12345678-1234-1234-1234-123456789abc',swap.read_text())
                 self.assertTrue((esp/'EFI/BOOT/BOOTX64.EFI').is_file())
                 self.assertFalse((target/installer.MARKER).exists())
                 kit,record=kits.read(target/kits.LOCATION)
@@ -287,6 +304,12 @@ class ConstructionTests(unittest.TestCase):
         self.assertEqual(bootstrap.paths.tree_hash(f.args.firmware_root),firmware_before)
 
     def test_initial_native_install_stage_select_and_result_are_joined_without_state_changes(self):
+        self.initial_native_install()
+
+    def test_btrfs_initial_deployment_uses_btrfs_modules_and_mount(self):
+        self.initial_native_install(root_fs='btrfs')
+
+    def initial_native_install(self, **policy):
         import test_kernel_boot as fixtures
         import test_mpm_system_transition as provider_fixture
         import mojt_system_package as packer
@@ -303,7 +326,7 @@ class ConstructionTests(unittest.TestCase):
         adapter.boot_mounts=lambda ref,target:[dict(source='nix',target='nix')]
         prep=f.fixture.work/'bootstrap-preparation';prep.mkdir();archive=prep/'base.tar.zst'
         shutil.copyfile(f.fixture.args.base_package,archive)
-        result=prep/'result';result.mkdir();value=request(root,result,seed,archive)
+        result=prep/'result';result.mkdir();value=request(root,result,seed,archive,**policy)
         before={k:v for k,v in f.snapshot().items() if k.startswith('state/')}
         real_run=subprocess.run;registrations=[]
         which=shutil.which;tar=which('tar')
@@ -318,7 +341,7 @@ class ConstructionTests(unittest.TestCase):
              mock.patch.object(bootstrap.subprocess,'run',side_effect=run), \
              mock.patch.object(packer,'nix_references',return_value=[ref]), \
              mock.patch.object(constructor.archive,'vm_module',return_value=vm), \
-             mock.patch.object(vm,'module_paths',side_effect=lambda release,p,**kw:[p/'kernel/example.ko']), \
+             mock.patch.object(vm,'module_paths',side_effect=lambda release,p,**kw:[p/'kernel/example.ko']) as modules, \
              mock.patch.object(vm,'static_x86_64_elf',return_value=True),mock.patch.object(vm,'validate_busybox_applets'), \
              mock.patch.object(vm.os,'mknod',side_effect=lambda path,*unused:path.touch()):
             completed=bootstrap.construct(root,runtime,value,prep/'work',adapter=adapter)
@@ -329,6 +352,12 @@ class ConstructionTests(unittest.TestCase):
         current,entries,raw=selection.current(root,verify=True)
         self.assertEqual(current,d['selection']);self.assertEqual(current['description']['selected'],d['deployment']['id'])
         self.assertEqual(entries[d['deployment']['id']]['record'],d['deployment'])
+        inputs = d['deployment']['description']['inputs']
+        root_fs = policy.get('root_fs','ext4')
+        self.assertEqual(inputs['description']['boot'].get('root_fs','ext4'),root_fs)
+        self.assertEqual(modules.call_args.kwargs['root_fs'],root_fs)
+        mount_options = 'ro,subvolid=5' if root_fs == 'btrfs' else 'ro'
+        self.assertIn(f'mount -t {root_fs} -o {mount_options} ',constructor.script(inputs,'/accepted/python',handover=True))
         self.assertTrue(system.realization(root,d['system'],verify=True))
         self.assertEqual(before,{k:v for k,v in f.snapshot().items() if k.startswith('state/')})
         self.assertEqual((root/'boot/mojt/grub.cfg').read_bytes(),selection.HOOK)

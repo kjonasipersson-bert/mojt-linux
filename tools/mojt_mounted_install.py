@@ -52,7 +52,8 @@ def mounts():
         fields = line.split(); separator = fields.index('-')
         rows.append(dict(id=int(fields[0]), device=fields[2], root=unescape(fields[3]),
                          path=unescape(fields[4]), options=fields[5].split(','),
-                         fstype=fields[separator+1], source=unescape(fields[separator+2])))
+                         fstype=fields[separator+1], source=unescape(fields[separator+2]),
+                         super_options=fields[separator+3].split(',')))
     return rows
 
 
@@ -90,7 +91,8 @@ def gpt_uuid(value):
 
 def probe_partition(row, *, role):
     path, number = device(row['source'])
-    require(number == row['device'], 'mount and source device differ')
+    if row['fstype'] != 'btrfs':
+        require(number == row['device'], 'mount and source device differ')
     disk, parent = parent_disk(number)
     raw = run('sfdisk', '--json', disk, capture_output=True, text=True, timeout=30).stdout
     require(len(raw) <= 1024*1024, 'unbounded GPT metadata')
@@ -111,7 +113,14 @@ def probe_partition(row, *, role):
     filesystem = dict(pairs)
     require(filesystem.get('TYPE') == row['fstype'], 'mounted filesystem differs from block probe')
     identifier = filesystem.get('UUID')
-    if role == 'root':boot.fs_uuid(identifier)
+    if role == 'root':
+        boot.fs_uuid(identifier)
+        if row['fstype'] == 'btrfs':
+            # Btrfs mountinfo uses an anonymous device number. Bind the mount
+            # to the probed block device through the kernel's filesystem record.
+            devices = Path('/sys/fs/btrfs') / identifier / 'devices'
+            require({(entry/'dev').read_text().strip() for entry in devices.iterdir()} == {number},
+                    'Btrfs root must use exactly the selected partition')
     else:
         require(filesystem.get('VERSION') == 'FAT32' and type(identifier) is str and
                 re.fullmatch(r'[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}', identifier), 'FAT32 ESP identity required')
@@ -127,7 +136,17 @@ def empty(path, *, root=False):
                 'target is not empty: ' + str(point))
 
 
-def inspect(root, esp, *, fresh=True):
+def mount_identity(fd, mount_id):
+    # A Btrfs subvolume may report a different st_dev from mountinfo. The
+    # kernel's mount ID identifies the opened mount directly on every filesystem.
+    fields = Path(f'/proc/self/fdinfo/{fd}').read_text().splitlines()
+    ids = [line.partition(':')[2].strip() for line in fields if line.startswith('mnt_id:')]
+    require(ids == [str(mount_id)], 'mountpoint identity changed')
+    info = os.fstat(fd)
+    return [info.st_dev, info.st_ino]
+
+
+def inspect(root, esp, *, fresh=True, root_fs='ext4'):
     require(os.geteuid() == 0, 'mounted target inspection requires an administrator')
     root, esp = (Path(os.path.abspath(p)) for p in (root, esp))
     require(root != esp and root not in esp.parents and esp not in root.parents,
@@ -144,16 +163,21 @@ def inspect(root, esp, *, fresh=True):
         require(len(selected) == 1, 'target must be one exact mountpoint: ' + str(path))
         row = selected[0]
         require(row['root'] == '/' and 'rw' in row['options'] and
-                row['fstype'] == ('ext4' if role == 'root' else 'vfat'),
-                'target must be a writable whole ext4 filesystem or FAT32 ESP')
+                row['fstype'] == (root_fs if role == 'root' else 'vfat'),
+                'target must be the selected writable whole root filesystem or FAT32 ESP')
+        if row['fstype'] == 'btrfs':
+            require('subvolid=5' in row['super_options'], 'Btrfs root must be the top-level subvolume')
         require(sum(r['device'] == row['device'] for r in rows) == 1,
                 'target filesystem is also mounted elsewhere')
         require(not any(Path(r['path']) != path and path in Path(r['path']).parents for r in rows),
                 'nested target mounts are unsupported')
         entry = probe_partition(row, role=role)
-        info = path.stat()
-        require(f'{os.major(info.st_dev)}:{os.minor(info.st_dev)}' == entry['device'], 'mountpoint device changed')
-        entry.update(path=str(path), mount_id=row['id'], directory=[info.st_dev, info.st_ino])
+        fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            directory = mount_identity(fd, row['id'])
+        finally:
+            os.close(fd)
+        entry.update(path=str(path), mount_id=row['id'], directory=directory)
         targets.append(entry)
         if fresh:empty(path, root=role == 'root')
     r, e = targets
@@ -165,10 +189,15 @@ def inspect(root, esp, *, fresh=True):
                   capture_output=True, text=True, timeout=30).stdout.splitlines()
     require({device(p)[1] for p in matches} == {r['device']}, 'target root UUID is missing or duplicated on another device')
     for row in rows:
-        if row['device'] in (r['device'], e['device']):continue
-        point = Path('/sys/dev/block')/row['device']
+        if row['id'] in (r['mount_id'], e['mount_id']):continue
+        number = row['device']
+        if row['source'].startswith('/dev/') and Path(row['source']).exists():
+            info = Path(row['source']).stat()
+            if stat.S_ISBLK(info.st_mode):
+                number = f'{os.major(info.st_rdev)}:{os.minor(info.st_rdev)}'
+        point = Path('/sys/dev/block')/number
         if (point/'partition').is_file():
-            require(parent_disk(row['device'])[1] != r['disk_device'],
+            require(parent_disk(number)[1] != r['disk_device'],
                     'target disk contains another mounted partition (possibly the running installation)')
     for line in Path('/proc/swaps').read_text().splitlines()[1:]:
         path = Path(unescape(line.split()[0]))
@@ -177,11 +206,14 @@ def inspect(root, esp, *, fresh=True):
                  f'{os.major(info.st_dev)}:{os.minor(info.st_dev)}'
         if (Path('/sys/dev/block')/number/'partition').is_file():
             require(parent_disk(number)[1] != r['disk_device'], 'target disk contains active swap')
-    return dict(format='mojt-mounted-target-v1', root=r, efi=e, storage_drivers=storage_drivers(r['disk_device']))
+    value = dict(format='mojt-mounted-target-v1', root=r, efi=e, storage_drivers=storage_drivers(r['disk_device']))
+    if root_fs != 'ext4':value['root_fs'] = root_fs
+    return value
 
 
 def recheck(value, *, fresh):
-    actual = inspect(value['root']['path'], value['efi']['path'], fresh=fresh)
+    options = {'root_fs': value['root_fs']} if 'root_fs' in value else {}
+    actual = inspect(value['root']['path'], value['efi']['path'], fresh=fresh, **options)
     require(actual == value, 'mounted target identity changed; repeat preview')
 
 
@@ -198,8 +230,11 @@ def locked(value):
                     f'{os.major(info.st_rdev)}:{os.minor(info.st_rdev)}' == names[name], 'target device changed')
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         for role in ('root', 'efi'):
-            fd = os.open(value[role]['path'], os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            target = value[role]
+            fd = os.open(target['path'], os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
             stack.callback(os.close, fd)
+            require(mount_identity(fd, target['mount_id']) == target['directory'],
+                    'opened target directory changed')
         recheck(value, fresh=True)
         yield
 
@@ -217,11 +252,13 @@ def publish(value, *, tree, result, bootstrap, inputs_id=None):
     checked = inspect_result(result, base_artifact=bootstrap['base'], kernel_artifact=bootstrap['kernel'])
     require(checked == bootstrap, 'mounted constructor result differs')
     inputs = checked['deployment']['description']['inputs']['description']
-    require(inputs['boot']['root_uuid'] == value['root']['uuid'], 'deployment UUID differs from target filesystem')
+    root_fs = value.get('root_fs', 'ext4')
+    require(inputs['boot']['root_uuid'] == value['root']['uuid'] and
+            inputs['boot'].get('root_fs', 'ext4') == root_fs, 'deployment root differs from target filesystem')
     choice, entries, unused = selection.current(tree)
     require(choice == checked['selection'], 'prepared selection differs from bootstrap result')
     work = result.parent/'mounted-efi'; work.mkdir()
-    loader = boot.efi_loader(tree/'boot/mojt/grub.cfg', work, value['root']['uuid'], inputs['boot']['console'])
+    loader = boot.efi_loader(tree/'boot/mojt/grub.cfg', work, value['root']['uuid'], inputs['boot']['console'], root_fs=root_fs)
     used = int(run('du', '-s', '--block-size=1', tree, capture_output=True, text=True).stdout.split()[0])
     free = os.statvfs(root)
     require(used + 128*1024*1024 < free.f_bavail*free.f_frsize, 'insufficient target filesystem free space')
@@ -271,14 +308,20 @@ def publish(value, *, tree, result, bootstrap, inputs_id=None):
                 receipt=str(root/RECEIPT), boot_acceptance=False)
 
 
-def build(args):
+def check_storage(drivers, profile):
+    supported = {'virtio_blk'} if profile is None else {'virtio_blk','ahci','usb-storage','uas'}
+    if profile == native.hardware.PC_PROFILE:supported.update({'nvme','virtio_scsi'})
+    require(bool(supported & set(drivers)),
+            'target storage driver is outside the selected initial boot profile: '+', '.join(drivers))
+
+
+def build(args, *, configure=None):
     from mojt_bootstrap import finalize, preflight
     require(args.efi_directory is not None, '--target-root requires --efi-directory')
-    value = inspect(args.target_root, args.efi_directory)
-    supported = {'virtio_blk'} if getattr(args,'hardware_profile',None) is None else {'virtio_blk','ahci','usb-storage','uas'}
-    if getattr(args,'hardware_profile',None) == native.hardware.PC_PROFILE:supported.update({'nvme','virtio_scsi'})
-    require(bool(supported & set(value['storage_drivers'])),
-            'target storage driver is outside the selected initial boot profile: '+', '.join(value['storage_drivers']))
+    root_fs = getattr(args, 'root_fs', 'ext4')
+    options = {'root_fs': root_fs} if root_fs != 'ext4' else {}
+    value = inspect(args.target_root, args.efi_directory, **options)
+    check_storage(value['storage_drivers'], getattr(args,'hardware_profile',None))
     if args.expected_root_uuid is not None:
         require(args.expected_root_uuid == value['root']['uuid'], 'expected root UUID differs')
     if args.expected_efi_partuuid is not None:
@@ -300,9 +343,11 @@ def build(args):
     with locked(value), tempfile.TemporaryDirectory(prefix='mojt-mounted-', dir=parent) as temporary:
         prepared.output = Path(temporary)/'unused-image-output'
         def check(evidence):
-            preflight(prepared, evidence, mounted=True); recheck(value, fresh=True)
+            preflight(prepared, evidence, mounted=True)
+            recheck(value, fresh=True)
         def finish(**values):
-            return finalize(system_version=args.system_version, system_revision=args.system_revision, **values)
+            if configure is not None:configure(values['tree'])
+            return finalize(system_version=args.system_version, system_revision=args.system_revision, **options, **values)
         def writer(**values):return publish(value, inputs_id=getattr(args,'installer_inputs_id',None), **values)
         return native.build(prepared, finalize_tree=finish, preflight=check,
                             filesystem_uuid=value['root']['uuid'], filesystem_writer=writer)

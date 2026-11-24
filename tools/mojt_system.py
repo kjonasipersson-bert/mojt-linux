@@ -90,7 +90,7 @@ MPM_FILES = (
 # environments; this code list is inventoried as part of the System profile.
 MBT_FILES = ('mbt','mbt_cli.py','mojt-build-env.py','mojt-kernel-build.py','mojt-base-build.py','mojt-base-pack',
              'mojt-artifact-pack.py','mojt_system_package.py','mojt_bootstrap.py','mojt-privileged-setup.py',
-             'mbt_runtime.py','mojt-console-size.py','mojt_mounted_install.py','mojt_bootstrap_inputs.py','mojt-repository.py')
+             'mbt_runtime.py','mojt-console-size.py','mojt_mounted_install.py','mojt_bootstrap_inputs.py','mojt_installer.py','mojt-repository.py')
 # Fixed assembly inputs at their repository-relative paths, so an installed
 # builder can assemble its successor without carrying a checkout.
 MBT_SOURCE_FILES = ('tests/check-mojt-system.sh','manifests/mpm-release-example.json',

@@ -244,6 +244,7 @@ def prepare(source, output):
             require(json.loads(regular(source/name).read_text()) == record['boot_record'],
                     'native-v2 deployment sidecar differs: '+name)
     parts = record["disk_layout"]
+    require(parts.get("root_fs", "ext4") == "ext4", "serial image conversion requires an ext4 root")
     offset, length = parts["root_offset"], parts["root_bytes"]
     require(type(offset) is int and type(length) is int and offset > 0 and length > 0 and
             offset % 4096 == 0 and length % 4096 == 0 and offset + length <= disk.stat().st_size,
