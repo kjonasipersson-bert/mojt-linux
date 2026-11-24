@@ -39,8 +39,7 @@ class NixBinaryAdapter:
         require(result.returncode==0,'Nix binary import/verification failed: '+args[1])
         return result.stdout.strip()
 
-    @staticmethod
-    def identity(ref):
+    def identity(self,ref):
         wishes.fields(ref,('provider','identity'));require(ref['provider']=='nix','wrong adapter')
         i=ref['identity'];wishes.fields(i,('format','output','closure','commands'))
         require(i['format']=='mojt-nix-output-v1','unsupported Nix identity')
@@ -54,21 +53,6 @@ class NixBinaryAdapter:
         require(type(i['commands']) is list and i['commands']==sorted(set(i['commands'])),'invalid command list')
         for name in i['commands']:executable_name(name)
         return i
-
-    def local_reference(self,output):
-        """Describe an already registered local output; never fetch, build or activate."""
-        output=str(store_path(output))
-        paths=sorted(set(self.runner([self.binary,'--query','--requisites',output]).splitlines()))
-        require(output in paths and len(paths)<=4096,'invalid local Nix closure')
-        for path in paths:store_path(path)
-        hashes=self.runner([self.binary,'--query','--hash',*paths]).splitlines()
-        require(len(hashes)==len(paths),'incomplete local Nix hashes')
-        directory=Path(output)/'bin'
-        commands=sorted(p.name for p in directory.iterdir() if p.is_file() and os.access(p,os.X_OK)) if directory.is_dir() else []
-        ref=dict(provider='nix',identity=dict(format='mojt-nix-output-v1',output=output,
-            closure=[dict(path=p,nar_hash=h) for p,h in zip(paths,hashes)],commands=commands))
-        self.identity(ref)
-        return ref
 
     def describe(self,ref,root):
         i=self.identity(ref)

@@ -52,6 +52,23 @@ def nix_references(manifest, adapter):
     return sorted(refs, key=artifact.canonical)
 
 
+def local_reference(adapter,output):
+    """Build-time observation of a registered output; never fetch or activate."""
+    from mpm_nix_binary import store_path
+    output=str(store_path(output))
+    paths=sorted(set(adapter.runner([adapter.binary,'--query','--requisites',output]).splitlines()))
+    artifact.require(output in paths and len(paths)<=4096,'invalid local Nix closure')
+    for path in paths:store_path(path)
+    hashes=adapter.runner([adapter.binary,'--query','--hash',*paths]).splitlines()
+    artifact.require(len(hashes)==len(paths),'incomplete local Nix hashes')
+    directory=Path(output)/'bin'
+    commands=sorted(p.name for p in directory.iterdir() if p.is_file() and os.access(p,os.X_OK)) if directory.is_dir() else []
+    ref=dict(provider='nix',identity=dict(format='mojt-nix-output-v1',output=output,
+        closure=[dict(path=p,nar_hash=h) for p,h in zip(paths,hashes)],commands=commands))
+    adapter.identity(ref)
+    return ref
+
+
 def raw(value):return artifact.canonical(value) + b'\n'
 
 
@@ -180,7 +197,7 @@ def package(tree, generation, upstream, revision, output, *, adapter):
     return dict(kit=kit, output=str(output), changed=True, activation=False)
 
 
-def package_installed(root, baseline, output, *, label, revision=1, firmware='none', resources=None, openssl_reference=None):
+def package_installed(root, baseline, output, *, label, revision=1, firmware='none', resources=None, openssl_reference=None, adapter=None):
     """Build a small Runtime successor and references; never copy firmware data."""
     import copy
     import mbt_runtime
@@ -202,8 +219,9 @@ def package_installed(root, baseline, output, *, label, revision=1, firmware='no
     dependencies=system.retained_providers(root,baseline)
     crypto=None
     if openssl_reference is not None:
-        from mpm_nix_binary import NixBinaryAdapter,store_path
-        identity=NixBinaryAdapter.identity(openssl_reference)
+        from mpm_nix_binary import store_path
+        artifact.require(adapter is not None,'OpenSSL reference requires its explicit Nix adapter')
+        identity=adapter.identity(openssl_reference)
         artifact.require('openssl' in identity['commands'],'OpenSSL output has no openssl command')
         crypto=str(store_path(identity['output'])/'bin/openssl')
         dependencies=sorted({artifact.canonical(r):r for r in [*dependencies,openssl_reference]}.values(),key=artifact.canonical)

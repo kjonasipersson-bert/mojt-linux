@@ -49,7 +49,7 @@ def main(argv=None, *, prog=None):
             result = artifact.verify(args.archive, args.expected_id)
         elif args.action == "system":
             if args.running:
-                from mojt_system_package import package_installed
+                from mojt_system_package import package_installed,local_reference
                 import mpm_base as base
                 import mpm_system as system
                 from mpm_cli import Runtime
@@ -60,14 +60,14 @@ def main(argv=None, *, prog=None):
                 baseline=description(running)['system']['artifact'];body,_=system.object_record(runtime.disk,baseline)
                 revision=1 if args.revision is None else args.revision
                 label=args.generation or 'system-'+body['version']['upstream']+'-r'+str(body['version']['revision']+revision)
-                crypto=None
+                crypto=adapter=None
                 if args.openssl_output is not None:
                     from mpm_nix_binary import NixBinaryAdapter
                     adapter=NixBinaryAdapter(runtime.system_bin/'nix-store')
-                    crypto=adapter.local_reference(args.openssl_output)
+                    crypto=local_reference(adapter,args.openssl_output)
                     adapter.verify_path(crypto,args.openssl_output+'/bin/openssl',executable=True)
                 result=package_installed(runtime.disk,baseline,args.output,label=label,revision=revision,
-                    firmware=args.firmware,openssl_reference=crypto)
+                    firmware=args.firmware,openssl_reference=crypto,adapter=adapter)
             else:
                 artifact.require(args.openssl_output is None,'--openssl-output requires --running')
                 from mojt_system_package import package

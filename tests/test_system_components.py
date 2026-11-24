@@ -75,14 +75,31 @@ class Components(Fixture):
 
     def test_packaged_crypto_helper_is_an_independent_exact_system_dependency(self):
         import tarfile
+        from mpm_nix_boot import NixBootAdapter
         output='/nix/store/'+'a'*32+'-openssl-bin'
         ref=dict(provider='nix',identity=dict(format='mojt-nix-output-v1',output=output,
             closure=[dict(path=output,nar_hash='sha256:'+'b'*52)],commands=['openssl']))
         kit=self.work/'crypto'
-        result=packaging.package_installed(self.root,self.body['id'],kit,label='crypto',openssl_reference=ref)
+        adapter=NixBootAdapter('/pinned/nix-store')
+        result=packaging.package_installed(self.root,self.body['id'],kit,label='crypto',openssl_reference=ref,adapter=adapter)
         archive=kit/result['dependency_files'][0]
         body=artifact.verify(archive)
         self.assertIn(ref,body['dependencies'])
+        # Frozen adapter bytes accepted by the source-Base System before the
+        # repository builder was added. A builder-only addition must not change
+        # this provider runtime or weaken its transition gate.
+        accepted='f05169d5ca796b9150f40dbefbbd8d5b66cf55376116e4a356365431a9118d99'
+        candidate=next(r for r in body['files'] if r['path']=='payload/tools/mpm_nix_binary.py')
+        self.assertEqual(candidate['sha256'],accepted)
+        manifest=base.read(system.realization_path(self.root,self.body['id'])/'profile/manifest.json')
+        before={'tools/mpm_nix_binary.py':dict(sha256=accepted,mode=0o444)}
+        after={'tools/mpm_nix_binary.py':dict(sha256=candidate['sha256'],mode=0o444)}
+        review=transition.providers(manifest,manifest,[ref],{'nix':adapter},baseline_refs=[ref],inventories=(before,after))
+        self.assertTrue(review['compatible'],review)
+        after['tools/mpm_nix_binary.py']['sha256']='f'*64
+        review=transition.providers(manifest,manifest,[ref],{'nix':adapter},baseline_refs=[ref],inventories=(before,after))
+        self.assertFalse(review['compatible'])
+        self.assertIn('provider runtime change',review['errors'][0])
         raw=subprocess.run(['zstd','-dc',str(archive)],check=True,capture_output=True).stdout
         import io
         with tarfile.open(fileobj=io.BytesIO(raw)) as stream:

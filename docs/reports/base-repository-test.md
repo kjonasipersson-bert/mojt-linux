@@ -136,6 +136,14 @@ acquired this exact OpenSSL output:
 `/nix/store/gvglnxscmvx4mh9my0cy0xgi0l1z6l9s-openssl-3.5.9-bin`.
 The new System owns its own exact reference; it does not depend on Ports aliases.
 
+If preparation of revision `31562a4` stopped with a provider runtime change for
+`tools/mpm_nix_binary.py`, retain that installed/unprepared generation and use
+the corrected source in a new output directory. That revision placed a build-only
+observation function in the runtime adapter. The corrected builder keeps the
+previously accepted adapter bytes unchanged and retains the existing transition
+gate. Repackage from the still-running System; no Base, Kernel or OpenSSL build
+is required. Use a distinct label such as `system-repository-tools-2`.
+
 Fetch the reviewed commit's source archive into a new directory under
 `/var/lib/mojt`, extract it into `source`, and enter that source directory.
 From **that Mojt checkout root**, package just a Runtime successor:
@@ -229,3 +237,8 @@ repository, Base flow, System component, dispatcher and adapter tests in a
 private root user namespace. A subsequent focused run passed 18 tests with one
 unmapped-UID namespace test skipped. Neither run boots the owner's VM. These are not a real published GitHub or VM acceptance. Record those
 results separately after running the corresponding sections above.
+
+The runtime separation fix was checked locally with the accepted pre-repository
+adapter SHA256 and the actual newly packaged Runtime descriptor. The provider
+transition accepts those unchanged bytes and still rejects a changed adapter.
+This is a packaging/transition regression check, not VM boot acceptance.
