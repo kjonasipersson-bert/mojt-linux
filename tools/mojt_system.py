@@ -557,11 +557,14 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
                if login_mode == "password" else "/bin/sh -i")
     console_environment = ""
     console_ordering = "After=systemd-user-sessions.service\n"
+    console_stderr = "journal"
     if installer_console:
         console_command = "/run/mojt-system/bin/bash --login -i"
         console_ordering = "Requires=mojt-setup.service\nAfter=mojt-setup.service\n"
+        # Interactive Bash writes its prompt to stderr.
+        console_stderr = "inherit"
         console_environment = (
-            "WorkingDirectory=/root\nEnvironment=HOME=/root USER=root LOGNAME=root\n"
+            "WorkingDirectory=/root\nEnvironment=HOME=/root USER=root LOGNAME=root HISTFILE=/dev/null\n"
             "ExecStartPre=/run/mojt-system/busybox echo Run mbt install to start the Mojt installer.\n"
         )
     elif login_mode == "password":
@@ -571,7 +574,7 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
         console_environment + "Restart=always\nRestartSec=1\nIgnoreSIGPIPE=no\n"
         "Environment=PATH=/run/mojt-system/bin:/usr/bin:/bin\n"
         "StandardInput=tty\nStandardOutput=tty\n"
-        "StandardError=journal\nTTYPath=/dev/" + tty + "\nTTYReset=yes\nTTYVHangup=yes",
+        f"StandardError={console_stderr}\nTTYPath=/dev/{tty}\nTTYReset=yes\nTTYVHangup=yes",
         console_ordering))
     setup = [
         "#!/bin/sh", "set -eu", "PATH=/run/mojt-system/bin:/usr/bin:/bin",

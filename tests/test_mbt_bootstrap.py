@@ -235,6 +235,8 @@ class ConstructionTests(unittest.TestCase):
             wanted = (profile/'units/mojt.target').read_text().split('Wants=', 1)[1].splitlines()[0].split()
             if installer_media:
                 self.assertIn('ExecStart=/run/mojt-system/bin/bash --login -i',console)
+                self.assertIn('StandardOutput=tty\nStandardError=inherit\n',console)
+                self.assertIn('HISTFILE=/dev/null',console)
                 self.assertIn('Requires=mojt-setup.service',console)
                 self.assertNotIn('systemd-user-sessions.service',console)
                 self.assertNotIn('mojt-privileged.service',console)
@@ -249,6 +251,7 @@ class ConstructionTests(unittest.TestCase):
                 self.assertTrue(d['deployment']['description']['inputs']['description']['boot']['installer_media'])
             else:
                 self.assertIn('busybox getty',console)
+                self.assertIn('StandardError=journal',console)
                 self.assertIn('Requires=mojt-privileged.service',console)
                 self.assertIn('mojt-privileged.service',wanted)
                 self.assertRegex(shadow,r'(?m)^root:\$6\$')
