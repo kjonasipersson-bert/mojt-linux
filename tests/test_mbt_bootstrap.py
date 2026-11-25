@@ -232,8 +232,15 @@ class ConstructionTests(unittest.TestCase):
             profile=tree/'realizations/system'/d['system'][7:]/'profile'
             console = (profile/'units/mojt-console.service').read_text()
             shadow = (tree/'state/etc/shadow').read_text()
+            wanted = (profile/'units/mojt.target').read_text().split('Wants=', 1)[1].splitlines()[0].split()
             if installer_media:
                 self.assertIn('ExecStart=/run/mojt-system/bin/bash --login -i',console)
+                self.assertIn('Requires=mojt-setup.service',console)
+                self.assertNotIn('systemd-user-sessions.service',console)
+                self.assertNotIn('mojt-privileged.service',console)
+                for service in ('mojt-privileged.service', 'systemd-logind.service', 'systemd-user-sessions.service'):
+                    self.assertNotIn(service,wanted)
+                self.assertFalse((profile/'bin/sudo').is_symlink())
                 self.assertRegex(shadow,r'(?m)^root:!:')
                 self.assertFalse((profile/'units/mojt.target.wants/sshd.service').exists())
                 self.assertNotIn('nix-store --load-db',(profile/'setup').read_text())
@@ -242,6 +249,8 @@ class ConstructionTests(unittest.TestCase):
                 self.assertTrue(d['deployment']['description']['inputs']['description']['boot']['installer_media'])
             else:
                 self.assertIn('busybox getty',console)
+                self.assertIn('Requires=mojt-privileged.service',console)
+                self.assertIn('mojt-privileged.service',wanted)
                 self.assertRegex(shadow,r'(?m)^root:\$6\$')
                 self.assertNotIn('installer_media',d['deployment']['description']['inputs']['description']['boot'])
             self.assertEqual(bootstrap.native.hardware.native_firmware(profile),profile/'kernel/lib/firmware')

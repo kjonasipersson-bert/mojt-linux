@@ -482,10 +482,11 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
 
 def _install(tree, payload, record, busybox, login_mode, repo, console, hardware_profile, generation, with_build_tools):
     step = record["step"]
+    installer_console = login_mode == "installer-console"
     require(type(with_build_tools) is bool and (not with_build_tools or step >= 3), "builder tools require System step 3+ management runtime")
     require(step < 10 or login_mode in ("password", "installer-console"),
             "account stage requires password login or an installer console")
-    if login_mode == "installer-console":
+    if installer_console:
         require(with_build_tools and INSTALLER_ROLES.keys() <= record["packages"].keys(),
                 "installer media require a System export prepared with --with-installer-tools")
     require(console in ("serial", "local"), "unsupported console")
@@ -555,8 +556,10 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
                "-l /run/mojt-system/login " + getty
                if login_mode == "password" else "/bin/sh -i")
     console_environment = ""
-    if login_mode == "installer-console":
+    console_ordering = "After=systemd-user-sessions.service\n"
+    if installer_console:
         console_command = "/run/mojt-system/bin/bash --login -i"
+        console_ordering = "Requires=mojt-setup.service\nAfter=mojt-setup.service\n"
         console_environment = (
             "WorkingDirectory=/root\nEnvironment=HOME=/root USER=root LOGNAME=root\n"
             "ExecStartPre=/run/mojt-system/busybox echo Run mbt install to start the Mojt installer.\n"
@@ -569,7 +572,7 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
         "Environment=PATH=/run/mojt-system/bin:/usr/bin:/bin\n"
         "StandardInput=tty\nStandardOutput=tty\n"
         "StandardError=journal\nTTYPath=/dev/" + tty + "\nTTYReset=yes\nTTYVHangup=yes",
-        "After=systemd-user-sessions.service\n"))
+        console_ordering))
     setup = [
         "#!/bin/sh", "set -eu", "PATH=/run/mojt-system/bin:/usr/bin:/bin",
         "export PATH", "systemd-sysusers /run/mojt-system/sysusers.conf",
@@ -718,7 +721,7 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
                     "trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=\n")
         roots = "/nix/var/nix/gcroots/mojt-system/" + key
         marker = "/nix/var/nix/.mojt-registration-loaded-" + key
-        if login_mode != "installer-console":
+        if not installer_console:
             setup += [
                 "mkdir -p /nix/var/nix/db " + roots,
                 f"if [ ! -f {marker} ]; then",
@@ -730,9 +733,9 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
         for obj in record["objects"]:
             name = Path(obj["path"]).name
             (root_directory / name).symlink_to(obj["path"])
-            if login_mode != "installer-console":
+            if not installer_console:
                 setup.append(f"ln -sfn {obj['path']} {roots}/{name}")
-    if login_mode == "installer-console":
+    if installer_console:
         for role, commands in INSTALLER_COMMANDS.items():
             for name in commands:
                 export(name, role, "bin/" + name, "sbin/" + name)
@@ -873,7 +876,7 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
         export("sshd", "openssh", "bin/sshd", "sbin/sshd")
         export("systemd-run", "systemd", "bin/systemd-run")
         export("ssh-keygen", "openssh", "bin/ssh-keygen")
-    if step >= 10:
+    if step >= 10 and not installer_console:
         wanted += accounts.install(tree, system, account_inputs(payload, record), repo,
                                    write, add_default, put_unit, unit)
     setup += ['echo "Mojt System setup complete"']
