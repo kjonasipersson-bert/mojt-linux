@@ -40,8 +40,9 @@ def prepare(args):
     nix = nix_adapter()
     source = nix.catalog_from_manifest(args.source_manifest)["source"]
     system.require(source["system"] == "x86_64-linux", "System VM requires x86_64-linux")
+    roles = system.roles(args.step, installer_tools=args.with_installer_tools)
     requests = [dict(name=name, attribute=attribute, commands=[], manual=name.startswith("manual-"))
-                for name, attribute in system.roles(args.step).items()]
+                for name, attribute in roles.items()]
     selected = json.loads(nix.run(
         "nix-instantiate", "--eval", "--strict", "--json",
         "--option", "allow-import-from-derivation", "false",
@@ -49,9 +50,9 @@ def prepare(args):
         json.dumps(dict(source=source, ports=requests))))
     packages = {item["name"]: {k: item[k] for k in ("attribute", "version", "output")}
                 for item in selected}
-    system.require(set(packages) == set(system.roles(args.step)), "invalid evaluated System roles")
+    system.require(set(packages) == set(roles), "invalid evaluated System roles")
     for name, package in packages.items():
-        system.require(package["attribute"] == system.roles(args.step)[name], "evaluated attribute changed")
+        system.require(package["attribute"] == roles[name], "evaluated attribute changed")
         system.store_path(package["output"])
         print(f"{name}: {package['version']} -> {package['output']}", flush=True)
         nix.run("nix-store", "--realise", package["output"], "--dry-run")
@@ -107,6 +108,8 @@ def prepare(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--step", type=int, choices=tuple(system.ROLES), required=True)
+    parser.add_argument("--with-installer-tools", action="store_true",
+                        help="include offline installation tools in the step 12 export")
     parser.add_argument("--source-manifest", type=Path,
                         default=REPO / "manifests/mpm-nix-example.toml")
     parser.add_argument("--output", type=Path, required=True)

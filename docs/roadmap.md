@@ -20,7 +20,7 @@ interfaces. The [architecture](architecture.md) defines the area boundaries.
 | Ports | Parallel versions, independent wishes, atomic profiles, explicit/following activation, history and active-version manuals | Native Port publication, cleanup and broader provider coverage |
 | Filesystem | Writable persistent root/local storage, immutable selected releases, persistent configuration/data/homes | Explicit incompatible-layout and data/schema migrations |
 | Interaction | Readable running/next/prepared entries, change/reboot previews and phase completion messages | Continued feedback on real administrative workflows |
-| Installation | Offline whole-disk installation from prepared UEFI media, with Btrfs and optional partition-backed swap | Physical hardware acceptance and automated media builds |
+| Installation | Offline whole-disk installation from prepared UEFI media, with Btrfs and optional partition-backed swap | Read-only installation media, physical hardware acceptance and automated media builds |
 | MBT | Private build environments, Kernel and source Base build/packaging with size reporting, fresh native-v2 bootstrap and signed Base catalog preparation | Native toolchain control and source builds of Mojt-owned System components |
 
 ## Next work for planning
@@ -49,6 +49,16 @@ Nix-backed applications do not need to be republished as Mojt archives.
    content, protecting running/next boot, deliberately retained recovery choices
    and application/toolchain/data references. Define the preview and explicit
    retirement boundary before provider-root release or physical deletion.
+
+Installer follow-ups from the [physical USB boot](reports/installer-test.md#physical-usb-boot-on-2026-11-24):
+
+- Retain the matching Bash and NetworkManager manual outputs in the System
+  export. Verify `man bash` and `man nmcli` from the booted installer and
+  the installed System.
+- Exercise the installer with an exact 6.18 LTS Kernel artifact and its
+  matching module tree. Reuse the locally built Kernel package if retained.
+  Check the declared Base bounds, boot the installer, and verify first boot
+  on the target before changing the installer build input.
 
 These are priorities for scoping, not a commitment to new command names or a
 reason to repeat unchanged test matrices. Performance profiling remains available
@@ -81,9 +91,9 @@ when a concrete bottleneck justifies another change.
 - Add supported native Ports distribution, explicit retention/garbage collection
   and further version-policy/provider integration.
 - Automate the production of bootable `install.img` media using pinned Base,
-  System, Kernel and hardware-profile inputs. Include the offline tool closure,
-  verify the resulting image with a two-disk UEFI smoke test and decide where
-  the build belongs in the release workflow.
+  System, Kernel and hardware-profile inputs. Use the offline two-disk UEFI
+  test to verify that the full source image stays byte-identical after both
+  installation and cancellation.
 - Expand representative hardware and failure/recovery coverage as supported
   features change.
 

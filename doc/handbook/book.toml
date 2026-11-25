@@ -4,7 +4,6 @@
 
 [book]
 title = "Mojt Handbook"
-authors = ["Jonas Persson"]
 language = "en"
 src = "."
 

@@ -205,7 +205,8 @@ packages="packages.txt"
                 os.readlink(path) if path.is_symlink() else artifact.file_sha(path) if path.is_file() else None)
                 for source in sources for path in (source, *source.rglob("*"))}
 
-    def synthetic_build(self, corrupt=None, *, finalize_tree=None, filesystem_uuid=None, filesystem_writer=None):
+    def synthetic_build(self, corrupt=None, *, finalize_tree=None, filesystem_uuid=None, filesystem_writer=None,
+                        workspace_parent=None):
         vm = fixtures.vm
         original = vm.make_initramfs
         def ramfs(root, *args, **kwargs):
@@ -239,7 +240,8 @@ packages="packages.txt"
                 contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             options = {}
             if filesystem_writer is not None:
-                options.update(filesystem_uuid=filesystem_uuid,filesystem_writer=filesystem_writer)
+                options.update(filesystem_uuid=filesystem_uuid,filesystem_writer=filesystem_writer,
+                               workspace_parent=workspace_parent)
             return native.build(self.args, vm=vm, finalize_tree=finalize_tree, **options)
 
     def test_real_input_preview_creates_no_output_import_or_state(self):

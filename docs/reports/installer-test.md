@@ -8,7 +8,7 @@ SPDX-License-Identifier: GPL-2.0-only
 
 The [media preparation guide](../mounted-installation.md#prepare-a-self-contained-installer-image)
 describes the supported build. Use a serial VirtIO installer image for this
-test. Prepare its private image tools while online and shut it down.
+test.
 
 ## Procedure
 
@@ -20,6 +20,7 @@ prepared `disk.img`.
 ```sh
 LAB=$(mktemp -d)
 cp --sparse=always "$INSTALLER_DIR/disk.img" "$LAB/installer.img"
+sha256sum "$LAB/installer.img" >"$LAB/installer.sha256"
 truncate -s 40G "$LAB/target.img"
 
 boot_test() {
@@ -34,17 +35,17 @@ boot_test() {
 }
 
 boot_test install-vars.fd \
-    -drive "if=none,format=raw,id=installer,file=$LAB/installer.img" \
+    -drive "if=none,format=raw,id=installer,readonly=on,file=$LAB/installer.img" \
     -device virtio-blk-pci,drive=installer,bootindex=1 \
     -drive "if=none,format=raw,id=target,file=$LAB/target.img" \
     -device virtio-blk-pci,drive=target
 ```
 
-Log in as root on the installer. Run `/var/lib/mojt/installer-tools/run
-/run/mojt-system/bin/mbt install` as one command. Check that the boot disk
+At the installer console, run `mbt install`. Check that the boot disk
 is excluded and only the empty 40 GiB disk is offered. Select it, set 2 GiB
 swap, confirm the exact device path and enter a new root password. Wait
-for `Mojt installed` and power off. Keep the installer output if it fails.
+for `Mojt installed` and power off. On the host, run
+`sha256sum --check "$LAB/installer.sha256"`.
 
 Boot only the target, with fresh firmware variables, in the same host shell.
 
@@ -59,9 +60,30 @@ Log in with the new password. Read `/usr/lib/os-release` and check
 Base, a writable Btrfs root and automatically active swap at the requested
 size. This procedure exposes only disposable regular-file disks to QEMU.
 
+## Acceptance criterion for read-only media
+
+Repeat with a fresh target file and cancel at disk confirmation. Check the
+source hash again. Repeat the successful run and the cancellation with the
+source attached writable at the QEMU layer (omit `readonly=on` for the
+installer drive). Inside the installer, verify the kernel has made the
+installer disk read-only with `lsblk -o NAME,RO,MOUNTPOINTS` and that the
+source, including its GPT and EFI partition, remains byte-identical once
+powered off.
+
+## Read-only startup probe on 2026-11-25
+
+A minimal QEMU/OVMF test image booted the installer initramfs mount code
+with ext4 and Btrfs roots. For each filesystem, the image was attached with
+both read-only and writable QEMU backing. Linux reported the disk, ESP and
+root partition read-only, rejected an attempt to remount the source root
+writable, and powered off with the full image SHA256 unchanged. A separate
+mount-namespace test exercised the RAM-backed root handover and read-only
+installer input mount. Whole-disk installation from the rebuilt media
+remains to be exercised end to end.
+
 ## Recorded acceptance on 2026-11-24
 
-The owner ran the offline test on Debian with QEMU/OVMF using installer revision
+The offline test used Debian with QEMU/OVMF and installer revision
 `0f18c60083803592473d4d80ca47502ef17e6e5c`. The target booted by itself to
 login. It reported System `system-installer-021`, Base 0.2.1 and Kernel
 `6.12.107-mojt1`. Root was writable Btrfs on `/dev/vda3`, using subvolume
@@ -77,3 +99,20 @@ remain separate.
 The older prepared-partition path was accepted in a VirtIO VM on 2026-11-12
 with an ext4 root and FAT32 ESP. Its independent boot agreed with the
 selected UUID and deployment, reached login and had no failed units.
+
+
+## Physical USB boot on 2026-11-24
+
+The generic `pc-x86_64` USB image booted on Lenovo hardware with
+Base 0.2.1 and Kernel `6.12.107-mojt1`. NetworkManager joined the local
+wireless network through `nmcli`. DNS resolution and ping to `www.dn.se`
+worked. `man bash` and `man nmcli` were missing in that System export.
+
+The locally compiled `6.18.63-mojt-lts1` Kernel belongs to the existing
+Lenovo installation. The USB result applies to the 6.12 build input. A
+whole-disk installation test from a separate 8 GiB generic PC USB image on a
+faster machine reached native construction. A copy between the private
+`/var/tmp/mojt-native-inputs-*` paths failed with `No space left on device`.
+The run did not reach target content publication or target boot. The
+subsequent implementation moves assembly to the confirmed target disk.
+A complete physical retry with that implementation remains outstanding.

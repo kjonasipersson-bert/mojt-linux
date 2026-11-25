@@ -107,9 +107,10 @@ With --output, create a NEW regular UEFI/GPT native-v2 image with serial console
 Requires verified exact Base/Kernel inputs, explicit Base compatibility bounds
 and an account-enabled step-10 System payload. --dry-run validates inputs without
 creating an image or registry. Actual creation requires root and an interactive
-terminal to set the new guest password. No automatic sudo or password flags.
+terminal to set the new guest password for a normal image or mounted target.
+Installer media skip that prompt. No automatic sudo or password flags.
 .PP
-The optional pc-x86_64 profile selects local password login, NVMe, USB/SATA,
+The optional pc-x86_64 profile selects a local console, NVMe, USB/SATA,
 VirtIO block/SCSI and keyboard early drivers. Runtime devices are probed through
 standard udev rules after System firmware and modules are mounted. Firmware input
 must include Intel/AMD graphics and Intel, Realtek, Qualcomm Atheros, MediaTek
@@ -118,7 +119,7 @@ See the Handbook hardware chapter for the exact bootstrap package set and limits
 The image launcher accepts QEMU_DISK_BUS=sata, usb or nvme for this profile.
 It is a separate machine policy, not a live migration of existing ThinkPad selections.
 .PP
-The retained thinkpad-x1-carbon-3 profile selects local password login, USB/SATA
+The retained thinkpad-x1-carbon-3 profile selects a local console, USB/SATA
 storage and keyboard support, and graphics/network drivers. --firmware-root names
 an extracted Debian firmware root with Intel 7265 firmware, regulatory database
 and upstream licenses. Firmware/licenses become inventoried System content;
@@ -140,12 +141,17 @@ before password entry. Root also probes private PID/mount namespace and chroot
 entry; ordinary-user preview explicitly reports this privileged probe as not run.
 This does not establish complete construction or guest boot acceptance.
 .PP
---with-installer-inputs (requires --with-build-tools) carries the frozen local
+--with-installer-inputs requires image output, --with-build-tools, and a System
+export prepared with --with-installer-tools. It carries the frozen local
 Base/context, Kernel registry, System export, static BusyBox and optional
-firmware in persistent /var/lib/mojt/installer-inputs. --inputs DIRECTORY
+firmware at /var/lib/mojt/installer-inputs during the live session. --inputs DIRECTORY
 verifies that closed versioned data and supplies the existing exact input flags.
 Competing artifact/provider flags cannot be mixed with it. It loads no hooks/code
-and carries no source installation passwords. SHA256 is not authentication.
+and carries no source installation passwords. A new media image made with
+--with-installer-inputs protects its backing disk against writes at boot and
+keeps live changes in RAM. It opens a root shell on its console and locks the
+root password. The installed target still asks for its own root password.
+SHA256 is not authentication.
 .PP
 --target-root and --efi-directory select separate, already mounted empty ext4 or Btrfs
 root and FAT32 EFI partitions on the same GPT disk. Root may have an empty lost+found;
@@ -153,7 +159,8 @@ existing EFI trees, alias/child mounts, another mounted partition or active swap
 on the disk and unsupported storage profiles are refused. Even preview requires
 root to inspect block metadata. Actual writes require both expected identity
 flags from preview. No partitioning, formatting, resizing or NVRAM entry is done.
-Use an explicit private image-tool environment to supply the disk/EFI tools.
+The installer medium bundles the disk and EFI tools. On a separate builder,
+supply them through an explicit private image-tool environment.
 .PP
 Construction is shared with the image path and binds the actual target UUID.
 Verified root content is copied/flushed before the fallback EFI directory is
@@ -164,8 +171,9 @@ stays with root. The initial construction receipt is mounted-install.json under
 the new installation's /var/lib/mojt; MPM records remain current boot authority.
 .SH WHOLE-DISK INSTALLATION
 .B mbt install
-requires root, an interactive terminal, a booted UEFI installation medium,
-and private image tools. It reads the local installer kit from
+requires root, an interactive terminal, and UEFI mode. The read-only
+installation medium supplies the tools and opens a local root console.
+The command reads the local installer kit from
 /var/lib/mojt/installer-inputs or the path given with --inputs.
 After disk selection, optional swap sizing and exact disk-path confirmation,
 it erases the selected disk, creates a GPT with FAT32 EFI, optional swap and

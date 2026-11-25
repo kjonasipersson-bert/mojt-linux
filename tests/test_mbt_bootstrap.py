@@ -158,6 +158,9 @@ class ConstructionTests(unittest.TestCase):
     def test_pc_image_binds_generic_profile_and_all_firmware_families(self):
         self.hardware_construction(mounted=False,hardware_profile=bootstrap.native.hardware.PC_PROFILE)
 
+    def test_usb_image_uses_direct_console_with_root_password_locked(self):
+        self.hardware_construction(mounted=False, installer_media=True)
+
     def test_pc_mounted_target_preserves_generic_profile_in_portable_inputs(self):
         self.hardware_construction(mounted=True,hardware_profile=bootstrap.native.hardware.PC_PROFILE)
 
@@ -165,7 +168,7 @@ class ConstructionTests(unittest.TestCase):
         self.hardware_construction(mounted=True, root_fs='btrfs')
 
     def hardware_construction(self, *, mounted, hardware_profile=bootstrap.native.hardware.PROFILE,
-                              after_construct=None, root_fs='ext4'):
+                              after_construct=None, root_fs='ext4', installer_media=False):
         import test_native_image as fixtures
         import test_system_vm as system_fixtures
         import test_hardware_boot as hardware_fixtures
@@ -173,7 +176,8 @@ class ConstructionTests(unittest.TestCase):
         import mojt_system_package as packer
         import mpm_boot_constructor as constructor
         f=fixtures.NativeImageTests();f.account_base=True;f.setUp();self.addCleanup(f.doCleanups)
-        source=system_fixtures.SystemVmTests();source.setUp();self.addCleanup(source.doCleanups);record=source.fixture(10)
+        source=system_fixtures.SystemVmTests();source.setUp();self.addCleanup(source.doCleanups)
+        record=source.fixture(12 if installer_media else 10,installer_tools=installer_media)
         python_output=record['packages']['python']['output']
         python_tree=source.payload/python_output.lstrip('/')
         system_fixtures.system.write(python_tree/'bin/zstd','#!/bin/sh\nexit 0\n',0o755)
@@ -186,7 +190,7 @@ class ConstructionTests(unittest.TestCase):
         f.args.hardware_profile=hardware_profile
         f.args.root_fs=root_fs
         f.args.firmware_root=hw.firmware(hardware_profile);f.args.with_build_tools=True
-        if mounted:
+        if mounted or installer_media:
             f.args.with_installer_inputs=True;f.args.system_version='0.2';f.args.system_revision=1
             # Real exports contain absolute guest links even without host Nix.
             record=base.read(source.payload/'system.json')
@@ -212,6 +216,7 @@ class ConstructionTests(unittest.TestCase):
                 from mojt_installer import swap_config
                 swap_config(tree, '12345678-1234-1234-1234-123456789abc')
                 policy['root_fs'] = root_fs
+            if installer_media:policy['installer_media'] = True
             seed=base.read(result/'selected-deployment.json');value=request(tree,result,seed,archive,**policy)
             def run(args,**kwargs):
                 if '--load-db' in args:return subprocess.CompletedProcess(args,0)
@@ -225,7 +230,32 @@ class ConstructionTests(unittest.TestCase):
             bootstrap.record_result(tree,result,outcome);d=outcome['description'];seen.append(d)
             if after_construct is not None:after_construct(tree,d,adapter)
             profile=tree/'realizations/system'/d['system'][7:]/'profile'
-            self.assertTrue((profile/'units/mojt-console.service').is_file())
+            console = (profile/'units/mojt-console.service').read_text()
+            shadow = (tree/'state/etc/shadow').read_text()
+            wanted = (profile/'units/mojt.target').read_text().split('Wants=', 1)[1].splitlines()[0].split()
+            if installer_media:
+                self.assertIn('ExecStart=/run/mojt-system/bin/bash --login -i',console)
+                self.assertIn('StandardOutput=tty\nStandardError=inherit\n',console)
+                self.assertIn('HISTFILE=/dev/null',console)
+                self.assertIn('Requires=mojt-setup.service',console)
+                self.assertNotIn('systemd-user-sessions.service',console)
+                self.assertNotIn('mojt-privileged.service',console)
+                for service in ('mojt-privileged.service', 'systemd-logind.service', 'systemd-user-sessions.service'):
+                    self.assertNotIn(service,wanted)
+                self.assertFalse((profile/'bin/sudo').is_symlink())
+                self.assertRegex(shadow,r'(?m)^root:!:')
+                self.assertFalse((profile/'units/mojt.target.wants/sshd.service').exists())
+                self.assertNotIn('nix-store --load-db',(profile/'setup').read_text())
+                self.assertTrue((profile/'bin/mkfs.btrfs').is_symlink())
+                self.assertTrue((profile/'bin/grub-mkstandalone').is_symlink())
+                self.assertTrue(d['deployment']['description']['inputs']['description']['boot']['installer_media'])
+            else:
+                self.assertIn('busybox getty',console)
+                self.assertIn('StandardError=journal',console)
+                self.assertIn('Requires=mojt-privileged.service',console)
+                self.assertIn('mojt-privileged.service',wanted)
+                self.assertRegex(shadow,r'(?m)^root:\$6\$')
+                self.assertNotIn('installer_media',d['deployment']['description']['inputs']['description']['boot'])
             self.assertEqual(bootstrap.native.hardware.native_firmware(profile),profile/'kernel/lib/firmware')
             self.assertFalse((profile/'kernel/lib/modules').exists())
             return d
@@ -245,7 +275,7 @@ class ConstructionTests(unittest.TestCase):
         prepared=tempfile.TemporaryDirectory(prefix=mbt_runtime.PREFIX,dir=mbt_runtime.temporary_parent())
         self.addCleanup(prepared.cleanup)
         execution=mbt_runtime.freeze(REPO,Path(prepared.name))
-        with mock.patch.object(fixtures.fixtures.vm,'password_hash_from_terminal',return_value='$6$synthetic$not-a-real-password'),\
+        with mock.patch.object(fixtures.fixtures.vm,'password_hash_from_terminal',return_value='$6$synthetic$not-a-real-password') as password_prompt,\
              mock.patch.object(bootstrap,'inspect_result',side_effect=inspect_owned),\
              mock.patch.object(fixtures.fixtures.vm,'handoff_result',side_effect=give_to_caller),\
              mock.patch.object(bootstrap.native,'__file__',str(Path(prepared.name)/'tools/mojt_native_image.py')),\
@@ -260,7 +290,12 @@ class ConstructionTests(unittest.TestCase):
                     self.assertEqual(root_uuid,target_uuid);self.assertEqual(console,'local')
                     self.assertEqual(options['root_fs'],root_fs)
                     path=work/'BOOTX64.EFI';path.write_bytes(b'synthetic loader; not hardware boot acceptance');return path
-                def writer(**values):return installer.publish(target_record,**values)
+                folder=target/'.mojt-mounted-fixture';folder.mkdir(mode=0o700)
+                info=folder.stat()
+                workspace=(folder,(info.st_dev,info.st_ino))
+                def writer(**values):
+                    self.assertTrue(values['tree'].is_relative_to(folder))
+                    return installer.publish(target_record,workspace=workspace,**values)
                 def target_run(name,*args,**kwargs):
                     if name == 'sync':return subprocess.CompletedProcess([],0)
                     return real_run([which(name),*map(str,args)],check=True,**kwargs)
@@ -268,7 +303,8 @@ class ConstructionTests(unittest.TestCase):
                      mock.patch.object(installer,'run',side_effect=target_run),\
                      mock.patch.object(installer.boot,'efi_loader',side_effect=loader),\
                      mock.patch.object(fixtures.fixtures.vm.boot,'build_disk',side_effect=AssertionError('must not create an image')):
-                    built=f.synthetic_build(finalize_tree=finish,filesystem_uuid=target_uuid,filesystem_writer=writer)
+                    built=f.synthetic_build(finalize_tree=finish,filesystem_uuid=target_uuid,
+                                            filesystem_writer=writer,workspace_parent=folder)
                 self.assertEqual(built['format'],'mojt-mounted-bootstrap-result-v1')
                 self.assertEqual(events,['verify']);self.assertFalse(f.args.output.exists())
                 choice,entries,unused=selection.current(target,verify=True)
@@ -291,6 +327,8 @@ class ConstructionTests(unittest.TestCase):
                 self.assertFalse((target/'disk.img').exists())
                 return
             else:built=f.synthetic_build(finalize_tree=finish)
+        if installer_media:password_prompt.assert_not_called()
+        else:password_prompt.assert_called_once()
         image=Path(built['output']);d=seen[0]
         self.assertEqual(events,['verify','verify','handoff']);self.assertEqual(built['bootstrap'],d)
         self.assertEqual(artifact.parse_json((image/'bootstrap.json').read_bytes())['description'],d)

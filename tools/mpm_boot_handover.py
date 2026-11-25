@@ -31,6 +31,7 @@ import mpm_transaction as tx
 from mpm_boot_v2 import record
 
 FORMAT = 'mojt-system-handover-v1'
+INSTALLER_INPUTS = 'var/lib/mojt/installer-inputs'
 require = artifact.require
 
 
@@ -237,7 +238,11 @@ def check(root, source, trees, value, *, provider_roots=None, cache=None, verify
     else:require(not (profile/'hardware.json').exists(),'hardware System requires its native boot profile')
     for mount in d['mounts']:require(inventory.path(root,mount['source']).is_dir(),'provider mount source missing')
     for name in ('etc','var','home','root'):inventory.path(root,'state/'+name)
-    writable_root(root,tree,d['mounts'])  # Inspect only; stage never initializes machine state.
+    if i['boot'].get('installer_media'):
+        require(inventory.path(root,'state/'+INSTALLER_INPUTS).is_dir(),'missing installer input kit')
+        root_projection(tree,d['mounts'])
+    else:
+        writable_root(root,tree,d['mounts'])  # Inspect only; stage never initializes machine state.
     for shell in [*persistent['base_shells'],*persistent['system_shells']]:guest_file(root,tree,profile,provider_roots,d['mounts'],shell,components=components)
     guest_file(root,tree,profile,provider_roots,d['mounts'],'/run/mojt-system/start',components=components)
     hostname = common.checked_bytes(root/'state/etc/hostname').decode().strip()
@@ -258,14 +263,8 @@ ROOT_MARKER = '.mojt-root-layout.json'
 ROOT_DIRECTORIES = ('boot','dev','etc','home','media','mnt','opt','proc','root','run','srv','sys','tmp','var')
 
 
-def writable_root(root, tree, mounts, *, create=False):
-    """Persistent shell of directories; release content is mounted read-only.
-
-    No overlay, mutable Base copy or generation-specific state. Existing roots
-    must have our installation/layout marker; never adopt arbitrary contents.
-    Only early boot creates this additive state, after current-state checks.
-    """
-    root=Path(root);tree=Path(tree)
+def root_projection(tree, mounts):
+    """Describe the mountpoints and links used by persistent and live roots."""
     mutable=set(ROOT_DIRECTORIES)|{row['target'] for row in mounts}
     directories={name:(0o700 if name=='root' else 0o1777 if name=='tmp' else 0o755) for name in mutable}
     projection={};bindings=[]
@@ -286,6 +285,25 @@ def writable_root(root, tree, mounts, *, create=False):
             bindings.append((source,name))
     local=paths.virtual_file(tree,'/usr/local')
     require(local==tree/'usr/local' and local.is_dir() and not any(local.iterdir()),'Base /usr/local must be an empty real mountpoint')
+    return directories,projection,bindings
+
+
+def populate_root(destination, directories, projection):
+    for name,mode in directories.items():
+        (destination/name).mkdir(mode=mode)
+        (destination/name).chmod(mode)
+    for name,row in projection.items():
+        if row['type']=='symlink':(destination/name).symlink_to(row['target'])
+        elif row['type']=='file':
+            with (destination/name).open('xb') as stream:
+                os.fchmod(stream.fileno(),0o444)
+                os.fsync(stream.fileno())
+
+
+def writable_root(root, tree, mounts, *, create=False):
+    """Persistent root projection with an installation/layout marker."""
+    root=Path(root);tree=Path(tree)
+    directories,projection,bindings=root_projection(tree,mounts)
     state=root/'state';folder=state/'rootfs';local_state=state/'local'
     for directory in (state,folder,local_state):
         tx.protected_directory(directory,label='Writable root')
@@ -314,12 +332,8 @@ def writable_root(root, tree, mounts, *, create=False):
     elif create:
         stage=Path(tempfile.mkdtemp(prefix='.rootfs-',dir=state))
         try:
-            for name,mode in directories.items():
-                (stage/name).mkdir(mode=mode);(stage/name).chmod(mode);tx.sync_directory(stage/name)
-            for name,row in projection.items():
-                if row['type']=='symlink':(stage/name).symlink_to(row['target'])
-                elif row['type']=='file':
-                    with (stage/name).open('xb') as stream:os.fchmod(stream.fileno(),0o444);os.fsync(stream.fileno())
+            populate_root(stage,directories,projection)
+            for name in directories:tx.sync_directory(stage/name)
             base.io.write_json(stage/ROOT_MARKER,expected);stage.chmod(0o755)
             tx.sync_directory(stage);tx.publish(stage,folder)
         finally:base.io.clean_stage(stage)
@@ -367,20 +381,34 @@ def _enter(root, context, verified, *, runner=None, execute=None, newroot=Path('
     execute = execute or os.execv
     newroot = Path(newroot);require(newroot == newroot.resolve() and newroot.is_dir() and not any(newroot.iterdir()),'newroot must be an empty canonical mountpoint')
     mounted = [];moved = [];backing_writable = False
+    installer = context['source']['description']['boot'].get('installer_media',False)
     def bind(source,target,readonly=False):
         runner(['mount','--bind',source,target]);mounted.append(target)
         if readonly:runner(['mount','-o','remount,bind,ro',source,target])
     try:
-        runner(['mount','-o','remount,rw',root]);backing_writable = True
-        layout=writable_root(root,context['tree'],context['mounts'],create=True)
-        bind(layout['root'],newroot)
-        for source,name in layout['bindings']:bind(source,newroot/name,True)
-        bind(layout['local'],newroot/'usr/local')
+        if installer:
+            require(os.statvfs(root).f_flag & os.ST_RDONLY,'installer backing filesystem must be read-only')
+            runner(['mount','-t','tmpfs','-o','mode=0755,nodev,nosuid','tmpfs',newroot]);mounted.append(newroot)
+            directories,projection,bindings=root_projection(context['tree'],context['mounts'])
+            populate_root(newroot,directories,projection)
+            shutil.copytree(root/'state/etc',newroot/'etc',symlinks=True,dirs_exist_ok=True)
+            (newroot/INSTALLER_INPUTS).mkdir(parents=True)
+            (newroot/'var/tmp').mkdir(mode=0o1777)
+            (newroot/'var/tmp').chmod(0o1777)
+            bind(root/'state'/INSTALLER_INPUTS,newroot/INSTALLER_INPUTS,True)
+        else:
+            runner(['mount','-o','remount,rw',root]);backing_writable = True
+            layout=writable_root(root,context['tree'],context['mounts'],create=True)
+            bind(layout['root'],newroot)
+            bindings=layout['bindings']
+        for source,name in bindings:bind(source,newroot/name,True)
+        if not installer:bind(layout['local'],newroot/'usr/local')
         runner(['mount','-t','tmpfs','-o','mode=0755,nodev,nosuid,strictatime','tmpfs',newroot/'run']);mounted.append(newroot/'run')
         for path in ('mojt-system','mojt','initramfs/bin','systemd/system'):(newroot/'run'/path).mkdir(parents=True,exist_ok=True)
         bind(context['profile'],newroot/'run/mojt-system',True)
-        for name in ('etc','var','home','root'):bind(root/'state'/name,newroot/name)
-        for mount in context['mounts']:bind(root/mount['source'],newroot/mount['target'])
+        if not installer:
+            for name in ('etc','var','home','root'):bind(root/'state'/name,newroot/name)
+        for mount in context['mounts']:bind(root/mount['source'],newroot/mount['target'],installer)
         immutable = []
         for component in context.get('components',[]):
             point=root/component['path'];bind(point,point,True)
@@ -397,8 +425,9 @@ def _enter(root, context, verified, *, runner=None, execute=None, newroot=Path('
         shutil.copyfile(runtime/'bin/busybox',newroot/'run/initramfs/bin/busybox');(newroot/'run/initramfs/bin/busybox').chmod(0o755)
         (newroot/'run/initramfs/bin/sh').symlink_to('busybox')
         shutil.copyfile(runtime/'shutdown',newroot/'run/initramfs/shutdown');(newroot/'run/initramfs/shutdown').chmod(0o755)
-        protected = ['/etc','/var','/home','/root','/usr/local','/run/mojt-system','/run/mojt-disk','/'+str(module_point),
-                     *['/'+name for unused,name in layout['bindings']],
+        state_mounts = ['/'+INSTALLER_INPUTS] if installer else ['/etc','/var','/home','/root','/usr/local']
+        protected = [*state_mounts,'/run/mojt-system','/run/mojt-disk','/'+str(module_point),
+                     *['/'+name for unused,name in bindings],
                      *['/'+m['target'] for m in context['mounts']],*immutable]
         if firmware_point is not None:protected.append('/'+str(firmware_point))
         for path in protected:

@@ -248,8 +248,8 @@ mbt bootstrap \
 ```
 
 The preview validates inputs and reports prerequisites. Actual image creation
-requires root, required image tools and an interactive terminal for the new
-machine's password. An ordinary-user preview does not establish that privileged
+requires root and the image tools. A normal image or mounted target needs an
+interactive terminal for the new machine's password. An ordinary-user preview does not establish that privileged
 namespace checks or full construction have passed. Bootstrap does not reboot.
 
 For a serial UEFI VM with a Btrfs root, add `--root-fs btrfs` and launch

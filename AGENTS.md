@@ -6,7 +6,7 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Working on Mojt Linux
 
-Speak Swedish with the project owner unless asked otherwise. Write code,
+Use Swedish in conversation unless asked otherwise. Write code,
 documentation, comments and commit messages in English. Mojt-owned files use
 `Copyright (C) 2026 Jonas Persson` and `SPDX-License-Identifier: GPL-2.0-only`;
 preserve upstream licenses.
@@ -29,7 +29,7 @@ preserve upstream licenses.
 - Validate archive paths and symlinks. SHA256 provides integrity, not publisher
   authentication. Keep build/bootstrap providers separate from Mojt's model.
 - Run checks appropriate to the change. Distinguish local, CI, VM and physical
-  machine results; never claim to have run commands on the owner's machine.
+  machine results and record which environments were actually tested.
 
 ## Normal operation boundaries
 
@@ -68,6 +68,9 @@ preserve upstream licenses.
 - Exercise partitioning on a new disposable virtual disk. Keep the installer
   image separate and disconnect it before testing the target's first boot.
   Physical disk erasure requires explicit authorization for the identified disk.
+- Keep the installer backing disk read-only from early boot. Verify the complete
+  image digest after successful and cancelled installs. Keep live state in RAM
+  and bulk staging on the confirmed target.
 
 ## Documentation is a current interface contract
 
@@ -77,7 +80,11 @@ preserve upstream licenses.
 - Document commands, preconditions, effects, persistent state, compatibility and
   concrete implemented limits. Clearly label proposed behavior as a proposal;
   keep future priorities in the roadmap rather than presenting them as commands.
-- Do not put conversation summaries, owner/agent commentary, PR/merge narratives,
+- Keep documentation impersonal, including historical notes and test reports.
+  Describe decisions, test environments and observations without identifying
+  any project participant by name, role, account or personal path. Preserve
+  copyright and license notices.
+- Do not put conversation summaries, agent commentary, PR/merge narratives,
   PASS announcements, stopwatch results, private machine paths or unexplained
   test-generation labels into current user/reference documentation. Explain a
   necessary compatibility distinction in terms of supported behavior or formats.

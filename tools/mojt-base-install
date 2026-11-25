@@ -468,7 +468,7 @@ def install(args, target):
     print(f"Installed Base {version}: {destination}")
     print(f"Persistent state:  {target / 'state'}")
     print(f"Current version:   {current_version(target) or '(none)'}")
-    print("Note: this is a directory installation, not a bootable system.")
+    print("Boot setup is handled separately.")
 
 
 

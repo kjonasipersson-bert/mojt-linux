@@ -12,20 +12,27 @@ native-v2 bootstrap used for explicitly mounted target partitions.
 
 ## Whole-disk installation
 
-Run the following as root from the prepared UEFI installation image described below.
+The UEFI installation image boots to a password-free local root console. Run
 
 ```sh
-/var/lib/mojt/installer-tools/run /run/mojt-system/bin/mbt install
+mbt install
 ```
 
 This lists unused writable disks and asks for a disk, an optional swap size in
 GiB and exact disk-path confirmation before erasing it. The installer creates
 GPT, a 128 MiB FAT32 ESP, optional partition-backed swap, and single-device Btrfs
 on the rest of the disk. The selected Kernel must supply Btrfs and the profile's
-early storage drivers. The target uses a new root password. Swap is configured
+early storage drivers. Choose a new root password for the target. Swap is configured
 with a persistent systemd unit using its GPT partition UUID. The keyboard
 layout stays that of the installation console. The installed system retains
 the ordinary native-v2 layout, with writable state and read-only release content.
+
+Linux sets the installation disk and its root partition read-only before
+mounting the root filesystem and skips filesystem journal replay. The ESP
+stays unmounted in Linux. The live root, `/etc`, `/var`, `/tmp` and
+`/run` use RAM. The input kit stays on the medium at a read-only mount under
+`/var`. Logs and network changes disappear after shutdown. The large
+installation workspace lives on the confirmed target disk.
 
 ## Prepared partition installation
 
@@ -57,8 +64,14 @@ Build manually from exact reviewed Base and Kernel artifacts, Base compatibility
 evidence, an exported System payload, and static BusyBox. This example produces
 a serial VirtIO image. For a physical USB installer, select the tested target
 hardware profile and supply its firmware inputs. Use a Btrfs-capable Kernel
-even when the installer image itself uses ext4. Choose a System step 12 export
-to include the OpenSSL helper for signed Base repository access.
+even when the installer image itself uses ext4. Export System step 12 with
+the offline tools from the pinned Nix source. Run this command in the Nix
+build environment as an ordinary user.
+
+```sh
+python3 tools/mojt-system-prepare.py --step 12 --with-installer-tools \
+  --output SYSTEM_EXPORT -y
+```
 
 ```sh
 sudo ./tools/mbt bootstrap \
@@ -66,16 +79,22 @@ sudo ./tools/mbt bootstrap \
   --kernel-registry KERNEL_REGISTRY --kernel-artifact KERNEL_ID \
   --system-payload SYSTEM_EXPORT --system-generation system-installer \
   --with-build-tools --with-installer-inputs \
-  --root-fs ext4 --disk-size-mib 24576 --output INSTALLER_DIR
+  --root-fs ext4 --disk-size-mib 8192 --output INSTALLER_DIR
 ```
 
-Substitute full artifact IDs and paths. Add `--hardware-profile PROFILE
---firmware-root FIRMWARE_DIR` for the physical profile. The example 24 GiB
-image fits a USB drive with at least that much actual capacity. The output
-directory must be new.
+Substitute full artifact IDs and paths. For a general x86-64 PC USB installer,
+add `--hardware-profile pc-x86_64 --firmware-root FIRMWARE_DIR` with the full
+firmware inputs for that profile. Size the raw image
+for the embedded inputs and installer tools. The USB device must
+have at least the image's logical capacity. The mounted bootstrap assembles
+the installation in a private directory on the confirmed target disk.
+That disk needs space for both the staging inputs and the installed tree.
+The output directory must be new. A fresh image built with `--with-installer-inputs`
+opens a root shell on its console, with the root password locked. A mounted
+target still prompts for its own root password.
 
 `--with-installer-inputs` carries a closed data directory at
-`/var/lib/mojt/installer-inputs` in persistent state. Its versioned `inputs.json`
+`/var/lib/mojt/installer-inputs` in the live session. Its versioned `inputs.json`
 binds the Base archive/context, exact installed Kernel registry, System export,
 static BusyBox, optional firmware/licenses and reviewed bootstrap defaults.
 Each resource has a transfer digest; the descriptor has a content identity.
@@ -97,29 +116,11 @@ System label/version/revision can be chosen explicitly for the new installation.
 No code, shell commands or hooks are loaded from the kit. Its source identity is
 retained in the mounted installation receipt.
 
-Before taking the USB to the physical machine, boot its VM once and prepare the
-private **image** tool environment as root (not a compiler environment):
-
-```sh
-umask 022
-mbt env --profile image --source-manifest /run/mojt-system/ports.toml \
-  --output /var/lib/mojt/installer-tools -y
-```
-
-Use networking for this preparation when the Nix outputs are not already
-available. Verify the launcher inside the guest and power off cleanly.
-
-```sh
-/var/lib/mojt/installer-tools/run /run/mojt-system/bin/mbt install --help
-poweroff
-```
-
-The prepared `INSTALLER_DIR/disk.img` can be copied as `install.img` or
-attached directly as a raw boot disk. Copy or write the image only after
-shutdown. For USB, identify the intended whole USB device by model, capacity,
-and serial number, unmount its partitions, and use a disk-image writer to
-overwrite that device. The private tool environment keeps its guest path and
-travels inside the raw image with the retained inputs.
+The completed `INSTALLER_DIR/disk.img` already carries the installation tools
+and can be copied as `install.img` or attached directly as a raw boot disk.
+For USB, identify the intended whole USB device by model, capacity, and
+serial number, unmount its partitions, and use a disk-image writer to write
+the image. The installation can run offline on the first boot.
 
 ## Preview the mounted target
 
@@ -128,10 +129,10 @@ and the ESP at `/run/mojt-target-esp` (example mountpoints). Mount them writable
 and root-controlled, with suitable root UID/GID and masks for FAT32. For Btrfs,
 mount the top-level subvolume with `subvolid=5` and add `--root-fs btrfs` to
 both commands below. The examples use the default ext4 target filesystem.
-As root, use installed MBT through the private installation environment.
+At the installer console, use the bundled MBT and disk tools.
 
 ```sh
-/var/lib/mojt/installer-tools/run /run/mojt-system/bin/mbt bootstrap \
+mbt bootstrap \
   --inputs /var/lib/mojt/installer-inputs \
   --target-root /run/mojt-target-root --efi-directory /run/mojt-target-esp \
   --system-generation system-ssd-A --dry-run
@@ -147,7 +148,7 @@ For the actual invocation, replace the following uppercase placeholders with
 `target.root.uuid` and `target.efi.partuuid` from that preview:
 
 ```sh
-/var/lib/mojt/installer-tools/run /run/mojt-system/bin/mbt bootstrap \
+mbt bootstrap \
   --inputs /var/lib/mojt/installer-inputs \
   --target-root /run/mojt-target-root --efi-directory /run/mojt-target-esp \
   --expected-root-uuid ROOT_UUID --expected-efi-partuuid ESP_PARTUUID \
@@ -161,7 +162,8 @@ and machine identity are not copied. No automatic reboot occurs.
 
 ## Construction and publication
 
-The common constructor finishes in a root-controlled private directory. It
+The common constructor finishes in a root-controlled private directory on
+the already confirmed root filesystem. It
 uses the **target's existing UUID**, creates the same MPM installation/retention,
 initramfs, boot-Base and native-v2 selection, and builds the same standalone GRUB
 loader used for images. It never formats the mounted destination or constructs
@@ -172,10 +174,10 @@ traditional root for `chroot /run/mojt-target-root`.
 MBT holds cooperating locks on the disk/partition devices and open mountpoint
 descriptors. It binds the opened mountpoint by Linux mount ID and verifies
 the partition identity separately, including the single Btrfs backing device.
-After rechecking target identity, emptiness and capacity, it writes
-`.mojt-bootstrap-incomplete`, copies the completed tree preserving ownership,
-modes, links and special files, then verifies the copied native-v2 proofs and
-selection. The root filesystem is flushed before the fallback EFI directory is
+After rechecking target identity and entries, it writes
+`.mojt-bootstrap-incomplete`, moves the completed entries into place on the
+same filesystem and verifies the installed native-v2 proofs and selection.
+The root filesystem is flushed before the fallback EFI directory is
 published. The loader is staged/flushed privately on the ESP, then its `EFI`
 directory is renamed into place and the ESP is flushed.
 
@@ -185,8 +187,9 @@ Use the machine's one-time UEFI menu with Secure Boot disabled for this unsigned
 development chain. A named internal-disk NVRAM entry can be a later operation.
 
 This is a fresh-target installation with an EFI publication boundary, not an
-atomic replacement of an entire disk. Failure before publication retains partial
-target data and its incomplete marker with no newly published fallback loader.
+atomic replacement of an entire disk. Failure after the incomplete marker was created retains any published target
+data and that marker. The fallback loader is published only after verification.
+A failed construction before the marker normally removes its private workspace.
 The target is then nonempty and cannot be adopted/resumed by another invocation.
 Inspect it before separately authorized cleanup; no automatic deletion occurs.
 Failure after EFI publication is explicitly `PublicationUncertain`: the target

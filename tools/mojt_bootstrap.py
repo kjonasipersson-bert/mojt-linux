@@ -34,8 +34,9 @@ def code_identity():
 
 def request(value):
     d = base.envelope(value,REQUEST)
-    artifact.fields(d,('tree','result','tree_identity','creator_mount_namespace','seed','archive','system_version','system_revision','code'), ('root_fs',))
+    artifact.fields(d,('tree','result','tree_identity','creator_mount_namespace','seed','archive','system_version','system_revision','code'), ('root_fs','installer_media'))
     native.boot.root_filesystem(d.get('root_fs','ext4'))
+    require('installer_media' not in d or d['installer_media'] is True,'invalid installer media policy')
     from mpm_deployment import validate_deployment
     old = validate_deployment(d['seed'])
     require(old['platform'] == 'x86_64-linux' and old['boot']['console'] in ('serial','local'),'unsupported bootstrap platform/console')
@@ -91,12 +92,13 @@ def fresh_tree(tree, result, value):
     return old,profile
 
 
-def finalize(*, tree, result, base_package, system_version, system_revision, root_fs="ext4"):
+def finalize(*, tree, result, base_package, system_version, system_revision, root_fs="ext4", installer_media=False):
     """Manager-owned tree callback, before mkfs and before image publication."""
     tree,result,base_package = map(lambda p:Path(p).absolute(),(tree,result,base_package))
     require(os.geteuid() == 0,'bootstrap construction requires an administrator')
     seed = base.read(result/'selected-deployment.json')
     policy = {'root_fs': root_fs} if root_fs != 'ext4' else {}
+    if installer_media:policy['installer_media'] = True
     value = base.record(REQUEST,dict(tree=str(tree),result=str(result),tree_identity=[tree.stat().st_dev,tree.stat().st_ino],
         creator_mount_namespace=os.readlink('/proc/self/ns/mnt'),seed=seed,
         archive=dict(sha256=artifact.file_sha(base_package),size=base_package.stat().st_size),
@@ -221,7 +223,7 @@ def construct(root, runtime, value, work, *, adapter=None):
     realized = system.realization(root,identifier);body,receipt = base.object_record(root,old['base']['artifact'])
     realized_base = base.realization(root,body['id'],receipt)
     kernel_body,_ = kernel.object_record(root/'kernel/installed'/old['kernel']['artifact'][7:],old['kernel']['artifact'],verify=True)
-    root_policy = {'root_fs': d['root_fs']} if 'root_fs' in d else {}
+    root_policy = {key:d[key] for key in ('root_fs','installer_media') if key in d}
     source = model.record(model.INPUTS,dict(installation=base.store_info(root)['installation'],platform=old['platform'],layout='native-v2',
         base=dict(old['base'],rootfs_sha256=realized_base['description']['rootfs_sha256'],kernel_min=bounds['kernel_min'],
                   kernel_max=bounds['kernel_max'],bounds_evidence=artifact.digest(bounds)),
@@ -264,6 +266,10 @@ def inspect_result(directory, *, base_artifact, kernel_artifact, files=True):
 def preflight(args, evidence, *, mounted=False):
     """Static gates and an explicit root namespace probe before password entry."""
     require(evidence['system_record']['step'] >= 10,'first native-v2 bootstrap requires account-enabled System step 10')
+    installer_media = getattr(args,'with_installer_inputs',False)
+    if installer_media:
+        require(paths.INSTALLER_ROLES.keys() <= evidence['system_record']['packages'].keys(),
+                'installer media require a System export prepared with --with-installer-tools')
     import mpm_management as management
     from mpm_kernel_boot import vm_module
     manager=management.current();vm=vm_module()
@@ -277,7 +283,9 @@ def preflight(args, evidence, *, mounted=False):
                 not Path(path).resolve().is_relative_to('/var/lib/mojt/ports') for path in selected.values()),
             'bootstrap tools must come from the host or an explicit private build environment, not shared Ports')
     require(vm.static_x86_64_elf(args.busybox),'trusted static x86_64 BusyBox required')
-    vm.validate_busybox_applets(args.busybox,'password',extra=tuple(sorted(paths.SHUTDOWN_APPLETS|{'findfs','cat','env'})))
+    applets = paths.SHUTDOWN_APPLETS | {'findfs','cat','env'}
+    if installer_media:applets |= {'blockdev'}
+    vm.validate_busybox_applets(args.busybox,'password',extra=tuple(sorted(applets)))
     privileged='not-run: requires administrator'
     if os.geteuid()==0:
         parent=native.WORK_PARENT.resolve(strict=True)
@@ -298,6 +306,7 @@ def build(args):
             '--with-installer-inputs requires --with-build-tools')
     root_fs = native.boot.root_filesystem(getattr(args,'root_fs','ext4'))
     if getattr(args,'target_root',None) is not None:
+        require(not getattr(args,'with_installer_inputs',False),'--with-installer-inputs requires image output')
         import mojt_mounted_install
         return mojt_mounted_install.build(args)
     require(not any(getattr(args,n,None) is not None for n in ('efi_directory','expected_root_uuid','expected_efi_partuuid')),
@@ -310,7 +319,8 @@ def build(args):
             system_payload=artifact.digest(preview['system_record']),system_version=artifact.version(version),
             boot_profile=native.hardware.boot_profile(args.hardware_profile) if preview['hardware'] is not None else model.PROFILE,hardware_inputs=preview['hardware'],
             output=str(Path(args.output).absolute()),root_fs=root_fs,preflight=checks,image_written=False,boot_acceptance=False)
-    def finish(**values):return finalize(system_version=args.system_version,system_revision=args.system_revision,root_fs=root_fs,**values)
+    def finish(**values):return finalize(system_version=args.system_version,system_revision=args.system_revision,
+        root_fs=root_fs,installer_media=getattr(args,'with_installer_inputs',False),**values)
     def check(evidence):
         print('Mojt bootstrap: checking prepared manager, host tools and namespace entry...',file=sys.stderr,flush=True)
         preflight(args,evidence)
