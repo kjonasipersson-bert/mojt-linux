@@ -181,6 +181,17 @@ def script(source, interpreter, *, handover=False):
     python = shlex.quote(interpreter)
     root_fs = d['boot'].get('root_fs', 'ext4')
     mount_options = 'ro,subvolid=5' if root_fs == 'btrfs' else 'ro'
+    protect_media = ''
+    if d['boot'].get('installer_media'):
+        mount_options += ',nologreplay' if root_fs == 'btrfs' else ',noload'
+        protect_media = '''node=$(readlink -f "/sys/class/block/${device##*/}") || panic "cannot resolve installer device"
+[ -e "$node/dev" ] || panic "cannot identify installer device"
+if [ -f "$node/partition" ]; then
+    parent=${node%/*}
+    blockdev --setro "/dev/${parent##*/}" || panic "cannot protect installer disk"
+fi
+blockdev --setro "$device" || panic "cannot protect installer root partition"
+'''
     result = '''#!/bin/sh
 # Mojt Linux; Copyright (C) 2026 Jonas Persson; SPDX-License-Identifier: GPL-2.0-only
 PATH=/bin
@@ -205,7 +216,7 @@ while :; do
     [ "$tries" -le 20 ] || panic "exact root UUID unavailable"
     sleep 1
 done
-mount -t '''+root_fs+''' -o '''+mount_options+''' "$device" /sysroot || panic "cannot mount exact root read-only"
+'''+protect_media+'''mount -t '''+root_fs+''' -o '''+mount_options+''' "$device" /sysroot || panic "cannot mount exact root read-only"
 /bin/busybox env -i PATH=/bin LC_ALL=C '''+python+''' -I -S -B /mojt/launch.py --root /sysroot --inputs /mojt/inputs.json --proof /mojt/trees.json \
     >/mojt/verified.json || panic "exact deployment verification failed"
 cat /mojt/verified.json
@@ -251,6 +262,13 @@ PAYLOAD_RECORD = 'mojt-initramfs-payload-v1'
 PAYLOAD_INIT = '#!/bin/sh\necho "Mojt: deployment overlay missing" >&2\nexec /bin/busybox sh </dev/console >/dev/console 2>&1\n'
 
 
+def early_applets(source, *, handover):
+    names = {'findfs','cat','env'}
+    if handover:names.update(paths.SHUTDOWN_APPLETS-{'cp','ln'})
+    if source['description']['boot'].get('installer_media'):names.add('blockdev')
+    return sorted(names)
+
+
 def payload_key(source, runtime, *, handover):
     """Heavy payload inputs deliberately exclude selected Base/System identities."""
     d = model.inputs(source);early.runtime(runtime)
@@ -261,7 +279,7 @@ def payload_key(source, runtime, *, handover):
         busybox_sha256=producer['busybox_sha256'],profile=d['boot']['profile'],
         root_fs=d['boot'].get('root_fs', 'ext4'),handover=handover,
         shutdown_sha256=hashlib.sha256(paths.SHUTDOWN.encode()).hexdigest() if handover else None,
-        applets=sorted({'findfs','cat','env'} | (paths.SHUTDOWN_APPLETS-{'cp','ln'} if handover else set())),
+        applets=early_applets(source,handover=handover),
         producer={name:producer['code'][name] for name in names}))
 
 
@@ -358,7 +376,7 @@ def _build_locked(root, source, runtime_directory, busybox, work, *, bounds, ada
     require(checksum == d['constructor']['identity']['busybox_sha256'], 'BusyBox changed during copying');frozen_busybox.chmod(0o755)
     vm = archive.vm_module()
     require(vm.static_x86_64_elf(frozen_busybox), 'trusted static x86_64 BusyBox required')
-    extra = tuple(sorted({'findfs','cat','env'} | (paths.SHUTDOWN_APPLETS-{'cp','ln'} if handover is not None else set())))
+    extra = tuple(early_applets(source,handover=handover is not None))
     vm.validate_busybox_applets(frozen_busybox,'password',extra=extra)
     payload = root/'kernel/installed'/d['kernel']['artifact'][7:]/'payload'
     module_tree = payload/'lib/modules'/d['kernel']['release']

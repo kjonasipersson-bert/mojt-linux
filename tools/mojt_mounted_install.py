@@ -129,8 +129,10 @@ def probe_partition(row, *, role):
                 start=part['start'], sectors=part['size'], sector_size=table.get('sectorsize', 512))
 
 
-def empty(path, *, root=False):
+def empty(path, *, root=False, workspace=None):
     for point in path.iterdir():
+        if workspace is not None and point == workspace[0]:
+            continue
         require(root and point.name == 'lost+found' and not point.is_symlink()
                 and point.is_dir() and point.stat().st_uid == 0 and not any(point.iterdir()),
                 'target is not empty: ' + str(point))
@@ -146,7 +148,7 @@ def mount_identity(fd, mount_id):
     return [info.st_dev, info.st_ino]
 
 
-def inspect(root, esp, *, fresh=True, root_fs='ext4'):
+def inspect(root, esp, *, fresh=True, root_fs='ext4', workspace=None):
     require(os.geteuid() == 0, 'mounted target inspection requires an administrator')
     root, esp = (Path(os.path.abspath(p)) for p in (root, esp))
     require(root != esp and root not in esp.parents and esp not in root.parents,
@@ -179,7 +181,15 @@ def inspect(root, esp, *, fresh=True, root_fs='ext4'):
             os.close(fd)
         entry.update(path=str(path), mount_id=row['id'], directory=directory)
         targets.append(entry)
-        if fresh:empty(path, root=role == 'root')
+        allowed = workspace if role == 'root' else None
+        if allowed is not None:
+            folder, original = allowed
+            info = folder.lstat()
+            require(folder.parent == path and stat.S_ISDIR(info.st_mode) and
+                    info.st_uid == 0 and stat.S_IMODE(info.st_mode) == 0o700 and
+                    (info.st_dev, info.st_ino) == original,
+                    'mounted installation workspace changed')
+        if fresh:empty(path, root=role == 'root', workspace=allowed)
     r, e = targets
     require(r['device'] != e['device'] and r['disk_device'] == e['disk_device'] and r['disk_id'] == e['disk_id'],
             'root and ESP must be distinct partitions on the same GPT disk')
@@ -211,8 +221,9 @@ def inspect(root, esp, *, fresh=True, root_fs='ext4'):
     return value
 
 
-def recheck(value, *, fresh):
+def recheck(value, *, fresh, workspace=None):
     options = {'root_fs': value['root_fs']} if 'root_fs' in value else {}
+    if workspace is not None:options['workspace'] = workspace
     actual = inspect(value['root']['path'], value['efi']['path'], fresh=fresh, **options)
     require(actual == value, 'mounted target identity changed; repeat preview')
 
@@ -245,7 +256,7 @@ def write_json(path, value):
         os.fchmod(stream.fileno(), 0o600); os.fsync(stream.fileno())
 
 
-def publish(value, *, tree, result, bootstrap, inputs_id=None):
+def publish(value, *, tree, result, bootstrap, workspace, inputs_id=None):
     """Write verified content first. The fallback EFI directory is published last."""
     from mojt_bootstrap import inspect_result
     root, esp = Path(value['root']['path']), Path(value['efi']['path'])
@@ -259,23 +270,26 @@ def publish(value, *, tree, result, bootstrap, inputs_id=None):
     require(choice == checked['selection'], 'prepared selection differs from bootstrap result')
     work = result.parent/'mounted-efi'; work.mkdir()
     loader = boot.efi_loader(tree/'boot/mojt/grub.cfg', work, value['root']['uuid'], inputs['boot']['console'], root_fs=root_fs)
-    used = int(run('du', '-s', '--block-size=1', tree, capture_output=True, text=True).stdout.split()[0])
-    free = os.statvfs(root)
-    require(used + 128*1024*1024 < free.f_bavail*free.f_frsize, 'insufficient target filesystem free space')
+    require(tree.is_relative_to(workspace[0]) and tree.stat().st_dev == root.stat().st_dev,
+            'prepared system is outside the target workspace')
+    entries = list(tree.iterdir())
+    require(all(not os.path.lexists(root/entry.name) for entry in entries),
+            'prepared system would overwrite an existing target entry')
     efi_free = os.statvfs(esp)
     require(loader.stat().st_size + 1024*1024 < efi_free.f_bavail*efi_free.f_frsize, 'insufficient ESP free space')
-    recheck(value, fresh=True)
+    recheck(value, fresh=True, workspace=workspace)
     write_json(root/MARKER, dict(format='mojt-mounted-install-incomplete-v1', target=value,
                                 deployment=checked['deployment']['id']))
     published = False
     try:
-        print('Mojt bootstrap: copying completed native installation to mounted target...', flush=True)
-        run('cp', '-a', '--', str(tree)+'/.', str(root)+'/')
-        recheck(value, fresh=False)
+        print('Mojt bootstrap: publishing completed native installation on the target...', flush=True)
+        for entry in entries:
+            entry.rename(root/entry.name)
+        recheck(value, fresh=False, workspace=workspace)
         chosen, installed, unused = selection.current(root, verify=True)
         require(chosen == checked['selection'] and
                 installed[chosen['description']['selected']]['record'] == checked['deployment'],
-                'copied native installation differs from constructed selection')
+                'published native installation differs from constructed selection')
         run('sync', '-f', root)
         staging = esp/('.mojt-bootstrap-'+uuid.uuid4().hex)
         (staging/'EFI/BOOT').mkdir(parents=True)
@@ -284,7 +298,7 @@ def publish(value, *, tree, result, bootstrap, inputs_id=None):
             shutil.copyfileobj(source, output); output.flush(); os.fsync(output.fileno())
         require(artifact.file_sha(destination) == artifact.file_sha(loader), 'copied EFI loader differs')
         run('sync', '-f', esp)
-        recheck(value, fresh=False)
+        recheck(value, fresh=False, workspace=workspace)
         require(not os.path.lexists(esp/'EFI'), 'ESP destination appeared; refusing replacement')
         (staging/'EFI').rename(esp/'EFI'); published = True
         run('sync', '-f', esp)
@@ -330,9 +344,9 @@ def build(args, *, configure=None):
         require(args.expected_root_uuid is not None and args.expected_efi_partuuid is not None,
                 'mounted writes require --expected-root-uuid and --expected-efi-partuuid from preview')
     prepared = copy.copy(args)
-    parent = native.WORK_PARENT.resolve(strict=True)
-    tx.protected_directory(parent/('.mounted-check-'+uuid.uuid4().hex), label='mounted bootstrap workspace')
     if args.dry_run:
+        parent = native.WORK_PARENT.resolve(strict=True)
+        tx.protected_directory(parent/('.mounted-check-'+uuid.uuid4().hex), label='mounted bootstrap workspace')
         prepared.output = parent/('.mojt-mounted-preview-'+uuid.uuid4().hex)
         evidence = native.preview(prepared)
         checks = preflight(prepared, evidence, mounted=True)
@@ -340,14 +354,35 @@ def build(args, *, configure=None):
         return dict(format='mojt-mounted-bootstrap-preview-v1', target=value, preflight=checks,
                     base=evidence['base']['id'], kernel=evidence['kernel']['id'],
                     target_written=False, boot_acceptance=False)
-    with locked(value), tempfile.TemporaryDirectory(prefix='mojt-mounted-', dir=parent) as temporary:
-        prepared.output = Path(temporary)/'unused-image-output'
-        def check(evidence):
-            preflight(prepared, evidence, mounted=True)
-            recheck(value, fresh=True)
-        def finish(**values):
-            if configure is not None:configure(values['tree'])
-            return finalize(system_version=args.system_version, system_revision=args.system_revision, **options, **values)
-        def writer(**values):return publish(value, inputs_id=getattr(args,'installer_inputs_id',None), **values)
-        return native.build(prepared, finalize_tree=finish, preflight=check,
-                            filesystem_uuid=value['root']['uuid'], filesystem_writer=writer)
+    completed = None
+    with locked(value):
+        try:
+            with tempfile.TemporaryDirectory(prefix='.mojt-mounted-', dir=value['root']['path']) as temporary:
+                folder = Path(temporary)
+                info = folder.lstat()
+                workspace = (folder, (info.st_dev, info.st_ino))
+                prepared.output = folder/'unused-image-output'
+
+                def check(evidence):
+                    preflight(prepared, evidence, mounted=True)
+                    recheck(value, fresh=True, workspace=workspace)
+
+                def finish(**values):
+                    if configure is not None:configure(values['tree'])
+                    return finalize(system_version=args.system_version, system_revision=args.system_revision,
+                                    **options, **values)
+
+                def writer(**values):
+                    nonlocal completed
+                    completed = publish(value, inputs_id=getattr(args, 'installer_inputs_id', None),
+                                        workspace=workspace, **values)
+                    return completed
+
+                native.build(prepared, finalize_tree=finish, preflight=check,
+                             filesystem_uuid=value['root']['uuid'], filesystem_writer=writer,
+                             workspace_parent=folder)
+        except OSError as error:
+            if completed is not None:
+                raise tx.PublicationUncertain('Installed target retained; workspace cleanup failed: '+str(error)) from error
+            raise
+    return completed

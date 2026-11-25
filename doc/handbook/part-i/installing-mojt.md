@@ -15,10 +15,11 @@ the [media preparation guide](https://github.com/kjonasipersson-bert/mojt-linux/
 if you need to build the image yourself.
 
 Boot the medium in x86-64 UEFI mode with Secure Boot disabled for the unsigned
-bootloader. As root on the installation system, run
+bootloader. The installation medium opens a root shell on its console without
+a password prompt. Run
 
 ```sh
-/var/lib/mojt/installer-tools/run /run/mojt-system/bin/mbt install
+mbt install
 ```
 
 Choose the whole disk and the swap size in GiB. Enter selects zero swap.
@@ -31,6 +32,8 @@ installation medium, and boot from the target disk. Log in with the password
 you just set. Use `cat /usr/lib/os-release` to check the running Base and
 `cat /proc/swaps` to check that any requested swap partition is active.
 
+The USB medium is read-only during the session. Temporary files and live
+settings are kept in RAM and discarded when the machine shuts down.
 The installer uses one whole disk with a storage driver supported by the
 installation kit's hardware profile. The prompts use the console keyboard
 layout of the booted medium.

@@ -417,12 +417,12 @@ def prepare_vm_root_shell(tree, version, replacement=None, system_shell=None):
     return replacement
 
 
-def provision_vm_root_login(tree, password_hash=None, console="serial"):
+def provision_vm_root_login(tree, password_hash=None, console="serial", *, lock_root=False):
     """Initialize *copied* guest shadow files, never host credentials.
 
     Existing shadow files are preserved; a missing one needs an explicitly
-    supplied hash (normally gathered from the terminal). Other accounts
-    are locked rather than accidentally receiving usable passwords.
+    supplied hash (normally gathered from the terminal) or an explicitly
+    locked root for installer media. Other accounts are always locked.
     """
     etc = require_directory(tree / "state/etc", "copied persistent /etc")
     passwd = etc / "passwd"
@@ -450,6 +450,8 @@ def provision_vm_root_login(tree, password_hash=None, console="serial"):
                 fail("expected root:x:0:0 in copied /etc/passwd")
     if root_count != 1:
         fail("expected exactly one root account")
+    if lock_root and (shadow.exists() or password_hash is not None):
+        fail("installer media require fresh, locked root credentials")
     if shadow.exists():
         if password_hash is not None:
             fail("refusing to overwrite existing /etc/shadow with new credentials")
@@ -462,7 +464,9 @@ def provision_vm_root_login(tree, password_hash=None, console="serial"):
         if stat.S_IMODE(shadow.stat().st_mode) & 0o077:
             fail("/etc/shadow has unsafe read/write permissions")
     else:
-        if password_hash is None or not password_hash.startswith("$6$"):
+        if lock_root:
+            password_hash = "!"
+        elif password_hash is None or not password_hash.startswith("$6$"):
             fail("root password has not been provisioned")
         today = int(time.time() // 86400)  # Shadow uses days since Unix epoch.
         lines = [
@@ -862,6 +866,10 @@ def build(args, *, finalize_tree=None, filesystem_uuid=None, filesystem_writer=N
             tree.mkdir()
             populate_disk_tree(target, version, tree)
             installer_inputs = getattr(args,'installer_inputs',None)
+            # Only a fresh media image gets direct console access. Mounted
+            # installations always use the ordinary target login policy.
+            installer_console = installer_inputs is not None and filesystem_writer is None
+            login_mode = "installer-console" if installer_console else args.login_mode
             if installer_inputs is not None:
                 from mojt_bootstrap_inputs import LOCATION
                 destination = tree/LOCATION
@@ -878,7 +886,7 @@ def build(args, *, finalize_tree=None, filesystem_uuid=None, filesystem_writer=N
                         fail(f"Base mountpoint /{name} must be empty for System assembly")
                     path.mkdir(exist_ok=True)
                 system_version = support.install(
-                    tree, payload, record, busybox, args.login_mode, Path(__file__).resolve().parents[1],
+                    tree, payload, record, busybox, login_mode, Path(__file__).resolve().parents[1],
                     console=console, hardware_profile=physical, generation=explicit_system,
                     with_build_tools=getattr(args,"with_build_tools",False))
                 assembled_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -905,9 +913,9 @@ def build(args, *, finalize_tree=None, filesystem_uuid=None, filesystem_writer=N
                 prepare_vm_root_shell(tree, version, args.root_shell, system_shell=system_shell)
                 copied_shadow = tree / "state/etc/shadow"
                 password_hash = None
-                if not copied_shadow.exists() and not copied_shadow.is_symlink():
+                if not installer_console and not copied_shadow.exists() and not copied_shadow.is_symlink():
                     password_hash = password_hash_from_terminal()
-                provision_vm_root_login(tree, password_hash, console=console)
+                provision_vm_root_login(tree, password_hash, console=console, lock_root=installer_console)
             else:
                 warn_missing_shadow(tree)
                 print("mojt-vm-build: WARNING: development mode gives unauthenticated "
@@ -988,7 +996,7 @@ def build(args, *, finalize_tree=None, filesystem_uuid=None, filesystem_writer=N
                             "hardware": hardware_record if support else None,
                             "disk_layout": disk_layout, "boot_record": native_boot['deployment'] if native_boot else boot_record,
                             "additional_boot_records": extra_records,
-                            "login_mode": args.login_mode}, indent=2) + "\n",
+                            "login_mode": login_mode}, indent=2) + "\n",
                 encoding="ascii",
             )
             # Native-v2 still has privileged final verification in its caller.

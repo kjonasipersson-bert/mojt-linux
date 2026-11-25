@@ -99,13 +99,19 @@ class RootTests(unittest.TestCase):
 @unittest.skipUnless(os.geteuid()==0 and shutil.which('unshare') and shutil.which('mount'),'private mount namespace requires root and mount tools')
 class MountTests(unittest.TestCase):
     def test_real_mounts_keep_root_and_local_writable_and_release_content_readonly(self):
-        result=subprocess.run(['unshare','--mount','--propagation','private',sys.executable,'-B',str(Path(__file__).resolve()),'--mount-probe'],
+        self.run_probe('--mount-probe')
+
+    def test_installer_uses_ram_and_keeps_backing_mount_readonly(self):
+        self.run_probe('--installer-mount-probe')
+
+    def run_probe(self, mode):
+        result=subprocess.run(['unshare','--mount','--propagation','private',sys.executable,'-B',str(Path(__file__).resolve()),mode],
                               capture_output=True,text=True)
         if result.returncode and 'unshare failed: Operation not permitted' in result.stderr:self.skipTest('mount namespaces unavailable')
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
 
-def mount_probe():
+def mount_probe(installer=False):
     def run(args):
         # util-linux can reparse host uid options while remounting a user-namespace
         # tmpfs fixture. The real handover uses BusyBox on the installation disk.
@@ -129,25 +135,49 @@ def mount_probe():
                 point=runtime/name;point.mkdir();run(['mount','--bind',point,point])
             context=dict(tree=tree,profile=profile,modules=modules,mounts=[dict(source='nix',target='nix')],
                          provider_roots=['nix/store/object'],hostname='fixture',source=fixtures.fixture(),deployment=dict(id='sha256:'+'0'*64))
+            if installer:
+                description=context['source']['description']
+                description['boot']['installer_media']=True
+                context['source']=handover.record(handover.model.INPUTS,description)
+                kit=disk/'state'/handover.INSTALLER_INPUTS;kit.mkdir(parents=True)
+                (kit/'inputs.json').write_text('local inputs')
+                (disk/'state/etc/hostname').write_text('fixture')
+                run(['mount','-o','remount,ro',disk])
             def runner(args):
                 if args[0]!='hostname':run(args)
             def execute(*unused):
                 for name in ('data','opt','srv'):
                     (newroot/name).mkdir(exist_ok=True);(newroot/name/'keep').write_text('persistent')
-                (newroot/'usr/local/keep').write_text('local')
-                for name in ('usr/bin/tool','run/mojt-system/start','nix/store/object/keep'):
+                immutable=['usr/bin/tool','run/mojt-system/start','nix/store/object/keep']
+                if installer:
+                    (newroot/'etc/hostname').write_text('temporary hostname')
+                    (newroot/'var/tmp/probe').touch()
+                    (newroot/'tmp/probe').touch()
+                    (newroot/'root/probe').touch()
+                    assert (newroot/handover.INSTALLER_INPUTS/'inputs.json').read_text()=='local inputs'
+                    assert os.statvfs(newroot/'run/mojt-disk').f_flag & os.ST_RDONLY
+                    immutable += [handover.INSTALLER_INPUTS+'/inputs.json','usr/local/keep','run/mojt-disk/state/etc/hostname']
+                else:
+                    (newroot/'usr/local/keep').write_text('local')
+                for name in immutable:
                     try:(newroot/name).write_text('must fail')
                     except OSError as error:assert error.errno==errno.EROFS,(name,error)
                     else:raise AssertionError('release content writable: '+name)
                 assert 'DefaultDependencies=no' in (newroot/'run/systemd/system/usr.mount.d/10-mojt-exitrd.conf').read_text()
-                assert 'DefaultDependencies=no' in (newroot/'run/systemd/system/usr-local.mount.d/10-mojt-exitrd.conf').read_text()
+                if not installer:
+                    assert 'DefaultDependencies=no' in (newroot/'run/systemd/system/usr-local.mount.d/10-mojt-exitrd.conf').read_text()
                 raise Booted()
             with mock.patch.object(handover.base,'store_info',return_value=dict(installation='1'*32)):
                 try:handover._enter(disk,context,{},runner=runner,execute=execute,newroot=newroot,runtime=runtime)
                 except Booted:pass
                 else:raise AssertionError('handover did not reach switch_root')
-            for name in ('data','opt','srv'):assert (disk/'state/rootfs'/name/'keep').read_text()=='persistent'
-            assert (disk/'state/local/keep').read_text()=='local'
+            if installer:
+                assert not (disk/'state/rootfs').exists()
+                assert not (disk/'state/local').exists()
+                assert (disk/'state/etc/hostname').read_text()=='fixture'
+            else:
+                for name in ('data','opt','srv'):assert (disk/'state/rootfs'/name/'keep').read_text()=='persistent'
+                assert (disk/'state/local/keep').read_text()=='local'
             assert (tree/'usr/bin/tool').read_text()=='Base release A'
             assert (profile/'start').read_text()=='System start'
         finally:
@@ -160,4 +190,5 @@ def mount_probe():
 
 if __name__=='__main__':
     if sys.argv[1:]==['--mount-probe']:mount_probe()
+    elif sys.argv[1:]==['--installer-mount-probe']:mount_probe(installer=True)
     else:unittest.main()

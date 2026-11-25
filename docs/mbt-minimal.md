@@ -128,12 +128,16 @@ environment nor MBT changes Base libc or claims arbitrary plugin ABI safety.
 The [mounted installation increment](mounted-installation.md) adds the same
 construction path for an empty mounted ext4 or Btrfs root and FAT32 ESP on one prepared
 GPT disk. USB is used for startup/installation; SSD installation precedes the
-physical compiler/performance session. `--with-installer-inputs` carries reusable
-local data, and `--inputs DIRECTORY` consumes it without a checkout. The mounted
+physical compiler/performance session. `--with-installer-inputs` builds
+read-only installer media with the offline tools from a System export prepared
+with `--with-installer-tools`. `--inputs DIRECTORY` consumes the local input kit
+without a checkout. The mounted
 path does not partition, format or overwrite an existing installation.
 
 The default profile is x86-64, serial console, UEFI/GPT and VirtIO. Bootstrap requires
-an account-enabled step-10 System payload and interactive password login. With
+an account-enabled System payload (step 10 or later). Installed targets and
+ordinary images use interactive password login. Installer media open a root
+shell on the console with the root password locked. With
 `--output`, it creates a new regular disk image; this mode accepts no physical
 target device. Ext4 is the image default. For Btrfs, pass `--root-fs btrfs` when creating an image or installing to
 a prepared mounted Btrfs target. This requires `mkfs.btrfs` (Debian package `btrfs-progs` or a fresh
@@ -161,10 +165,9 @@ to exercise the real private PID/mount namespace and host `chroot` entry with
 a guest-only PATH. It neither starts the candidate System nor asks for a
 password. The versioned `preflight` report distinguishes a passed privileged
 probe from an ordinary-user preview where that probe has not run.
-Actual image
-creation requires root and an interactive terminal for the new guest password;
-repeat the same command without `--dry-run` in that context. No password flags or
-automatic privilege escalation are provided. `mbt env --profile image` supplies
+Actual image creation requires root. A normal image or mounted target also
+requires an interactive terminal for the new guest password. Repeat the same
+command without `--dry-run` in that context. `mbt env --profile image` supplies
 the image tools, including the namespace/mount helpers; use its existing `run`
 launcher if these tools are not already available on the builder.
 
@@ -212,7 +215,7 @@ and install/activate it with MPM.
 ### Generic PC image profile
 
 `--hardware-profile pc-x86_64 --firmware-root EXTRACTED_FIRMWARE_ROOT` uses
-UEFI/local password login, includes NVMe and VirtIO SCSI alongside SATA/USB early
+UEFI and a local console, includes NVMe and VirtIO SCSI alongside SATA/USB early
 drivers, and probes runtime devices through standard udev rules. It requires the
 broader fixed firmware/license set described in the Handbook's
 [hardware chapter](../doc/handbook/part-iii/hardware.md). Firmware remains part of
@@ -224,7 +227,7 @@ an existing selection. Its image launcher also accepts `QEMU_DISK_BUS=nvme`.
 
 `--hardware-profile thinkpad-x1-carbon-3 --firmware-root EXTRACTED_FIRMWARE_ROOT`
 selects the existing ThinkPad X1 Carbon 3 hardware policy: UEFI, local `tty1`
-password login, USB/SATA/ext4 and keyboard modules in the initramfs, and explicit
+console, USB/SATA/ext4 and keyboard modules in the initramfs, and explicit
 runtime graphics/Ethernet/Wi-Fi drivers. It uses the same native-v2 bootstrap;
 it does not turn the output path into a physical disk target.
 

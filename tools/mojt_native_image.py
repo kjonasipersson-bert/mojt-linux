@@ -389,7 +389,7 @@ def complete(tree, result, context, *, base, selected_system, root_uuid, console
 
 
 def build(args, vm=None, *, finalize_tree=None, preflight=None,
-          filesystem_uuid=None, filesystem_writer=None):
+          filesystem_uuid=None, filesystem_writer=None, workspace_parent=None):
     # Fresh image defaults must be traversable independently of the host's
     # private lab mask. Temporary workspaces and credentials have explicit modes.
     previous = os.umask(0o022)
@@ -399,14 +399,16 @@ def build(args, vm=None, *, finalize_tree=None, preflight=None,
         if preflight is not None:options['preflight']=preflight
         if filesystem_writer is not None:
             options.update(filesystem_uuid=filesystem_uuid,filesystem_writer=filesystem_writer)
-        elif filesystem_uuid is not None:raise ValueError('filesystem UUID requires a mounted target writer')
+        elif filesystem_uuid is not None or workspace_parent is not None:
+            raise ValueError('filesystem UUID or custom workspace requires a mounted target writer')
+        if workspace_parent is not None:options['workspace_parent'] = workspace_parent
         return _build(args,vm,**options)
     finally:
         os.umask(previous)
 
 
 def _build(args, vm=None, *, finalize_tree=None, preflight=None,
-           filesystem_uuid=None, filesystem_writer=None):
+           filesystem_uuid=None, filesystem_writer=None, workspace_parent=None):
     evidence = preview(args)
     require(not getattr(args,'hardware_profile',None) or finalize_tree is not None,'native hardware images require mbt bootstrap')
     if args.dry_run:
@@ -420,12 +422,15 @@ def _build(args, vm=None, *, finalize_tree=None, preflight=None,
         spec.loader.exec_module(vm)
     output = Path(os.path.abspath(args.output))
     output.parent.mkdir(parents=True, exist_ok=True)
-    if not os.path.lexists(WORK_PARENT):
-        transaction.protected_directory(WORK_PARENT,label='native build workspace')
-        WORK_PARENT.mkdir(mode=0o1777);WORK_PARENT.chmod(0o1777)
+    if workspace_parent is None:
+        if not os.path.lexists(WORK_PARENT):
+            transaction.protected_directory(WORK_PARENT,label='native build workspace')
+            WORK_PARENT.mkdir(mode=0o1777);WORK_PARENT.chmod(0o1777)
+        workspace_parent = WORK_PARENT.resolve(strict=True)
     # MPM must never follow a root-owned target through a caller-owned home.
     # Check the scratch parent's complete ancestry before creating any work.
-    work_parent = WORK_PARENT.resolve(strict=True)
+    work_parent = Path(workspace_parent)
+    require(work_parent.is_dir(), 'missing native build workspace')
     transaction.protected_directory(work_parent/('.mojt-native-check-'+uuid.uuid4().hex),label='native build workspace')
     with tempfile.TemporaryDirectory(prefix="mojt-native-inputs-",dir=work_parent) as work, \
             tempfile.TemporaryDirectory(prefix=".mojt-native-image-", dir=output.parent) as publish:

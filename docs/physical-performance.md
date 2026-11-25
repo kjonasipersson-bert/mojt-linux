@@ -19,18 +19,10 @@ harness, a hardware benchmark suite or a full generation cross-product.
 Use the supported ThinkPad X1 Carbon 3 profile and the accepted native-v2
 bootstrap path. Keep the accepted VM image, builds and inputs as the reference.
 
-For a device marketed as 32 GB, prepare a **new 24576-MiB (24-GiB) image** using
-the existing `mbt bootstrap --disk-size-mib 24576` option, the same exact
-Base/Kernel/System inputs, the hardware profile and
-`--with-build-tools --with-installer-inputs`.
-Use a new output directory and a fresh guest password. This is ordinary bootstrap,
-using the same constructor as mounted SSD installation. Do not truncate the 32768-MiB
-reference image: changing just the file length would leave its filesystem and
-GPT inconsistent. No resizing of the accepted image is needed.
-
-A 24576-MiB image requires 25769803776 bytes; the 32768-MiB reference requires
-34359738368 bytes and is too large for many nominal 32-GB devices. Inspect the
-actual destination capacity in bytes before deciding it fits. The destination's
+Prepare a new image with the [installer media build](mounted-installation.md#prepare-a-self-contained-installer-image).
+Use the same exact Base and Kernel inputs, the hardware profile, and a System
+export with offline installation tools. Compare the generated image's logical
+size with the actual destination capacity in bytes. The destination's
 model/serial and mounted partitions must be inspected on the Debian host before
 a separately authorized write. This guide does not select a disk or provide a
 generic disk-write command. Use the one-time UEFI boot menu with Secure Boot
@@ -42,20 +34,15 @@ or writing it. A successful static-exitrd shutdown is the completion signal;
 do not copy a live disk. Do not attach two copies with the same filesystem UUID
 during physical boot.
 
-Copy this guide and [`tests/measure-command.sh`](../tests/measure-command.sh)
-from one reviewed, pinned repository revision into `/var/lib/mojt/performance/`
-before starting the measurements. This can be done in the running VM before its
-clean shutdown, or once booted on the physical machine. Keep the helper root-owned
-and readable (`0644`); it is invoked through Bash. The measurement helper needs
-no System rebuild, offline filesystem editing or additional package. Bash and
-`date` are already supplied by the builder. Retain its repository revision and
-SHA256 with the results; hashes identify content, not its publisher.
+The USB image's bundled kit and tools can install Mojt to the SSD without
+a checkout or compiler. Check the console, keyboard and basic network
+usability in the live session. Boot from SSD before collecting timings.
 
-Prepare only the private **image-tool** environment on the USB as described in
-the installation guide. Its carried kit and tools then install Mojt to the
-prepared SSD partitions without a checkout or compiler. Boot from SSD before
-collecting the following timings; a USB boot needs only login, keyboard/display,
-basic network usability and available installed tools.
+Copy this guide and [`tests/measure-command.sh`](../tests/measure-command.sh)
+from one reviewed, pinned repository revision into the SSD's
+`/var/lib/mojt/performance/`. Keep the helper root-owned and readable
+(`0644`) and invoke it through Bash. Retain its repository revision and
+SHA256 with the results.
 
 The new SSD installation carries the normal System closure and exact installed
 Kernel/provenance, but no compiler environment or previous build objects. Its
@@ -64,9 +51,7 @@ Record outputs already shared with System; this is not an entirely empty Nix
 store. Read the original Debian config from the retained Kernel provenance and
 acquire the pinned upstream source when needed. Check free space on SSD before
 compiling, allowing for objects, staged modules, package and installation.
-The original VM remains the reference with earlier builds retained. Copy the
-small timing helper/guide into the SSD's persistent state if they were prepared
-on USB; installation does not copy the USB's general mutable state.
+The original VM remains the reference with earlier builds retained.
 
 ## Measurement rules
 

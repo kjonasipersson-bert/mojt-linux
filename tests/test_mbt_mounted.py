@@ -202,6 +202,40 @@ class MountedInspectionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'mountpoint identity changed'):
             mounted.recheck(value, fresh=True)
 
+    def test_mounted_build_places_native_work_on_target_and_cleans_it(self):
+        from contextlib import nullcontext
+
+        args = SimpleNamespace(target_root=self.root, efi_directory=self.esp, dry_run=False,
+                               expected_root_uuid=UUID, expected_efi_partuuid=ESP_UUID)
+        outcome = {'receipt': 'fixture'}
+        def build(prepared, *, workspace_parent, preflight, filesystem_writer, **options):
+            self.assertEqual(workspace_parent.parent,self.root)
+            self.assertEqual(prepared.output.parent,workspace_parent)
+            preflight({})
+            return filesystem_writer()
+
+        with mock.patch.object(mounted,'locked',return_value=nullcontext()), \
+             mock.patch.object(bootstrap,'preflight'), \
+             mock.patch.object(mounted.native,'build',side_effect=build), \
+             mock.patch.object(mounted,'publish',return_value=outcome) as publish:
+            self.assertEqual(mounted.build(args),outcome)
+            self.assertEqual(publish.call_args.kwargs['workspace'][0].parent,self.root)
+        self.assertEqual(list(self.root.iterdir()),[])
+
+    def test_fresh_recheck_only_allows_the_current_private_workspace(self):
+        value = mounted.inspect(self.root,self.esp)
+        folder = self.root/'.mojt-mounted-test'
+        folder.mkdir(mode=0o700)
+        info = folder.stat()
+        workspace = (folder,(info.st_dev,info.st_ino))
+        mounted.recheck(value,fresh=True,workspace=workspace)
+        with self.assertRaisesRegex(ValueError,'not empty'):
+            mounted.recheck(value,fresh=True)
+        folder.rename(self.root/'old-workspace')
+        folder.mkdir(mode=0o700)
+        with self.assertRaisesRegex(ValueError,'workspace changed'):
+            mounted.recheck(value,fresh=True,workspace=workspace)
+
     def test_aliases_child_mounts_live_disk_swap_duplicate_uuid_and_existing_efi_are_refused(self):
         original=copy.deepcopy(self.rows)
         for extra in (dict(self.rows[0],path='/elsewhere'),
@@ -240,8 +274,13 @@ class PublicationTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
         self.work = Path(self.tmp.name); self.root = self.work/'target'; self.esp = self.work/'esp'
-        self.tree = self.work/'filesystem'; self.result = self.work/'result'
-        for path in (self.root,self.esp,self.tree,self.result):path.mkdir()
+        self.root.mkdir(); self.esp.mkdir()
+        folder = self.root/'.mojt-mounted-fixture'
+        folder.mkdir(mode=0o700)
+        info = folder.stat()
+        self.workspace = (folder, (info.st_dev, info.st_ino))
+        self.tree = folder/'filesystem'; self.result = folder/'result'
+        self.tree.mkdir(); self.result.mkdir()
         (self.tree/'boot/mojt').mkdir(parents=True)
         (self.tree/'boot/mojt/grub.cfg').write_text('exact menu\n')
         (self.tree/'retained').write_bytes(b'installed artifact bytes')
@@ -256,8 +295,8 @@ class PublicationTests(unittest.TestCase):
                 self.events.append(('sync',str(args[-1]),(self.esp/'EFI').exists()))
                 if self.fail == 'after-publication' and (self.esp/'EFI').exists():raise OSError('late flush failure')
                 return subprocess.CompletedProcess([],0)
-            if name == 'cp' and self.fail == 'copy':
-                (self.root/'partial').write_text('incomplete copy');raise OSError('copy failed')
+            if name == 'cp':
+                raise AssertionError('publishing on the target must not copy the assembled tree')
             return original_run(name,*args,**kwargs)
         def verify(root,**kwargs):
             if root == self.root:
@@ -268,18 +307,22 @@ class PublicationTests(unittest.TestCase):
             return self.choice,{IDENTITY:{'record':self.deployment}},b'menu'
         def loader(config,work,*args,**kwargs):
             path=work/'loader';path.write_bytes(b'synthetic EFI bytes');return path
-        def recheck(value,*,fresh):
-            if fresh:mounted.empty(self.root,root=True);mounted.empty(self.esp)
+        def recheck(value,*,fresh,workspace):
+            self.assertEqual(workspace,self.workspace)
+            if fresh:mounted.empty(self.root,root=True,workspace=workspace);mounted.empty(self.esp)
         for target,attribute,side in ((mounted,'run',run),(mounted,'recheck',recheck),
                                      (mounted.boot,'efi_loader',loader),(mounted.selection,'current',verify)):
             patch=mock.patch.object(target,attribute,side_effect=side);patch.start();self.addCleanup(patch.stop)
         patch=mock.patch.object(bootstrap,'inspect_result',return_value=self.outcome);patch.start();self.addCleanup(patch.stop)
 
     def publish(self):
-        return mounted.publish(self.value,tree=self.tree,result=self.result,bootstrap=self.outcome,inputs_id=IDENTITY)
+        return mounted.publish(self.value,tree=self.tree,result=self.result,bootstrap=self.outcome,
+                               workspace=self.workspace,inputs_id=IDENTITY)
 
     def test_content_is_verified_and_flushed_before_fallback_efi_publication(self):
+        original = (self.tree/'retained').stat().st_ino
         result=self.publish()
+        self.assertEqual((self.root/'retained').stat().st_ino,original)
         self.assertEqual(result['deployment'],IDENTITY)
         self.assertEqual((self.esp/'EFI/BOOT/BOOTX64.EFI').read_bytes(),b'synthetic EFI bytes')
         self.assertFalse((self.root/mounted.MARKER).exists())
@@ -290,21 +333,28 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(self.events[2],('sync',str(self.esp),False))
         self.assertEqual(self.events[3],('sync',str(self.esp),True))
 
-    def test_copy_or_verification_failure_retains_partial_content_without_bootloader(self):
-        for phase in ('copy','verify'):
-            with self.subTest(phase=phase):
-                self.fail=phase
-                with self.assertRaises((OSError,ValueError)):self.publish()
-                self.assertTrue((self.root/mounted.MARKER).is_file())
-                self.assertFalse((self.esp/'EFI').exists())
-                if phase == 'copy':self.assertTrue((self.root/'partial').exists())
-                shutil.rmtree(self.root);self.root.mkdir()
-                shutil.rmtree(self.result.parent/'mounted-efi')
+    def test_move_failure_retains_marker_without_bootloader(self):
+        rename = Path.rename
+        def fail(path, target):
+            if path.parent == self.tree:
+                raise OSError('publish move failed')
+            return rename(path, target)
+        with mock.patch.object(Path,'rename',new=fail):
+            with self.assertRaisesRegex(OSError,'move failed'):self.publish()
+        self.assertTrue((self.root/mounted.MARKER).is_file())
+        self.assertFalse((self.esp/'EFI').exists())
+
+    def test_verification_failure_retains_published_content_without_bootloader(self):
+        self.fail = 'verify'
+        with self.assertRaisesRegex(ValueError,'proof differs'):self.publish()
+        self.assertTrue((self.root/'retained').is_file())
+        self.assertTrue((self.root/mounted.MARKER).is_file())
+        self.assertFalse((self.esp/'EFI').exists())
 
     def test_capacity_failure_writes_no_target_marker_or_efi(self):
         with mock.patch.object(mounted.os,'statvfs',return_value=SimpleNamespace(f_bavail=0,f_frsize=4096)):
             with self.assertRaisesRegex(ValueError,'free space'):self.publish()
-        self.assertEqual(list(self.root.iterdir()),[]);self.assertEqual(list(self.esp.iterdir()),[])
+        self.assertEqual(list(self.root.iterdir()),[self.workspace[0]]);self.assertEqual(list(self.esp.iterdir()),[])
 
     def test_post_publication_failure_is_explicit_and_never_removes_the_loader(self):
         self.fail='after-publication'

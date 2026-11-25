@@ -44,6 +44,21 @@ ADMIN_COMMANDS = {
     "less": ("less",),
     "editor": ("vi", "ex"),
 }
+INSTALLER_ROLES = {
+    "installer-coreutils": "coreutils",
+    "installer-cpio": "cpio",
+    "installer-btrfs": "btrfs-progs",
+    "installer-fat": "dosfstools",
+    "installer-grub": "grub2_efi",
+}
+INSTALLER_COMMANDS = {
+    "installer-coreutils": ("chroot", "cp", "du", "sync"),
+    "installer-cpio": ("cpio",),
+    "installer-btrfs": ("mkfs.btrfs",),
+    "installer-fat": ("mkfs.vfat",),
+    "installer-grub": ("grub-mkstandalone", "grub-script-check"),
+    "util-linux": ("sfdisk", "unshare", "mkswap"),
+}
 DIAGNOSTIC_COMMANDS = {
     "iputils": ("ping", "tracepath", "arping"),
     "dnsutils": ("dig", "nslookup"),
@@ -129,7 +144,7 @@ def require(condition, message):
         raise ValueError(message)
 
 
-def roles(step):
+def roles(step, *, installer_tools=False):
     require(type(step) is int and step in ROLES, "System step must be an integer from 1 to 12")
     result = {key: value for n in range(1, step + 1) for key, value in ROLES[n].items()}
     if step >= 9:
@@ -137,6 +152,9 @@ def roles(step):
     if step >= 10:
         result.update({"manual-" + name: name for name in ("shadow", "pam", "sudo")})
     if step >= 11:result["manual-openssh"]="openssh"
+    if installer_tools:
+        require(step >= 12, "installer tools require System step 12")
+        result.update(INSTALLER_ROLES)
     return result
 
 
@@ -328,7 +346,8 @@ def load_payload(path):
     require(record_file.is_file() and not record_file.is_symlink(), "missing System payload metadata")
     record = json.loads(record_file.read_text())
     require(record["format"] == 1, "unsupported System payload format")
-    expected = roles(record["step"])
+    installer_tools = bool(set(record["packages"]) & INSTALLER_ROLES.keys())
+    expected = roles(record["step"], installer_tools=installer_tools)
     missing = sorted(set(expected) - set(record["packages"]))
     extra = sorted(set(record["packages"]) - set(expected))
     require(not missing and not extra, "unexpected System package roles in "+str(record_file)+
@@ -410,6 +429,10 @@ def load_payload(path):
     if record["step"] >= 11:
         executable(path,record,"openssh","bin/sshd","sbin/sshd")
         executable(path,record,"openssh","bin/ssh-keygen")
+    if installer_tools:
+        for role, commands in INSTALLER_COMMANDS.items():
+            for name in commands:
+                executable(path, record, role, "bin/" + name, "sbin/" + name)
     return record
 
 
@@ -460,7 +483,11 @@ def install(tree, payload, record, busybox, login_mode, repo, console="serial", 
 def _install(tree, payload, record, busybox, login_mode, repo, console, hardware_profile, generation, with_build_tools):
     step = record["step"]
     require(type(with_build_tools) is bool and (not with_build_tools or step >= 3), "builder tools require System step 3+ management runtime")
-    require(step < 10 or login_mode == "password", "account stage requires password login")
+    require(step < 10 or login_mode in ("password", "installer-console"),
+            "account stage requires password login or an installer console")
+    if login_mode == "installer-console":
+        require(with_build_tools and INSTALLER_ROLES.keys() <= record["packages"].keys(),
+                "installer media require a System export prepared with --with-installer-tools")
     require(console in ("serial", "local"), "unsupported console")
     require(hardware_profile in (None, "thinkpad-x1-carbon-3", "pc-x86_64"), "unsupported hardware profile")
     key = VERSION + "-step" + str(step)
@@ -527,11 +554,18 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
     console_command = ("/run/mojt-system/busybox getty -f /run/mojt/issue "
                "-l /run/mojt-system/login " + getty
                if login_mode == "password" else "/bin/sh -i")
-    if login_mode == "password":
+    console_environment = ""
+    if login_mode == "installer-console":
+        console_command = "/run/mojt-system/bin/bash --login -i"
+        console_environment = (
+            "WorkingDirectory=/root\nEnvironment=HOME=/root USER=root LOGNAME=root\n"
+            "ExecStartPre=/run/mojt-system/busybox echo Run mbt install to start the Mojt installer.\n"
+        )
+    elif login_mode == "password":
         (system / "login").symlink_to("busybox")
     put_unit("mojt-console.service", unit(
         "Mojt " + console + " console (" + login_mode + ")", console_command,
-        "Restart=always\nRestartSec=1\nIgnoreSIGPIPE=no\n"
+        console_environment + "Restart=always\nRestartSec=1\nIgnoreSIGPIPE=no\n"
         "Environment=PATH=/run/mojt-system/bin:/usr/bin:/bin\n"
         "StandardInput=tty\nStandardOutput=tty\n"
         "StandardError=journal\nTTYPath=/dev/" + tty + "\nTTYReset=yes\nTTYVHangup=yes",
@@ -684,18 +718,24 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
                     "trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=\n")
         roots = "/nix/var/nix/gcroots/mojt-system/" + key
         marker = "/nix/var/nix/.mojt-registration-loaded-" + key
-        setup += [
-            "mkdir -p /nix/var/nix/db " + roots,
-            f"if [ ! -f {marker} ]; then",
-            "    nix-store --load-db </run/mojt-system/registration",
-            f"    touch {marker}", "fi",
-        ]
+        if login_mode != "installer-console":
+            setup += [
+                "mkdir -p /nix/var/nix/db " + roots,
+                f"if [ ! -f {marker} ]; then",
+                "    nix-store --load-db </run/mojt-system/registration",
+                f"    touch {marker}", "fi",
+            ]
         root_directory = tree / roots.lstrip("/")
         root_directory.mkdir(parents=True)
         for obj in record["objects"]:
             name = Path(obj["path"]).name
             (root_directory / name).symlink_to(obj["path"])
-            setup.append(f"ln -sfn {obj['path']} {roots}/{name}")
+            if login_mode != "installer-console":
+                setup.append(f"ln -sfn {obj['path']} {roots}/{name}")
+    if login_mode == "installer-console":
+        for role, commands in INSTALLER_COMMANDS.items():
+            for name in commands:
+                export(name, role, "bin/" + name, "sbin/" + name)
     if step >= 4:
         for role, commands in ADMIN_COMMANDS.items():
             for name in commands:

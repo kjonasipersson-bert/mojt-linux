@@ -52,9 +52,9 @@ class SystemVmTests(unittest.TestCase):
         self.busybox = self.root / "fake-busybox"
         self.busybox.write_text("synthetic static BusyBox")
 
-    def fixture(self, step):
+    def fixture(self, step, *, installer_tools=False):
         packages = {}
-        for index, (role, attribute) in enumerate(system.roles(step).items(), 1):
+        for index, (role, attribute) in enumerate(system.roles(step, installer_tools=installer_tools).items(), 1):
             value = "/nix/store/" + f"{index:032d}" + "-" + role
             packages[role] = dict(attribute=attribute, output=value, version="test-version")
             base = self.payload / value.lstrip("/")
@@ -77,10 +77,14 @@ class SystemVmTests(unittest.TestCase):
                 **{role: ["bin/" + name for name in names]
                    for role, names in system.DIAGNOSTIC_COMMANDS.items()
                    if role not in ("iproute2", "kmod")},
+                **{role: ["bin/" + name for name in names]
+                   for role, names in system.INSTALLER_COMMANDS.items() if role != "util-linux"},
             }[role]
             # Real sysusers defaults may use an absolute dependency-store nologin.
             if role == "util-linux":
                 names = [*names, "bin/nologin"]
+                if installer_tools:
+                    names += ["bin/" + name for name in system.INSTALLER_COMMANDS[role]]
             base.mkdir(parents=True)
             for name in names:
                 system.write(base / name, "#!/bin/sh\nexit 0\n", 0o755)
@@ -1210,7 +1214,8 @@ esac""")
             return types.SimpleNamespace(returncode=0)
 
         args = types.SimpleNamespace(output=self.root / "export", step=step, yes=True,
-                                     dry_run=dry_run, source_manifest=Path("synthetic.toml"))
+                                     dry_run=dry_run, source_manifest=Path("synthetic.toml"),
+                                     with_installer_tools=False)
         with mock.patch.object(prepare.os, "geteuid", return_value=1000), \
                 mock.patch.object(prepare.shutil, "which", return_value="/synthetic/tool"), \
                 mock.patch.object(prepare, "nix_adapter", return_value=fake), \
