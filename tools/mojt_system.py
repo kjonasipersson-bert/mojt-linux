@@ -253,6 +253,32 @@ def executable(payload, record, role, *candidates):
     raise ValueError(f"missing {role} executable: {candidates}")
 
 
+def openssh_commands(payload, record):
+    """Find the OpenSSH package's public commands in the guest namespace."""
+    output = record["packages"]["openssh"]["output"]
+    objects = {payload / row["path"].lstrip("/") for row in record["objects"]}
+    commands = {}
+    for directory in ("bin", "sbin"):
+        path = virtual_file(payload, output + "/" + directory)
+        if not path.is_dir():
+            continue
+        for entry in sorted(path.iterdir()):
+            if entry.name.startswith("."):
+                continue
+            target = f"{output}/{directory}/{entry.name}"
+            resolved = virtual_file(payload, target)
+            if not resolved.is_file() or not resolved.stat().st_mode & 0o111:
+                continue
+            require(any(parent in objects for parent in resolved.parents),
+                    f"OpenSSH command outside the retained closure: {target}")
+            first = commands.setdefault(entry.name, target)
+            require(first == target or virtual_file(payload, first) == resolved,
+                    f"conflicting OpenSSH commands: {entry.name}")
+    missing = {"ssh", "scp", "sftp", "sshd", "ssh-keygen"} - commands.keys()
+    require(not missing, "missing OpenSSH commands: " + ", ".join(sorted(missing)))
+    return commands
+
+
 def retained_command(payload, record, name):
     """Select an unambiguous executable from this verified closure, never host PATH."""
     candidates = set()
@@ -427,8 +453,7 @@ def load_payload(path):
     if record["step"] >= 10:
         account_inputs(path, record)
     if record["step"] >= 11:
-        executable(path,record,"openssh","bin/sshd","sbin/sshd")
-        executable(path,record,"openssh","bin/ssh-keygen")
+        openssh_commands(path, record)
         executable(path, record, "systemd", "bin/systemd-tmpfiles")
     if installer_tools:
         for role, commands in INSTALLER_COMMANDS.items():
@@ -953,9 +978,9 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
         write(system / "manual-path", ":".join(["/run/mojt-system/share/man"] + manual_paths(payload, record)) + "\n")
         write(system / "zoneinfo-path", record["packages"]["tzdata"]["output"] + "/share/zoneinfo\n")
     if step >= 11:
-        export("sshd", "openssh", "bin/sshd", "sbin/sshd")
+        for name, target in openssh_commands(payload, record).items():
+            (system / "bin" / name).symlink_to(target)
         export("systemd-run", "systemd", "bin/systemd-run")
-        export("ssh-keygen", "openssh", "bin/ssh-keygen")
         if not installer_console:
             install_sshd(system, put_unit, executable(payload, record, "systemd", "bin/systemd-tmpfiles"))
     if step >= 10 and not installer_console:

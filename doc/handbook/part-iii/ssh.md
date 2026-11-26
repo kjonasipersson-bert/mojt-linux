@@ -6,9 +6,10 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # 6. Remote administration with SSH
 
-The installed System provides OpenSSH as `sshd.service`. The service is
-disabled by default. Its supplied configuration accepts public-key logins for
-ordinary accounts and disables password and root logins.
+The installed System provides the OpenSSH commands `ssh`, `scp`, `sftp`
+and `ssh-keygen`. The server runs as `sshd.service`, which is disabled by
+default. Its supplied configuration accepts public-key logins for ordinary
+accounts and disables password and root logins.
 
 Boot the installed system and follow [Network configuration](networking.md).
 Use `systemctl cat sshd.service` to check the installed unit. Images made

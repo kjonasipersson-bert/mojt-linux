@@ -69,7 +69,9 @@ class SystemVmTests(unittest.TestCase):
                 "curl": ["bin/curl"], "cacert": [], "iproute2": ["bin/ip", "bin/ss"],
                 "nix": ["bin/nix", "bin/nix-store", "bin/nix-instantiate"], "python": ["bin/python3"], "tar": ["bin/tar"],
                 "shell": ["bin/bash"], "tzdata": [], "man-db": ["bin/man", "bin/manpath"],
-                "openssh": ["bin/sshd", "bin/ssh-keygen"], "openssl": ["bin/openssl"],
+                "openssh": ["bin/ssh", "bin/scp", "bin/sftp", "bin/ssh-keygen", "bin/ssh-agent",
+                            "bin/.ssh-wrapped", "sbin/sshd", "libexec/sshd-session"],
+                "openssl": ["bin/openssl"],
                 "shadow": ["bin/" + n for n in system.accounts.COMMANDS],
                 "pam": ["bin/unix_chkpwd"], "sudo": ["bin/sudo", "sbin/visudo"],
                 "kmod": ["bin/modprobe", "bin/lsmod", "bin/modinfo"],
@@ -167,8 +169,13 @@ class SystemVmTests(unittest.TestCase):
 
     def test_step11_ships_an_optional_openssh_service(self):
         directory,record=self.install(11,"password")
-        self.assertTrue((directory/'bin/sshd').is_symlink())
-        self.assertTrue((directory/'bin/ssh-keygen').is_symlink())
+        output = record['packages']['openssh']['output']
+        for name in ('ssh', 'scp', 'sftp', 'ssh-keygen', 'ssh-agent'):
+            self.assertEqual(os.readlink(directory/'bin'/name), f'{output}/bin/{name}')
+        self.assertEqual(os.readlink(directory/'bin/sshd'), f'{output}/sbin/sshd')
+        self.assertFalse((directory/'bin/.ssh-wrapped').is_symlink())
+        self.assertFalse((directory/'bin/sshd-session').is_symlink())
+        self.assertTrue((self.tree / output.lstrip('/') / 'bin/.ssh-wrapped').is_file())
         self.assertFalse((directory/'bin/mojt-sshd').exists())
         self.assertFalse((directory/'tools/mojt_sshd.py').exists())
         self.assertFalse((directory/'units/mojt-sshd.service').exists())
