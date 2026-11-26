@@ -6,36 +6,56 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # 6. Remote administration with SSH
 
-A System assembled with OpenSSH support exports the upstream `sshd` and
-`ssh-keygen` commands. Configure OpenSSH in `/etc/ssh/sshd_config` and manage
-`sshd.service` with `systemctl`. Installing the binaries does not enable a
-listener or change local authentication policy.
+The System included in the current installation image provides OpenSSH's
+`sshd` and `ssh-keygen`. Remote login is disabled until you configure the
+server and enable `sshd.service`. The password chosen during installation
+is for the local console unless you explicitly allow password login over SSH.
+
+Boot the installed system, log in locally as root, and follow
+[Network configuration](networking.md) to bring up the network. The standard
+login profile puts System commands on your shell's `PATH`. Check that both
+OpenSSH commands are available.
+
+```sh
+command -v sshd && command -v ssh-keygen
+```
+
+If either command is missing, check that the running System includes OpenSSH
+and that your login shell loads the System profile. Use the steps below for a
+fresh SSH setup. On a machine that already has SSH configured, review its
+configuration and keep its host keys.
 
 ## 6.1. Prepare the account, host key and PAM
 
-As root, create `/etc/sysusers.d/sshd.conf` with:
+As root, prepare the directories used by the server. OpenSSH requires
+`/var/empty` to be empty and owned by root.
+
+```sh
+install -d -m 0755 /etc/ssh /etc/pam.d /etc/sysusers.d /etc/systemd/system /var/empty
+```
+
+Save this line in `/etc/sysusers.d/sshd.conf`.
 
 ```text
 u sshd - "OpenSSH privilege separation" /var/empty /bin/false
 ```
 
-Run `systemd-sysusers /etc/sysusers.d/sshd.conf`. The `sshd` account is a locked
-privilege-separation account, separate from the login account. Create the empty,
-root-owned `/var/empty` directory with mode 0755.
-
-Generate a machine host key if it is missing:
+Create the locked privilege-separation account.
 
 ```sh
-umask 077
-mkdir -p /etc/ssh
+systemd-sysusers /etc/sysusers.d/sshd.conf
+```
+
+If the machine has no Ed25519 host key yet, generate one.
+
+```sh
 ssh-keygen -t ed25519 -N '' -f /etc/ssh/ssh_host_ed25519_key
 ```
 
-Keep an existing host key when changing generations. Its private file has mode
-0600. The host key identifies the machine; it is needed for both password and
-public-key login.
+The host key identifies the machine to clients. Keep its private file at
+mode 0600 and retain the key across generation changes.
 
-Create `/etc/pam.d/sshd` using System's retained PAM modules:
+Save the following as `/etc/pam.d/sshd` to use the running System's PAM modules.
 
 ```text
 auth required /run/mojt-system/pam/pam_unix.so
@@ -47,18 +67,30 @@ session required /run/mojt-system/pam/pam_systemd.so
 
 ## 6.2. Choose authentication in sshd_config
 
-The following example explicitly permits root to log in with its existing
-password. Create `/etc/ssh/sshd_config`:
+This example allows root to log in with a public key. On the client, use an
+existing key pair or generate one with `ssh-keygen -t ed25519`. On Mojt, create
+the account's `.ssh` directory, then add the contents of the client's `.pub`
+file as a line in `/root/.ssh/authorized_keys`. Keep the private key on the
+client.
+
+```sh
+install -d -m 0700 /root/.ssh
+vi /root/.ssh/authorized_keys
+chmod 0600 /root/.ssh/authorized_keys
+```
+
+Save the following as `/etc/ssh/sshd_config`.
 
 ```text
 Port 22
 ListenAddress 0.0.0.0
 HostKey /etc/ssh/ssh_host_ed25519_key
 AllowUsers root
-PermitRootLogin yes
-PasswordAuthentication yes
-AuthenticationMethods password
-PubkeyAuthentication no
+PermitRootLogin prohibit-password
+PubkeyAuthentication yes
+AuthenticationMethods publickey
+AuthorizedKeysFile .ssh/authorized_keys
+PasswordAuthentication no
 KbdInteractiveAuthentication no
 PermitEmptyPasswords no
 UsePAM yes
@@ -66,28 +98,33 @@ SetEnv PATH=/run/mojt-system/bin:/var/lib/mojt/ports/current/bin:/usr/local/bin:
 Subsystem sftp internal-sftp
 ```
 
-The named login account must exist, have an executable shell and a usable
-password. Change `AllowUsers` to select another existing account. No account
-password is set or unlocked by writing this configuration.
+For an ordinary local account, set `AllowUsers` to that account and set
+`PermitRootLogin no`. Put `authorized_keys` in that account's home directory
+with the same permissions and ensure the account owns both `.ssh` and the file.
+The account must have an executable login shell.
 
-For public-key login instead, use `PubkeyAuthentication yes`,
-`AuthenticationMethods publickey`, `PasswordAuthentication no` and
-`PermitRootLogin prohibit-password`. Put the client's public key in that
-account's `~/.ssh/authorized_keys`, with the directory mode 0700 and file mode
-0600 owned by the account. Client private keys stay on the client.
+For password login as root on a trusted local test network, replace the four
+authentication settings below. Use the existing root password chosen during
+installation.
 
-See the upstream [sshd_config manual](https://man.openbsd.org/sshd_config.5)
-for listener and authentication settings. Configure an existing installation
-deliberately; preserve local configuration and host identity.
+```text
+PermitRootLogin yes
+PubkeyAuthentication no
+AuthenticationMethods password
+PasswordAuthentication yes
+```
+
+The example listens on all IPv4 interfaces. To restrict where SSH accepts
+connections, see the [sshd_config manual](https://man.openbsd.org/sshd_config.5).
 
 ## 6.3. Install the service and connect
 
-Create `/etc/systemd/system/sshd.service`:
+Save this unit as `/etc/systemd/system/sshd.service`.
 
 ```ini
 [Unit]
 Description=OpenSSH server
-After=network.target mojt-setup.service
+After=network.target mojt-setup.service systemd-logind.service
 
 [Service]
 Type=simple
@@ -102,21 +139,24 @@ KillMode=process
 WantedBy=mojt.target
 ```
 
-The System binary path and boot target follow Mojt's filesystem/boot layout.
-The daemon, configuration syntax and service controls are ordinary OpenSSH and
-systemd. Create `/run/sshd` with mode 0755 for the initial configuration check,
-then run:
+The unit gives systemd the full path to the System's `sshd` so it can start
+the server independently of the login shell's `PATH`.
+
+Create the temporary runtime directory for the first configuration check.
+If the check passes, enable the service for future boots and start it now.
 
 ```sh
-sshd -t -f /etc/ssh/sshd_config
-systemctl daemon-reload
-systemctl enable --now sshd.service
+install -d -m 0755 /run/sshd
+sshd -t -f /etc/ssh/sshd_config &&
+  systemctl daemon-reload &&
+  systemctl enable --now sshd.service
 systemctl status --no-pager sshd.service
 ssh-keygen -l -f /etc/ssh/ssh_host_ed25519_key.pub
-ip -brief address
+ip -4 -brief address
 ```
 
-From the client, substitute the target address:
+From the client, use the IPv4 address of Mojt's network interface. Compare the
+fingerprint on the first connection with the one printed at the local console.
 
 ```sh
 ssh root@MOJT_ADDRESS
@@ -124,22 +164,27 @@ ssh root@MOJT_ADDRESS 'mpm system status'
 sftp root@MOJT_ADDRESS
 ```
 
-Compare the host-key fingerprint on first connection. For the password example,
-use the existing root password. With a custom port use `ssh -p PORT` or
-`sftp -P PORT`. Inspect logs with `journalctl -u sshd.service -b`.
+Replace `root` if you configured another account. With a custom port use
+`ssh -p PORT` or `sftp -P PORT`. To select a client key at a custom path, use
+`ssh -i PATH_TO_PRIVATE_KEY`. Inspect logs with `journalctl -u sshd.service -b`.
 
-After editing configuration, validate it with `sshd -t` and restart the service
-with `systemctl restart sshd.service`. Disable its listener and boot enablement
-with `systemctl disable --now sshd.service`. The unit's `KillMode=process` leaves
-existing authenticated sessions running when stopping the listener; close them
-explicitly when required.
+After editing the configuration, validate it before restarting the service.
+
+```sh
+sshd -t -f /etc/ssh/sshd_config &&
+  systemctl restart sshd.service
+```
+
+Use `systemctl disable --now sshd.service` to stop the listener and disable it
+at boot. With `KillMode=process`, existing authenticated sessions continue
+running when the listener stops.
 
 ## 6.4. Persistent files and long builds
 
 Host keys and configuration under `/etc/ssh`, `/etc/pam.d/sshd`,
 `/etc/sysusers.d/sshd.conf`, the service unit and its enable link persist across
-compatible generation changes. `/run/sshd` is temporary and recreated by systemd.
-An older System without OpenSSH cannot serve this service.
+compatible generation changes. The login account's `authorized_keys` is also
+persistent. Systemd recreates `/run/sshd` each time the service starts.
 
 Compile Kernels under your existing account in a separate workspace, as described in
 the [MBT chapter](../part-i/mbt.md#43-build-a-kernel-as-an-ordinary-user).
