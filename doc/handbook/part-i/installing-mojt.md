@@ -88,4 +88,8 @@ findmnt -T /
 
 If you requested swap, run `cat /proc/swaps` to check that it is active.
 
+Follow [Network configuration](../part-iii/networking.md) to connect the
+installed system. To allow remote logins, complete the
+[OpenSSH setup](../part-iii/ssh.md).
+
 [Previous: Introduction](introduction.md) · [Next: MPM](mpm.md)

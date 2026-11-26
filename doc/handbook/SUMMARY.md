@@ -26,6 +26,7 @@ SPDX-License-Identifier: GPL-2.0-only
 - [6. Remote administration with SSH](part-iii/ssh.md)
 - [7. Building and installing a Kernel](part-iii/kernel.md)
 - [8. Hardware and firmware](part-iii/hardware.md)
+- [9. Network configuration](part-iii/networking.md)
 
 # Part IV. Development
 

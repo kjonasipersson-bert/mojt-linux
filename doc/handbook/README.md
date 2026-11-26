@@ -20,7 +20,7 @@ remain the references for formats, implementation details and acceptance evidenc
 ## Part I. Getting started
 
 1. [Introduction](part-i/introduction.md)
-2. [Installing Mojt](part-i/installing-mojt.md) — reserved; not written yet
+2. [Installing Mojt](part-i/installing-mojt.md)
 3. [mpm — Mojt package manager](part-i/mpm.md)
 4. [mbt — Mojt build/bootstrap tool](part-i/mbt.md)
 
@@ -31,6 +31,10 @@ remain the references for formats, implementation details and acceptance evidenc
 ## Part III. System administration
 
 5. [Filesystem layout and persistent state](part-iii/filesystem-layout.md) — writable root, release mounts and what generation changes preserve
+6. [Remote administration with SSH](part-iii/ssh.md)
+7. [Building and installing a Kernel](part-iii/kernel.md)
+8. [Hardware and firmware](part-iii/hardware.md)
+9. [Network configuration](part-iii/networking.md)
 
 ## Part IV. Development
 
