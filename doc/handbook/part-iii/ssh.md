@@ -12,16 +12,18 @@ server and enable `sshd.service`. The password chosen during installation
 is for the local console unless you explicitly allow password login over SSH.
 
 Boot the installed system, log in locally as root, and follow
-[Network configuration](networking.md) to bring up the network. Check that the
-running System provides both OpenSSH commands.
+[Network configuration](networking.md) to bring up the network. The standard
+login profile puts System commands on your shell's `PATH`. Check that both
+OpenSSH commands are available.
 
 ```sh
-ls -l /run/mojt-system/bin/sshd /run/mojt-system/bin/ssh-keygen
+command -v sshd && command -v ssh-keygen
 ```
 
-If these paths are missing, boot a System that includes OpenSSH before
-continuing. Use the steps below for a fresh SSH setup. On a machine that
-already has SSH configured, review its configuration and keep its host keys.
+If either command is missing, check that the running System includes OpenSSH
+and that your login shell loads the System profile. Use the steps below for a
+fresh SSH setup. On a machine that already has SSH configured, review its
+configuration and keep its host keys.
 
 ## 6.1. Prepare the account, host key and PAM
 
@@ -47,7 +49,7 @@ systemd-sysusers /etc/sysusers.d/sshd.conf
 If the machine has no Ed25519 host key yet, generate one.
 
 ```sh
-/run/mojt-system/bin/ssh-keygen -t ed25519 -N '' -f /etc/ssh/ssh_host_ed25519_key
+ssh-keygen -t ed25519 -N '' -f /etc/ssh/ssh_host_ed25519_key
 ```
 
 The host key identifies the machine to clients. Keep its private file at
@@ -137,16 +139,19 @@ KillMode=process
 WantedBy=mojt.target
 ```
 
+The unit gives systemd the full path to the System's `sshd` so it can start
+the server independently of the login shell's `PATH`.
+
 Create the temporary runtime directory for the first configuration check.
 If the check passes, enable the service for future boots and start it now.
 
 ```sh
 install -d -m 0755 /run/sshd
-/run/mojt-system/bin/sshd -t -f /etc/ssh/sshd_config &&
+sshd -t -f /etc/ssh/sshd_config &&
   systemctl daemon-reload &&
   systemctl enable --now sshd.service
 systemctl status --no-pager sshd.service
-/run/mojt-system/bin/ssh-keygen -l -f /etc/ssh/ssh_host_ed25519_key.pub
+ssh-keygen -l -f /etc/ssh/ssh_host_ed25519_key.pub
 ip -4 -brief address
 ```
 
@@ -166,7 +171,7 @@ Replace `root` if you configured another account. With a custom port use
 After editing the configuration, validate it before restarting the service.
 
 ```sh
-/run/mojt-system/bin/sshd -t -f /etc/ssh/sshd_config &&
+sshd -t -f /etc/ssh/sshd_config &&
   systemctl restart sshd.service
 ```
 
