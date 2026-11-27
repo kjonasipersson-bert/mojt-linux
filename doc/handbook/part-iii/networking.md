@@ -21,6 +21,11 @@ nmcli device status
 Use the names in the `DEVICE` column wherever the examples refer to an
 interface.
 
+System supplies a trust bundle for p11-kit, which provides certificate trust
+to the Nixpkgs Firefox build. During boot, System links the running generation's
+bundle at `/etc/ssl/trust-source/ca-bundle.trust.p11-kit` if that path is missing.
+Existing local trust files are preserved.
+
 ## 9.1. Ethernet with DHCP
 
 Plug in an Ethernet cable. On a network with DHCP, NetworkManager normally

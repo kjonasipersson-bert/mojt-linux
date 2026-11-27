@@ -91,7 +91,8 @@ or `man 5 sway` for configuration. Kitty defaults to DejaVu Sans Mono at
 13 points and reads `~/.config/kitty/kitty.conf` for user overrides.
 
 The wallpaper is fitted to each output. The session provides Mesa drivers and
-a DejaVu font fallback. It reuses an existing D-Bus session bus or starts one
+DejaVu and Noto fonts with Fontconfig defaults for graphical applications.
+It reuses an existing D-Bus session bus or starts one
 with the packaged configuration. If Sway cannot open graphics or input devices,
 check `XDG_SESSION_ID` and `XDG_RUNTIME_DIR` from the local login. An administrator
 can inspect the session with `loginctl list-sessions` over SSH. Waybar indicates

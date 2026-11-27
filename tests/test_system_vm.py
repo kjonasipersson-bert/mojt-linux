@@ -66,7 +66,7 @@ class SystemVmTests(unittest.TestCase):
                             "lib/systemd/systemd-timesyncd", "lib/systemd/systemd-logind",
                             "lib/systemd/systemd-user-runtime-dir", "lib/systemd/systemd-sysctl", "bin/loginctl", "bin/systemd-run"],
                 "dbus": ["bin/dbus-daemon"], "networkmanager": ["bin/NetworkManager", "bin/nmcli"],
-                "curl": ["bin/curl"], "cacert": [], "iproute2": ["bin/ip", "bin/ss"],
+                "curl": ["bin/curl"], "cacert": [], "cacert-p11kit": [], "iproute2": ["bin/ip", "bin/ss"],
                 "nix": ["bin/nix", "bin/nix-store", "bin/nix-instantiate"], "python": ["bin/python3"], "tar": ["bin/tar"],
                 "shell": ["bin/bash"], "tzdata": [], "man-db": ["bin/man", "bin/manpath"],
                 "openssh": ["bin/ssh", "bin/scp", "bin/sftp", "bin/ssh-keygen", "bin/ssh-agent",
@@ -123,6 +123,8 @@ class SystemVmTests(unittest.TestCase):
 
             if role == "cacert":
                 system.write(base / "etc/ssl/certs/ca-bundle.crt", "synthetic cert")
+            if role == "cacert-p11kit":
+                system.write(base / system.P11KIT_TRUST_BUNDLE.lstrip("/"), "synthetic p11-kit trust data")
         if step >= 10:
             system.write(self.tree / "state/etc/group", "root:x:0:\n")
             system.write(self.tree / "state/etc/shadow", "root:!:0:0:99999:7:::\n", 0o600)
@@ -987,6 +989,15 @@ esac""")
         setup = (directory / "setup").read_text()
         self.assertLess(setup.index("systemd-sysusers"), setup.index("/70-mojt-render.rules"))
         self.assertIn("/run/udev/rules.d/70-mojt-render.rules", setup)
+
+    def test_system_projects_p11kit_trust_from_the_retained_provider(self):
+        directory, record = self.install(2)
+        bundle = directory / "ca-bundle.trust.p11-kit"
+        output = record["packages"]["cacert-p11kit"]["output"]
+        self.assertEqual(str(bundle.readlink()), output + system.P11KIT_TRUST_BUNDLE)
+        setup = (directory / "setup").read_text()
+        self.assertIn("trust_bundle=" + system.P11KIT_TRUST_BUNDLE, setup)
+        self.assertIn('[ ! -e "$trust_bundle" ] && [ ! -L "$trust_bundle" ]', setup)
 
     def test_mpm_codec_is_selected_from_the_retained_closure_not_host_path(self):
         record = self.fixture(3)

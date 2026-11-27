@@ -22,10 +22,11 @@ accounts = importlib.util.module_from_spec(_accounts_spec)
 _accounts_spec.loader.exec_module(accounts)
 
 STORE_NAME = r"[0-9abcdfghijklmnpqrsvwxyz]{32}-[A-Za-z0-9+._?=-]+"
+P11KIT_TRUST_BUNDLE = "/etc/ssl/trust-source/ca-bundle.trust.p11-kit"
 ROLES = {
     1: {"systemd": "systemd"},
     2: {"dbus": "dbus", "networkmanager": "networkmanager", "curl": "curl",
-        "cacert": "cacert", "iproute2": "iproute2"},
+        "cacert": "cacert", "cacert-p11kit": "cacert.p11kit", "iproute2": "iproute2"},
     3: {"nix": "nix", "python": "python3", "tar": "gnutar"},
     4: {"procps": "procps", "util-linux": "util-linux", "less": "less", "editor": "nvi"},
     5: {"shell": "bashInteractive"},
@@ -374,6 +375,9 @@ def load_payload(path):
     require(record["format"] == 1, "unsupported System payload format")
     installer_tools = bool(set(record["packages"]) & INSTALLER_ROLES.keys())
     expected = roles(record["step"], installer_tools=installer_tools)
+    # Accept payloads made before System shipped the PKCS#11 trust data.
+    if "cacert-p11kit" not in record["packages"]:
+        expected.pop("cacert-p11kit", None)
     missing = sorted(set(expected) - set(record["packages"]))
     extra = sorted(set(record["packages"]) - set(expected))
     require(not missing and not extra, "unexpected System package roles in "+str(record_file)+
@@ -417,6 +421,9 @@ def load_payload(path):
             executable(path, record, role, "bin/" + name, "sbin/" + name)
         require(virtual_file(path, record["packages"]["cacert"]["output"] +
                              "/etc/ssl/certs/ca-bundle.crt").is_file(), "missing exported CA bundle")
+        if "cacert-p11kit" in record["packages"]:
+            require(virtual_file(path, record["packages"]["cacert-p11kit"]["output"] +
+                                 P11KIT_TRUST_BUNDLE).is_file(), "missing exported p11-kit trust bundle")
     if record["step"] >= 3:
         for name in ("nix", "nix-store", "nix-instantiate"):
             executable(path, record, "nix", "bin/" + name)
@@ -753,6 +760,18 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
         cert = record["packages"]["cacert"]["output"] + "/etc/ssl/certs/ca-bundle.crt"
         require(virtual_file(payload, cert).is_file(), "missing exported CA bundle")
         write(system / "ca-path", cert + "\n")
+        if "cacert-p11kit" in record["packages"]:
+            trust = record["packages"]["cacert-p11kit"]["output"] + P11KIT_TRUST_BUNDLE
+            require(virtual_file(payload, trust).is_file(), "missing exported p11-kit trust bundle")
+            runtime_trust = "/run/mojt-system/ca-bundle.trust.p11-kit"
+            (system / Path(runtime_trust).name).symlink_to(trust)
+            setup += [
+                f"trust_bundle={P11KIT_TRUST_BUNDLE}",
+                'if [ ! -e "$trust_bundle" ] && [ ! -L "$trust_bundle" ]; then',
+                '    mkdir -p "${trust_bundle%/*}"',
+                f'    ln -sT {runtime_trust} "$trust_bundle"',
+                "fi",
+            ]
     if step >= 3:
         # MPM's default source/cache/profile roots need a protected machine-state
         # parent even on a fresh image without acceptance fixtures or old state.

@@ -9,17 +9,22 @@
   makeFontsConf,
   dbus,
   dejavu_fonts,
+  fontconfig,
   kitty,
   mesa,
+  noto-fonts,
   sway,
   swaybg,
   waybar,
 }:
 
 let
-  fonts = makeFontsConf { fontDirectories = [ dejavu_fonts ]; };
+  fonts = makeFontsConf {
+    fontDirectories = [ dejavu_fonts noto-fonts ];
+    includes = [ "${fontconfig.out}/etc/fonts/conf.d" "/etc/fonts/conf.d" ];
+  };
 in
-runCommand "mojt-sway-0.1.2"
+runCommand "mojt-sway-0.1.3"
   {
     nativeBuildInputs = [ makeWrapper ];
     meta = {
