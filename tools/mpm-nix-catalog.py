@@ -11,7 +11,6 @@ import argparse
 import importlib.machinery
 import importlib.util
 import json
-import os
 from pathlib import Path
 import sys
 import tomllib
@@ -86,7 +85,7 @@ def prepare_bundle(backend, catalog, name):
     offers = {}
     for candidate in catalog['candidates']:
         output = candidate['artifact']
-        commands = backend.discover_commands(dict(output=output, attribute=name))
+        commands = backend.executable_inventory(output)
         ref = dict(provider='nix', identity=dict(format='mojt-nix-output-v1',
             output=output, closure=copy.deepcopy(candidate['integrity']['closure']), commands=commands))
         # Validate shape without importing or retaining payloads.
@@ -99,8 +98,7 @@ def prepare_bundle(backend, catalog, name):
             closure=sorted(backend.run('nix-store','--query','--requisites',manual).splitlines())
             hashes=backend.run('nix-store','--query','--hash',*closure).splitlines()
             backend.require(manual in closure and len(closure)==len(hashes),'invalid manual closure evidence')
-            directory=Path(manual)/'bin'
-            commands=sorted(p.name for p in directory.iterdir() if p.is_file() and os.access(p,os.X_OK)) if directory.is_dir() else []
+            commands=backend.executable_inventory(manual)
             docref=dict(provider='nix',identity=dict(format='mojt-nix-output-v1',output=manual,
                 closure=[dict(path=p,nar_hash=h) for p,h in zip(closure,hashes)],commands=commands))
             NixBinaryAdapter('/nonexecuted/nix-store').describe(docref,Path('/nonexecuted'))

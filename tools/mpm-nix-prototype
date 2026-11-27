@@ -141,13 +141,16 @@ def source_from_fields(source, directory):
                 nar_hash=run("nix-store", "--query", "--hash", str(source_root)))
 
 
+def executable_inventory(output):
+    directory = Path(output) / "bin"
+    return sorted(p.name for p in directory.iterdir()
+                  if p.is_file() and os.access(p, os.X_OK)) if directory.is_dir() else []
+
+
 def discover_commands(record):
-    directory = Path(record["output"]) / "bin"
-    commands = sorted(p.name for p in directory.iterdir()
-                      if p.is_file() and os.access(p, os.X_OK)) if directory.is_dir() else []
+    commands = executable_inventory(record["output"])
     require(commands, f"no executable commands in selected binary output: {record['attribute']}")
-    require(all(re.fullmatch(COMMAND, c) for c in commands), "unsupported executable name")
-    return commands
+    return [name for name in commands if re.fullmatch(COMMAND, name)]
 
 
 def resolve_package(source, name, attribute):

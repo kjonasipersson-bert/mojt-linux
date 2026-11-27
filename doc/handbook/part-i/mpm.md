@@ -111,7 +111,9 @@ versions preserve an existing default. Use `--no-activate` when adding content
 without establishing that initial default.
 
 A preview for a newly discovered package can be an acquisition preview: exact
-command exports are learned by inspecting the binary. It performs no payload
+command exports are learned by inspecting the binary. Private executables used
+by the package, such as dot-prefixed wrappers, remain in its verified output
+without becoming Ports aliases. A dry run performs no payload
 import and is not proof of a completed installation.
 
 Search and inspection use accepted local metadata:
