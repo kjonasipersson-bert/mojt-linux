@@ -104,8 +104,12 @@ def current(root):
     return dict(record=state,path=relative,transaction=row)
 
 
+def is_command_alias(name):
+    return type(name) is str and re.fullmatch(COMMAND, name) is not None and len(name.encode()) <= 255
+
+
 def command(name):
-    require(type(name) is str and re.fullmatch(COMMAND,name) and len(name.encode()) <= 255, 'unsupported command alias: '+repr(name))
+    require(is_command_alias(name), 'unsupported command alias: '+repr(name))
 
 
 def described(adapters,reference,root):

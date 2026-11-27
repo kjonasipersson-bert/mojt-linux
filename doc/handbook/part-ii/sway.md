@@ -13,52 +13,23 @@ which is disabled in the supplied configuration.
 
 ## Install the session
 
-Use a Mojt x86-64 installation with the System Nix tools, working Internet
-access, kernel modesetting and a local login managed by systemd-logind. From a
-trusted checkout, run these commands as an administrator in the repository root:
+Use an x86-64 Mojt installation with native Ports support and a configured
+[Mojt Ports repository](https://github.com/kjonasipersson-bert/mojt-linux/blob/main/docs/ports-repository.md). The repository
+provides the session files, theme and command. MPM acquires Sway, swaybg,
+Waybar, Kitty, fonts and graphics resources through the System's pinned Ports
+provider. Install as an administrator:
 
 ```sh
-(
-  set -eu
-  nixpkgs=$(sed -n 's/^path = "\(.*\)"$/\1/p' /run/mojt-system/ports.toml)
-  test -f "$nixpkgs/default.nix"
-  install -d -m 0755 /var/lib/mojt/mojt-sway
-  if [ ! -d /usr/local/bin ]; then
-    install -d -m 0755 /usr/local/bin
-  fi
-  result=/var/lib/mojt/mojt-sway/result
-  command_link=/usr/local/bin/mojt-sway
-  target=$result/bin/mojt-sway
-  if [ -e "$command_link" ] || [ -L "$command_link" ]; then
-    if [ "$(readlink "$command_link" || true)" != "$target" ]; then
-      echo "$command_link already exists with a different target" >&2
-      exit 1
-    fi
-  fi
-  drv=$(nix-instantiate ports/mojt-sway --argstr nixpkgs "$nixpkgs")
-  nix-store --realise "$drv" --add-root "$result" \
-    --indirect --option max-jobs 1
-  if [ ! -L "$command_link" ]; then
-    ln -sT "$target" "$command_link"
-  fi
-  for section in 1 5; do
-    page=sway.$section.gz
-    directory=/usr/local/share/man/man$section
-    mkdir -p "$directory"
-    if [ ! -e "$directory/$page" ] && [ ! -L "$directory/$page" ]; then
-      ln -sT "$result/share/man/man$section/$page" "$directory/$page"
-    fi
-  done
-)
+mpm ports install mojt-sway
+mpm ports list
 ```
 
-The command uses the installed System's pinned Nixpkgs source. Use the same
-Nixpkgs pin and repository revision to reproduce the build on another machine.
-Nix uses the configured cache for available dependencies. `--option max-jobs 1`
-allows local builds for this command, including dependencies if their substitutes
-are unavailable. The result link retains the session in the persistent Nix store
-and exposes `mojt-sway` through `/usr/local/bin`. The runtime closure is about
-2 GiB with the tested pin. Paths already in the store are shared.
+MPM records the metapackage and its package wishes in one Ports transaction.
+The component packages appear individually in the list, with their normal
+installation and activation rules.
+
+If you used the standalone Sway prototype, remove its administrator-created
+command and manual links after verifying the active Ports command and manuals.
 
 ## Start from the console
 
@@ -67,12 +38,6 @@ Log in as an ordinary user on a local virtual terminal and run:
 ```sh
 mojt-sway
 ```
-
-On older System builds, add `/usr/local/bin` to the login shell's `PATH` if
-needed. Run `export PATH="$PATH:/usr/local/bin"` for the current shell, or add
-that line after the System login hook in `/etc/profile` for future logins.
-For manuals on such builds, add `/usr/local/share/man` to `MANPATH` after the
-same hook. The session includes its Sway manuals in Kitty's search path.
 
 | Shortcut | Action |
 | --- | --- |
@@ -88,7 +53,8 @@ same hook. The session includes its Sway manuals in Kitty's search path.
 Select **Exit** on the status bar and confirm to return to the console. From
 Kitty, `swaymsg exit` exits immediately. Run `man sway` for the command manual
 or `man 5 sway` for configuration. Kitty defaults to DejaVu Sans Mono at
-13 points and reads `~/.config/kitty/kitty.conf` for user overrides.
+13 points and reads `~/.config/kitty/kitty.conf` for user overrides. MPM's
+ordinary manual lookup also supplies `man kitty`.
 
 The wallpaper is fitted to each output. The session provides Mesa drivers and
 DejaVu and Noto fonts with Fontconfig defaults for graphical applications.
@@ -122,15 +88,9 @@ packaged defaults, and installing the package never writes to the file.
 Exit Sway and run this command as an administrator:
 
 ```sh
-for section in 1 5; do
-  page=man$section/sway.$section.gz
-  link=/usr/local/share/man/$page
-  if [ "$(readlink "$link")" = "/var/lib/mojt/mojt-sway/result/share/man/$page" ]; then
-    rm "$link"
-  fi
-done
-rm /usr/local/bin/mojt-sway /var/lib/mojt/mojt-sway/result
+mpm ports remove mojt-sway
 ```
 
-Removing the result link releases this reference to the package. User
-configuration stays in the home directory.
+Removing the metapackage releases its dependency wishes. A package with a
+separate installation wish or exact active selection stays installed.
+User configuration is stored in the home directory.

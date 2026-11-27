@@ -7,6 +7,7 @@ import argparse
 import json
 from pathlib import Path
 import sys
+import tomllib
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import mojt_artifact as artifact
@@ -19,6 +20,8 @@ def main(argv=None, *, prog=None):
     generic.add_argument("--source", type=Path, required=True)
     generic.add_argument("--spec", type=Path, required=True)
     generic.add_argument("--attachment", action="append", default=[], metavar="NAME=FILE")
+    port = commands.add_parser("port")
+    port.add_argument("--manifest", type=Path, required=True)
     kernel = commands.add_parser("kernel")
     kernel.add_argument("--build", type=Path, default=Path("kernel-result"))
     kernel.add_argument("--revision", type=int, default=1)
@@ -37,7 +40,7 @@ def main(argv=None, *, prog=None):
     system.add_argument("--version")
     system.add_argument("--revision", type=int)
     system.add_argument("--nix-store", type=Path)
-    for command in (generic, kernel, base, system):
+    for command in (generic, kernel, base, system, port):
         command.add_argument("--output", type=Path, required=command is not kernel,
                              default=Path("kernel-package") if command is kernel else None)
     verify = commands.add_parser("verify")
@@ -47,6 +50,12 @@ def main(argv=None, *, prog=None):
     try:
         if args.action == "verify":
             result = artifact.verify(args.archive, args.expected_id)
+        elif args.action == "port":
+            with args.manifest.open('rb') as stream:
+                spec = tomllib.load(stream)
+            artifact.require(spec['kind'] == 'port', 'manifest must describe a Port')
+            spec['version'].setdefault('revision', None)
+            result = artifact.pack(args.manifest.parent / 'payload', spec, args.output, numeric_owner=(0, 0))
         elif args.action == "system":
             if args.running:
                 from mojt_system_package import package_installed,local_reference

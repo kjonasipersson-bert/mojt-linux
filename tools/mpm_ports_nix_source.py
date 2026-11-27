@@ -24,9 +24,17 @@ require = wishes.require
 
 
 from mpm_nix_binary import NixBinaryAdapter
+from mpm_ports_profile import is_command_alias
 
 
 class NixPortsAdapter(NixBinaryAdapter):
+    def describe(self, ref, root):
+        description = super().describe(ref, root)
+        # The reference keeps private executables for exact output verification.
+        description['commands'] = {name: path for name, path in description['commands'].items()
+                                   if is_command_alias(name)}
+        return description
+
     def documentation(self,ref,source,role):
         output=self.identity(ref)['output'];catalog=source['catalogs'][role];metadata=[]
         for name,row in catalog['sources'].items():

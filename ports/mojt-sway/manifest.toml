@@ -1,0 +1,23 @@
+# Mojt Linux
+# Copyright (C) 2026 Jonas Persson
+# SPDX-License-Identifier: GPL-2.0-only
+format = "mojt-artifact-spec-v1"
+kind = "port"
+name = "mojt-sway"
+platform = "x86_64-linux"
+dependencies = []
+
+[version]
+upstream = "0.1.4"
+scheme = "dotted-v1"
+
+[requirements]
+
+[provides]
+commands = ["mojt-sway"]
+
+[provenance]
+project = "mojt-linux"
+
+[metadata]
+ports = ["sway", "swaybg", "waybar", "kitty", "dejavu_fonts", "noto-fonts@=2026.10.01", "fontconfig.out", "mesa"]

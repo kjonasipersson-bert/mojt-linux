@@ -102,24 +102,39 @@ class NixAdapterTests(unittest.TestCase):
 
     def test_catalog_bundle_exports_exact_frontend_bindings_without_import(self):
         import importlib.util
-        import types
         import mpm_selection as selection
         import mpm_request_plan as planning
         import mpm_ports_cli as frontend
+        import mpm_ports_profile as profiles
         import mpm_requests as wishes
         spec=importlib.util.spec_from_file_location('bundle_export',Path(__file__).resolve().parents[1]/'tools/mpm-nix-catalog.py')
         exporter=importlib.util.module_from_spec(spec);spec.loader.exec_module(exporter)
-        backend=types.SimpleNamespace(selection_core=lambda:selection,require=wishes.require,discover_commands=lambda r:['hello'])
+        backend=exporter.load_backend()
+        output=self.root/'output';directory=output/'bin';directory.mkdir(parents=True)
+        (directory/'hello').touch(mode=0o755)
+        (output/'helper').touch(mode=0o755)
+        (directory/'.hello-wrapped').symlink_to('../helper')
+        (directory/'unrelated').touch(mode=0o644)
+        inventory=backend.executable_inventory
+        with mock.patch.object(backend, 'evaluate', return_value=dict(version='2.12.3', output=self.output)), \
+                mock.patch.object(Path, 'exists', return_value=True), \
+                mock.patch.object(backend, 'executable_inventory', side_effect=lambda _: inventory(output)):
+            record=backend.resolve_package({},'hello','hello')
+        self.assertEqual(record['commands'],['hello'])
         catalog=dict(format=selection.FORMAT,area='ports',name='ports-main',channel='stable',platform='x86_64-linux',
             sources=dict(pinned=dict(backend='nix',identity=dict(revision='a'*40))),candidates=[dict(name='hello',release_id='2.12.3',
             upstream_version='2.12.3',version_scheme='dotted-v1',stability='stable',source='pinned',artifact=self.output,
             integrity=dict(closure=self.ref['identity']['closure']))])
-        bundle=exporter.prepare_bundle(backend,catalog,'hello')
+        with mock.patch.object(backend, 'executable_inventory', side_effect=lambda _: inventory(output)):
+            bundle=exporter.prepare_bundle(backend,catalog,'hello')
         view=frontend.source_bundle(bundle,'x86_64-linux')
         state=wishes.request_interactively(wishes.empty_state('1'*32),'hello','local')
         lock=planning.resolve_requests(state,view,platform='x86_64-linux')
         ref=lock['description']['resolutions'][0]['reference']
-        self.assertEqual(ref['identity']['commands'],['hello'])
+        self.assertEqual(ref['identity']['commands'],['.hello-wrapped','hello'])
+        adapter=frontend.adapters_for(view,None,None)['nix']
+        description=profiles.described({'nix':adapter},ref,self.root)
+        self.assertEqual(description['commands'],{'hello':self.output+'/bin/hello'})
         self.assertEqual(ref['identity']['output'],self.output)
         self.assertEqual(ref['identity']['closure'],self.ref['identity']['closure'])
         self.assertEqual(self.calls,[])
@@ -139,7 +154,7 @@ class NixAdapterTests(unittest.TestCase):
             self.assertEqual(args[:2],('nix-store','--query'))
             return manual if '--requisites' in args else self.hash
         backend=types.SimpleNamespace(selection_core=lambda:selection,require=wishes.require,
-            discover_commands=lambda r:['hello'],store_path=lambda p:None,run=run)
+            executable_inventory=lambda path:[] if path==manual else ['hello'],store_path=lambda p:None,run=run)
         with mock.patch.object(Path,'is_dir',lambda p:str(p)==manual):
             bundle=exporter.prepare_bundle(backend,catalog,'hello')
         view=bundle['description']['sources']['local'];application=next(o for o in view['offers'] if o['artifact']==self.output)

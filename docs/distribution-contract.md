@@ -52,6 +52,14 @@ active selections and tracked wishes. Persistent state and build environments
 are not additional OS layers. Installation, selection and execution are distinct.
 Nix is a supported adapter, not the identity or schema of the core model.
 
+Every installed program and runtime resource belongs to Base, System, or
+Ports. A Mojt metapackage belongs to Ports and declares its application and
+resource packages as Ports wishes. Its native archive may supply the session
+configuration and command. MPM records the metapackage and component packages
+through the normal Ports lifecycle. Provider library closures belong to their
+owning packages. Upstream manuals follow the selected packages through the
+normal manual paths. See [Mojt Ports repository](ports-repository.md).
+
 ## 2. Identities, records and inspection (ID)
 
 Every journey MUST distinguish offered, requested, resolved, installed, selected,

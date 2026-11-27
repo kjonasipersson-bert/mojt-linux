@@ -1,0 +1,5 @@
+#!/bin/sh
+# Mojt Linux
+# Copyright (C) 2026 Jonas Persson
+# SPDX-License-Identifier: GPL-2.0-only
+exec waybar --config "$MOJT_SWAY_ASSETS/waybar.jsonc" --style "$MOJT_SWAY_ASSETS/waybar.css" "$@"

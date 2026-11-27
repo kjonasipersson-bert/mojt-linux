@@ -26,7 +26,7 @@ def usage():
           '  build kernel    compile a separate Kernel and matching modules\n'
           '  build base      build and package a complete source Base (plain host GCC)\n'
           '  package         package kernel/base/system inputs, or verify an archive\n'
-          '  repo prepare    prepare signed Base repository metadata for publication\n'
+          '  repo prepare    prepare signed Base or Ports repository metadata for publication\n'
           '  bootstrap       create a native-v2 image or install to prepared mounted partitions\n'
           '  install         interactively install Mojt on a whole disk\n'
           'Use mbt COMMAND --help for options; build accepts kernel or base.\n'

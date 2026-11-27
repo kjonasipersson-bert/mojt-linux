@@ -131,8 +131,10 @@ Nix protocol and bundle shape; neither is live Nix cache acceptance. Native Kern
 frontend regressions and System payload/capability tests remain in CI.
 
 The real adapter/frontend acceptance is [recorded separately](ports-profile-acceptance.md).
+The [native Ports repository](ports-repository.md) supports bounded metapackage
+archives and discovers their Nixpkgs wishes through the same transaction.
 Remaining gates: remote authenticated source acquisition,
-artifact-only pruning and configuration-source forgetting, native Port archives, lifecycle effects
+artifact-only pruning and configuration-source forgetting, general native Port dependencies, lifecycle effects
 and complete recovery, then the remaining Base/System/bootstrap/build milestones.
 No global compiler/libc selection changes or runtime ABI proof follow from this work.
 
