@@ -7,7 +7,7 @@
   "position": "top",
   "height": 28,
   "modules-left": ["sway/workspaces"],
-  "modules-right": ["network", "battery", "clock"],
+  "modules-right": ["network", "battery", "clock", "custom/exit"],
   "sway/workspaces": {
     "disable-scroll": true
   },
@@ -25,5 +25,10 @@
   },
   "clock": {
     "format": "{:%Y-%m-%d  %H:%M}"
+  },
+  "custom/exit": {
+    "format": "Exit",
+    "tooltip": false,
+    "on-click": "swaynag -m 'Exit the Sway session?' -B 'Exit Sway' 'swaymsg exit'"
   }
 }

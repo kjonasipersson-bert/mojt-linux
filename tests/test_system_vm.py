@@ -447,7 +447,7 @@ class SystemVmTests(unittest.TestCase):
                  if key not in ("MANPATH", "TZDIR", "TZ", "LOCALE_ARCHIVE")}
         result = subprocess.run(["/bin/sh", "-c", code, "sh", str(environment)],
                                 env=clean, text=True, capture_output=True, check=True)
-        self.assertEqual(result.stdout.splitlines(), [":".join(paths) + ":/usr/share/man",
+        self.assertEqual(result.stdout.splitlines(), [":".join(paths) + ":/usr/share/man:/usr/local/share/man",
                          record["packages"]["tzdata"]["output"] + "/share/zoneinfo", "unset", "unset"])
         result = subprocess.run(["/bin/sh", "-c", code, "sh", str(environment)],
                                 env={**clean, "MANPATH": "/custom/man", "TZDIR": "/custom/zones"},

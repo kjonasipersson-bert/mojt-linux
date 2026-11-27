@@ -19,7 +19,7 @@
 let
   fonts = makeFontsConf { fontDirectories = [ dejavu_fonts ]; };
 in
-runCommand "mojt-sway-0.1.1"
+runCommand "mojt-sway-0.1.2"
   {
     nativeBuildInputs = [ makeWrapper ];
     meta = {
@@ -35,6 +35,8 @@ runCommand "mojt-sway-0.1.1"
     cp ${./mojt_logo.png} "$session/mojt_logo.png"
     cp ${./waybar.jsonc} "$session/waybar.jsonc"
     cp ${./waybar.css} "$session/waybar.css"
+    cp ${./kitty.conf} "$session/kitty.conf"
+    ln -s ${sway}/share/man "$out/share/man"
 
     substitute ${./sway.conf} "$session/sway.conf" \
       --replace-fail @kitty@ ${lib.getExe kitty} \
@@ -47,6 +49,7 @@ runCommand "mojt-sway-0.1.1"
     makeWrapper ${lib.getExe sway} "$session/sway" \
       --add-flags "--config $session/sway.conf" \
       --prefix PATH : ${lib.makeBinPath [ sway swaybg ]} \
+      --run 'export MANPATH="'"$out"'/share/man:''${MANPATH-}"' \
       --run 'export TERMINFO_DIRS="${kitty.terminfo}/share/terminfo:''${TERMINFO_DIRS-}"' \
       --set-default FONTCONFIG_FILE "${fonts}" \
       --set-default LIBGL_DRIVERS_PATH "${mesa}/lib/dri" \

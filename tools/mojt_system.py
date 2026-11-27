@@ -1016,7 +1016,8 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
     if step >= 9:
         with (system / "environment").open("a") as environment:
             environment.write('export MANPATH="${MANPATH:-' +
-                              ":".join(["/run/mojt-system/share/man"] + manual_paths(payload, record)) + ':/usr/share/man}"\n')
+                              ":".join(["/run/mojt-system/share/man"] + manual_paths(payload, record)) +
+                              ':/usr/share/man:/usr/local/share/man}"\n')
             environment.write('export TZDIR="${TZDIR:-' +
                               record["packages"]["tzdata"]["output"] + '/share/zoneinfo}"\n')
     if step >= 10:

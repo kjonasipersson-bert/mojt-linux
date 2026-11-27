@@ -41,6 +41,14 @@ trusted checkout, run these commands as an administrator in the repository root:
   if [ ! -L "$command_link" ]; then
     ln -sT "$target" "$command_link"
   fi
+  for section in 1 5; do
+    page=sway.$section.gz
+    directory=/usr/local/share/man/man$section
+    mkdir -p "$directory"
+    if [ ! -e "$directory/$page" ] && [ ! -L "$directory/$page" ]; then
+      ln -sT "$result/share/man/man$section/$page" "$directory/$page"
+    fi
+  done
 )
 ```
 
@@ -63,6 +71,8 @@ mojt-sway
 On older System builds, add `/usr/local/bin` to the login shell's `PATH` if
 needed. Run `export PATH="$PATH:/usr/local/bin"` for the current shell, or add
 that line after the System login hook in `/etc/profile` for future logins.
+For manuals on such builds, add `/usr/local/share/man` to `MANPATH` after the
+same hook. The session includes its Sway manuals in Kitty's search path.
 
 | Shortcut | Action |
 | --- | --- |
@@ -74,6 +84,11 @@ that line after the System login hook in `/etc/profile` for future logins.
 | Super+Shift+Q | Close the focused window |
 | Super+Shift+C | Reload Sway configuration |
 | Super+Shift+E | Exit to the console |
+
+Select **Exit** on the status bar and confirm to return to the console. From
+Kitty, `swaymsg exit` exits immediately. Run `man sway` for the command manual
+or `man 5 sway` for configuration. Kitty defaults to DejaVu Sans Mono at
+13 points and reads `~/.config/kitty/kitty.conf` for user overrides.
 
 The wallpaper is fitted to each output. The session provides Mesa drivers and
 a DejaVu font fallback. It reuses an existing D-Bus session bus or starts one
@@ -106,6 +121,13 @@ packaged defaults, and installing the package never writes to the file.
 Exit Sway and run this command as an administrator:
 
 ```sh
+for section in 1 5; do
+  page=man$section/sway.$section.gz
+  link=/usr/local/share/man/$page
+  if [ "$(readlink "$link")" = "/var/lib/mojt/mojt-sway/result/share/man/$page" ]; then
+    rm "$link"
+  fi
+done
 rm /usr/local/bin/mojt-sway /var/lib/mojt/mojt-sway/result
 ```
 
