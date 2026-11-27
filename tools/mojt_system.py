@@ -685,8 +685,11 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
         f"for rule in {sd}/lib/udev/rules.d/*; do",
         '    [ -f "$rule" ] || continue',
         '    ln -sfn "$rule" "/run/udev/rules.d/$(basename "$rule")"', "done",
+        "ln -sfn /run/mojt-system/70-mojt-render.rules /run/udev/rules.d/70-mojt-render.rules",
     ]
-    write(system / "sysusers.conf", 'g systemd-journal -\n' +
+    write(system / "70-mojt-render.rules",
+          'SUBSYSTEM=="drm", KERNEL=="renderD*", GROUP="render", MODE="0660"\n')
+    write(system / "sysusers.conf", 'g systemd-journal -\ng render -\n' +
           ('u messagebus - "D-Bus system bus" /var/empty\n' if step >= 2 else ""))
     wanted = ["mojt-console.service", "systemd-journald.socket", "systemd-journald.service",
               "systemd-udevd.service", "systemd-udev-trigger.service"]

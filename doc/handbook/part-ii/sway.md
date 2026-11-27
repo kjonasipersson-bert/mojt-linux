@@ -82,11 +82,11 @@ check `XDG_SESSION_ID` and `XDG_RUNTIME_DIR` from the local login. An administra
 can inspect the session with `loginctl list-sessions` over SSH. Waybar indicates
 local network status.
 
-If Mesa reports permission denied for a `/dev/dri/renderD*` node, check its
-owner and permissions with `ls -l /dev/dri`. If the node is group-writable and
-belongs to `render`, an administrator can grant that account access with
+For GPU rendering, an administrator can grant the account access to
+[DRM render nodes](../part-iii/hardware.md#82-device-detection) with
 `usermod -aG render LOGIN_NAME`. Log out and back in to apply the new group
-membership.
+membership. If Mesa still reports permission denied, check the node's owner
+and mode with `ls -l /dev/dri`.
 
 ## Set the Wayland keyboard layout
 

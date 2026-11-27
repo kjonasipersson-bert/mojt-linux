@@ -957,7 +957,7 @@ esac""")
         runtime = json.loads((directory / "mpm-runtime.json").read_text())
         self.assertEqual(runtime["files"], list(system.MPM_FILES))
         self.assertEqual(runtime["kernel_root"], "/run/mojt-disk/kernel")
-        self.assertIn("/var/lib/mojt/ports/current/bin:/run/mojt-system/bin",
+        self.assertIn("/var/lib/mojt/ports/current/bin:/run/mojt-system/bin:/usr/bin:/bin:/usr/local/bin",
                       (directory / "environment").read_text())
         self.assertIn("/run/mojt-system/environment",
                       (self.tree / "state/etc/profile.d/mojt-system.sh").read_text())
@@ -978,6 +978,15 @@ esac""")
         self.assertEqual((directory / "tests/run-mpm-nix-ports.py").read_bytes(),
                          (REPO / "tests/run-mpm-nix-ports.py").read_bytes())
         self.assertIn(record["source"]["revision"], (directory / "ports.toml").read_text())
+
+    def test_system_sets_up_group_access_to_drm_render_nodes(self):
+        directory, _ = self.install(1)
+        self.assertIn("g render -", (directory / "sysusers.conf").read_text().splitlines())
+        self.assertEqual((directory / "70-mojt-render.rules").read_text(),
+                         'SUBSYSTEM=="drm", KERNEL=="renderD*", GROUP="render", MODE="0660"\n')
+        setup = (directory / "setup").read_text()
+        self.assertLess(setup.index("systemd-sysusers"), setup.index("/70-mojt-render.rules"))
+        self.assertIn("/run/udev/rules.d/70-mojt-render.rules", setup)
 
     def test_mpm_codec_is_selected_from_the_retained_closure_not_host_path(self):
         record = self.fixture(3)
