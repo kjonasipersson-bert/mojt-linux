@@ -49,18 +49,20 @@ url = "https://github.com/OWNER/REPO/releases/download/TAG/ARCHIVE"
 mbt repo prepare --config ports-repository.toml --output ports-publication
 ```
 
-Host the archive at its recorded URL and publish `stable.json` under
-`ports/` on the repository publication branch. Keep the private key outside the
+Host the archive at its recorded URL and publish the signed catalog at
+`repository/ports/stable.json` on `main`. Keep the private key outside the
 source tree and the published metadata. Use the repository administrator's
 trusted public key when registering the channel.
 
 ## Use a published repository
 
-Configure the Ports channel once, with the actual catalog URL and independently
-obtained publisher public key:
+Configure the Ports channel once, with the independently obtained publisher public key. Replace `OWNER/REPO` with
+the publishing repository:
 
 ```sh
-mpm ports repo add mojt-ports --url HTTPS_CATALOG_URL --key-file publisher-public.pem
+mpm ports repo add mojt-ports \
+  --url https://raw.githubusercontent.com/OWNER/REPO/main/repository/ports/stable.json \
+  --key-file publisher-public.pem
 mpm ports repo update mojt-ports
 mpm ports install mojt-sway
 mpm ports list
