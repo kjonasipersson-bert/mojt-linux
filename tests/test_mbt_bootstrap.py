@@ -162,13 +162,14 @@ class ConstructionTests(unittest.TestCase):
         self.hardware_construction(mounted=False, installer_media=True)
 
     def test_pc_mounted_target_preserves_generic_profile_in_portable_inputs(self):
-        self.hardware_construction(mounted=True,hardware_profile=bootstrap.native.hardware.PC_PROFILE)
+        self.hardware_construction(mounted=True, hardware_profile=bootstrap.native.hardware.PC_PROFILE,
+                                   system_step=12)
 
     def test_btrfs_mounted_target_publishes_an_efi_loader_and_swap_configuration(self):
         self.hardware_construction(mounted=True, root_fs='btrfs')
 
     def hardware_construction(self, *, mounted, hardware_profile=bootstrap.native.hardware.PROFILE,
-                              after_construct=None, root_fs='ext4', installer_media=False):
+                              after_construct=None, root_fs='ext4', installer_media=False, system_step=10):
         import test_native_image as fixtures
         import test_system_vm as system_fixtures
         import test_hardware_boot as hardware_fixtures
@@ -177,7 +178,7 @@ class ConstructionTests(unittest.TestCase):
         import mpm_boot_constructor as constructor
         f=fixtures.NativeImageTests();f.account_base=True;f.setUp();self.addCleanup(f.doCleanups)
         source=system_fixtures.SystemVmTests();source.setUp();self.addCleanup(source.doCleanups)
-        record=source.fixture(12 if installer_media else 10,installer_tools=installer_media)
+        record=source.fixture(12 if installer_media else system_step,installer_tools=installer_media)
         python_output=record['packages']['python']['output']
         python_tree=source.payload/python_output.lstrip('/')
         system_fixtures.system.write(python_tree/'bin/zstd','#!/bin/sh\nexit 0\n',0o755)
@@ -244,6 +245,7 @@ class ConstructionTests(unittest.TestCase):
                     self.assertNotIn(service,wanted)
                 self.assertFalse((profile/'bin/sudo').is_symlink())
                 self.assertRegex(shadow,r'(?m)^root:!:')
+                self.assertFalse((profile/'units/sshd.service').exists())
                 self.assertFalse((profile/'units/mojt.target.wants/sshd.service').exists())
                 self.assertNotIn('nix-store --load-db',(profile/'setup').read_text())
                 self.assertTrue((profile/'bin/mkfs.btrfs').is_symlink())
@@ -253,6 +255,9 @@ class ConstructionTests(unittest.TestCase):
                 self.assertIn('busybox getty',console)
                 self.assertIn('StandardError=journal',console)
                 self.assertIn('Requires=mojt-privileged.service',console)
+                self.assertEqual((profile/'units/sshd.service').is_file(), system_step >= 11)
+                self.assertNotIn('sshd.service', wanted)
+                self.assertFalse((tree/'state/etc/ssh').exists())
                 self.assertIn('mojt-privileged.service',wanted)
                 self.assertRegex(shadow,r'(?m)^root:\$6\$')
                 self.assertNotIn('installer_media',d['deployment']['description']['inputs']['description']['boot'])

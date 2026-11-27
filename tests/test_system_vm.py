@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import tempfile
 import unittest
@@ -60,14 +61,17 @@ class SystemVmTests(unittest.TestCase):
             base = self.payload / value.lstrip("/")
             names = [] if role.startswith("manual-") else {
                 "systemd": ["lib/systemd/systemd", "bin/systemctl", "bin/journalctl",
-                            "bin/udevadm", "bin/systemd-sysusers", "bin/timedatectl", "bin/systemd-cat", "bin/systemd-machine-id-setup",
+                            "bin/udevadm", "bin/systemd-sysusers", "bin/systemd-tmpfiles",
+                            "bin/timedatectl", "bin/systemd-cat", "bin/systemd-machine-id-setup",
                             "lib/systemd/systemd-timesyncd", "lib/systemd/systemd-logind",
                             "lib/systemd/systemd-user-runtime-dir", "lib/systemd/systemd-sysctl", "bin/loginctl", "bin/systemd-run"],
                 "dbus": ["bin/dbus-daemon"], "networkmanager": ["bin/NetworkManager", "bin/nmcli"],
                 "curl": ["bin/curl"], "cacert": [], "iproute2": ["bin/ip", "bin/ss"],
                 "nix": ["bin/nix", "bin/nix-store", "bin/nix-instantiate"], "python": ["bin/python3"], "tar": ["bin/tar"],
                 "shell": ["bin/bash"], "tzdata": [], "man-db": ["bin/man", "bin/manpath"],
-                "openssh": ["bin/sshd", "bin/ssh-keygen"], "openssl": ["bin/openssl"],
+                "openssh": ["bin/ssh", "bin/scp", "bin/sftp", "bin/ssh-keygen", "bin/ssh-agent",
+                            "bin/.ssh-wrapped", "sbin/sshd", "libexec/sshd-session"],
+                "openssl": ["bin/openssl"],
                 "shadow": ["bin/" + n for n in system.accounts.COMMANDS],
                 "pam": ["bin/unix_chkpwd"], "sudo": ["bin/sudo", "sbin/visudo"],
                 "kmod": ["bin/modprobe", "bin/lsmod", "bin/modinfo"],
@@ -163,15 +167,72 @@ class SystemVmTests(unittest.TestCase):
         self.assertEqual(json.loads((directory/'mpm-runtime.json').read_text())['helpers']['openssl'],expected)
         self.assertNotIn('openssl',system.roles(11))
 
-    def test_step11_exposes_ssh_tools_without_enabling_or_configuring_a_server(self):
+    def test_step11_ships_an_optional_openssh_service(self):
         directory,record=self.install(11,"password")
-        self.assertTrue((directory/'bin/sshd').is_symlink())
-        self.assertTrue((directory/'bin/ssh-keygen').is_symlink())
+        output = record['packages']['openssh']['output']
+        for name in ('ssh', 'scp', 'sftp', 'ssh-keygen', 'ssh-agent'):
+            self.assertEqual(os.readlink(directory/'bin'/name), f'{output}/bin/{name}')
+        self.assertEqual(os.readlink(directory/'bin/sshd'), f'{output}/sbin/sshd')
+        self.assertFalse((directory/'bin/.ssh-wrapped').is_symlink())
+        self.assertFalse((directory/'bin/sshd-session').is_symlink())
+        self.assertTrue((self.tree / output.lstrip('/') / 'bin/.ssh-wrapped').is_file())
         self.assertFalse((directory/'bin/mojt-sshd').exists())
         self.assertFalse((directory/'tools/mojt_sshd.py').exists())
         self.assertFalse((directory/'units/mojt-sshd.service').exists())
-        self.assertFalse((self.tree/'state/etc/ssh/mojt').exists())
-        self.assertNotIn('sshd',(directory/'sysusers.conf').read_text())
+        self.assertFalse((self.tree/'state/etc/ssh').exists())
+        self.assertFalse((self.tree/'state/etc/pam.d/sshd').exists())
+        self.assertNotIn('sshd.service', (directory/'units/mojt.target').read_text())
+        self.assertFalse((directory/'units/mojt.target.wants/sshd.service').exists())
+        service = (directory/'units/sshd.service').read_text()
+        self.assertIn('WantedBy=mojt.target', service)
+        self.assertIn('RuntimeDirectory=sshd', service)
+        self.assertIn('ExecStartPre=/run/mojt-system/openssh/host-key', service)
+        self.assertIn(record['packages']['systemd']['output'] + '/bin/systemd-tmpfiles --create', service)
+        self.assertLess(service.index('/openssh/tmpfiles.conf'), service.index('/openssh/host-key'))
+        self.assertLess(service.index('/openssh/host-key'), service.index('sshd -t'))
+
+    @unittest.skipUnless(shutil.which('systemd-tmpfiles') and shutil.which('ssh-keygen'),
+                         'requires systemd-tmpfiles and ssh-keygen')
+    def test_sshd_start_prepares_missing_configuration_and_keeps_host_identity(self):
+        directory, _ = self.install(11, 'password')
+        root = self.root/'activation'
+        files = root/'run/mojt-system/openssh'
+        files.parent.mkdir(parents=True)
+        shutil.copytree(directory/'openssh', files)
+
+        tmpfiles = ['systemd-tmpfiles', '--create', '--root', str(root), str(files/'tmpfiles.conf')]
+        subprocess.run(tmpfiles, check=True)
+        config = root/'etc/ssh/sshd_config'
+        self.assertEqual(config.read_bytes(), (files/'sshd_config').read_bytes())
+        self.assertIn('AuthenticationMethods publickey', config.read_text())
+        self.assertIn('PermitRootLogin no', config.read_text())
+        pam = root/'etc/pam.d/sshd'
+        self.assertEqual(pam.read_bytes(), (files/'pam').read_bytes())
+        self.assertTrue((root/'var/empty').is_dir())
+
+        host_key = (files/'host-key').read_text().replace('/etc/ssh', str(root/'etc/ssh'))
+        subprocess.run(['/bin/sh', '-s'], input=host_key, text=True, check=True)
+        key = root/'etc/ssh/ssh_host_ed25519_key'
+        public = key.with_suffix('.pub')
+        original = key.read_bytes(), public.read_bytes()
+        self.assertEqual(stat.S_IMODE(key.stat().st_mode), 0o600)
+        self.assertTrue(original[1].startswith(b'ssh-ed25519 '))
+
+        config.write_text('local SSH policy\n')
+        config.chmod(0o600)
+        pam.write_text('local PAM policy\n')
+        subprocess.run(tmpfiles, check=True)
+        subprocess.run(['/bin/sh', '-s'], input=host_key, text=True, check=True)
+        self.assertEqual(config.read_text(), 'local SSH policy\n')
+        self.assertEqual(stat.S_IMODE(config.stat().st_mode), 0o600)
+        self.assertEqual(pam.read_text(), 'local PAM policy\n')
+        self.assertEqual((key.read_bytes(), public.read_bytes()), original)
+
+        public.unlink()
+        subprocess.run(['/bin/sh', '-s'], input=host_key, text=True, check=True)
+        self.assertEqual(key.read_bytes(), original[0])
+        fingerprint = subprocess.check_output(['ssh-keygen', '-l', '-f', str(key)], text=True)
+        self.assertIn('ED25519', fingerprint)
 
     def test_step3_creates_protected_mpm_state_parent_on_fresh_image(self):
         parent = self.tree/'state/var/lib/mojt'

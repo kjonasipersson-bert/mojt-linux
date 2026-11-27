@@ -253,6 +253,32 @@ def executable(payload, record, role, *candidates):
     raise ValueError(f"missing {role} executable: {candidates}")
 
 
+def openssh_commands(payload, record):
+    """Find the OpenSSH package's public commands in the guest namespace."""
+    output = record["packages"]["openssh"]["output"]
+    objects = {payload / row["path"].lstrip("/") for row in record["objects"]}
+    commands = {}
+    for directory in ("bin", "sbin"):
+        path = virtual_file(payload, output + "/" + directory)
+        if not path.is_dir():
+            continue
+        for entry in sorted(path.iterdir()):
+            if entry.name.startswith("."):
+                continue
+            target = f"{output}/{directory}/{entry.name}"
+            resolved = virtual_file(payload, target)
+            if not resolved.is_file() or not resolved.stat().st_mode & 0o111:
+                continue
+            require(any(parent in objects for parent in resolved.parents),
+                    f"OpenSSH command outside the retained closure: {target}")
+            first = commands.setdefault(entry.name, target)
+            require(first == target or virtual_file(payload, first) == resolved,
+                    f"conflicting OpenSSH commands: {entry.name}")
+    missing = {"ssh", "scp", "sftp", "sshd", "ssh-keygen"} - commands.keys()
+    require(not missing, "missing OpenSSH commands: " + ", ".join(sorted(missing)))
+    return commands
+
+
 def retained_command(payload, record, name):
     """Select an unambiguous executable from this verified closure, never host PATH."""
     candidates = set()
@@ -427,8 +453,8 @@ def load_payload(path):
     if record["step"] >= 10:
         account_inputs(path, record)
     if record["step"] >= 11:
-        executable(path,record,"openssh","bin/sshd","sbin/sshd")
-        executable(path,record,"openssh","bin/ssh-keygen")
+        openssh_commands(path, record)
+        executable(path, record, "systemd", "bin/systemd-tmpfiles")
     if installer_tools:
         for role, commands in INSTALLER_COMMANDS.items():
             for name in commands:
@@ -466,6 +492,82 @@ def add_default(path, contents, mode=0o644):
 def unit(description, executable_path, extra="", dependencies=""):
     return (f"[Unit]\nDescription={description}\n{dependencies}\n"
             f"[Service]\nExecStart={executable_path}\n{extra}\n")
+
+
+def install_sshd(system, put_unit, tmpfiles):
+    """Ship a disabled service that initializes missing machine state on start."""
+    templates = system / "openssh"
+    write(templates / "sshd_config", """Include /etc/ssh/sshd_config.d/*.conf
+HostKey /etc/ssh/ssh_host_ed25519_key
+PermitRootLogin no
+PubkeyAuthentication yes
+AuthenticationMethods publickey
+AuthorizedKeysFile .ssh/authorized_keys
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitEmptyPasswords no
+UsePAM yes
+SetEnv PATH=/run/mojt-system/bin:/var/lib/mojt/ports/current/bin:/usr/local/bin:/usr/bin:/bin
+Subsystem sftp internal-sftp
+""")
+    write(templates / "pam", """auth required /run/mojt-system/pam/pam_unix.so
+account required /run/mojt-system/pam/pam_unix.so
+session required /run/mojt-system/pam/pam_loginuid.so
+session required /run/mojt-system/pam/pam_unix.so
+session required /run/mojt-system/pam/pam_systemd.so
+""")
+    write(templates / "sysusers.conf", 'u sshd - "OpenSSH privilege separation" /var/empty /bin/false\n')
+    write(templates / "tmpfiles.conf", """d /var/empty - - - -
+C /etc/ssh/sshd_config - - - - /run/mojt-system/openssh/sshd_config
+C /etc/pam.d/sshd - - - - /run/mojt-system/openssh/pam
+""")
+    write(templates / "host-key", """#!/bin/sh
+set -eu
+PATH=/run/mojt-system/bin:/usr/bin:/bin
+export PATH
+directory=/etc/ssh
+mode=$(stat -c %a "$directory")
+if [ -L "$directory" ] || [ "$(stat -c %u "$directory")" != "$(id -u)" ] ||
+   [ "$((0$mode & 022))" -ne 0 ]; then
+    echo "Unsafe OpenSSH directory: $directory" >&2
+    exit 1
+fi
+key=$directory/ssh_host_ed25519_key
+if [ -e "$key" ] || [ -L "$key" ]; then
+    exit 0
+fi
+if [ -e "$key.pub" ] || [ -L "$key.pub" ]; then
+    echo "OpenSSH public host key exists without its private key: $key.pub" >&2
+    exit 1
+fi
+work=$(mktemp -d "$directory/.host-key.XXXXXX")
+trap 'rm -rf -- "$work"' EXIT
+ssh-keygen -q -t ed25519 -N '' -f "$work/key"
+# Publish the complete private key first. The server can use it on retry
+# even if publication of the derived public key was interrupted.
+ln -T -- "$work/key" "$key"
+ln -T -- "$work/key.pub" "$key.pub"
+""", 0o755)
+    put_unit("sshd.service", f"""[Unit]
+Description=OpenSSH server
+Requires=mojt-setup.service systemd-logind.service
+After=mojt-setup.service systemd-logind.service network.target
+
+[Service]
+Type=exec
+RuntimeDirectory=sshd
+RuntimeDirectoryMode=0755
+ExecStartPre=/run/mojt-system/bin/systemd-sysusers /run/mojt-system/openssh/sysusers.conf
+ExecStartPre={tmpfiles} --create /run/mojt-system/openssh/tmpfiles.conf
+ExecStartPre=/run/mojt-system/openssh/host-key
+ExecStartPre=/run/mojt-system/bin/sshd -t -f /etc/ssh/sshd_config
+ExecStart=/run/mojt-system/bin/sshd -D -e -f /etc/ssh/sshd_config
+Restart=on-failure
+KillMode=process
+
+[Install]
+WantedBy=mojt.target
+""")
 
 
 def install(tree, payload, record, busybox, login_mode, repo, console="serial", hardware_profile=None,
@@ -876,9 +978,11 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
         write(system / "manual-path", ":".join(["/run/mojt-system/share/man"] + manual_paths(payload, record)) + "\n")
         write(system / "zoneinfo-path", record["packages"]["tzdata"]["output"] + "/share/zoneinfo\n")
     if step >= 11:
-        export("sshd", "openssh", "bin/sshd", "sbin/sshd")
+        for name, target in openssh_commands(payload, record).items():
+            (system / "bin" / name).symlink_to(target)
         export("systemd-run", "systemd", "bin/systemd-run")
-        export("ssh-keygen", "openssh", "bin/ssh-keygen")
+        if not installer_console:
+            install_sshd(system, put_unit, executable(payload, record, "systemd", "bin/systemd-tmpfiles"))
     if step >= 10 and not installer_console:
         wanted += accounts.install(tree, system, account_inputs(payload, record), repo,
                                    write, add_default, put_unit, unit)
