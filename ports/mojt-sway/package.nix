@@ -4,8 +4,10 @@
 {
   lib,
   runCommand,
+  runtimeShell,
   makeWrapper,
   makeFontsConf,
+  dbus,
   dejavu_fonts,
   kitty,
   mesa,
@@ -17,7 +19,7 @@
 let
   fonts = makeFontsConf { fontDirectories = [ dejavu_fonts ]; };
 in
-runCommand "mojt-sway-0.1.0"
+runCommand "mojt-sway-0.1.1"
   {
     nativeBuildInputs = [ makeWrapper ];
     meta = {
@@ -42,11 +44,17 @@ runCommand "mojt-sway-0.1.0"
     makeWrapper ${lib.getExe waybar} "$session/waybar" \
       --add-flags "--config $session/waybar.jsonc --style $session/waybar.css"
 
-    makeWrapper ${lib.getExe sway} "$out/bin/mojt-sway" \
+    makeWrapper ${lib.getExe sway} "$session/sway" \
       --add-flags "--config $session/sway.conf" \
       --prefix PATH : ${lib.makeBinPath [ sway swaybg ]} \
       --run 'export TERMINFO_DIRS="${kitty.terminfo}/share/terminfo:''${TERMINFO_DIRS-}"' \
       --set-default FONTCONFIG_FILE "${fonts}" \
       --set-default LIBGL_DRIVERS_PATH "${mesa}/lib/dri" \
       --set-default __EGL_VENDOR_LIBRARY_DIRS "${mesa}/share/glvnd/egl_vendor.d"
+
+    substitute ${./mojt-sway.sh} "$out/bin/mojt-sway" \
+      --replace-fail @shell@ ${runtimeShell} \
+      --replace-fail @sway@ "$session/sway" \
+      --replace-fail @dbus@ ${dbus}
+    chmod 0755 "$out/bin/mojt-sway"
   ''

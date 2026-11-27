@@ -14,31 +14,35 @@ which is disabled in the supplied configuration.
 ## Install the session
 
 Use a Mojt x86-64 installation with the System Nix tools, working Internet
-access, kernel modesetting and a local login managed by systemd-logind.
-Use the same repository revision on each machine to install the same session.
-From a trusted checkout, run these commands as an administrator in the repository
-root:
+access, kernel modesetting and a local login managed by systemd-logind. From a
+trusted checkout, run these commands as an administrator in the repository root:
 
 ```sh
-source_ref="path:$PWD/ports/mojt-sway"
-nix --extra-experimental-features 'nix-command flakes' profile add \
-  --max-jobs 1 --profile /nix/var/nix/profiles/mojt-sway "$source_ref"
+(
+  set -eu
+  nixpkgs=$(sed -n 's/^path = "\(.*\)"$/\1/p' /run/mojt-system/ports.toml)
+  test -f "$nixpkgs/default.nix"
+  install -d -m 0755 /var/lib/mojt/mojt-sway
+  drv=$(nix-instantiate ports/mojt-sway --argstr nixpkgs "$nixpkgs")
+  nix-store --realise "$drv" --add-root /var/lib/mojt/mojt-sway/result \
+    --indirect --option max-jobs 1
+)
 ```
 
-The lock file pins Nixpkgs. Nix uses the configured cache for available
-dependencies and can build the Mojt package locally. `--max-jobs 1` allows
-builds for this command, including dependencies if their substitutes are
-unavailable. The dedicated Nix profile retains the session and its dependencies
-in the persistent Nix store. It uses its own command path and leaves MPM's
-active Ports and the installed System start-up configuration alone.
-The runtime closure is about 2 GiB. Paths already in the store are shared.
+The command uses the installed System's pinned Nixpkgs source. Use the same
+Nixpkgs pin and repository revision to reproduce the build on another machine.
+Nix uses the configured cache for available dependencies. `--option max-jobs 1`
+allows local builds for this command, including dependencies if their substitutes
+are unavailable. The result link retains the session in the persistent Nix store
+and gives it a dedicated command path. The runtime closure is about 2 GiB with
+the tested pin. Paths already in the store are shared.
 
 ## Start from the console
 
 Log in as an ordinary user on a local virtual terminal and run:
 
 ```sh
-/nix/var/nix/profiles/mojt-sway/bin/mojt-sway
+/var/lib/mojt/mojt-sway/result/bin/mojt-sway
 ```
 
 | Shortcut | Action |
@@ -53,10 +57,11 @@ Log in as an ordinary user on a local virtual terminal and run:
 | Super+Shift+E | Exit to the console |
 
 The wallpaper is fitted to each output. The session provides Mesa drivers and
-a DejaVu font fallback. Check that `loginctl session-status` reports an
-active local session if Sway cannot open graphics or input devices. Use
-`nmtui` from Kitty to open NetworkManager's text interface on a System that
-provides it. Waybar indicates local network status.
+a DejaVu font fallback. It reuses an existing D-Bus session bus or starts one
+with the packaged configuration. If Sway cannot open graphics or input devices,
+check `XDG_SESSION_ID` and `XDG_RUNTIME_DIR` from the local login. An administrator
+can inspect the session with `loginctl list-sessions` over SSH. Waybar indicates
+local network status.
 
 ## Set the Wayland keyboard layout
 
@@ -76,10 +81,8 @@ packaged defaults, and installing the package never writes to the file.
 Exit Sway and run this command as an administrator:
 
 ```sh
-nix --extra-experimental-features 'nix-command flakes' profile remove \
-  --profile /nix/var/nix/profiles/mojt-sway mojt-sway
+rm /var/lib/mojt/mojt-sway/result
 ```
 
-This removes the start command from the active profile. Previous Nix profile
-versions can still retain the package, and user configuration stays in the home
-directory.
+Removing the result link releases this reference to the package. User
+configuration stays in the home directory.
