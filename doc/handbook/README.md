@@ -26,7 +26,7 @@ remain the references for formats, implementation details and acceptance evidenc
 
 ## Part II. Common tasks
 
-[TBD](part-ii/README.md). Chapters will be added as workflows become established.
+- [An optional Sway desktop](part-ii/sway.md)
 
 ## Part III. System administration
 

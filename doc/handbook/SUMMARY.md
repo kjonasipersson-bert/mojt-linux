@@ -17,7 +17,8 @@ SPDX-License-Identifier: GPL-2.0-only
 
 # Part II. Common tasks
 
-- [To be written](part-ii/README.md)
+- [Overview](part-ii/README.md)
+- [An optional Sway desktop](part-ii/sway.md)
 
 # Part III. System administration
 
