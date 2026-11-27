@@ -1004,7 +1004,7 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
     (system / "units/default.target").symlink_to("mojt.target")
     write(system / "environment", "export PATH=" +
           ("/var/lib/mojt/ports/current/bin:" if step >= 3 else "") +
-          "/run/mojt-system/bin:/usr/bin:/bin\n" +
+          "/run/mojt-system/bin:/usr/bin:/bin:/usr/local/bin\n" +
           ("export SSL_CERT_FILE=" + cert + "\nexport NIX_SSL_CERT_FILE=" + cert + "\n"
            if step >= 2 else "") +
           ("export NIX_REMOTE=local\n" if step >= 3 else "") +

@@ -23,9 +23,24 @@ trusted checkout, run these commands as an administrator in the repository root:
   nixpkgs=$(sed -n 's/^path = "\(.*\)"$/\1/p' /run/mojt-system/ports.toml)
   test -f "$nixpkgs/default.nix"
   install -d -m 0755 /var/lib/mojt/mojt-sway
+  if [ ! -d /usr/local/bin ]; then
+    install -d -m 0755 /usr/local/bin
+  fi
+  result=/var/lib/mojt/mojt-sway/result
+  command_link=/usr/local/bin/mojt-sway
+  target=$result/bin/mojt-sway
+  if [ -e "$command_link" ] || [ -L "$command_link" ]; then
+    if [ "$(readlink "$command_link" || true)" != "$target" ]; then
+      echo "$command_link already exists with a different target" >&2
+      exit 1
+    fi
+  fi
   drv=$(nix-instantiate ports/mojt-sway --argstr nixpkgs "$nixpkgs")
-  nix-store --realise "$drv" --add-root /var/lib/mojt/mojt-sway/result \
+  nix-store --realise "$drv" --add-root "$result" \
     --indirect --option max-jobs 1
+  if [ ! -L "$command_link" ]; then
+    ln -sT "$target" "$command_link"
+  fi
 )
 ```
 
@@ -34,16 +49,20 @@ Nixpkgs pin and repository revision to reproduce the build on another machine.
 Nix uses the configured cache for available dependencies. `--option max-jobs 1`
 allows local builds for this command, including dependencies if their substitutes
 are unavailable. The result link retains the session in the persistent Nix store
-and gives it a dedicated command path. The runtime closure is about 2 GiB with
-the tested pin. Paths already in the store are shared.
+and exposes `mojt-sway` through `/usr/local/bin`. The runtime closure is about
+2 GiB with the tested pin. Paths already in the store are shared.
 
 ## Start from the console
 
 Log in as an ordinary user on a local virtual terminal and run:
 
 ```sh
-/var/lib/mojt/mojt-sway/result/bin/mojt-sway
+mojt-sway
 ```
+
+On older System builds, add `/usr/local/bin` to the login shell's `PATH` if
+needed. Run `export PATH="$PATH:/usr/local/bin"` for the current shell, or add
+that line after the System login hook in `/etc/profile` for future logins.
 
 | Shortcut | Action |
 | --- | --- |
@@ -63,6 +82,12 @@ check `XDG_SESSION_ID` and `XDG_RUNTIME_DIR` from the local login. An administra
 can inspect the session with `loginctl list-sessions` over SSH. Waybar indicates
 local network status.
 
+If Mesa reports permission denied for a `/dev/dri/renderD*` node, check its
+owner and permissions with `ls -l /dev/dri`. If the node is group-writable and
+belongs to `render`, an administrator can grant that account access with
+`usermod -aG render LOGIN_NAME`. Log out and back in to apply the new group
+membership.
+
 ## Set the Wayland keyboard layout
 
 Create `~/.config/mojt-sway/config` as the user running Sway. For a Swedish
@@ -81,7 +106,7 @@ packaged defaults, and installing the package never writes to the file.
 Exit Sway and run this command as an administrator:
 
 ```sh
-rm /var/lib/mojt/mojt-sway/result
+rm /usr/local/bin/mojt-sway /var/lib/mojt/mojt-sway/result
 ```
 
 Removing the result link releases this reference to the package. User
