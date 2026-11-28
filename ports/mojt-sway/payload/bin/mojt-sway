@@ -11,4 +11,9 @@ export PATH="$MOJT_SWAY_ASSETS:$PATH"
 
 : "${XDG_RUNTIME_DIR:?Start mojt-sway from a local user session}"
 
+ports_fonts=/var/lib/mojt/ports/current/share/fonts.conf
+if [ -z "${FONTCONFIG_FILE:-}" ] && [ -r "$ports_fonts" ]; then
+    export FONTCONFIG_FILE="$ports_fonts"
+fi
+
 exec sway --config "$MOJT_SWAY_ASSETS/sway.conf" "$@"

@@ -34,6 +34,8 @@ Fresh store layout:
 | `profiles/<id>/state.json` | Content-identified `mojt-ports-profile-v1` |
 | `profiles/<id>/transaction.json` | `mojt-ports-transaction-v1` |
 | `profiles/<id>/bin/` | Complete executable alias set |
+| `profiles/<id>/share/fonts/` | Links to active package font directories |
+| `profiles/<id>/share/fonts.conf` | Fontconfig configuration for that profile |
 | `current` | The single atomic selection pointer |
 
 State binds its target platform and embeds normalized wishes, exact lock/source views, logical installed
@@ -60,9 +62,18 @@ logical versions. The full reference hash disambiguates equal versions from
 different providers. Conflicting exports, oversized names and management-command
 shadowing fail before import. No implicit PATH-wide selection is performed.
 
+Font projection runs after provider verification and before pointer
+publication. It visits the active outputs directly. Incidental dependencies
+and inactive retained versions do not contribute font directories. The
+Fontconfig file scans the generation-specific path so each profile has its
+own cache key. Profiles created before font projection acquire it on their
+next successful mutation.
+
 Adapter contract: `describe(reference, root)` returns deterministic exports
 without fetching/writing; `ensure` acquires and retains an exact object;
-`verify` checks retained physical content and identity. Adapter code is explicitly
+`verify` checks retained physical content and identity. An optional
+`resource_path(reference, root, relative)` exposes a path within a verified
+output for a resource the core recognizes. Adapter code is explicitly
 registered by the trusted caller; catalog entries cannot load executable hooks.
 The core depends on this contract, not Nix identity syntax.
 

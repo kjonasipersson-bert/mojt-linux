@@ -103,6 +103,10 @@ class NativePortsAdapter:
         return dict(reference=ref, commands={name: str(directory / name)
             for name in self.body(ref, root)['provides']['commands']})
 
+    def resource_path(self, ref, root, relative):
+        path = self.directory(ref, root) / 'payload' / relative
+        return path if path.exists() else None
+
     def ensure(self, ref, root):
         directory = self.directory(ref, root)
         if os.path.lexists(directory):

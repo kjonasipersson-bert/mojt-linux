@@ -73,6 +73,31 @@ choice and refuses a changed binary rather than silently upgrading. Explicit
 catalog producers must include the manual dependencies themselves. Packages
 without a manual may provide `--help` or HTML documentation instead.
 
+## Fonts
+
+MPM links the `share/fonts` directories of active Nix and native Port
+outputs under `/var/lib/mojt/ports/current/share/fonts/`. Each package role
+gets its own directory. Installing another version keeps the currently
+selected fonts. Activation or removal updates the font view with the same
+profile switch as command aliases.
+
+The `mojt-sway` launcher sets `FONTCONFIG_FILE` to the profile's
+`share/fonts.conf` by default. To use the same configuration in another
+session, export it before starting Fontconfig applications. With the
+`fontconfig.bin` Port installed, `fc-match` shows the font family and file:
+
+```sh
+export FONTCONFIG_FILE=/var/lib/mojt/ports/current/share/fonts.conf
+fc-match -f '%{family}\n%{file}\n' 'DejaVu Sans Mono'
+```
+
+The generated configuration adds the profile fonts to the system and user
+font paths available through Fontconfig. New processes use the newly selected
+profile. Restart applications that keep their font list in memory.
+The first successful Ports mutation with the updated MPM publishes the font
+view for an existing profile, including when the wishes and selections are
+unchanged.
+
 ## Recovery and limits
 
 Retained versions can be selected explicitly. Profile publication preserves the
