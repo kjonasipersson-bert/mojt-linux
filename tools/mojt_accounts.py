@@ -5,6 +5,7 @@
 
 import json
 import os
+import re
 import stat
 
 COMMANDS = ("login", "useradd", "usermod", "userdel", "groupadd", "groupmod",
@@ -12,6 +13,34 @@ COMMANDS = ("login", "useradd", "usermod", "userdel", "groupadd", "groupmod",
 PAM_MODULES = ("pam_unix", "pam_deny", "pam_permit", "pam_loginuid", "pam_motd")
 SYSTEMD_PROGRAMS = ("systemd-logind", "systemd-user-runtime-dir", "systemd-sysctl")
 USER_SHUTDOWN_UNITS = ("exit.target", "systemd-exit.service", "shutdown.target")
+
+
+USER_SESSION_TARGET = "[Unit]\nDescription=Mojt user session\n"
+USER_BUS_CONFIG = "dbus-session.conf"
+LEGACY_USER_BUS_SERVICE = (
+    "[Unit]\nDescription=D-Bus User Message Bus\n"
+    "Requires=dbus.socket\nAfter=dbus.socket\n\n"
+    "[Service]\nExecStart=/run/mojt-system/bin/dbus-daemon "
+    "--config-file=/run/mojt-system/dbus-session.conf "
+    "--address=systemd: --nofork --nopidfile --systemd-activation\n"
+    "Type=notify\nNotifyAccess=main\n"
+)
+USER_BUS_UNITS = {
+    "default.target": USER_SESSION_TARGET + "Wants=dbus.socket\nAfter=dbus.socket\n",
+    "dbus.socket": "[Unit]\nDescription=D-Bus User Message Bus Socket\n"
+                   "[Socket]\nListenStream=%t/bus\n",
+    "dbus.service": LEGACY_USER_BUS_SERVICE.replace(
+        "After=dbus.socket\n",
+        "After=dbus.socket\nDefaultDependencies=no\n"
+        "Conflicts=shutdown.target\nBefore=shutdown.target\n",
+    ),
+}
+
+
+def user_bus_config(daemon):
+    match = re.fullmatch(r"(/nix/store/[0-9abcdfghijklmnpqrsvwxyz]{32}-[A-Za-z0-9+._?=-]+)/bin/dbus-daemon",
+                         daemon or "")
+    return match[1] + "/share/dbus-1/session.conf" if match else None
 
 
 def install(tree, profile, inputs, repo, write, add_default, put_unit, unit):
@@ -154,7 +183,8 @@ root ALL=(ALL:ALL) ALL
              "Environment=XDG_RUNTIME_DIR=/run/user/%i\n"
              "Environment=PATH=/run/mojt-system/bin:/usr/bin:/bin\n",
              "Requires=user-runtime-dir@%i.service\nAfter=user-runtime-dir@%i.service systemd-logind.service\n"))
-    write(profile / "user-units/default.target", "[Unit]\nDescription=Mojt user session\n")
+    for name, contents in USER_BUS_UNITS.items():
+        write(profile / "user-units" / name, contents)
     for name, path in inputs["user_shutdown_units"].items():
         (profile / "user-units" / name).symlink_to(path)
     console = profile / "units/mojt-console.service"

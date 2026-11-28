@@ -40,6 +40,10 @@ require Intel graphics, Ethernet or Wi-Fi hardware. Device-specific failures rem
 visible in the journal; successful event processing is not proof that each device
 works. See the upstream [udevadm reference](https://www.freedesktop.org/software/systemd/man/latest/udevadm.html).
 
+System creates the `render` group and assigns DRM render nodes (`/dev/dri/renderD*`)
+to `root:render` with mode `0660`. An administrator grants render access by adding
+an account to that group. This rule applies only to render nodes.
+
 ## 8.3 Firmware input
 
 For the current Debian bootstrap backend, extract these packages into one new

@@ -55,6 +55,20 @@ dependency archives. Install them using the existing `mpm system install
 firmware referenced by the generation needs no dependency archive. No package
 code or interpreter from the candidate runs during installation.
 
+For the D-Bus user bus transition, package the tooling-only successor first
+using the updated checkout and `--firmware keep`. Boot it before packaging and
+installing the generation with the new user bus. The following packaging
+command retains the exact firmware reference and assigns a new System version:
+
+```sh
+mbt package system --running --firmware keep --user-bus --version 0.3.0 \
+  --output ./system-0.3.0-package
+```
+
+The default packaging revision for a new version is 1. For an explicit
+baseline, pass its complete artifact ID as `--expected-running`. The user bus
+uses the existing System D-Bus output.
+
 The assembled-tree packaging interface remains available for bootstrap inputs:
 `mbt package system --tree ... --generation ... --version ... --revision ...
 --nix-store ... --output ...`. It retains its materialized profile layout.

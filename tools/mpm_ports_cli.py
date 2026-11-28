@@ -21,7 +21,7 @@ from mpm_selection import Catalog, parse_selector, resolve
 SOURCES = 'mojt-ports-sources-v1'
 SUPPORTED_STATE_FORMATS = ('mojt-ports-profile-v1',)
 SUPPORTED_CAPABILITIES = ('mpm-request-origins-v1',)
-READ_ONLY = {'status', 'list', 'history', 'search', 'info'}
+READ_ONLY = {'status', 'list', 'history', 'search', 'info', 'path'}
 ACTIONS = READ_ONLY | {'update', 'install', 'activate', 'upgrade', 'apply', 'remove', 'reset'}
 require = wishes.require
 
@@ -38,7 +38,7 @@ def executor_identity(runtime):
     files = ('mpm_cli.py', 'mpm_ports_cli.py', 'mpm_requests.py',
              'mpm_request_plan.py', 'mpm_ports_profile.py', 'mpm_nix_binary.py',
              'mpm_selection.py', 'mpm_transaction.py', 'mpm_ports_nix_source.py',
-             'mpm-nix-catalog.py', 'mpm-nix-prototype', 'mpm_ui.py')
+             'mpm-nix-catalog.py', 'mpm-nix-prototype', 'mpm_ports_native.py', 'mpm_ui.py')
     directory = Path(__file__).parent
     return dict(provider='mpm-runtime', identity=dict(format='mojt-mpm-executor-v1',
         files={name: hashlib.sha256((directory / name).read_bytes()).hexdigest() for name in files},
@@ -51,12 +51,12 @@ def adapters_for(sources, previous, runtime):
     if previous:
         refs += [o['reference'] for o in previous['record']['description']['objects']]
     providers = {r['provider'] for r in refs}
-    require(providers <= {'nix'}, 'unsupported Ports provider: ' + ', '.join(sorted(providers - {'nix'})))
+    require(providers <= {'nix','native'}, 'unsupported Ports provider: ' + ', '.join(sorted(providers - {'nix','native'})))
     if not providers:
         return {}
     from mpm_ports_nix_source import NixPortsAdapter
     binary = runtime.system_bin / 'nix-store' if runtime else Path(shutil.which('nix-store') or '/nonexistent/nix-store')
-    return {'nix': NixPortsAdapter(binary.absolute())}
+    return {'nix': NixPortsAdapter(binary.absolute())} if 'nix' in providers else {}
 
 
 def installed_choice(state, request, platform):
@@ -101,7 +101,7 @@ def parser():
             sub.add_argument('names', nargs='+', help='bare package roles whose interactive active overrides are released')
         if action == 'install':
             sub.add_argument('names', nargs='+')
-            sub.add_argument('--source', help='named accepted source; mandatory if more than one exists')
+            sub.add_argument('--source', help='named accepted source; otherwise use the matching repository or pinned provider')
             sub.add_argument('--no-activate', action='store_true')
         if action == 'activate':
             sub.add_argument('request', help='installed selector or full exact reference ID from list --exact')
@@ -118,6 +118,8 @@ def parser():
             sub.add_argument('query'); sub.add_argument('--limit', type=int, default=50)
         if action == 'info':
             sub.add_argument('name')
+        if action == 'path':
+            sub.add_argument('names', nargs='+')
         sub.add_argument('--json', action='store_true')
     return p
 
@@ -155,6 +157,18 @@ def inspect(root, args, previous, platform):
                         if args.query.casefold() in name.casefold()}) if state else []
         rows = names[:args.limit]
         print(json.dumps(dict(matches=rows, total=len(names)), indent=2) if args.json else '\n'.join(rows))
+    elif args.action == 'path':
+        from mpm_nix_binary import NixBinaryAdapter
+        adapter = NixBinaryAdapter('/not-executed')
+        active = state['active'] if state else {}
+        outputs = []
+        for name in args.names:
+            ref = active.get(name)
+            require(ref is not None and ref['provider'] == 'nix', 'no active Nix Port: '+name)
+            output = adapter.identity(ref)['output']
+            require(Path(output).is_dir(), 'active Nix output is missing: '+name)
+            outputs.append(output)
+        print(json.dumps(outputs) if args.json else '\n'.join(outputs))
     else:
         require(state is not None, 'no installed Ports profile')
         print(json.dumps(installed_choice(state, args.name, platform), indent=2))
@@ -193,37 +207,88 @@ def _main(argv, *, root, runtime, adapters, stack):
     else:
         require(not args.expected_sources, '--expected-sources requires --sources')
         sources = copy.deepcopy(old['sources']) if old else {}
+    from mpm_ports_native import PREFIX, NativePortsAdapter, dependency_wishes, discover
+    native_views, bindings = discover(runtime) if args.sources is None and args.action in ('install','upgrade') else ({}, {})
+    require('nixpkgs' not in native_views, 'reserved native repository name')
+    known_native = set(native_views) | {name for name,view in sources.items() if view['offers']
+                                      and all(o['backend']=='native' for o in view['offers'])}
+    native_adapter = NativePortsAdapter(runtime, bindings)
+    routes = {}
+    native_requests = []
+    if args.action == 'install':
+        for selector in args.names:
+            role = parse_selector(selector).name
+            native_sources = [name for name,view in native_views.items() if role in view['catalogs']]
+            matches = [name for name,view in sources.items() if role in view['catalogs']
+                       and name != 'nixpkgs' and name not in known_native]
+            choices = sorted(set(native_sources + matches))
+            if args.source is not None:
+                source = args.source
+            elif not known_native:
+                require(len(sources) <= 1, 'specify one accepted --source NAME')
+                source = next(iter(sources), 'nixpkgs')
+            else:
+                require(len(choices) <= 1, 'ambiguous package source; specify --source NAME')
+                source = choices[0] if choices else 'nixpkgs'
+            routes[selector] = source
+            require(source not in known_native or source in native_sources,
+                    'native Port absent from the registered repository: '+role)
+            if source in native_views:
+                sources[source] = native_views[source]
+                state = wishes.request_interactively(state, selector, source)
+                native_requests.append(selector)
+    if args.action == 'upgrade':
+        for c in state['description']['claims']:
+            if c['source'] in native_views and (not args.names or c['role'] in args.names):
+                sources[c['source']] = native_views[c['source']]
+    if args.action == 'remove':
+        state = wishes.remove_interactive(state, args.names, source=args.source)
+    native_advance = [c['key'] for c in state['description']['claims'] if args.action == 'upgrade'
+                      and (not args.names or c['role'] in args.names) and c['source'] in native_views]
+    dependencies = []
+    if args.action in ('install','upgrade','remove'):
+        state, dependencies = dependency_wishes(state, old, native_views, native_adapter, root, platform, native_advance)
     prepared = None
-    if runtime is not None and args.sources is None and args.action in ('install', 'update'):
+    if runtime is not None and args.sources is None and (args.action in ('install', 'update') or native_advance):
         from mpm_ports_nix_source import prepare, materialize, preview as discovery_preview
-        prepared = prepare(runtime, args, sources, platform)
+        nix_args = args
+        if args.action != 'update' and (native_requests or native_advance or set(sources) & known_native):
+            nix_args = copy.copy(args)
+            nix_args.action = 'install'
+            nix_args.source = None
+            nix_args.names = sorted(set(dependencies + [s for s in routes if routes[s]=='nixpkgs']))
+        nix_sources = {name:view for name,view in sources.items() if name not in known_native}
+        prepared = prepare(runtime, nix_args, nix_sources, platform)
     if prepared is not None:
         # This is a provider-discovery preview, not a publishable profile plan:
         # binaries may export more commands than their package's public name.
         if prepared['rows']:
             proposal = discovery_preview(prepared)
+            if native_requests:
+                proposal['metapackages'] = native_requests
             if args.dry_run:
                 print(json.dumps(dict(dry_run=True, changed=False, plan=proposal), indent=2)); return 0
             if not args.yes:
                 print(json.dumps(proposal, indent=2))
                 if input('Fetch these exact binaries for inspection? [y/N] ').strip().lower() != 'y':
                     print('Cancelled.'); return 0
-        sources = materialize(prepared, sources, stack)
+        sources.update(materialize(prepared, nix_sources, stack))
         require(profiles.current(root) == previous, 'Ports baseline changed during discovery; retry')
     require(args.action != 'update' or args.sources is not None or prepared is not None,
             'update needs an explicit --sources snapshot bundle')
-    require(args.action == 'update' or old is not None or args.sources is not None or prepared is not None,
+    require(args.action == 'update' or old is not None or args.sources is not None or prepared is not None or native_requests,
             'initial operation needs --sources FILE (no installed provider source)')
     before_keys = {c['key'] for c in state['description']['claims']}
     advance = []
     if args.action == 'install':
-        source = args.source or (next(iter(sources)) if len(sources) == 1 else None)
-        require(source in sources, 'specify one accepted --source NAME')
         for selector in args.names:
+            source = routes[selector]
+            require(source in sources, 'specify one accepted --source NAME')
             state = wishes.request_interactively(state, selector, source)
         # New wishes resolve now; accepted existing wishes do not advance here.
     elif args.action == 'apply':
         document = wishes.parse_configuration(args.configuration.read_bytes())
+        require(not document['name'].startswith(PREFIX), 'reserved metapackage configuration name')
         require(not (set(document) & {'base', 'system', 'kernel'}), 'ports apply supports only Ports; other areas require their own implementation')
         default = next(iter(sources)) if len(sources) == 1 else None
         state = wishes.reconcile_configuration(state, document, default_source=default)
@@ -235,8 +300,6 @@ def _main(argv, *, root, runtime, adapters, stack):
         require(not names - roles, 'upgrade names must have recorded wishes')
         advance = [c['key'] for c in state['description']['claims']
                    if (not names or c['role'] in names) and parse_selector(c['policy']['selector']).kind != 'exact']
-    elif args.action == 'remove':
-        state = wishes.remove_interactive(state, args.names, source=args.source)
     elif args.action == 'reset':
         state = wishes.reset_selection(state, args.names)
     elif args.action == 'activate':
@@ -266,6 +329,7 @@ def _main(argv, *, root, runtime, adapters, stack):
             state = wishes.select_interactively(state, package['role'], package['reference'])
     if adapters is None:
         adapters = adapters_for(sources, previous, runtime)
+        adapters['native'] = native_adapter
     options = dict(platform=platform, executor=executor_identity(runtime),
         target_identity=wishes.digest(dict(root=str(root), installation=installation)))
     refresh=[c['key'] for c in state['description']['claims'] if c['source']=='nixpkgs'

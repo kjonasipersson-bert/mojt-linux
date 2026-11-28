@@ -26,6 +26,10 @@ explicitly requested attributes; local search is not a remote package index.
 Binary substitutes are imported without a hidden source-build fallback.
 An explicit finite `--sources FILE` bundle supplies its own metadata/dependencies.
 
+Native metapackages come from a configured [Mojt Ports repository](ports-repository.md).
+Install them using the same command. MPM records their declared Nixpkgs package
+wishes with their own origin, and lists the metapackage and installed packages.
+
 First unambiguous installation can establish an active default. Adding another
 version preserves an existing default; `--no-activate` suppresses that initial
 convenience. A preview can describe acquisition before exact command exports

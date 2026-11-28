@@ -13,6 +13,9 @@ preserve upstream licenses.
 
 ## Engineering principles
 
+- Keep installed software within Base, System or Ports. Use normal MPM Ports
+  wishes for programs and resources in metapackages, and the packages' normal
+  manual handling. Follow the distribution contract in `docs/distribution-contract.md`.
 - Preserve the independent Base, System, Kernel upgrade scope, Ports and
   persistent-state lifecycles. Base is a whole versioned userspace release.
 - Use standard tools through their upstream commands, configuration files and

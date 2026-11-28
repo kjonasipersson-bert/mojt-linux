@@ -252,8 +252,8 @@ class CliTests(unittest.TestCase):
         self.cli("ports", "search", "linux", "--area", "kernel", "--catalog", str(self.catalog), success=False)
 
     def test_fresh_ports_dispatch_never_falls_back_to_the_prototype(self):
-        for name in ('mpm_ports_cli.py', 'mpm_ports_profile.py', 'mpm_request_plan.py',
-                     'mpm_requests.py', 'mpm_transaction.py'):
+        from mojt_system import MPM_FILES
+        for name in MPM_FILES:
             shutil.copyfile(REPO / 'tools' / name, self.tools / name)
         (self.tools / 'mpm-nix-prototype').write_text("raise AssertionError('prototype loaded')\n")
         root = self.directory / 'fresh-registry'

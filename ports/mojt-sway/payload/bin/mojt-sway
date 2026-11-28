@@ -1,0 +1,14 @@
+#!/bin/sh
+# Mojt Linux
+# Copyright (C) 2026 Jonas Persson
+# SPDX-License-Identifier: GPL-2.0-only
+set -eu
+
+command_path=$(readlink -f "$0")
+MOJT_SWAY_ASSETS=${command_path%/bin/*}/share/mojt-sway
+export MOJT_SWAY_ASSETS
+export PATH="$MOJT_SWAY_ASSETS:$PATH"
+
+: "${XDG_RUNTIME_DIR:?Start mojt-sway from a local user session}"
+
+exec sway --config "$MOJT_SWAY_ASSETS/sway.conf" "$@"

@@ -28,19 +28,21 @@ def prepare(config,output):
     config=Path(config).resolve(strict=True)
     artifact.require(config.stat().st_size<=https.MAX_METADATA,'repository configuration exceeds limit')
     settings=tomllib.loads(config.read_text())
-    artifact.fields(settings,('format','name','channel','sequence','key','packages'))
+    artifact.fields(settings,('format','name','channel','sequence','key','packages'),('area',))
     artifact.require(settings['format']==1,'unsupported repository configuration')
+    area=settings.get('area','base')
+    artifact.require(area in ('base','ports'),'unsupported repository area')
     sources.cache.model.token(settings['name']);sources.cache.model.token(settings['channel'])
     sequence=settings['sequence']
     artifact.require(type(sequence) is int and 0<sequence<2**63,'invalid repository sequence')
     packages=settings['packages']
-    artifact.require(type(packages) is list and len(packages)<=64,'repository accepts at most 64 Base packages')
+    artifact.require(type(packages) is list and len(packages)<=64,'repository accepts at most 64 packages')
     key=(config.parent/settings['key']).resolve(strict=True);info=key.stat()
     artifact.require(stat.S_ISREG(info.st_mode) and info.st_nlink==1 and info.st_uid==os.geteuid()
         and not info.st_mode&0o077,'signing key must be an executor-owned private regular file (0600)')
     output=Path(output).absolute()
     artifact.require(not os.path.lexists(output),'repository output already exists; use a new directory')
-    catalog=dict(format='mpm-release-catalog-v1',area='base',name='mojt',channel=settings['channel'],
+    catalog=dict(format='mpm-release-catalog-v1',area=area,name='mojt' if area=='base' else 'ports',channel=settings['channel'],
         platform='x86_64-linux',sources={settings['name']:dict(backend='native',identity=dict(repository=settings['name']))},candidates=[])
     offers=[];descriptors={};assets=[];releases=set()
     for row in packages:
@@ -48,11 +50,16 @@ def prepare(config,output):
         location=https.url(row['url']);path=(config.parent/row['archive']).resolve(strict=True)
         before=path.stat();artifact.require(stat.S_ISREG(before.st_mode) and 0<before.st_size<=1024**3,'Base archive exceeds repository limit')
         body=artifact.verify(path,max_uncompressed=4*1024**3)
-        artifact.require((body['kind'],body['name'],body['platform'])==('base','mojt','x86_64-linux'),
-                         'repository prototype accepts Mojt Base x86_64 archives only')
+        artifact.require(body['platform']=='x86_64-linux' and
+                         (body['kind']=='port' if area=='ports' else (body['kind'],body['name'])==('base','mojt')),
+                         'archive belongs to another repository area or platform')
+        if area == 'ports':
+            from mpm_ports_native import descriptor
+            descriptor(body)
         version=body['version'];release=version['release_id']
-        artifact.require(release not in releases,'duplicate Base release; keep one exact build per release')
-        releases.add(release)
+        key_release=(body['name'],release)
+        artifact.require(key_release not in releases,'duplicate release; keep one exact build per release')
+        releases.add(key_release)
         with path.open('rb') as stream:checksum=hashlib.file_digest(stream,'sha256').hexdigest()
         after=path.stat()
         artifact.require((before.st_dev,before.st_ino,before.st_size,before.st_mtime_ns)==

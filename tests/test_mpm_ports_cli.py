@@ -241,9 +241,8 @@ class PortsCliTests(unittest.TestCase):
 
     def test_installed_copy_can_publish_without_checkout(self):
         installed = self.parent / 'installed'; installed.mkdir()
-        for name in ('mpm_cli.py', 'mpm_ports_cli.py', 'mpm_requests.py', 'mpm_request_plan.py',
-                     'mpm_ports_profile.py', 'mpm_nix_binary.py', 'mpm_selection.py', 'mpm_transaction.py',
-                     'mpm_ports_nix_source.py', 'mpm-nix-catalog.py', 'mpm-nix-prototype', 'mpm_ui.py'):
+        from mojt_system import MPM_FILES
+        for name in MPM_FILES:
             shutil.copyfile(Path(manager.__file__).parent / name, installed / name)
         # The acceptance harness supplies a trusted file-copy provider, just as
         # native boot fixtures substitute host tools. Production mapping stays Nix.

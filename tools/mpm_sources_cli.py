@@ -26,7 +26,7 @@ def parser(area,domain=None):
         if action == 'add':
             origin=sub.add_mutually_exclusive_group(required=True)
             origin.add_argument('--from-file', type=Path)
-            origin.add_argument('--url', help='signed HTTPS Base repository metadata')
+            origin.add_argument('--url', help='signed HTTPS repository metadata')
             sub.add_argument('--policy-file', type=Path)
             sub.add_argument('--key-file', type=Path, help='publisher Ed25519 public PEM key, obtained independently')
             sub.add_argument('--channel', default='stable')
@@ -89,7 +89,7 @@ def _main(area, argv, *, root=None, runtime=None,domain=None):
                 sources.require(result['catalog']['area']==domain,'repository catalog belongs to another area')
         elif args.action == 'add':
             if args.url:
-                sources.require(domain in (None,'base'),'HTTPS publisher currently supports Base only')
+                sources.require(domain in (None,'base','ports'),'HTTPS publisher supports Base and Ports')
                 sources.require(args.key_file is not None and args.policy_file is None,
                                 '--url requires --key-file; do not also specify --policy-file')
                 with args.key_file.open(encoding='ascii') as stream:key=stream.read(513)

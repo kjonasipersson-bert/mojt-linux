@@ -23,6 +23,49 @@ import mpm_system_transition as transition
 
 
 class ReviewTests(unittest.TestCase):
+    def test_packaged_user_bus_transition_and_return_only_accept_reviewed_units(self):
+        from tempfile import TemporaryDirectory
+        accounts = legacy.accounts
+        with TemporaryDirectory() as directory:
+            profile = Path(directory)
+            (profile / 'user-units').mkdir()
+            (profile / 'user-units/default.target').write_text(accounts.USER_SESSION_TARGET)
+            (profile / 'bin').mkdir()
+            daemon = '/nix/store/' + 'a' * 32 + '-dbus/bin/dbus-daemon'
+            (profile / 'bin/dbus-daemon').symlink_to(daemon)
+            template = dict(label='user-bus', architecture='x86_64',
+                requirements=dict(base_abi={'libc':'glibc'}, state_layout=1),
+                support=dict(ports=dict(read=[], write=[], capabilities=[])),
+                provides=[], artifacts={'fixture':True}, provenance={'fixture':True})
+            old = manifests.create(dict(template, profile=system.inventory(profile)))
+            packer.add_user_bus(profile)
+            candidate = manifests.create(dict(template, profile=system.inventory(profile)))
+            service = profile / 'user-units/dbus.service'
+            service.write_text(accounts.LEGACY_USER_BUS_SERVICE)
+            trial = manifests.create(dict(template, profile=system.inventory(profile)))
+            packer.add_user_bus(profile)
+            self.assertEqual(system.inventory(profile), candidate['description']['profile'])
+            service.write_text('[Unit]\nDescription=Unreviewed service\n')
+            with self.assertRaisesRegex(ValueError, 'refusing to replace'):
+                packer.add_user_bus(profile)
+
+        for selected, proposed in ((old, candidate), (candidate, old), (old, trial),
+                                   (trial, old), (trial, candidate), (candidate, trial)):
+            review = transition.tooling_review(selected, proposed)['description']
+            self.assertTrue(review['compatible'], review['blockers'])
+            self.assertEqual(review['policy'], 'dbus-user-bus-v1')
+        for name, row in (
+            ('user-units/dbus.service', dict(sha256='f'*64, mode=0o444)),
+            ('dbus-session.conf', dict(link='/etc/dbus-1/session.conf')),
+            ('units/dbus.service', dict(sha256='e'*64, mode=0o444)),
+        ):
+            damaged = copy.deepcopy(candidate['description'])
+            damaged['profile'][name] = row
+            for selected in (old, trial):
+                review = transition.tooling_review(selected, manifests.create(damaged))['description']
+                self.assertFalse(review['compatible'])
+                self.assertIn(name, review['blockers'])
+
     def test_new_crypto_helper_requires_matching_public_alias_and_cannot_retarget(self):
         old=manifests.create(dict(label='crypto',architecture='x86_64',
             requirements=dict(base_abi={'libc':'glibc'},state_layout=1),

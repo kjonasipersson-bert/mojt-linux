@@ -145,6 +145,14 @@ units, helper declarations/producers, authentication data and service configs.
 Changed/removed services or startup inputs block. No new migration or initializer
 is inferred from an empty lifecycle list or a package-supplied script.
 
+The D-Bus user bus exception recognizes the exact Mojt default user target,
+socket unit and unprivileged service. The session configuration link must point
+into the unchanged System D-Bus output. The review also recognizes the reverse
+transition to the previous target. The system bus, other units and persistent
+configuration remain subject to the usual checks. A manager predating this
+exception can install and boot a tooling-only successor before selecting a
+generation with the user bus.
+
 The `mojt-system-firmware-data-v1` contract permits firmware and upstream
 attribution changes in a new immutable System. Its startup review uses
 `mojt-system-startup-review-v2`: `changed` lists non-firmware

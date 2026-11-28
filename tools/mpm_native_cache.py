@@ -132,8 +132,8 @@ def metadata(*, policy_file, source, snapshot, catalog_bytes, acquisition_bytes)
     bound(catalog_bytes,snap['catalog']);bound(acquisition_bytes,snap['acquisition'])
     require(snap['catalog']['format']=='mpm-release-catalog-v1','unsupported catalog acquisition format')
     catalog=Catalog.from_dict(artifact.parse_json(catalog_bytes))
-    if remote:require(catalog.area=='base' and catalog.name=='mojt' and catalog.platform=='x86_64-linux',
-                      'HTTPS prototype supports Mojt Base x86_64 only')
+    if remote:require((catalog.area,catalog.name) in {('base','mojt'),('ports','ports')}
+                      and catalog.platform=='x86_64-linux', 'unsupported HTTPS repository area/name/platform')
     require(catalog.channel==src['channel'],'catalog/source channel differs')
     mapping=artifact.parse_json(acquisition_bytes);md=envelope(mapping,'mojt-acquisition-map-v1')
     fields(md,('catalog_sha256','offers'))

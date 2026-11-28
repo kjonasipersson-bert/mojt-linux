@@ -108,6 +108,37 @@ class Boundaries(unittest.TestCase):
             choose.assert_called_once_with(Path('/fixture'),'system')
             self.assertEqual(stage.call_args.args[2],identifier)
 
+    def test_running_busybox_can_be_projected_from_its_retained_component(self):
+        from mpm_cli import Runtime
+        import mpm_boot_update as update
+
+        record = fixtures.bound(fixtures.fixture())
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            runtime = Runtime(system_bin=root / 'profile/bin', disk=root)
+            runtime.system_bin.mkdir(parents=True)
+            running_path = runtime.system_bin.parent / 'busybox'
+            running_path.touch()
+            self.assertEqual(update.boot_busybox(runtime, None), running_path)
+            running_path.unlink()
+
+            retained = root / 'retained-busybox'
+            retained.touch()
+            running_path.symlink_to(retained)
+            with mock.patch.object(status, 'read_running', return_value=record), \
+                 mock.patch.object(update.system, 'profile_file', return_value=retained) as profile_file:
+                self.assertEqual(update.boot_busybox(runtime, None), retained)
+                profile_file.assert_called_once_with(
+                    update.system.realization_path(root, status.description(record)['system']['artifact']) / 'profile',
+                    'busybox')
+                profile_file.return_value = root / 'different-busybox'
+                with self.assertRaisesRegex(ValueError, 'differs from the retained System profile'):
+                    update.boot_busybox(runtime, None)
+
+            with self.assertRaisesRegex(ValueError, 'canonical static BusyBox required'):
+                update.boot_busybox(None, running_path)
+            self.assertEqual(update.boot_busybox(None, retained), retained)
+
     def test_update_keeps_existing_management_requirements_and_other_area_inputs(self):
         import mpm_boot_update as update
         source=fixtures.fixture();before=source['description']

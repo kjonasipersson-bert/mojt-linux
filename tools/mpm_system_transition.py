@@ -178,6 +178,40 @@ def profile_review(selected, candidate, profile, *, selected_system=None, candid
     return tooling_review(selected,candidate,firmware=proof,inventories=(before,after),allowed_data=allowed)
 
 
+def user_bus_paths(before, after):
+    accounts = paths.accounts
+
+    def unit(text):
+        return dict(sha256=hashlib.sha256(text.encode()).hexdigest(), mode=0o444)
+
+    service = "user-units/dbus.service"
+    default = "user-units/default.target"
+    fixed = {"user-units/" + name: unit(text) for name, text in accounts.USER_BUS_UNITS.items()}
+    legacy = fixed | {service: unit(accounts.LEGACY_USER_BUS_SERVICE)}
+    absent = dict.fromkeys(fixed)
+    absent[default] = unit(accounts.USER_SESSION_TARGET)
+
+    previous = {name: before.get(name) for name in fixed}
+    following = {name: after.get(name) for name in fixed}
+    if previous == absent:
+        before, after = after, before
+        previous, following = following, previous
+    daemon = before.get("bin/dbus-daemon", {})
+    config = accounts.user_bus_config(daemon.get("link"))
+    if not config or after.get("bin/dbus-daemon") != daemon:
+        return set()
+    config_path = accounts.USER_BUS_CONFIG
+    link = dict(link=config)
+
+    if previous in (fixed, legacy) and following == absent:
+        if before.get(config_path) == link and after.get(config_path) in (None, link):
+            return {*fixed, config_path}
+    if (previous, following) in ((legacy, fixed), (fixed, legacy)):
+        if before.get(config_path) == after.get(config_path) == link:
+            return {service}
+    return set()
+
+
 def tooling_review(selected, candidate, *, firmware=None, inventories=None, allowed_data=()):
     """Allow management tooling changes; do not infer service/schema migrations."""
     old = manifests.validate(selected)['description'];new = manifests.validate(candidate)['description']
@@ -186,6 +220,7 @@ def tooling_review(selected, candidate, *, firmware=None, inventories=None, allo
     after = {p:normalized(r) for p,r in following.items() if p != management.FILENAME}
     changed = sorted(p for p in set(before) | set(after) if before.get(p) != after.get(p))
     firmware_paths=firmware_review(selected,candidate,firmware) if firmware is not None else set()
+    bus_paths = user_bus_paths(before, after)
     blocked = []
     for path in changed:
         allowed = (path.startswith(('tools/', 'tests/')) or path in ('tools', 'tests', 'bin/mpm', 'bin/man', 'bin/manpath', 'bin/mojt-system-inspect', 'bin/mbt', 'share/man/man1/mpm.1',
@@ -200,19 +235,21 @@ def tooling_review(selected, candidate, *, firmware=None, inventories=None, allo
                      after[path]['link']==after.get('bin/openssl',{}).get('link'))
         if path == 'version':
             allowed = after.get(path, {}).get('sha256') == hashlib.sha256((new['label'] + '\n').encode()).hexdigest()
-        if not allowed and path not in firmware_paths and path not in allowed_data:blocked.append(path)
+        if not allowed and path not in firmware_paths and path not in bus_paths and path not in allowed_data:blocked.append(path)
     previous_outputs = sorted({r['link'] for r in before.values() if r.get('link') in
         ('/run/mojt-privileged/passwd', '/run/mojt-privileged/sudo')})
     outputs = new['provenance'].get('runtime_outputs', [])
     if outputs != previous_outputs:blocked.append('runtime-output-contract')
     stable = {p:r for p,r in before.items() if p not in changed}
     policy=('firmware-data-and-guest-agent-v1' if firmware is not None and 'units/qemu-guest-agent.service' in firmware_paths
-            else 'firmware-data-only-v1' if firmware is not None else 'unchanged-startup-only-v1')
+            else 'firmware-data-only-v1' if firmware is not None
+            else 'dbus-user-bus-v1' if bus_paths else 'unchanged-startup-only-v1')
     description=dict(policy=policy, selected=selected['id'], candidate=candidate['id'],
         changed=changed, blockers=sorted(blocked), preserved_inventory=artifact.digest(stable),
         runtime_outputs=outputs, compatible=not blocked, effects=False,
         limitation=('Firmware data and the fixed optional QEMU guest service only; no other service or state-schema migration.'
-                    if firmware is not None else 'No service upgrade, new initializer, state-schema migration or runtime health is authorized.'))
+                    if firmware is not None else 'Fixed D-Bus user units only; no state-schema migration or runtime health is authorized.'
+                    if bus_paths else 'No service upgrade, new initializer, state-schema migration or runtime health is authorized.'))
     if firmware is not None:
         data_paths=set(firmware_inventory(before)) | set(firmware_inventory(after))
         data_changes=[p for p in changed if p in data_paths]

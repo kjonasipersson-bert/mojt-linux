@@ -1,0 +1,34 @@
+// Mojt Linux
+// Copyright (C) 2026 Jonas Persson
+// SPDX-License-Identifier: GPL-2.0-only
+{
+  "id": "mojt",
+  "layer": "top",
+  "position": "top",
+  "height": 28,
+  "modules-left": ["sway/workspaces"],
+  "modules-right": ["network", "battery", "clock", "custom/exit"],
+  "sway/workspaces": {
+    "disable-scroll": true
+  },
+  "network": {
+    "format-wifi": "{essid} · {signalStrength}%",
+    "format-ethernet": "Ethernet",
+    "format-disconnected": "Offline",
+    "tooltip-format": "{ifname} · {ipaddr}"
+  },
+  "battery": {
+    "format": "Battery {capacity}%",
+    "format-charging": "Charging {capacity}%",
+    "format-plugged": "AC · {capacity}%",
+    "states": { "critical": 10 }
+  },
+  "clock": {
+    "format": "{:%Y-%m-%d  %H:%M}"
+  },
+  "custom/exit": {
+    "format": "Exit",
+    "tooltip": false,
+    "on-click": "swaynag -m 'Exit the Sway session?' -B 'Exit Sway' 'swaymsg exit'"
+  }
+}

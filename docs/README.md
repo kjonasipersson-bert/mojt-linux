@@ -8,6 +8,9 @@ SPDX-License-Identifier: GPL-2.0-only
 
 ## Current behavior and usage
 
+For native metapackage publication and configuration, see the
+[Mojt Ports repository](ports-repository.md).
+
 Start with the [Mojt Handbook](../doc/handbook/README.md) for normal use. These
 references describe the implementation and supported limits at this commit:
 

@@ -22,10 +22,11 @@ accounts = importlib.util.module_from_spec(_accounts_spec)
 _accounts_spec.loader.exec_module(accounts)
 
 STORE_NAME = r"[0-9abcdfghijklmnpqrsvwxyz]{32}-[A-Za-z0-9+._?=-]+"
+P11KIT_TRUST_BUNDLE = "/etc/ssl/trust-source/ca-bundle.trust.p11-kit"
 ROLES = {
     1: {"systemd": "systemd"},
     2: {"dbus": "dbus", "networkmanager": "networkmanager", "curl": "curl",
-        "cacert": "cacert", "iproute2": "iproute2"},
+        "cacert": "cacert", "cacert-p11kit": "cacert.p11kit", "iproute2": "iproute2"},
     3: {"nix": "nix", "python": "python3", "tar": "gnutar"},
     4: {"procps": "procps", "util-linux": "util-linux", "less": "less", "editor": "nvi"},
     5: {"shell": "bashInteractive"},
@@ -96,7 +97,7 @@ MPM_FILES = (
     "mpm_selector_ports.py", "mpm_system.py", "mpm_system_model.py", "mpm_system_cli.py", "mpm_system_source.py", "mpm_system_transition.py", "mpm_boot_v2.py", "mpm_boot_v2_store.py", "mpm_boot_inventory.py", "mpm_boot_early.py", "mpm_boot_constructor.py", "mpm_boot_base.py", "mpm_boot_handover.py", "mpm_nix_boot.py", "mpm_boot_status.py", "mpm_base.py", "mpm_base_transition.py", "mpm_base_boot.py", "mpm_base_cli.py", "mpm_base_source.py", "mpm_base_request.py", "mpm_base_status.py",
     "mpm_native_io.py", "mpm_ui.py", "mpm_man.py", "mojt-base-install", "mpm_kernel.py", "mpm_kernel_source.py", "mpm_deployment.py", "mpm_kernel_boot.py",
     "mpm_transaction.py", "mpm_defaults.py", "mpm_management.py", "mpm_requests.py", "mpm_request_plan.py", "mpm_sources.py", "mpm_sources_cli.py", "mpm_https.py",
-    "mpm_ports_profile.py", "mpm_ports_cli.py", "mpm_ports_nix_source.py", "mpm_nix_binary.py", "mpm_native_cache.py", "mojt_artifact.py", "mojt_boot.py", "mojt_system.py",
+    "mpm_ports_profile.py", "mpm_ports_cli.py", "mpm_ports_nix_source.py", "mpm_ports_native.py", "mpm_nix_binary.py", "mpm_native_cache.py", "mojt_artifact.py", "mojt_boot.py", "mojt_system.py",
     "mojt_system_manifest.py", "mojt_native_image.py", "mojt-vm-build.py",
     "mojt_hardware.py", "mojt_generations.py", "mojt_accounts.py", "mojt-system-inspect.py",
     "mpm-nix-prototype", "mpm-nix-catalog.py",
@@ -374,6 +375,9 @@ def load_payload(path):
     require(record["format"] == 1, "unsupported System payload format")
     installer_tools = bool(set(record["packages"]) & INSTALLER_ROLES.keys())
     expected = roles(record["step"], installer_tools=installer_tools)
+    # Accept payloads made before System shipped the PKCS#11 trust data.
+    if "cacert-p11kit" not in record["packages"]:
+        expected.pop("cacert-p11kit", None)
     missing = sorted(set(expected) - set(record["packages"]))
     extra = sorted(set(record["packages"]) - set(expected))
     require(not missing and not extra, "unexpected System package roles in "+str(record_file)+
@@ -417,6 +421,9 @@ def load_payload(path):
             executable(path, record, role, "bin/" + name, "sbin/" + name)
         require(virtual_file(path, record["packages"]["cacert"]["output"] +
                              "/etc/ssl/certs/ca-bundle.crt").is_file(), "missing exported CA bundle")
+        if "cacert-p11kit" in record["packages"]:
+            require(virtual_file(path, record["packages"]["cacert-p11kit"]["output"] +
+                                 P11KIT_TRUST_BUNDLE).is_file(), "missing exported p11-kit trust bundle")
     if record["step"] >= 3:
         for name in ("nix", "nix-store", "nix-instantiate"):
             executable(path, record, "nix", "bin/" + name)
@@ -685,13 +692,23 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
         f"for rule in {sd}/lib/udev/rules.d/*; do",
         '    [ -f "$rule" ] || continue',
         '    ln -sfn "$rule" "/run/udev/rules.d/$(basename "$rule")"', "done",
+        "ln -sfn /run/mojt-system/70-mojt-render.rules /run/udev/rules.d/70-mojt-render.rules",
     ]
-    write(system / "sysusers.conf", 'g systemd-journal -\n' +
+    write(system / "70-mojt-render.rules",
+          'SUBSYSTEM=="drm", KERNEL=="renderD*", GROUP="render", MODE="0660"\n')
+    write(system / "sysusers.conf", 'g systemd-journal -\ng render -\n' +
           ('u messagebus - "D-Bus system bus" /var/empty\n' if step >= 2 else ""))
     wanted = ["mojt-console.service", "systemd-journald.socket", "systemd-journald.service",
               "systemd-udevd.service", "systemd-udev-trigger.service"]
     if step >= 2:
         dbus = export("dbus-daemon", "dbus", "bin/dbus-daemon")
+        session_conf = record["packages"]["dbus"]["output"] + "/share/dbus-1/session.conf"
+        has_session_conf = virtual_file(payload, session_conf).is_file()
+        if step >= 10 and not installer_console:
+            require(has_session_conf, "missing packaged D-Bus session configuration")
+        if has_session_conf:
+            (system / "dbus-session.conf").symlink_to(session_conf)
+            export("dbus-run-session", "dbus", "bin/dbus-run-session")
         nm = export("NetworkManager", "networkmanager", "bin/NetworkManager", "sbin/NetworkManager")
         export("nmcli", "networkmanager", "bin/nmcli")
         export("curl", "curl", "bin/curl")
@@ -750,6 +767,18 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
         cert = record["packages"]["cacert"]["output"] + "/etc/ssl/certs/ca-bundle.crt"
         require(virtual_file(payload, cert).is_file(), "missing exported CA bundle")
         write(system / "ca-path", cert + "\n")
+        if "cacert-p11kit" in record["packages"]:
+            trust = record["packages"]["cacert-p11kit"]["output"] + P11KIT_TRUST_BUNDLE
+            require(virtual_file(payload, trust).is_file(), "missing exported p11-kit trust bundle")
+            runtime_trust = "/run/mojt-system/ca-bundle.trust.p11-kit"
+            (system / Path(runtime_trust).name).symlink_to(trust)
+            setup += [
+                f"trust_bundle={P11KIT_TRUST_BUNDLE}",
+                'if [ ! -e "$trust_bundle" ] && [ ! -L "$trust_bundle" ]; then',
+                '    mkdir -p "${trust_bundle%/*}"',
+                f'    ln -sT {runtime_trust} "$trust_bundle"',
+                "fi",
+            ]
     if step >= 3:
         # MPM's default source/cache/profile roots need a protected machine-state
         # parent even on a fresh image without acceptance fixtures or old state.
@@ -1004,7 +1033,7 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
     (system / "units/default.target").symlink_to("mojt.target")
     write(system / "environment", "export PATH=" +
           ("/var/lib/mojt/ports/current/bin:" if step >= 3 else "") +
-          "/run/mojt-system/bin:/usr/bin:/bin\n" +
+          "/run/mojt-system/bin:/usr/bin:/bin:/usr/local/bin\n" +
           ("export SSL_CERT_FILE=" + cert + "\nexport NIX_SSL_CERT_FILE=" + cert + "\n"
            if step >= 2 else "") +
           ("export NIX_REMOTE=local\n" if step >= 3 else "") +
@@ -1013,7 +1042,8 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
     if step >= 9:
         with (system / "environment").open("a") as environment:
             environment.write('export MANPATH="${MANPATH:-' +
-                              ":".join(["/run/mojt-system/share/man"] + manual_paths(payload, record)) + ':/usr/share/man}"\n')
+                              ":".join(["/run/mojt-system/share/man"] + manual_paths(payload, record)) +
+                              ':/usr/share/man:/usr/local/share/man}"\n')
             environment.write('export TZDIR="${TZDIR:-' +
                               record["packages"]["tzdata"]["output"] + '/share/zoneinfo}"\n')
     if step >= 10:

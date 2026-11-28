@@ -65,8 +65,8 @@ class SystemVmTests(unittest.TestCase):
                             "bin/timedatectl", "bin/systemd-cat", "bin/systemd-machine-id-setup",
                             "lib/systemd/systemd-timesyncd", "lib/systemd/systemd-logind",
                             "lib/systemd/systemd-user-runtime-dir", "lib/systemd/systemd-sysctl", "bin/loginctl", "bin/systemd-run"],
-                "dbus": ["bin/dbus-daemon"], "networkmanager": ["bin/NetworkManager", "bin/nmcli"],
-                "curl": ["bin/curl"], "cacert": [], "iproute2": ["bin/ip", "bin/ss"],
+                "dbus": ["bin/dbus-daemon", "bin/dbus-run-session"], "networkmanager": ["bin/NetworkManager", "bin/nmcli"],
+                "curl": ["bin/curl"], "cacert": [], "cacert-p11kit": [], "iproute2": ["bin/ip", "bin/ss"],
                 "nix": ["bin/nix", "bin/nix-store", "bin/nix-instantiate"], "python": ["bin/python3"], "tar": ["bin/tar"],
                 "shell": ["bin/bash"], "tzdata": [], "man-db": ["bin/man", "bin/manpath"],
                 "openssh": ["bin/ssh", "bin/scp", "bin/sftp", "bin/ssh-keygen", "bin/ssh-agent",
@@ -121,8 +121,13 @@ class SystemVmTests(unittest.TestCase):
                     for name, text in user_units.items():
                         system.write(base / "example/systemd/user" / name, text)
 
+            if role == "dbus":
+                system.write(base / "share/dbus-1/session.conf",
+                             "<busconfig><type>session</type></busconfig>\n")
             if role == "cacert":
                 system.write(base / "etc/ssl/certs/ca-bundle.crt", "synthetic cert")
+            if role == "cacert-p11kit":
+                system.write(base / system.P11KIT_TRUST_BUNDLE.lstrip("/"), "synthetic p11-kit trust data")
         if step >= 10:
             system.write(self.tree / "state/etc/group", "root:x:0:\n")
             system.write(self.tree / "state/etc/shadow", "root:!:0:0:99999:7:::\n", 0o600)
@@ -353,6 +358,25 @@ class SystemVmTests(unittest.TestCase):
         self.assertIn("Requires=mojt-privileged.service", (directory / "units/mojt-console.service").read_text())
         self.assertNotIn("/ports/", (self.tree / "state/etc/sudoers").read_text())
 
+    def test_step10_exposes_a_socket_activated_user_bus(self):
+        directory, record = self.install(10, "password")
+        dbus = record["packages"]["dbus"]["output"]
+        self.assertEqual((directory / "dbus-session.conf").readlink().as_posix(),
+                         dbus + "/share/dbus-1/session.conf")
+        user_units = directory / "user-units"
+        target = (user_units / "default.target").read_text()
+        self.assertIn("Wants=dbus.socket\nAfter=dbus.socket\n", target)
+        self.assertIn("ListenStream=%t/bus\n", (user_units / "dbus.socket").read_text())
+        service = (user_units / "dbus.service").read_text()
+        self.assertIn("Requires=dbus.socket", service)
+        self.assertIn("DefaultDependencies=no\n", service)
+        self.assertIn("Conflicts=shutdown.target\nBefore=shutdown.target\n", service)
+        self.assertIn("ExecStart=/run/mojt-system/bin/dbus-daemon "
+                      "--config-file=/run/mojt-system/dbus-session.conf "
+                      "--address=systemd:", service)
+        system_socket = (directory / "units/dbus.socket").read_text()
+        self.assertIn("ListenStream=/run/dbus/system_bus_socket", system_socket)
+
     def test_step10_user_shutdown_transaction_keeps_the_complete_upstream_chain(self):
         directory, record = self.install(10, "password")
         units = {}
@@ -447,7 +471,7 @@ class SystemVmTests(unittest.TestCase):
                  if key not in ("MANPATH", "TZDIR", "TZ", "LOCALE_ARCHIVE")}
         result = subprocess.run(["/bin/sh", "-c", code, "sh", str(environment)],
                                 env=clean, text=True, capture_output=True, check=True)
-        self.assertEqual(result.stdout.splitlines(), [":".join(paths) + ":/usr/share/man",
+        self.assertEqual(result.stdout.splitlines(), [":".join(paths) + ":/usr/share/man:/usr/local/share/man",
                          record["packages"]["tzdata"]["output"] + "/share/zoneinfo", "unset", "unset"])
         result = subprocess.run(["/bin/sh", "-c", code, "sh", str(environment)],
                                 env={**clean, "MANPATH": "/custom/man", "TZDIR": "/custom/zones"},
@@ -957,7 +981,7 @@ esac""")
         runtime = json.loads((directory / "mpm-runtime.json").read_text())
         self.assertEqual(runtime["files"], list(system.MPM_FILES))
         self.assertEqual(runtime["kernel_root"], "/run/mojt-disk/kernel")
-        self.assertIn("/var/lib/mojt/ports/current/bin:/run/mojt-system/bin",
+        self.assertIn("/var/lib/mojt/ports/current/bin:/run/mojt-system/bin:/usr/bin:/bin:/usr/local/bin",
                       (directory / "environment").read_text())
         self.assertIn("/run/mojt-system/environment",
                       (self.tree / "state/etc/profile.d/mojt-system.sh").read_text())
@@ -978,6 +1002,24 @@ esac""")
         self.assertEqual((directory / "tests/run-mpm-nix-ports.py").read_bytes(),
                          (REPO / "tests/run-mpm-nix-ports.py").read_bytes())
         self.assertIn(record["source"]["revision"], (directory / "ports.toml").read_text())
+
+    def test_system_sets_up_group_access_to_drm_render_nodes(self):
+        directory, _ = self.install(1)
+        self.assertIn("g render -", (directory / "sysusers.conf").read_text().splitlines())
+        self.assertEqual((directory / "70-mojt-render.rules").read_text(),
+                         'SUBSYSTEM=="drm", KERNEL=="renderD*", GROUP="render", MODE="0660"\n')
+        setup = (directory / "setup").read_text()
+        self.assertLess(setup.index("systemd-sysusers"), setup.index("/70-mojt-render.rules"))
+        self.assertIn("/run/udev/rules.d/70-mojt-render.rules", setup)
+
+    def test_system_projects_p11kit_trust_from_the_retained_provider(self):
+        directory, record = self.install(2)
+        bundle = directory / "ca-bundle.trust.p11-kit"
+        output = record["packages"]["cacert-p11kit"]["output"]
+        self.assertEqual(str(bundle.readlink()), output + system.P11KIT_TRUST_BUNDLE)
+        setup = (directory / "setup").read_text()
+        self.assertIn("trust_bundle=" + system.P11KIT_TRUST_BUNDLE, setup)
+        self.assertIn('[ ! -e "$trust_bundle" ] && [ ! -L "$trust_bundle" ]', setup)
 
     def test_mpm_codec_is_selected_from_the_retained_closure_not_host_path(self):
         record = self.fixture(3)
