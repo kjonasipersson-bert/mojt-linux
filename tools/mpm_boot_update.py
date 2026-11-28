@@ -47,6 +47,25 @@ def runtime_reference(root, runtime, adapters):
     raise ValueError('running interpreter is outside the retained manager closure')
 
 
+def boot_busybox(runtime, explicit):
+    require(explicit is not None or runtime is not None,
+            'offline construction requires an explicit static BusyBox')
+    if explicit is not None:
+        busybox = Path(explicit)
+    else:
+        from mpm_boot_status import read_running, description
+        running_path = runtime.system_bin.parent / 'busybox'
+        busybox = running_path.resolve(strict=True)
+        if busybox != running_path:
+            running = read_running(runtime)
+            require(running is not None, 'missing authoritative running deployment')
+            profile = system.realization_path(runtime.disk, description(running)['system']['artifact']) / 'profile'
+            require(system.profile_file(profile, 'busybox') == busybox,
+                    'running BusyBox differs from the retained System profile')
+    require(busybox == busybox.absolute() and busybox == busybox.resolve(), 'canonical static BusyBox required')
+    return busybox
+
+
 def source_for(plan, runtime, busybox):
     candidate = transition.boot_fields(plan);p = plan['description']
     d = copy.deepcopy(p['baseline_inputs']['description'])
@@ -126,9 +145,7 @@ def _stage_locked(root, area, identifier, *, bounds=None, adapters=None, runtime
             if measured is None:
                 measured=constructor.describe_runtime(root,ref,interpreter,adapters=adapters)
                 if not dry_run:constructor.retain_runtime(root,measured)
-    require(busybox is not None or runtime is not None,'offline construction requires an explicit static BusyBox')
-    busybox = Path(busybox) if busybox is not None else runtime.system_bin.parent/'busybox'
-    require(busybox == busybox.absolute() and busybox == busybox.resolve(),'canonical static BusyBox required')
+    busybox = boot_busybox(runtime, busybox)
     source = source_for(plan,measured,busybox)
     require(expected_inputs is None or source['id'] == expected_inputs,'constructor/runtime changed after approval')
     report['inputs'] = source['id']
