@@ -14,7 +14,7 @@ SYSTEMD_PROGRAMS = ("systemd-logind", "systemd-user-runtime-dir", "systemd-sysct
 USER_SHUTDOWN_UNITS = ("exit.target", "systemd-exit.service", "shutdown.target")
 
 
-def install(tree, profile, inputs, repo, write, add_default, put_unit, unit):
+def install(tree, profile, inputs, repo, write, add_default, put_unit, unit, dbus):
     """Prepare only the private new image; never create passwords or human users."""
     etc = tree / "state/etc"
     # The real builder runs as root; tests may stage images as their own user.
@@ -154,7 +154,16 @@ root ALL=(ALL:ALL) ALL
              "Environment=XDG_RUNTIME_DIR=/run/user/%i\n"
              "Environment=PATH=/run/mojt-system/bin:/usr/bin:/bin\n",
              "Requires=user-runtime-dir@%i.service\nAfter=user-runtime-dir@%i.service systemd-logind.service\n"))
-    write(profile / "user-units/default.target", "[Unit]\nDescription=Mojt user session\n")
+    user_units = profile / "user-units"
+    write(user_units / "default.target",
+          "[Unit]\nDescription=Mojt user session\nWants=dbus.socket\nAfter=dbus.socket\n")
+    write(user_units / "dbus.socket",
+          "[Unit]\nDescription=D-Bus User Message Bus Socket\n"
+          "[Socket]\nListenStream=%t/bus\n")
+    write(user_units / "dbus.service", unit("D-Bus User Message Bus",
+          dbus + " --config-file=/run/mojt-system/dbus-session.conf"
+          " --address=systemd: --nofork --nopidfile --systemd-activation",
+          "Type=notify\nNotifyAccess=main\n", "Requires=dbus.socket\nAfter=dbus.socket\n"))
     for name, path in inputs["user_shutdown_units"].items():
         (profile / "user-units" / name).symlink_to(path)
     console = profile / "units/mojt-console.service"

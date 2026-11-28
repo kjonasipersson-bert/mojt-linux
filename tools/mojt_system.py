@@ -703,7 +703,10 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
     if step >= 2:
         dbus = export("dbus-daemon", "dbus", "bin/dbus-daemon")
         session_conf = record["packages"]["dbus"]["output"] + "/share/dbus-1/session.conf"
-        if virtual_file(payload, session_conf).is_file():
+        has_session_conf = virtual_file(payload, session_conf).is_file()
+        if step >= 10 and not installer_console:
+            require(has_session_conf, "missing packaged D-Bus session configuration")
+        if has_session_conf:
             (system / "dbus-session.conf").symlink_to(session_conf)
             export("dbus-run-session", "dbus", "bin/dbus-run-session")
         nm = export("NetworkManager", "networkmanager", "bin/NetworkManager", "sbin/NetworkManager")
@@ -1011,7 +1014,7 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
             install_sshd(system, put_unit, executable(payload, record, "systemd", "bin/systemd-tmpfiles"))
     if step >= 10 and not installer_console:
         wanted += accounts.install(tree, system, account_inputs(payload, record), repo,
-                                   write, add_default, put_unit, unit)
+                                   write, add_default, put_unit, unit, dbus)
     setup += ['echo "Mojt System setup complete"']
     write(system / "setup", "\n".join(setup) + "\n", 0o755)
     put_unit("mojt-setup.service", unit("Mojt System setup", "/run/mojt-system/setup",

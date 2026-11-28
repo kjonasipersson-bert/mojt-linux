@@ -65,7 +65,7 @@ class SystemVmTests(unittest.TestCase):
                             "bin/timedatectl", "bin/systemd-cat", "bin/systemd-machine-id-setup",
                             "lib/systemd/systemd-timesyncd", "lib/systemd/systemd-logind",
                             "lib/systemd/systemd-user-runtime-dir", "lib/systemd/systemd-sysctl", "bin/loginctl", "bin/systemd-run"],
-                "dbus": ["bin/dbus-daemon"], "networkmanager": ["bin/NetworkManager", "bin/nmcli"],
+                "dbus": ["bin/dbus-daemon", "bin/dbus-run-session"], "networkmanager": ["bin/NetworkManager", "bin/nmcli"],
                 "curl": ["bin/curl"], "cacert": [], "cacert-p11kit": [], "iproute2": ["bin/ip", "bin/ss"],
                 "nix": ["bin/nix", "bin/nix-store", "bin/nix-instantiate"], "python": ["bin/python3"], "tar": ["bin/tar"],
                 "shell": ["bin/bash"], "tzdata": [], "man-db": ["bin/man", "bin/manpath"],
@@ -121,6 +121,9 @@ class SystemVmTests(unittest.TestCase):
                     for name, text in user_units.items():
                         system.write(base / "example/systemd/user" / name, text)
 
+            if role == "dbus":
+                system.write(base / "share/dbus-1/session.conf",
+                             "<busconfig><type>session</type></busconfig>\n")
             if role == "cacert":
                 system.write(base / "etc/ssl/certs/ca-bundle.crt", "synthetic cert")
             if role == "cacert-p11kit":
@@ -354,6 +357,23 @@ class SystemVmTests(unittest.TestCase):
         self.assertIsNotNone(bus.find('./policy[@context="default"]/allow[@user="*"]'))
         self.assertIn("Requires=mojt-privileged.service", (directory / "units/mojt-console.service").read_text())
         self.assertNotIn("/ports/", (self.tree / "state/etc/sudoers").read_text())
+
+    def test_step10_exposes_a_socket_activated_user_bus(self):
+        directory, record = self.install(10, "password")
+        dbus = record["packages"]["dbus"]["output"]
+        self.assertEqual((directory / "dbus-session.conf").readlink().as_posix(),
+                         dbus + "/share/dbus-1/session.conf")
+        user_units = directory / "user-units"
+        target = (user_units / "default.target").read_text()
+        self.assertIn("Wants=dbus.socket\nAfter=dbus.socket\n", target)
+        self.assertIn("ListenStream=%t/bus\n", (user_units / "dbus.socket").read_text())
+        service = (user_units / "dbus.service").read_text()
+        self.assertIn("Requires=dbus.socket", service)
+        self.assertIn("ExecStart=" + dbus + "/bin/dbus-daemon "
+                      "--config-file=/run/mojt-system/dbus-session.conf "
+                      "--address=systemd:", service)
+        system_socket = (directory / "units/dbus.socket").read_text()
+        self.assertIn("ListenStream=/run/dbus/system_bus_socket", system_socket)
 
     def test_step10_user_shutdown_transaction_keeps_the_complete_upstream_chain(self):
         directory, record = self.install(10, "password")
