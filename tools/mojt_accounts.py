@@ -17,16 +17,23 @@ USER_SHUTDOWN_UNITS = ("exit.target", "systemd-exit.service", "shutdown.target")
 
 USER_SESSION_TARGET = "[Unit]\nDescription=Mojt user session\n"
 USER_BUS_CONFIG = "dbus-session.conf"
+LEGACY_USER_BUS_SERVICE = (
+    "[Unit]\nDescription=D-Bus User Message Bus\n"
+    "Requires=dbus.socket\nAfter=dbus.socket\n\n"
+    "[Service]\nExecStart=/run/mojt-system/bin/dbus-daemon "
+    "--config-file=/run/mojt-system/dbus-session.conf "
+    "--address=systemd: --nofork --nopidfile --systemd-activation\n"
+    "Type=notify\nNotifyAccess=main\n"
+)
 USER_BUS_UNITS = {
     "default.target": USER_SESSION_TARGET + "Wants=dbus.socket\nAfter=dbus.socket\n",
     "dbus.socket": "[Unit]\nDescription=D-Bus User Message Bus Socket\n"
                    "[Socket]\nListenStream=%t/bus\n",
-    "dbus.service": "[Unit]\nDescription=D-Bus User Message Bus\n"
-                    "Requires=dbus.socket\nAfter=dbus.socket\n\n"
-                    "[Service]\nExecStart=/run/mojt-system/bin/dbus-daemon "
-                    "--config-file=/run/mojt-system/dbus-session.conf "
-                    "--address=systemd: --nofork --nopidfile --systemd-activation\n"
-                    "Type=notify\nNotifyAccess=main\n",
+    "dbus.service": LEGACY_USER_BUS_SERVICE.replace(
+        "After=dbus.socket\n",
+        "After=dbus.socket\nDefaultDependencies=no\n"
+        "Conflicts=shutdown.target\nBefore=shutdown.target\n",
+    ),
 }
 
 

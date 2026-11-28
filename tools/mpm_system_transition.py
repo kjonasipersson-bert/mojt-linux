@@ -180,28 +180,36 @@ def profile_review(selected, candidate, profile, *, selected_system=None, candid
 
 def user_bus_paths(before, after):
     accounts = paths.accounts
-    expected = {
-        "user-units/" + name: dict(sha256=hashlib.sha256(text.encode()).hexdigest(), mode=0o444)
-        for name, text in accounts.USER_BUS_UNITS.items()
-    }
-    socket = "user-units/dbus.socket"
-    if socket in before and socket not in after:
-        before, after = after, before
-    if any(after.get(name) != row for name, row in expected.items()):
-        return set()
+
+    def unit(text):
+        return dict(sha256=hashlib.sha256(text.encode()).hexdigest(), mode=0o444)
+
+    service = "user-units/dbus.service"
     default = "user-units/default.target"
-    legacy = dict(sha256=hashlib.sha256(accounts.USER_SESSION_TARGET.encode()).hexdigest(), mode=0o444)
-    if before.get(default) != legacy or any(name in before for name in expected if name != default):
-        return set()
+    fixed = {"user-units/" + name: unit(text) for name, text in accounts.USER_BUS_UNITS.items()}
+    legacy = fixed | {service: unit(accounts.LEGACY_USER_BUS_SERVICE)}
+    absent = dict.fromkeys(fixed)
+    absent[default] = unit(accounts.USER_SESSION_TARGET)
+
+    previous = {name: before.get(name) for name in fixed}
+    following = {name: after.get(name) for name in fixed}
+    if previous == absent:
+        before, after = after, before
+        previous, following = following, previous
     daemon = before.get("bin/dbus-daemon", {})
     config = accounts.user_bus_config(daemon.get("link"))
     if not config or after.get("bin/dbus-daemon") != daemon:
         return set()
     config_path = accounts.USER_BUS_CONFIG
     link = dict(link=config)
-    if after.get(config_path) != link or before.get(config_path) not in (None, link):
-        return set()
-    return {*expected, config_path}
+
+    if previous in (fixed, legacy) and following == absent:
+        if before.get(config_path) == link and after.get(config_path) in (None, link):
+            return {*fixed, config_path}
+    if (previous, following) in ((legacy, fixed), (fixed, legacy)):
+        if before.get(config_path) == after.get(config_path) == link:
+            return {service}
+    return set()
 
 
 def tooling_review(selected, candidate, *, firmware=None, inventories=None, allowed_data=()):

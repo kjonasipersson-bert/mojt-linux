@@ -40,6 +40,8 @@ The user manager and private `/run/user/<uid>` are integrated, with prompt
 cleanup after the last session. The user manager listens on
 `$XDG_RUNTIME_DIR/bus` and starts the per-user D-Bus daemon on first connection.
 The daemon uses the running System's packaged session configuration.
+Its user unit declares socket and shutdown ordering explicitly, so it can run
+with the minimal Mojt user manager's target set.
 The system bus is a separate service. KillUserProcesses=yes is
 an explicit initial policy for ordinary sessions; background jobs are not
 promised to survive logout.

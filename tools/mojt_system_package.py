@@ -203,12 +203,21 @@ def add_user_bus(content):
     unit_dir = content / "user-units"
     default = unit_dir / "default.target"
     artifact.require(unit_dir.is_dir() and not unit_dir.is_symlink() and
-                     default.is_file() and not default.is_symlink() and
-                     default.read_text() == accounts.USER_SESSION_TARGET,
+                     default.is_file() and not default.is_symlink(),
                      "user bus needs the standard Mojt user manager target")
-    artifact.require(not any(os.path.lexists(unit_dir / name)
-                             for name in accounts.USER_BUS_UNITS if name != default.name),
-                     "user bus units already exist")
+    units = accounts.USER_BUS_UNITS
+    default_text = default.read_text()
+    if default_text == units[default.name]:
+        for name, data in units.items():
+            target = unit_dir / name
+            legacy = accounts.LEGACY_USER_BUS_SERVICE if name == "dbus.service" else data
+            artifact.require(target.is_file() and not target.is_symlink() and
+                             target.read_text() in (legacy, data),
+                             "refusing to replace a different D-Bus user unit: " + name)
+    else:
+        artifact.require(default_text == accounts.USER_SESSION_TARGET and
+                         not any(os.path.lexists(unit_dir / name) for name in units if name != default.name),
+                         "user bus needs the standard Mojt user manager target")
     daemon = content / "bin/dbus-daemon"
     config = accounts.user_bus_config(os.readlink(daemon) if daemon.is_symlink() else None)
     artifact.require(config is not None, "user bus needs the retained System D-Bus output")
@@ -218,9 +227,11 @@ def add_user_bus(content):
                          "refusing to replace a different D-Bus session configuration")
     else:
         link.symlink_to(config)
-    default.unlink()
-    for name, data in accounts.USER_BUS_UNITS.items():
+    for name, data in units.items():
         target = unit_dir / name
+        if target.is_file() and target.read_text() == data:
+            continue
+        target.unlink(missing_ok=True)
         target.write_text(data)
         target.chmod(0o644)
 

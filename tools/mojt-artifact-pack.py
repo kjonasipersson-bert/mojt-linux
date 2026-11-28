@@ -35,7 +35,7 @@ def main(argv=None, *, prog=None):
     system_input.add_argument("--tree",type=Path)
     system_input.add_argument("--running",action="store_true",help="package a component-based successor of the running native System")
     system.add_argument("--firmware",choices=("none","keep"),default="none",help="component System firmware selection (default: none)")
-    system.add_argument("--user-bus", action="store_true", help="add the reviewed D-Bus user units to a running-System successor")
+    system.add_argument("--user-bus", action="store_true", help="add or repair the reviewed D-Bus user units in a running-System successor")
     system.add_argument("--expected-running", help="require this exact running System artifact when packaging a successor")
     system.add_argument("--openssl-output",help="retain an exact installed Nix OpenSSL output in the new running-System successor")
     system.add_argument("--generation")

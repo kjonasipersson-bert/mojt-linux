@@ -40,8 +40,17 @@ class ReviewTests(unittest.TestCase):
             old = manifests.create(dict(template, profile=system.inventory(profile)))
             packer.add_user_bus(profile)
             candidate = manifests.create(dict(template, profile=system.inventory(profile)))
+            service = profile / 'user-units/dbus.service'
+            service.write_text(accounts.LEGACY_USER_BUS_SERVICE)
+            trial = manifests.create(dict(template, profile=system.inventory(profile)))
+            packer.add_user_bus(profile)
+            self.assertEqual(system.inventory(profile), candidate['description']['profile'])
+            service.write_text('[Unit]\nDescription=Unreviewed service\n')
+            with self.assertRaisesRegex(ValueError, 'refusing to replace'):
+                packer.add_user_bus(profile)
 
-        for selected, proposed in ((old, candidate), (candidate, old)):
+        for selected, proposed in ((old, candidate), (candidate, old), (old, trial),
+                                   (trial, old), (trial, candidate), (candidate, trial)):
             review = transition.tooling_review(selected, proposed)['description']
             self.assertTrue(review['compatible'], review['blockers'])
             self.assertEqual(review['policy'], 'dbus-user-bus-v1')
@@ -52,9 +61,10 @@ class ReviewTests(unittest.TestCase):
         ):
             damaged = copy.deepcopy(candidate['description'])
             damaged['profile'][name] = row
-            review = transition.tooling_review(old, manifests.create(damaged))['description']
-            self.assertFalse(review['compatible'])
-            self.assertIn(name, review['blockers'])
+            for selected in (old, trial):
+                review = transition.tooling_review(selected, manifests.create(damaged))['description']
+                self.assertFalse(review['compatible'])
+                self.assertIn(name, review['blockers'])
 
     def test_new_crypto_helper_requires_matching_public_alias_and_cannot_retarget(self):
         old=manifests.create(dict(label='crypto',architecture='x86_64',
