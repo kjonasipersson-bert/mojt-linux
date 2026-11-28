@@ -335,6 +335,12 @@ def pack(source, spec, output, attachments=None, *, numeric_owner=None):
     rows, locations = inventory(source)
     check_payload(spec, source, rows)
     original = copy.deepcopy(rows)
+    if spec["kind"] == "port":
+        # Source archives may grant group write access. The published Port
+        # carries protected modes while the checkout keeps its original modes.
+        for row in rows:
+            if row["type"] in ("file", "directory"):
+                row["mode"] &= ~0o022
     if numeric_owner is not None:
         require(type(numeric_owner) is tuple and len(numeric_owner) == 2 and
                 all(type(n) is int and n >= 0 for n in numeric_owner), 'invalid archive numeric owner')
