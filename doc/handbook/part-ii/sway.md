@@ -33,7 +33,8 @@ command and manual links after verifying the active Ports command and manuals.
 
 ## Start from the console
 
-Log in as an ordinary user on a local virtual terminal and run:
+Log in as an ordinary user on a local virtual terminal. The start script
+uses Sway, swaybg, Waybar and Kitty from the session's `PATH`. Run:
 
 ```sh
 mojt-sway
@@ -56,13 +57,14 @@ or `man 5 sway` for configuration. Kitty defaults to DejaVu Sans Mono at
 13 points and reads `~/.config/kitty/kitty.conf` for user overrides. MPM's
 ordinary manual lookup also supplies `man kitty`.
 
-The wallpaper is fitted to each output. The session provides Mesa drivers and
-DejaVu and Noto fonts with Fontconfig defaults for graphical applications.
-It reuses an existing D-Bus session bus or starts one
-with the packaged configuration. If Sway cannot open graphics or input devices,
-check `XDG_SESSION_ID` and `XDG_RUNTIME_DIR` from the local login. An administrator
-can inspect the session with `loginctl list-sessions` over SSH. Waybar indicates
-local network status.
+The wallpaper is fitted to each output. Graphical applications use the fonts
+and graphics drivers configured in the login environment. If your installation
+requires custom settings such as `FONTCONFIG_FILE` or `LIBGL_DRIVERS_PATH`,
+set them before starting the session. The script reuses an existing D-Bus
+session bus or starts one with the System's D-Bus configuration. If Sway cannot
+open graphics or input devices, check `XDG_SESSION_ID` and `XDG_RUNTIME_DIR` from
+the local login. An administrator can inspect the session with
+`loginctl list-sessions` over SSH. Waybar indicates local network status.
 
 For GPU rendering, an administrator can grant the account access to
 [DRM render nodes](../part-iii/hardware.md#82-device-detection) with

@@ -9,36 +9,11 @@ MOJT_SWAY_ASSETS=${command_path%/bin/*}/share/mojt-sway
 export MOJT_SWAY_ASSETS
 export PATH="$MOJT_SWAY_ASSETS:$PATH"
 
-paths=$(mpm ports path dejavu_fonts noto-fonts fontconfig.out mesa)
-{
-    read -r dejavu
-    read -r noto
-    read -r fontconfig
-    read -r mesa
-} <<EOF_PATHS
-$paths
-EOF_PATHS
-
 : "${XDG_RUNTIME_DIR:?Start mojt-sway from a local user session}"
-work=$(mktemp -d "$XDG_RUNTIME_DIR/mojt-sway.XXXXXX")
-trap 'rm -f "$work/fonts.conf"; rmdir "$work"' EXIT
-cat > "$work/fonts.conf" <<EOF_FONTS
-<?xml version="1.0"?>
-<!DOCTYPE fontconfig SYSTEM "fonts.dtd">
-<fontconfig>
-  <include>$fontconfig/etc/fonts/fonts.conf</include>
-  <include>$fontconfig/etc/fonts/conf.d</include>
-  <dir>$dejavu/share/fonts</dir>
-  <dir>$noto/share/fonts</dir>
-</fontconfig>
-EOF_FONTS
-export FONTCONFIG_FILE="$work/fonts.conf"
-export LIBGL_DRIVERS_PATH="${LIBGL_DRIVERS_PATH:-$mesa/lib/dri}"
-export __EGL_VENDOR_LIBRARY_DIRS="${__EGL_VENDOR_LIBRARY_DIRS:-$mesa/share/glvnd/egl_vendor.d}"
 
 if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ ! -S "$XDG_RUNTIME_DIR/bus" ]; then
-    dbus-run-session --config-file=/run/mojt-system/dbus-session.conf -- \
+    exec dbus-run-session --config-file=/run/mojt-system/dbus-session.conf -- \
         sway --config "$MOJT_SWAY_ASSETS/sway.conf" "$@"
-else
-    sway --config "$MOJT_SWAY_ASSETS/sway.conf" "$@"
 fi
+
+exec sway --config "$MOJT_SWAY_ASSETS/sway.conf" "$@"

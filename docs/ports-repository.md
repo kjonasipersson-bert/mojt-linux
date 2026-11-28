@@ -74,6 +74,6 @@ Repeated installs preserve accepted references. An explicit metapackage upgrade
 can change the dependency wishes, and removal releases that metapackage's own
 wishes. Other installation wishes and explicit selections remain independent.
 
-`mpm ports path NAME` prints the output path of an active Nix Port. Programs
-can use this for resources such as fonts and graphics drivers. Shell commands
-and manuals use the normal active Ports profile.
+`mpm ports path NAME` prints the output path of an active Nix Port for
+inspection and manual configuration. Shell commands and manuals use the
+normal active Ports profile.

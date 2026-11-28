@@ -8,7 +8,7 @@ platform = "x86_64-linux"
 dependencies = []
 
 [version]
-upstream = "0.1.4"
+upstream = "0.1.5"
 scheme = "dotted-v1"
 
 [requirements]
