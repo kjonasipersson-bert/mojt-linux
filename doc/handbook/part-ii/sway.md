@@ -57,10 +57,12 @@ or `man 5 sway` for configuration. Kitty defaults to DejaVu Sans Mono at
 13 points and reads `~/.config/kitty/kitty.conf` for user overrides. MPM's
 ordinary manual lookup also supplies `man kitty`.
 
-The wallpaper is fitted to each output. Graphical applications use the fonts
-and graphics drivers configured in the login environment. If your installation
-requires custom settings such as `FONTCONFIG_FILE` or `LIBGL_DRIVERS_PATH`,
-set them before starting the session. Applications that need a D-Bus session
+The wallpaper is fitted to each output. The launcher uses the Fontconfig
+configuration from the active Ports profile by default. Its font directories
+follow the active versions of installed font packages. Restart an application
+if it keeps an earlier font list in memory. To use custom settings such as
+`FONTCONFIG_FILE` or `LIBGL_DRIVERS_PATH`, set them before starting the session.
+Applications that need a D-Bus session
 bus use the System's user bus at `$XDG_RUNTIME_DIR/bus`. If Sway cannot open
 graphics or input devices, check `XDG_SESSION_ID` and `XDG_RUNTIME_DIR` from
 the local login. An administrator can inspect the session with

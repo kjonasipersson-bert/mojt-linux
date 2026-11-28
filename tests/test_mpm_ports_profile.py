@@ -80,6 +80,42 @@ class ProfileTests(unittest.TestCase):
         self.assertFalse(result['changed']);self.assertEqual(before,os.readlink(self.root/'current'))
         self.assertEqual(fetches,self.adapter.fetches);self.assertEqual(len(ports.history(self.root)),1)
 
+    def test_fonts_follow_active_version_and_existing_profile_gets_projection(self):
+        def font_path(ref, root, relative):
+            output = Path(self.adapter.describe(ref, root)['commands']['hello']).parent
+            path = output / relative
+            return path if path.is_dir() else None
+
+        first = self.apply(self.state('hello@=2.12.1'))['profile']
+        shutil.rmtree(self.root / first / 'share')  # Profile written by an earlier MPM.
+        for ref in self.refs.values():
+            output = Path(self.adapter.describe(ref, self.root)['commands']['hello']).parent
+            (output / 'share/fonts').mkdir(parents=True)
+        self.adapter.resource_path = font_path
+
+        refreshed = self.apply(self.state('hello@=2.12.1'))
+        fonts = self.root / 'current/share/fonts'
+        config = self.root / 'current' / ports.FONTCONFIG_FILE
+        self.assertTrue(refreshed['changed'])
+        self.assertEqual(self.adapter.fetches, 1)
+        self.assertEqual((fonts / 'hello').resolve(), font_path(self.refs['2.12.1'], self.root, 'share/fonts'))
+        self.assertIn(str(self.root / refreshed['profile'] / 'share/fonts'), config.read_text())
+
+        state = ports.current(self.root)['record']['description']['requests']
+        state = wishes.request_interactively(state, 'hello@=2.12.3', 'local')
+        self.apply(state)
+        self.assertEqual((fonts / 'hello').resolve(), font_path(self.refs['2.12.1'], self.root, 'share/fonts'))
+
+        state = ports.current(self.root)['record']['description']['requests']
+        self.apply(wishes.select_interactively(state, 'hello', self.refs['2.12.3']))
+        self.assertEqual((fonts / 'hello').resolve(), font_path(self.refs['2.12.3'], self.root, 'share/fonts'))
+        self.assertTrue((self.root / refreshed['profile'] / 'share/fonts/hello').is_dir())
+
+        state = wishes.empty_state(self.empty['description']['installation'])
+        self.apply(state)
+        self.assertEqual(list(fonts.iterdir()), [])
+        self.assertFalse(self.apply(state)['changed'])
+
     def test_upgrade_keeps_old_exact_alias_and_ownership(self):
         self.candidates[:]=self.candidates[:1];self.apply(self.state())
         oldaliases=ports.current(self.root)['record']['description']['aliases']

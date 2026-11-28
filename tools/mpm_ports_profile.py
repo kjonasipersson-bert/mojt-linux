@@ -11,6 +11,7 @@ import re
 import shutil
 import stat
 import uuid
+from xml.sax.saxutils import escape
 
 import mpm_requests as wishes
 import mpm_request_plan as planning
@@ -21,6 +22,7 @@ MARKER = 'mojt-ports-store-v1'
 PROFILE = 'mojt-ports-profile-v1'
 PLAN = 'mojt-ports-publish-plan-v1'
 HISTORY = 'mojt-ports-transaction-v1'
+FONTCONFIG_FILE = 'share/fonts.conf'
 RESERVED = {'mpm','mojt-system-check','nix','nix-store','nix-instantiate'}
 COMMAND = r'[A-Za-z0-9][A-Za-z0-9._+-]*'
 require = planning.require
@@ -265,9 +267,50 @@ def preview(root, desired, sources, adapters, *, platform, executor, target_iden
         if parsed.kind=='series':
             for name,target in packages[planning.key(row['reference'])]['commands'].items():alias(name+'-'+'.'.join(map(str,parsed.value)),target)
     state=dict(installation=installation,platform=platform,requests=requests,lock=lock,sources=copy.deepcopy(view),packages=sorted(packages.values(),key=lambda p:planning.key(p['reference'])),objects=sorted(objects.values(),key=lambda p:planning.key(p['reference'])),acquisition=([ref for ref in prior['acquisition'] if planning.key(ref) in objects] if prior else [])+[objects[k]['reference'] for k in objects if not prior or k not in {planning.key(ref) for ref in prior['acquisition']}],aliases=dict(sorted(aliases.items())),active={role:packages[k]['reference'] for role,k in sorted(active.items())},event_sequence=event)
-    if prior:unchanged=all(prior[k]==v for k,v in state.items())
-    else:unchanged=False
+    unchanged = (prior is not None and (root / old['path'] / FONTCONFIG_FILE).is_file()
+                 and all(prior[k] == v for k, v in state.items()))
     return planning.record(PLAN,dict(root=str(root),baseline=old['record']['id'] if old else None,platform=platform,executor=planning.reference(executor),target_identity=planning.identity(target_identity),candidate=state,no_op=unchanged,advance=advance,auto_select=auto_select,refresh_dependencies=refresh_dependencies))
+
+
+def publish_fonts(directory, root, active, adapters, sync):
+    """Assemble the font view from verified, active outputs."""
+    share = directory / 'share'
+    fonts = share / 'fonts'
+    fonts.mkdir(parents=True, mode=0o755)
+    config = None
+    for role, ref in sorted(active.items()):
+        adapter = adapters[ref['provider']]
+        resource = getattr(adapter, 'resource_path', None)
+        if resource is None:
+            continue
+        require(parse_selector(role).name == role, 'invalid active Ports role')
+        target = resource(ref, root, 'share/fonts')
+        if target is not None and target.is_dir():
+            (fonts / role).symlink_to(target, target_is_directory=True)
+        if role in ('fontconfig', 'fontconfig.out'):
+            target = resource(ref, root, 'etc/fonts/fonts.conf')
+            if target is not None and target.is_file():
+                config = target
+    # A generation-specific directory keeps Fontconfig cache keys independent
+    # of the replaceable current symlink.
+    with (directory / FONTCONFIG_FILE).open('x', encoding='utf-8') as stream:
+        stream.write('<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">\n<fontconfig>\n')
+        stream.write(f'  <dir>{escape(str(fonts))}</dir>\n')
+        stream.write('  <include ignore_missing="yes">/etc/fonts/fonts.conf</include>\n')
+        if config is not None:
+            stream.write(f'  <include>{escape(str(config))}</include>\n')
+        stream.write('  <dir prefix="xdg">fonts</dir>\n'
+                     '  <cachedir prefix="xdg">fontconfig</cachedir>\n'
+                     '  <include ignore_missing="yes" prefix="xdg">fontconfig/conf.d</include>\n'
+                     '  <include ignore_missing="yes" prefix="xdg">fontconfig/fonts.conf</include>\n'
+                     '</fontconfig>\n')
+        stream.flush()
+        os.fchmod(stream.fileno(), 0o444)
+        os.fsync(stream.fileno())
+    fonts.chmod(0o755)
+    share.chmod(0o755)
+    sync(fonts)
+    sync(share)
 
 
 def apply(root, plan, sources, adapters, *, platform, executor, target_identity, action='apply', sync=transaction.sync_directory):
@@ -310,6 +353,7 @@ def apply(root, plan, sources, adapters, *, platform, executor, target_identity,
             history=planning.record(HISTORY,dict(profile=relative,parent=d['parent'],sequence=d['sequence'],action=action,uid=os.geteuid(),utc=datetime.now(timezone.utc).isoformat(),before=old['record']['id'] if old else None,after=state['id'],requests_before=old['record']['description']['requests']['id'] if old else None,requests_after=d['requests']['id'],added=sorted(newrefs-oldrefs),removed=sorted(oldrefs-newrefs),aliases_before=old['record']['description']['aliases'] if old else {},aliases_after=d['aliases']))
             write(directory/'state.json',state);write(directory/'transaction.json',history)
             for name,target in d['aliases'].items():(directory/'bin'/name).symlink_to(target)
+            publish_fonts(directory, root, d['active'], adapters, sync)
             (directory/'bin').chmod(0o755);directory.chmod(0o755)
             sync(directory/'bin');sync(directory);sync(root/'profiles')
             temp.symlink_to(relative)

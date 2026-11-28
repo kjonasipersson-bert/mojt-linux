@@ -72,6 +72,13 @@ class NixBinaryAdapter:
                 'provider path escapes closure or has an unsupported type')
         require(not executable or resolved.is_file() and resolved.stat().st_mode & 0o001, 'provider export is not a public executable')
 
+    def resource_path(self, ref, root, relative):
+        path = store_path(self.identity(ref)['output']) / relative
+        if not os.path.lexists(path):
+            return None
+        self.verify_path(ref, str(path))
+        return path
+
     def preserves(self,refs,baseline):
         """Pure exact closure comparison for the unchanged-startup System subset."""
         require(type(baseline) is dict and type(baseline.get('objects')) is list, 'missing selected Nix closure facts')
