@@ -11,9 +11,4 @@ export PATH="$MOJT_SWAY_ASSETS:$PATH"
 
 : "${XDG_RUNTIME_DIR:?Start mojt-sway from a local user session}"
 
-if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ ! -S "$XDG_RUNTIME_DIR/bus" ]; then
-    exec dbus-run-session --config-file=/run/mojt-system/dbus-session.conf -- \
-        sway --config "$MOJT_SWAY_ASSETS/sway.conf" "$@"
-fi
-
 exec sway --config "$MOJT_SWAY_ASSETS/sway.conf" "$@"

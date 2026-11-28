@@ -60,9 +60,9 @@ ordinary manual lookup also supplies `man kitty`.
 The wallpaper is fitted to each output. Graphical applications use the fonts
 and graphics drivers configured in the login environment. If your installation
 requires custom settings such as `FONTCONFIG_FILE` or `LIBGL_DRIVERS_PATH`,
-set them before starting the session. The script reuses an existing D-Bus
-session bus or starts one with the System's D-Bus configuration. If Sway cannot
-open graphics or input devices, check `XDG_SESSION_ID` and `XDG_RUNTIME_DIR` from
+set them before starting the session. Applications that need a D-Bus session
+bus use the bus provided by the login environment. If Sway cannot open graphics
+or input devices, check `XDG_SESSION_ID` and `XDG_RUNTIME_DIR` from
 the local login. An administrator can inspect the session with
 `loginctl list-sessions` over SSH. Waybar indicates local network status.
 
