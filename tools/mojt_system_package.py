@@ -197,7 +197,36 @@ def package(tree, generation, upstream, revision, output, *, adapter):
     return dict(kit=kit, output=str(output), changed=True, activation=False)
 
 
-def package_installed(root, baseline, output, *, label, revision=1, firmware='none', resources=None, openssl_reference=None, adapter=None):
+def add_user_bus(content):
+    import mojt_accounts as accounts
+
+    unit_dir = content / "user-units"
+    default = unit_dir / "default.target"
+    artifact.require(unit_dir.is_dir() and not unit_dir.is_symlink() and
+                     default.is_file() and not default.is_symlink() and
+                     default.read_text() == accounts.USER_SESSION_TARGET,
+                     "user bus needs the standard Mojt user manager target")
+    artifact.require(not any(os.path.lexists(unit_dir / name)
+                             for name in accounts.USER_BUS_UNITS if name != default.name),
+                     "user bus units already exist")
+    daemon = content / "bin/dbus-daemon"
+    config = accounts.user_bus_config(os.readlink(daemon) if daemon.is_symlink() else None)
+    artifact.require(config is not None, "user bus needs the retained System D-Bus output")
+    link = content / accounts.USER_BUS_CONFIG
+    if os.path.lexists(link):
+        artifact.require(link.is_symlink() and os.readlink(link) == config,
+                         "refusing to replace a different D-Bus session configuration")
+    else:
+        link.symlink_to(config)
+    default.unlink()
+    for name, data in accounts.USER_BUS_UNITS.items():
+        target = unit_dir / name
+        target.write_text(data)
+        target.chmod(0o644)
+
+
+def package_installed(root, baseline, output, *, label, revision=1, firmware='none', resources=None, openssl_reference=None, adapter=None,
+                      user_bus=False, upstream=None):
     """Build a small Runtime successor and references; never copy firmware data."""
     import copy
     import mbt_runtime
@@ -212,7 +241,12 @@ def package_installed(root, baseline, output, *, label, revision=1, firmware='no
                                                      for n in mbt_runtime.resources(Path(__file__).resolve().parents[1])}
     version={k:body['version'][k] for k in ('upstream','scheme','revision')}
     artifact.require(type(version['revision']) is int and type(revision) is int and revision>0,'numeric System revision required')
-    version['revision']+=revision
+    if upstream is None:
+        version['revision'] += revision
+    else:
+        artifact.require(upstream != version['upstream'], "a new System version must differ from the running version")
+        version.update(upstream=upstream, revision=revision)
+    artifact.version(version)
     roles={r['role']:r['reference'] for r in old['components']}
     runtime_paths=[r['path'] for r in old['profile'] if r['source']['reference']==roles['runtime']]
     firmware_paths=('kernel/lib/firmware','kernel/licenses')
@@ -247,6 +281,8 @@ def package_installed(root, baseline, output, *, label, revision=1, firmware='no
         for name in ('kernel/lib','kernel'):
             directory=content/name
             if directory.is_dir() and not directory.is_symlink() and not any(directory.iterdir()):directory.rmdir()
+        if user_bus:
+            add_user_bus(content)
         for name,data in resources.items():
             artifact.relative(name);target=content/name
             target.parent.mkdir(parents=True,exist_ok=True)

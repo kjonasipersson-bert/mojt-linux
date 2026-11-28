@@ -1014,7 +1014,7 @@ def _install(tree, payload, record, busybox, login_mode, repo, console, hardware
             install_sshd(system, put_unit, executable(payload, record, "systemd", "bin/systemd-tmpfiles"))
     if step >= 10 and not installer_console:
         wanted += accounts.install(tree, system, account_inputs(payload, record), repo,
-                                   write, add_default, put_unit, unit, dbus)
+                                   write, add_default, put_unit, unit)
     setup += ['echo "Mojt System setup complete"']
     write(system / "setup", "\n".join(setup) + "\n", 0o755)
     put_unit("mojt-setup.service", unit("Mojt System setup", "/run/mojt-system/setup",

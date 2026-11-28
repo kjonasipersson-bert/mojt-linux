@@ -35,6 +35,8 @@ def main(argv=None, *, prog=None):
     system_input.add_argument("--tree",type=Path)
     system_input.add_argument("--running",action="store_true",help="package a component-based successor of the running native System")
     system.add_argument("--firmware",choices=("none","keep"),default="none",help="component System firmware selection (default: none)")
+    system.add_argument("--user-bus", action="store_true", help="add the reviewed D-Bus user units to a running-System successor")
+    system.add_argument("--expected-running", help="require this exact running System artifact when packaging a successor")
     system.add_argument("--openssl-output",help="retain an exact installed Nix OpenSSL output in the new running-System successor")
     system.add_argument("--generation")
     system.add_argument("--version")
@@ -63,12 +65,17 @@ def main(argv=None, *, prog=None):
                 import mpm_system as system
                 from mpm_cli import Runtime
                 from mpm_boot_status import read_running,description
-                artifact.require(args.version is None and args.nix_store is None,'--version/--nix-store belong to assembled-tree packaging')
+                artifact.require(args.nix_store is None,'--nix-store belongs to assembled-tree packaging')
                 runtime=Runtime();running=read_running(runtime)
                 artifact.require(running is not None,'running native System identity required')
-                baseline=description(running)['system']['artifact'];body,_=system.object_record(runtime.disk,baseline)
+                baseline=description(running)['system']['artifact']
+                artifact.require(args.expected_running is None or baseline == args.expected_running,
+                                 'running System artifact differs from --expected-running')
+                body,_=system.object_record(runtime.disk,baseline)
                 revision=1 if args.revision is None else args.revision
-                label=args.generation or 'system-'+body['version']['upstream']+'-r'+str(body['version']['revision']+revision)
+                version = args.version if args.version is not None else body['version']['upstream']
+                release_revision = revision if args.version is not None else body['version']['revision'] + revision
+                label = args.generation or f"system-{version}-r{release_revision}"
                 crypto=adapter=None
                 if args.openssl_output is not None:
                     from mpm_nix_binary import NixBinaryAdapter
@@ -76,9 +83,11 @@ def main(argv=None, *, prog=None):
                     crypto=local_reference(adapter,args.openssl_output)
                     adapter.verify_path(crypto,args.openssl_output+'/bin/openssl',executable=True)
                 result=package_installed(runtime.disk,baseline,args.output,label=label,revision=revision,
-                    firmware=args.firmware,openssl_reference=crypto,adapter=adapter)
+                    firmware=args.firmware,openssl_reference=crypto,adapter=adapter,
+                    user_bus=args.user_bus,upstream=args.version)
             else:
-                artifact.require(args.openssl_output is None,'--openssl-output requires --running')
+                artifact.require(args.openssl_output is None and not args.user_bus and args.expected_running is None,
+                                 '--openssl-output, --user-bus and --expected-running require --running')
                 from mojt_system_package import package
                 from mpm_nix_binary import NixBinaryAdapter
                 artifact.require(all(v is not None for v in (args.generation,args.version,args.revision,args.nix_store)),

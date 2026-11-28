@@ -5,6 +5,7 @@
 
 import json
 import os
+import re
 import stat
 
 COMMANDS = ("login", "useradd", "usermod", "userdel", "groupadd", "groupmod",
@@ -14,7 +15,28 @@ SYSTEMD_PROGRAMS = ("systemd-logind", "systemd-user-runtime-dir", "systemd-sysct
 USER_SHUTDOWN_UNITS = ("exit.target", "systemd-exit.service", "shutdown.target")
 
 
-def install(tree, profile, inputs, repo, write, add_default, put_unit, unit, dbus):
+USER_SESSION_TARGET = "[Unit]\nDescription=Mojt user session\n"
+USER_BUS_CONFIG = "dbus-session.conf"
+USER_BUS_UNITS = {
+    "default.target": USER_SESSION_TARGET + "Wants=dbus.socket\nAfter=dbus.socket\n",
+    "dbus.socket": "[Unit]\nDescription=D-Bus User Message Bus Socket\n"
+                   "[Socket]\nListenStream=%t/bus\n",
+    "dbus.service": "[Unit]\nDescription=D-Bus User Message Bus\n"
+                    "Requires=dbus.socket\nAfter=dbus.socket\n\n"
+                    "[Service]\nExecStart=/run/mojt-system/bin/dbus-daemon "
+                    "--config-file=/run/mojt-system/dbus-session.conf "
+                    "--address=systemd: --nofork --nopidfile --systemd-activation\n"
+                    "Type=notify\nNotifyAccess=main\n",
+}
+
+
+def user_bus_config(daemon):
+    match = re.fullmatch(r"(/nix/store/[0-9abcdfghijklmnpqrsvwxyz]{32}-[A-Za-z0-9+._?=-]+)/bin/dbus-daemon",
+                         daemon or "")
+    return match[1] + "/share/dbus-1/session.conf" if match else None
+
+
+def install(tree, profile, inputs, repo, write, add_default, put_unit, unit):
     """Prepare only the private new image; never create passwords or human users."""
     etc = tree / "state/etc"
     # The real builder runs as root; tests may stage images as their own user.
@@ -154,16 +176,8 @@ root ALL=(ALL:ALL) ALL
              "Environment=XDG_RUNTIME_DIR=/run/user/%i\n"
              "Environment=PATH=/run/mojt-system/bin:/usr/bin:/bin\n",
              "Requires=user-runtime-dir@%i.service\nAfter=user-runtime-dir@%i.service systemd-logind.service\n"))
-    user_units = profile / "user-units"
-    write(user_units / "default.target",
-          "[Unit]\nDescription=Mojt user session\nWants=dbus.socket\nAfter=dbus.socket\n")
-    write(user_units / "dbus.socket",
-          "[Unit]\nDescription=D-Bus User Message Bus Socket\n"
-          "[Socket]\nListenStream=%t/bus\n")
-    write(user_units / "dbus.service", unit("D-Bus User Message Bus",
-          dbus + " --config-file=/run/mojt-system/dbus-session.conf"
-          " --address=systemd: --nofork --nopidfile --systemd-activation",
-          "Type=notify\nNotifyAccess=main\n", "Requires=dbus.socket\nAfter=dbus.socket\n"))
+    for name, contents in USER_BUS_UNITS.items():
+        write(profile / "user-units" / name, contents)
     for name, path in inputs["user_shutdown_units"].items():
         (profile / "user-units" / name).symlink_to(path)
     console = profile / "units/mojt-console.service"

@@ -369,7 +369,7 @@ class SystemVmTests(unittest.TestCase):
         self.assertIn("ListenStream=%t/bus\n", (user_units / "dbus.socket").read_text())
         service = (user_units / "dbus.service").read_text()
         self.assertIn("Requires=dbus.socket", service)
-        self.assertIn("ExecStart=" + dbus + "/bin/dbus-daemon "
+        self.assertIn("ExecStart=/run/mojt-system/bin/dbus-daemon "
                       "--config-file=/run/mojt-system/dbus-session.conf "
                       "--address=systemd:", service)
         system_socket = (directory / "units/dbus.socket").read_text()
